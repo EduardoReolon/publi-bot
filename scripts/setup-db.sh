@@ -100,6 +100,7 @@ SQL
 echo "Preparando template1 (para os bancos de teste herdarem)..."
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d template1 <<SQL
 CREATE SCHEMA IF NOT EXISTS extensions;
+GRANT USAGE ON SCHEMA extensions TO ${DB_USER};
 CREATE EXTENSION IF NOT EXISTS vector   WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
 SQL

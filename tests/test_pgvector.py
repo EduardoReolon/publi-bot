@@ -108,3 +108,31 @@ def test_indice_hnsw_com_cosseno_pode_ser_criado(_exige_pgvector, tenant_factory
 
     assert "hnsw" in indexdef.lower()
     assert "vector_cosine_ops" in indexdef
+
+
+@pytest.mark.django_db
+def test_usuario_da_aplicacao_tem_usage_no_schema_extensions():
+    """Bug real encontrado ao testar setup-db.sh de ponta a ponta.
+
+    `CREATE EXTENSION` cria o schema e a extensao, mas NAO concede USAGE ao
+    usuario da aplicacao. Sem o GRANT explicito, um banco criado a partir do
+    template1 (o banco de teste do pytest, ou qualquer banco novo) resolve
+    `current_schemas(true)` sem 'extensions' mesmo com o schema existindo e
+    com o schema presente no `search_path` — e todo `CREATE TABLE` com coluna
+    `vector` falha com "type vector does not exist", com a causa real
+    (permissao, nao ausencia de extensao) invisivel na mensagem de erro.
+
+    Ver scripts/setup-db.sh: o GRANT USAGE precisa acontecer tanto no banco de
+    aplicacao quanto no template1 — instalar a extensao em um so nao basta.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_schema_privilege(current_user, 'extensions', 'USAGE')"
+        )
+        tem_permissao = cursor.fetchone()[0]
+
+    assert tem_permissao, (
+        "usuario da aplicacao sem USAGE no schema 'extensions'. "
+        "Rode: GRANT USAGE ON SCHEMA extensions TO <usuario>; "
+        "(precisa ser feito no banco de aplicacao E no template1)"
+    )
