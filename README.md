@@ -65,7 +65,8 @@ Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e nos ADRs.
 
 ## Ambiente de desenvolvimento
 
-Pre-requisitos: Python 3.12 e Docker (ou Podman) para Postgres e Redis.
+Pre-requisitos: Python 3.12, PostgreSQL com pgvector, e Redis. Tudo nativo — o
+projeto nao depende de container em nenhuma etapa (ver passo 3).
 
 ### 1. Clonar e criar o ambiente
 
@@ -98,18 +99,41 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 
 Cole o valor gerado em `DJANGO_SECRET_KEY` e defina `POSTGRES_PASSWORD`.
 
-### 3. Subir a infraestrutura
+### 3. PostgreSQL e Redis
+
+O caminho padrao e **nativo, sem container**. No Ubuntu o pgvector esta no
+repositorio oficial da distribuicao:
+
+```bash
+sudo apt install postgresql postgresql-contrib redis-server
+sudo apt install postgresql-16-pgvector      # ajuste 16 para a sua versao
+./scripts/setup-db.sh
+```
+
+O script cria o papel, o banco e — o passo que nao pode ser esquecido — instala
+a extensao `vector` num schema **`extensions`** dedicado, nao no `public`.
+
+Isso nao e preciosismo: com um schema por tenant, uma extensao instalada apenas
+no `public` nao fica alcancavel da forma que as migrations esperam ao criar o
+segundo tenant. O primeiro funciona e o segundo falha com
+*type "vector" does not exist*. O `PG_EXTRA_SEARCH_PATHS = ["extensions"]` do
+settings fecha o circuito.
+
+<details>
+<summary>Alternativa em container (util no Windows)</summary>
+
+Compilar o pgvector no Windows exige MSVC e os headers do PostgreSQL. Se voce
+ainda desenvolve no Windows, o container evita esse trabalho:
 
 ```bash
 docker compose up -d
 ```
 
-Sobe PostgreSQL com pgvector e Redis. O script de inicializacao cria o schema
-`extensions` e instala a extensao `vector` dentro dele — passo obrigatorio: sem
-ele, a migration do **segundo** tenant falha com *type "vector" does not exist*.
+O `compose.yaml` sobe **apenas** PostgreSQL com pgvector e Redis. O Django
+nunca e containerizado — ele roda no virtualenv nativo, preservando depurador,
+recarga automatica e stack trace direto.
 
-Apenas a infraestrutura e containerizada. O Django roda no virtualenv nativo,
-preservando depurador e recarga automatica.
+</details>
 
 ### 4. Migrar e rodar
 

@@ -1,8 +1,21 @@
-# Infraestrutura de desenvolvimento local.
+# ALTERNATIVA ao setup nativo. NAO e o caminho padrao do projeto.
 #
-# Deliberadamente NAO containeriza o Django: o app roda no venv nativo, para
-# manter debugger, autoreload e stack trace diretos. O container serve apenas
-# ao que e trabalhoso instalar na mao — Postgres com pgvector e Redis.
+# O padrao e instalar PostgreSQL, pgvector e Redis nativamente:
+#
+#   sudo apt install postgresql postgresql-contrib redis-server
+#   sudo apt install postgresql-16-pgvector
+#   ./scripts/setup-db.sh
+#
+# No Ubuntu o pgvector vem no repositorio oficial da distribuicao, entao o
+# argumento que costuma justificar containerizar o banco nao se aplica. O
+# deploy tambem e nativo (virtualenv, Gunicorn, Nginx, systemd), e um banco em
+# container no meio disso seria a peca fora do padrao.
+#
+# Este arquivo existe para UM caso concreto: desenvolver no Windows, onde
+# compilar o pgvector exige MSVC e os headers do PostgreSQL.
+#
+# Mesmo aqui o Django NAO e containerizado — ele roda no venv nativo, para
+# preservar depurador, recarga automatica e stack trace direto.
 #
 #   docker compose up -d
 #   docker compose logs -f postgres

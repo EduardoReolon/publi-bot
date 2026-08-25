@@ -40,6 +40,20 @@ insercao incremental — exatamente o padrao da curadoria manual deste produto.
   Super Chunks a varredura sequencial ja atende.
 - `CONN_MAX_AGE = 60` no processo web; **`CONN_MAX_AGE = 0` nos processos do
   Celery**, para nao segurar conexao entre tarefas.
-- Desenvolvimento local usa a imagem `pgvector/pgvector:pg17` via
-  `compose.yaml`. Apenas a infraestrutura e containerizada; o Django roda no
-  virtualenv nativo, preservando depurador e recarga automatica.
+- **Instalacao nativa, sem container, e o caminho padrao** — em
+  desenvolvimento e em producao. No Ubuntu o pgvector esta no repositorio
+  oficial da distribuicao (`postgresql-<versao>-pgvector`), entao o argumento
+  que normalmente justifica containerizar o banco nao se aplica aqui.
+  `scripts/setup-db.sh` faz a preparacao de forma idempotente.
+- Isso mantem coerencia com o resto do deploy, que ja e nativo: virtualenv,
+  Gunicorn, Nginx e systemd. Um banco em container no meio disso seria a peca
+  fora do padrao.
+- O `compose.yaml` permanece no repositorio como **alternativa**, util em um
+  unico caso concreto: desenvolver no Windows, onde compilar o pgvector exige
+  MSVC e os headers do PostgreSQL. Mesmo nesse caso ele sobe apenas
+  PostgreSQL e Redis — o Django nunca e containerizado, para preservar
+  depurador, recarga automatica e stack trace direto.
+- Verificado nativamente: extensao `vector` 0.6.0 criada no schema
+  `extensions`, coluna `vector(1024)`, indice HNSW com `vector_cosine_ops` e
+  consulta por distancia de cosseno funcionando **de dentro de dois schemas de
+  tenant diferentes** — que era exatamente o caso previsto como falha.

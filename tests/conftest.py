@@ -54,3 +54,43 @@ def user(db) -> User:
         password="uma-senha-longa-de-teste",
         full_name="Revisor de Teste",
     )
+
+
+@pytest.fixture(scope="session")
+def _exige_pgvector(django_db_setup, django_db_blocker):
+    """Falha cedo e com mensagem util se o banco de teste nao tiver o pgvector.
+
+    O banco de teste e criado do zero pelo pytest-django e herda do
+    `template1`. Como `vector` nao e uma extensao "trusted", cria-la exige
+    superusuario — e o usuario da aplicacao nao e (nem deveria ser). Por isso
+    `scripts/setup-db.sh` instala a extensao no `template1`.
+
+    Sem esta verificacao, a ausencia se manifestaria como
+    "current transaction is aborted" em cascata, varios testes adiante, sem
+    apontar para a causa.
+    """
+    with django_db_blocker.unblock(), connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT n.nspname
+              FROM pg_extension e
+              JOIN pg_namespace n ON n.oid = e.extnamespace
+             WHERE e.extname = 'vector'
+            """
+        )
+        row = cursor.fetchone()
+
+    if row is None:
+        pytest.fail(
+            "A extensao 'vector' nao existe no banco de teste.\n"
+            "Rode: ./scripts/setup-db.sh  (ele instala no template1, de onde "
+            "os bancos de teste herdam)",
+            pytrace=False,
+        )
+    if row[0] != "extensions":
+        pytest.fail(
+            f"A extensao 'vector' esta no schema '{row[0]}', deveria estar em "
+            f"'extensions'. No public ela nao fica alcancavel para o segundo "
+            f"tenant.",
+            pytrace=False,
+        )
