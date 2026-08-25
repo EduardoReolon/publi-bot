@@ -171,10 +171,17 @@ pre-commit install    # uma vez, para rodar tudo isso a cada commit
 ## Comandos de tenant
 
 ```bash
-# Cria um tenant e roda as migrations dentro do schema dele
-python manage.py create_tenant
+# Cria um tenant COMPLETO: registro, schema fisico e migrations dentro dele.
+# E o comando a usar hoje — o `create_tenant` nativo do django-tenants NAO
+# basta neste projeto: ele so grava o registro. A criacao do schema fisico
+# so acontece automaticamente quando `auto_create_schema=True` no model, e
+# este projeto desliga essa flag de proposito (ADR-0001) para o
+# provisionamento nao travar a request HTTP do cadastro. Este comando e o
+# equivalente sincrono dessa rotina, para terminal e scripts — a Entrega 2
+# fara a mesma coisa de forma assincrona, por tras do cadastro web.
+python manage.py provision_tenant acme --name="ACME Ltda"
 
-# Aplica migrations em public e em todos os tenants
+# Aplica migrations em public e em todos os tenants ja provisionados
 python manage.py migrate_schemas
 
 # Roda um comando dentro de um tenant especifico

@@ -126,9 +126,7 @@ def test_usuario_da_aplicacao_tem_usage_no_schema_extensions():
     aplicacao quanto no template1 — instalar a extensao em um so nao basta.
     """
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT has_schema_privilege(current_user, 'extensions', 'USAGE')"
-        )
+        cursor.execute("SELECT has_schema_privilege(current_user, 'extensions', 'USAGE')")
         tem_permissao = cursor.fetchone()[0]
 
     assert tem_permissao, (

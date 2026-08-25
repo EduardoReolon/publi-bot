@@ -224,7 +224,7 @@ Qualquer site que for conectado ao SaaS (seja Django, WP, etc.) deve implementar
   "question_id": 145, // ID da pergunta original (apenas para tipo "qa")
   "html_content": "<p>Texto da resposta ou artigo...</p>",
   "cover_image_base64": "...", // Vazio se for Q&A
-  "status": "published" 
+  "status": "published"
 }
 
 ```
