@@ -1,5 +1,31 @@
 # Documentação de Arquitetura: Motor de Geração de Conteúdo IA (SaaS)
 
+> **Aviso de status — 25/08/2026**
+>
+> Este documento e a especificacao original do sistema e permanece a referencia
+> para a intencao de produto. Varios pontos dele foram **revisados ou
+> substituidos** por decisoes registradas em [`adr/`](adr/), que prevalecem em
+> caso de divergencia:
+>
+> | Ponto deste documento | Substituido por | O que mudou |
+> |---|---|---|
+> | Secao 2.B — "biblioteca padrao de multi-tenancy do Django" | [ADR-0003](adr/ADR-0003-multi-tenancy.md) | O Django nao tem multi-tenancy nativa. Usa-se `django-tenants`. |
+> | Secao 2.B — Worker Local com Django, PostgreSQL, Gunicorn e Nginx | [ADR-0007](adr/ADR-0007-fronteira-da-gpu.md) | Copia indevida da secao 2.A. A maquina com GPU expoe apenas endpoints HTTP. |
+> | Secao 2.A — orquestracao via LangChain / CrewAI | [ADR-0008](adr/ADR-0008-sem-langchain.md) | Nao serao usados; o estado dos passos vive no banco. |
+> | Secao 3.A — "o PDF e enviado para a fila do Celery" | [ADR-0007](adr/ADR-0007-fronteira-da-gpu.md) | A fila carrega apenas identificadores. Bytes nunca trafegam pelo broker. |
+> | Secao 3.B — Markdown completo compactado em GZIP | [ADR-0004](adr/ADR-0004-postgres-pgvector.md) | Coluna `TextField`; o PostgreSQL ja comprime via TOAST e o gzip manual impede busca textual. |
+> | Secao 4 — "Graceful Resume" via retry do Celery | [ADR-0012](adr/ADR-0012-inferencia-como-endpoint.md) | Retomada pelo `GenerationJob` no banco; o broker e so transporte. |
+> | Secao 6 — "exatamente as duas rotas abaixo", seguido de tres | pendente | O contrato sera reescrito como `/api/v1/` versionado, com OpenAPI. |
+> | Secao 6 — payload sem idempotencia, sem autoria, sem metadados de SEO | pendente | Sera reescrito na entrega de integracao. |
+> | Estados de negocio nomeados em portugues | [ADR-0009](adr/ADR-0009-idiomas.md) | Valores de `choices` em ingles; rotulos traduzidos. |
+>
+> A linha "Sua arquitetura agora esta blindada!" e texto conversacional que
+> vazou para a especificacao, e explica a origem de varias contradicoes acima.
+
+---
+
+
+
 ## 1. Visão Geral do Sistema
 
 O sistema é um orquestrador centralizado (SaaS) projetado para gerenciar, gerar iterativamente, aprovar e publicar conteúdo focado em SEO para múltiplos sites (Nós Finais) utilizando Modelos de Linguagem (LLMs). A arquitetura suporta *multi-tenancy* (múltiplos projetos/clientes isolados) e desacopla o motor de inferência (hardware local) da lógica de negócios e aprovação (nuvem).

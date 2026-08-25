@@ -1,0 +1,18 @@
+# ---------------------------------------------------------------------------
+# PubliBot — dependencias de desenvolvimento e teste
+#
+# Uso:  pip install -r requirements.txt -r requirements-dev.txt
+# ---------------------------------------------------------------------------
+
+-r requirements.txt
+
+# --- Testes ----------------------------------------------------------------
+pytest==8.4.2
+pytest-django==4.11.1
+pytest-cov==6.2.1
+
+# --- Lint e formatacao -----------------------------------------------------
+ruff==0.14.2
+
+# --- Hooks de pre-commit ---------------------------------------------------
+pre-commit==4.3.0

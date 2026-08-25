@@ -1,107 +1,181 @@
-# 🤖 PubliBot: AI-Driven SEO Content Orchestrator
+# PubliBot
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Django](https://img.shields.io/badge/Django-Multi--Tenant-092E20?logo=django)](https://www.djangoproject.com/)
-[![Celery](https://img.shields.io/badge/Celery-Distributed_Task_Queue-37814A?logo=celery)](https://docs.celeryproject.org/)
-[![Ollama](https://img.shields.io/badge/Local_LLM-Ollama-white?logo=ollama)](https://ollama.com/)
+Orquestrador multi-tenant que transforma literatura cientifica em conteudo web
+fundamentado, com revisao humana obrigatoria e publicacao agendada em sites de
+terceiros.
 
-> **A multi-tenant SaaS architecture that bridges the gap between raw scientific data and SEO-optimized web content using advanced Vision-RAG and decoupled local LLM inference.**
+> ### Status: em construcao — Fase 0 concluida
+>
+> Este README descreve **o que existe hoje**, nao o que esta planejado. O que
+> ainda nao foi construido esta marcado como tal.
+>
+> | Bloco | Estado |
+> |---|---|
+> | Fundacao: configuracao, Celery, Postgres, infraestrutura de dev | **Pronto** |
+> | Tenancy: Tenant, Domain, User, TenantMembership, isolamento por schema | **Pronto** |
+> | Cadastro autonomo por subdominio | A fazer |
+> | Base de conhecimento e RAG | A fazer |
+> | Geracao de conteudo | A fazer |
+> | Contrato de integracao com os sites | A fazer |
+> | Motor de cadencia, perguntas e respostas, imagem, deploy | A fazer |
+>
+> As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/).
 
-## 🎯 The Problem It Solves
+## O problema
 
-Most AI content generators produce generic, hallucinated text that penalizes websites in modern search engines (Google's E-E-A-T guidelines). When trying to ground AI with real documents (RAG), standard PDF parsers fail at complex scientific layouts, and injecting random chunks of text into an LLM causes the **"Frankenstein Effect"** (paragraphs contradicting each other).
+Gerar conteudo com um modelo de linguagem sem fundamentacao produz texto
+generico e sujeito a alucinacao. Fundamenta-lo com documentos reais esbarra em
+dois obstaculos praticos: extratores de PDF falham em artigos cientificos de
+duas colunas, e injetar trechos avulsos no prompt produz paragrafos que se
+contradizem entre si.
 
-## 💡 The PubliBot Solution
+## A abordagem
 
-PubliBot is engineered to generate highly authoritative **Pillar Articles** and **Q&A responses**. It mitigates hallucinations and API costs through a meticulously designed distributed architecture:
+1. **Analise de layout por visao.** O PDF e convertido em Markdown estruturado
+   por um modelo que enxerga a pagina, em vez de um extrator de texto.
+2. **Indexacao por resumo, com curadoria humana.** Em vez de fatiar o documento
+   as cegas, uma pessoa seleciona os trechos de maior valor — tipicamente
+   resumo e conclusao — e apenas eles sao vetorizados.
+3. **Tese antes da redacao.** Antes de escrever, o sistema le os trechos
+   recuperados e constroi uma tese unica, registrando explicitamente quando as
+   fontes divergem entre si.
+4. **Revisao humana obrigatoria.** Nenhum conteudo e publicado sem aprovacao,
+   e o esforco editorial e registrado e mensuravel.
 
-1. **Decoupled Compute:** The lightweight SaaS core runs in the cloud, while heavy ML inference (LLMs, Vision Parsers, Stable Diffusion) runs cost-free on a Local GPU Worker connected via a secure Tailscale tunnel.
-2. **Vision-Based Data Ingestion:** Bypasses flawed PDF text extractors. It uses Vision Models (`Docling`/`MinerU`) to "see" scientific papers and convert dual-column, messy PDFs into perfectly structured Markdown.
-3. **Summary Indexing RAG:** Instead of blind chunking, the system isolates high-value sections (Abstracts and Conclusions) into "Super Chunks." 
-4. **Anti-Frankenstein Filter:** Before drafting, the LLM reads multiple retrieved summaries to build a logical "Consensus Thesis." The final article is written based on this thesis, injecting a single, highly authoritative canonical SEO backlink.
+## Arquitetura em uma frase
 
-## 🏗️ System Architecture
+Um SaaS Django multi-tenant na nuvem coordena o trabalho; a inferencia pesada
+roda em endpoints HTTP — uma GPU local numa rede privada, ou APIs hospedadas —
+cada um com limite proprio de concorrencia; a fila e a fonte da verdade vivem
+no banco, nunca no broker.
 
-The project is split into three main operational domains:
+Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e nos ADRs.
 
-```mermaid
-graph TD
-    subgraph Cloud SaaS (Django / PostgreSQL)
-        A[Web Dashboard] --> B(Tenant Router)
-        B --> C[(PostgreSQL + pgvector)]
-        B --> D[Celery Task Queue]
-    end
+## Stack
 
-    subgraph Local GPU Worker (Private Network)
-        D -- Async Tasks --> E[Local Celery Worker]
-        E --> F[Docling / MinerU Vision]
-        E --> G[Ollama: Llama 3 / Qwen]
-        F -- Structured Markdown --> D
-        G -- Drafted Content --> D
-    end
+| Camada | Tecnologia |
+|---|---|
+| Aplicacao | Python 3.12, Django 5.2 LTS |
+| Multi-tenancy | django-tenants (um schema PostgreSQL por tenant) |
+| Fila | Celery 5.6 + Redis, com tenant-schemas-celery |
+| Agendamento | django-celery-beat (`DatabaseScheduler`) |
+| Banco | PostgreSQL 17 + pgvector (indice HNSW, distancia de cosseno) |
+| Embeddings | `intfloat/multilingual-e5-large` (1024 dim), em CPU via ONNX |
+| Inferencia | Ollama local e APIs compativeis com OpenAI |
 
-    subgraph End-Nodes (Client Websites)
-        H[WordPress / Django Sites]
-        D -- Push via Cron --> H
-        H -- Pull Q&A Context --> A
-    end
+## Ambiente de desenvolvimento
 
-```
+Pre-requisitos: Python 3.12 e Docker (ou Podman) para Postgres e Redis.
 
-## ✨ Core Engineering Features
+### 1. Clonar e criar o ambiente
 
-* **Stateful & Resilient Queuing:** Long-running LLM chains are broken down into stateful Celery tasks. If the Local GPU worker loses connection or shuts down, the workflow gracefully pauses and resumes from the exact stopped node when the hardware is back online.
-* **Human-in-the-Loop (HITL):** Enforces mandatory human approval for both Content Generation and Data Ingestion, ensuring YMYL (Your Money or Your Life) compliance.
-* **Smart Storage:** Retains full, GZIP-compressed Markdown versions of parsed documents in the relational database, while pushing semantic Super Chunks to `pgvector`.
-* **Idempotent Ingestion:** Prevents vector database pollution by generating unique composite hashes `[Title + Author + Year]` for every uploaded source.
-* **Dynamic Cron Engine:** Manages independent publication schedules (crawl-budget optimization) for each tenant.
-
-## 🛠️ Tech Stack
-
-* **Backend:** Python, Django, Django-Tenants, Django REST Framework.
-* **Asynchronous Engine:** Celery, Redis.
-* **Database:** PostgreSQL, `pgvector` (Vector similarity search).
-* **AI & Inference:** Ollama (Local LLMs), Stable Diffusion, Docling (Document Layout Analysis).
-* **Infrastructure:** Nginx, Gunicorn, Systemd (Unix Sockets).
-
-## 🚀 Getting Started
-
-**1. Clone and setup the environment:**
+**Linux / macOS**
 
 ```bash
-git clone [https://github.com/yourusername/publi_bot.git](https://github.com/yourusername/publi_bot.git)
-cd publi_bot
-python3 -m venv venv
+git clone https://github.com/EduardoReolon/publi-bot.git
+cd publi-bot
+python3.12 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-**2. Environment Variables:**
-Create a `.env` file in the root directory. Configure your Postgres credentials, Redis URL, and Node API Keys.
+**Windows (PowerShell)**
 
-**3. Run the Cloud Services (Terminal 1):**
+```powershell
+git clone https://github.com/EduardoReolon/publi-bot.git
+cd publi-bot
+py -3.12 -m venv venv
+venv\Scripts\Activate.ps1
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+### 2. Configurar
 
 ```bash
-python manage.py migrate_schemas
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(64))"
+```
+
+Cole o valor gerado em `DJANGO_SECRET_KEY` e defina `POSTGRES_PASSWORD`.
+
+### 3. Subir a infraestrutura
+
+```bash
+docker compose up -d
+```
+
+Sobe PostgreSQL com pgvector e Redis. O script de inicializacao cria o schema
+`extensions` e instala a extensao `vector` dentro dele — passo obrigatorio: sem
+ele, a migration do **segundo** tenant falha com *type "vector" does not exist*.
+
+Apenas a infraestrutura e containerizada. O Django roda no virtualenv nativo,
+preservando depurador e recarga automatica.
+
+### 4. Migrar e rodar
+
+```bash
+python manage.py migrate_schemas --shared
+python manage.py createsuperuser
 python manage.py runserver
-
 ```
 
-**4. Start the Local GPU Worker (Terminal 2):**
-Ensure Ollama is running (`ollama serve`), then start the Celery worker:
+Note `migrate_schemas`, nao `migrate`: o comando puro do Django nao percorre os
+schemas dos tenants.
+
+Acesse `http://localhost:8000/admin/`. Um tenant chamado `acme` responderia em
+`http://acme.localhost:8000/` — navegadores resolvem qualquer subdominio de
+`.localhost` para 127.0.0.1 sem precisar editar `/etc/hosts`.
+
+### 5. Worker do Celery
 
 ```bash
-celery -A core worker -l INFO --concurrency=1
-
+celery -A core worker -l INFO --concurrency=2 --prefetch-multiplier=1
 ```
 
-## 📂 Project Structure
+No Windows, acrescente `-P solo`: o pool `prefork` nao tem suporte oficial
+desde o Celery 4 e falha de forma erratica.
 
-* `/core` - Django root, configurations, and tenant routing.
-* `/docs` - Deep-dive architectural documentation (`ARCHITECTURE.md`).
-* `/deploy` - Production-ready configuration files (Nginx, Systemd daemons, Unix Sockets).
+### Testes e lint
 
----
+```bash
+pytest
+ruff check .
+ruff format .
+pre-commit install    # uma vez, para rodar tudo isso a cada commit
+```
 
-*Conceptualized and Built as an exploration of scalable AI workflows, SEO engineering, and decoupled machine learning architectures.*
+## Comandos de tenant
+
+```bash
+# Cria um tenant e roda as migrations dentro do schema dele
+python manage.py create_tenant
+
+# Aplica migrations em public e em todos os tenants
+python manage.py migrate_schemas
+
+# Roda um comando dentro de um tenant especifico
+python manage.py tenant_command shell --schema=acme
+```
+
+## Estrutura
+
+```
+apps/
+  accounts/       Tenant, Domain, User, TenantMembership (schema public)
+core/
+  settings/       base, dev, prod
+  celery.py       app do Celery, com propagacao de tenant
+  urls_public.py  rotas do dominio raiz
+  urls_tenants.py rotas de um tenant
+deploy/
+  postgres/init/  criacao do schema `extensions` e das extensoes
+docs/
+  ARCHITECTURE.md especificacao do sistema
+  adr/            decisoes de arquitetura
+tests/            isolamento entre tenants e propagacao de schema
+```
+
+## Licenca
+
+Nenhuma licenca foi concedida. Todos os direitos reservados. Ver
+[`NOTICE.md`](NOTICE.md).

@@ -1,0 +1,60 @@
+[project]
+name = "publibot"
+version = "0.1.0"
+description = "Orquestrador de conteudo SEO fundamentado em literatura cientifica"
+requires-python = ">=3.12"
+
+# ---------------------------------------------------------------------------
+# Ruff — lint e formatacao
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["migrations", "venv", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort — ordem de imports
+    "UP",   # pyupgrade — sintaxe moderna
+    "B",    # bugbear — armadilhas comuns
+    "C4",   # comprehensions
+    "DJ",   # regras especificas de Django
+    "S",    # bandit — seguranca
+    "T20",  # proibe print() em codigo de producao
+    "RUF",
+]
+ignore = [
+    "S101",  # assert: legitimo dentro de teste
+    "RUF012",# ClassVar em atributos mutaveis de classe: ruidoso com Django
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Settings sao, por natureza, um monte de constante importada com *.
+"core/settings/*.py" = ["F403", "F405", "E501"]
+# Testes podem usar print e credencial de mentira.
+"**/tests/**" = ["S105", "S106", "T20"]
+"**/test_*.py" = ["S105", "S106", "T20"]
+# Scripts utilitarios podem imprimir.
+"scripts/*.py" = ["T20"]
+"convert_requirements.py" = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "core"]
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "core.settings.dev"
+python_files = ["test_*.py", "*_test.py"]
+testpaths = ["tests", "apps"]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: exige Postgres, Redis e um worker Celery de verdade rodando",
+]
+
+[tool.coverage.run]
+source = ["apps", "core"]
+omit = ["*/migrations/*", "*/tests/*"]

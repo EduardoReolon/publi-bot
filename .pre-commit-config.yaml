@@ -1,0 +1,50 @@
+# Instale uma vez com:  pre-commit install
+#
+# Cada hook aqui existe para impedir um problema concreto de chegar ao
+# repositorio, nao por gosto estetico.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      # Um PDF de teste ou um modelo baixado nao pode entrar no git.
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      # Impede commitar chave privada por acidente.
+      - id: detect-private-key
+      # Normaliza para LF. Sem isto, um .sh escrito no Windows chega ao
+      # servidor Linux com CRLF e falha com "bad interpreter".
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.2
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # Falha se algum model mudou sem a migration correspondente. E o erro
+      # mais comum de esquecer, e o mais chato de descobrir em producao.
+      - id: django-makemigrations-check
+        name: migrations em dia
+        entry: venv/bin/python manage.py makemigrations --check --dry-run
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      # O contrato exige TLS. verify=False anula o TLS inteiro e e o "conserto"
+      # mais comum quando um cliente tem certificado ruim.
+      - id: proibir-verify-false
+        name: proibir verify=False
+        entry: 'verify\s*=\s*False'
+        language: pygrep
+        types: [python]
+        exclude: '^tests/'

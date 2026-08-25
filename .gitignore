@@ -1,4 +1,6 @@
+# ---------------------------------------------------------------------------
 # Python
+# ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,34 +8,79 @@ __pycache__/
 venv/
 env/
 .venv/
+.python-version
+*.egg-info/
+.eggs/
+build/
+dist/
 
+# ---------------------------------------------------------------------------
 # Django
+# ---------------------------------------------------------------------------
 *.sqlite3
 *.sqlite3-journal
-media/
-static/
 
-# Variáveis de Ambiente e Segurança
+# Uploads dos tenants (MEDIA_ROOT/<schema_name>/...) — nunca versionado.
+media/
+
+# Saida do collectstatic. NAO ignorar "static/", que guarda os estaticos-fonte
+# do projeto e precisa ser versionado.
+staticfiles/
+
+# ---------------------------------------------------------------------------
+# Variaveis de ambiente e segredos
+# ---------------------------------------------------------------------------
+# CUIDADO: o padrao ".env.*" tambem engoliria o .env.example, que TEM que ser
+# versionado (e o unico lugar onde se documenta quais variaveis existem).
+# Por isso: ignora os concretos, um a um, e nunca por curinga.
 .env
 .env.local
-.env.*
+.env.dev
+.env.prod
+.env.worker
+*.pem
+*.key
+!ca-bundle.crt
 
+# ---------------------------------------------------------------------------
 # Celery
+# ---------------------------------------------------------------------------
 celerybeat-schedule
+celerybeat-schedule.*
 celerybeat.pid
+*.pid
 
+# ---------------------------------------------------------------------------
 # Logs
+# ---------------------------------------------------------------------------
 logs/
 *.log
 
-# Arquivos de upload e testes locais de RAG
-*.pdf
-*.md.gz
+# ---------------------------------------------------------------------------
+# Cache de ferramentas
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
 
-# OS (Mac/Windows)
+# Modelos de embedding baixados em runtime (fastembed) — ~2.2 GB, nunca no git
+.model_cache/
+
+# ---------------------------------------------------------------------------
+# SO e IDEs
+# ---------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
-
-# IDEs
+desktop.ini
 .vscode/
 .idea/
+*.swp
+
+# Arquivos de persistencia do Redis, caso ele seja iniciado a partir
+# desta pasta em vez do container.
+appendonlydir/
+dump.rdb

@@ -5,25 +5,20 @@ import os
 
 # Lista de pacotes para EXCLUIR da produção (Linux)
 # Adicione aqui qualquer lib que seja exclusiva de Windows ou Development
-IGNORE_PACKAGES = [
-    "pywin32",
-    "pypiwin32",
-    "pywintypes",
-    "win32-setctime",
-    "pywinpty"
-]
+IGNORE_PACKAGES = ["pywin32", "pypiwin32", "pywintypes", "win32-setctime", "pywinpty"]
 
 # Define o nome do arquivo de entrada padrão caso nenhum seja fornecido
 DEFAULT_INPUT_FILE = "requirements.txt"
+
 
 def generate_flexible_requirements():
     """
     Processa um arquivo requirements.txt para criar uma versão 'flexível',
     substituindo ==X.Y.Z por <X+1.0.0, e excluindo pacotes específicos.
-    O nome do arquivo de entrada pode ser fornecido como argumento de linha de comando, 
+    O nome do arquivo de entrada pode ser fornecido como argumento de linha de comando,
     caso contrário, o padrão é DEFAULT_INPUT_FILE.
     """
-    
+
     # 1. Verifica e Obtém o Parâmetro do Arquivo de Entrada
     if len(sys.argv) < 2:
         input_file = DEFAULT_INPUT_FILE
@@ -41,7 +36,7 @@ def generate_flexible_requirements():
     # Exemplo: requirements.txt -> requirements_flexible.txt
     if "." in input_file:
         # Divide no último ponto para separar nome e extensão
-        base_name, ext = input_file.rsplit('.', 1)
+        base_name, ext = input_file.rsplit(".", 1)
         output_file = f"{base_name}_flexible.{ext}"
     else:
         # Se não houver extensão, apenas adiciona o sufixo
@@ -60,9 +55,11 @@ def generate_flexible_requirements():
             break
         except UnicodeDecodeError:
             continue
-    
+
     if lines is None:
-        raise Exception(f"Não foi possível ler o arquivo '{input_file}'. Tente salvá-lo como UTF-8.")
+        raise Exception(
+            f"Não foi possível ler o arquivo '{input_file}'. Tente salvá-lo como UTF-8."
+        )
 
     new_lines = []
     for line in lines:
@@ -73,12 +70,12 @@ def generate_flexible_requirements():
         if not line or line.startswith("#"):
             new_lines.append(line)
             continue
-        
+
         # Extrai o nome do pacote para verificar a ignore list
         # Pega tudo antes de ==, >=, <, etc.
         # Usa um lookahead negativo para evitar dividir em ==, <= ou >=.
-        pkg_name = re.split(r'[<>]|==|!=|~=', line, 1)[0].strip()
-        
+        pkg_name = re.split(r"[<>]|==|!=|~=", line, 1)[0].strip()
+
         if pkg_name.lower() in [p.lower() for p in IGNORE_PACKAGES]:
             print(f"Ignorando pacote exclusivo de Windows/Dev: {pkg_name}")
             continue
@@ -86,8 +83,8 @@ def generate_flexible_requirements():
         if "==" in line:
             # Garante que não está pegando a URL (ex: git+https://...)
             if line.startswith("git+") or line.startswith("http"):
-                 new_lines.append(line)
-                 continue
+                new_lines.append(line)
+                continue
 
             parts = line.split("==")
             if len(parts) >= 2:
@@ -101,19 +98,21 @@ def generate_flexible_requirements():
             # Trata casos onde a versão pode ter sufixos estranhos ou ser complexa
             try:
                 # Tenta extrair o número principal (major version)
-                major_match = re.match(r'^(\d+)\.', ver)
-                
+                major_match = re.match(r"^(\d+)\.", ver)
+
                 if major_match:
                     major = major_match.group(1)
                     # Se major for numérico, cria a regra flexible (major < next_major)
                     major_int = int(major)
-                    new_lines.append(f"{pkg}<{major_int+1}.0.0")
+                    new_lines.append(f"{pkg}<{major_int + 1}.0.0")
                 else:
                     # Se não conseguir ler a versão (ex: git hash, versão não numérica), mantém a linha original
                     new_lines.append(line)
             except Exception as e:
                 # Em caso de erro na manipulação da versão, mantém a linha original
-                print(f"Aviso: Não foi possível flexibilizar a versão de {pkg}. Mantendo a linha original. Erro: {e}")
+                print(
+                    f"Aviso: Não foi possível flexibilizar a versão de {pkg}. Mantendo a linha original. Erro: {e}"
+                )
                 new_lines.append(line)
         else:
             # Mantém linhas que já são flexíveis (ex: >=, ~>) ou não tem versão
@@ -128,6 +127,7 @@ def generate_flexible_requirements():
     except Exception as e:
         print(f"Erro ao escrever o arquivo de saída '{output_file}': {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     generate_flexible_requirements()

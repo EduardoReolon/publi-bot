@@ -1,0 +1,62 @@
+# Infraestrutura de desenvolvimento local.
+#
+# Deliberadamente NAO containeriza o Django: o app roda no venv nativo, para
+# manter debugger, autoreload e stack trace diretos. O container serve apenas
+# ao que e trabalhoso instalar na mao — Postgres com pgvector e Redis.
+#
+#   docker compose up -d
+#   docker compose logs -f postgres
+
+name: publibot
+
+services:
+  postgres:
+    # Imagem oficial do pgvector: ja traz a extensao compilada. Instalar
+    # pgvector na mao no Windows e um caminho de sofrimento evitavel.
+    image: pgvector/pgvector:pg17
+    container_name: publibot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-publibot}
+      POSTGRES_USER: ${POSTGRES_USER:-publibot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      # Acelera o boot em dev. Nao usar em producao.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Cria o schema `extensions` e instala o pgvector dentro dele, uma unica
+      # vez. Sem isso, a migration do SEGUNDO tenant falha com
+      # "type vector does not exist" — a extensao nao se replica por schema.
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-publibot} -d ${POSTGRES_DB:-publibot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: publibot-redis
+    restart: unless-stopped
+    # appendonly: sem isso um restart do Redis perde as mensagens da fila.
+    # noeviction: com politica de evicao, o Redis DESCARTA mensagens em
+    # silencio quando bate o limite de memoria — uma task some sem erro.
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory-policy noeviction
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
