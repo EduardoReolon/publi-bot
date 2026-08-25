@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+.venv/
+
+# Django
+*.sqlite3
+*.sqlite3-journal
+media/
+static/
+
+# Variáveis de Ambiente e Segurança
+.env
+.env.local
+.env.*
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Logs
+logs/
+*.log
+
+# Arquivos de upload e testes locais de RAG
+*.pdf
+*.md.gz
+
+# OS (Mac/Windows)
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
