@@ -73,8 +73,8 @@ TENANT_APPS = [
     # Necessario dentro do schema para o admin e as permissoes por tenant
     # resolverem corretamente.
     "django.contrib.contenttypes",
-    # Os apps de dominio entram aqui conforme forem construidos:
-    #   "apps.knowledge",
+    "apps.knowledge",
+    # Os demais apps de dominio entram aqui conforme forem construidos:
     #   "apps.content",
     #   "apps.integrations",
     #   "apps.ops",
@@ -359,10 +359,40 @@ EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)
 # tokenizer real na curadoria, nunca por contagem de caracteres.
 EMBEDDING_MAX_TOKENS = env.integer("EMBEDDING_MAX_TOKENS", 480)
 
-# Calibrar empiricamente antes de confiar: distancia de cosseno nao e
-# comparavel entre modelos diferentes.
+# Onde o modelo e carregado. O download tem cerca de 2 GB e acontece uma vez.
+EMBEDDING_CACHE_DIR = env.get("EMBEDDING_CACHE_DIR", str(BASE_DIR / ".model_cache"))
+
+# Impede que o fastembed tente o HuggingFace quando o modelo ja esta em cache.
+# Util em rede restrita e em CI.
+EMBEDDING_LOCAL_FILES_ONLY = env.boolean("EMBEDDING_LOCAL_FILES_ONLY", False)
+
+# Trocavel para `apps.knowledge.embeddings.FakeEmbeddingClient` nos testes, que
+# evita carregar 2 GB de modelo a cada execucao da suite.
+EMBEDDING_CLIENT = env.get("EMBEDDING_CLIENT", "apps.knowledge.embeddings.FastEmbedClient")
+
 RAG_TOP_K = env.integer("RAG_TOP_K", 3)
-RAG_MAX_COSINE_DISTANCE = env.decimal("RAG_MAX_COSINE_DISTANCE", 0.35)
+
+# MEDIDO, nao herdado de recomendacao generica.
+#
+# Com `multilingual-e5-large`, as distancias de cosseno se concentram numa
+# faixa estreita. Medicao real feita neste projeto, para a consulta
+# "monitoramento de pressao alta na gravidez":
+#
+#   passagem PT relevante ......... 0.1193
+#   passagem EN relevante ......... 0.1445   (cross-lingual funciona)
+#   passagem PT tangente .......... 0.1678
+#   passagem de outra area ........ 0.1911
+#   passagem absurda (bolo) ....... 0.2004
+#
+# Um limiar de 0.35 deixaria passar TODAS, inclusive a receita de bolo — o
+# filtro seria decorativo. Modelos da familia e5 comprimem a faixa de
+# similaridade; a distancia absoluta nao e comparavel entre modelos, e por isso
+# este valor precisa ser recalibrado sempre que EMBEDDING_MODEL mudar.
+#
+# 0.16 separa as passagens relevantes das demais nessa amostra. E um ponto de
+# partida, nao uma verdade: recalibre com o corpus real usando
+# `manage.py calibrate_retrieval`.
+RAG_MAX_COSINE_DISTANCE = env.decimal("RAG_MAX_COSINE_DISTANCE", 0.16)
 
 # ---------------------------------------------------------------------------
 # Log

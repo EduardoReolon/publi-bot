@@ -50,10 +50,12 @@ def tenant_factory(db, public_tenant):
 
     yield _make
 
+    # Sem DROP SCHEMA explicito: `CREATE SCHEMA` e transacional no PostgreSQL,
+    # e o pytest-django reverte a transacao de cada teste. Um DROP aqui roda
+    # ainda dentro dessa transacao e falha com
+    # "cannot DROP TABLE ... because it has pending trigger events" assim que
+    # as tabelas passam a ter constraints deferidas.
     connection.set_schema_to_public()
-    for tenant in created:
-        with connection.cursor() as cursor:
-            cursor.execute(f'DROP SCHEMA IF EXISTS "{tenant.schema_name}" CASCADE')
 
 
 @pytest.fixture

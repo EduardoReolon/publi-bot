@@ -20,6 +20,16 @@
 Django==5.2.17
 psycopg[binary]==3.3.4
 
+# --- Busca vetorial --------------------------------------------------------
+# Tipo VectorField e o indice HNSW para o Django. A EXTENSAO do PostgreSQL nao
+# e criada por migration (ver ADR-0003): com schema por tenant ela vive uma
+# unica vez no schema `extensions`, instalada por scripts/setup-db.sh.
+pgvector==0.5.0
+
+# Embeddings em CPU via ONNX, sem torch. Baixa ~2 GB de modelo na primeira
+# execucao, cacheado em EMBEDDING_CACHE_DIR.
+fastembed==0.8.0
+
 # --- Multi-tenancy (schema por tenant) -------------------------------------
 # django-tenants 3.14.0 declara django<6.2,>=5.2 — compativel com 5.2 LTS.
 django-tenants==3.14.0
