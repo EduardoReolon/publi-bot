@@ -52,6 +52,13 @@ tenant-schemas-celery==5.0.0
 # tambem: o app entra em INSTALLED_APPS independentemente do broker.
 django-celery-results==2.6.0
 
+# --- Rede e criptografia ---------------------------------------------------
+# Cliente HTTP dos provedores de LLM e do contrato com os sites.
+httpx==0.28.1
+
+# Fernet, para cifrar credenciais de terceiros guardadas no banco.
+cryptography==46.0.4
+
 # --- Configuracao ----------------------------------------------------------
 python-dotenv==1.2.3
 

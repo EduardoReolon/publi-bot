@@ -44,7 +44,10 @@ repos:
       # mais comum quando um cliente tem certificado ruim.
       - id: proibir-verify-false
         name: proibir verify=False
-        entry: 'verify\s*=\s*False'
+        # `^[^#]*` impede que o proprio texto de um comentario explicando a
+        # regra dispare a regra. Descoberto na pratica: o comentario que
+        # documentava o hook fez o hook falhar.
+        entry: '^[^#]*\bverify\s*=\s*False'
         language: pygrep
         types: [python]
         exclude: '^tests/'

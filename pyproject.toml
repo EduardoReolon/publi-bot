@@ -58,6 +58,18 @@ markers = [
 # Os testes de integracao carregam ~2 GB e sao excluidos por padrao.
 # Rode-os com: pytest -m integration
 
+filterwarnings = [
+    "error::DeprecationWarning",
+    # Django 6.0 muda o esquema padrao de URLField em formularios de http para
+    # https. O aviso e emitido pelo Django ao construir formularios do admin a
+    # partir de qualquer URLField, em varios apps. Nao afeta comportamento
+    # agora, e o comportamento futuro (https) e justamente o desejado — o
+    # contrato de integracao exige TLS. Some sozinho na atualizacao para 6.x.
+    # Perseguir isso hoje exigiria remendo em cada ModelAdmin, o que e pior que
+    # o aviso. Registrado aqui em vez de escondido.
+    "ignore:The default scheme will be changed:DeprecationWarning",
+]
+
 [tool.coverage.run]
 source = ["apps", "core"]
 omit = ["*/migrations/*", "*/tests/*"]

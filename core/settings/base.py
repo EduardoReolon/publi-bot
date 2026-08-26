@@ -67,6 +67,8 @@ SHARED_APPS = [
     # Guarda o resultado das tasks numa tabela do Django. Usado quando o broker
     # e o proprio PostgreSQL (ADR-0013); inofensivo quando o broker e o Redis.
     "django_celery_results",
+    # Conexoes de inferencia: compartilhadas entre tenants, logo no public.
+    "apps.inference",
 ]
 
 TENANT_APPS = [
@@ -74,6 +76,7 @@ TENANT_APPS = [
     # resolverem corretamente.
     "django.contrib.contenttypes",
     "apps.knowledge",
+    "apps.ops",
     # Os demais apps de dominio entram aqui conforme forem construidos:
     #   "apps.content",
     #   "apps.integrations",
