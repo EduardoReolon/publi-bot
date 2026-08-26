@@ -99,7 +99,7 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 
 Cole o valor gerado em `DJANGO_SECRET_KEY` e defina `POSTGRES_PASSWORD`.
 
-### 3. PostgreSQL e Redis
+### 3. PostgreSQL (e Redis, se voce quiser)
 
 O caminho padrao e **nativo, sem container**. No Ubuntu o pgvector esta no
 repositorio oficial da distribuicao:
@@ -109,6 +109,42 @@ sudo apt install postgresql postgresql-contrib redis-server
 sudo apt install postgresql-16-pgvector      # ajuste 16 para a sua versao
 ./scripts/setup-db.sh
 ```
+
+<details>
+<summary><strong>Desenvolvendo no Windows? Da para rodar sem Redis.</strong></summary>
+
+Nao existe build oficial de Redis para Windows. Como o PostgreSQL ja e
+necessario, ele pode servir tambem de fila em desenvolvimento — basta uma
+variavel no `.env`:
+
+```ini
+BROKER_BACKEND=postgres
+```
+
+A URL da fila e montada a partir das credenciais `POSTGRES_*` que voce ja
+configurou, no **mesmo banco** da aplicacao. Nenhuma variavel adicional, e
+nenhum servico a mais para manter.
+
+Instale a dependencia de desenvolvimento (ja incluida em
+`requirements-dev.txt`):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+**Isto e so para desenvolvimento.** Producao usa Redis. O modo Postgres nao
+reproduz o `visibility_timeout` do Redis — o comportamento de reentrega de
+mensagem ja reservada, que e justamente o risco de gerar o mesmo artigo duas
+vezes — e a latencia da fila e maior por causa do polling (medido: ~2100 ms
+contra ~3 ms). Para este produto isso e irrelevante, porque as tarefas reais
+levam dezenas de segundos, mas as diferencas estao documentadas em
+[`ADR-0013`](docs/adr/ADR-0013-broker-postgres-em-dev.md).
+
+Para o PostgreSQL e o pgvector no Windows, use o `compose.yaml` (abaixo) ou
+WSL2 — que tambem devolve o pool `prefork` do Celery, sem suporte oficial no
+Windows nativo.
+
+</details>
 
 O script cria o papel, o banco e — o passo que nao pode ser esquecido — instala
 a extensao `vector` num schema **`extensions`** dedicado, nao no `public`.
@@ -158,6 +194,8 @@ celery -A core worker -l INFO --concurrency=2 --prefetch-multiplier=1
 
 No Windows, acrescente `-P solo`: o pool `prefork` nao tem suporte oficial
 desde o Celery 4 e falha de forma erratica.
+
+O worker usa o broker definido por `BROKER_BACKEND` — nada muda no comando.
 
 ### Testes e lint
 

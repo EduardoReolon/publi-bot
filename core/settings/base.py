@@ -64,6 +64,9 @@ SHARED_APPS = [
     # O agendamento vive no public: as entradas fixas de infraestrutura sao do
     # sistema, nao de um cliente. A cadencia por tenant fica em outra tabela.
     "django_celery_beat",
+    # Guarda o resultado das tasks numa tabela do Django. Usado quando o broker
+    # e o proprio PostgreSQL (ADR-0013); inofensivo quando o broker e o Redis.
+    "django_celery_results",
 ]
 
 TENANT_APPS = [
@@ -222,8 +225,68 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5_242_880
 # ---------------------------------------------------------------------------
 # Celery
 # ---------------------------------------------------------------------------
-CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-CELERY_RESULT_BACKEND = env.get("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
+# O broker pode ser Redis (producao) ou o proprio PostgreSQL (desenvolvimento).
+# Ver ADR-0013 para o porque e para as diferencas semanticas entre os dois.
+#
+# `BROKER_BACKEND` aceita:
+#   "redis"     -> usa CELERY_BROKER_URL, ou o default do Redis local
+#   "postgres"  -> monta a URL a partir das MESMAS credenciais do banco
+#                  principal, sem exigir nenhuma variavel a mais
+#
+# Montar a URL do Postgres aqui, em vez de pedir que o desenvolvedor a escreva
+# no .env, evita a classe de erro mais chata deste arranjo: o broker apontando
+# para um banco diferente do da aplicacao, sem nenhum sintoma alem de tasks que
+# somem.
+
+
+def _postgres_broker_url() -> str:
+    """URL do transporte `sqla` a partir das credenciais do banco principal."""
+    from urllib.parse import quote
+
+    usuario = env.get("POSTGRES_USER", PROJECT_SLUG)
+    senha = quote(env.require("POSTGRES_PASSWORD"), safe="")
+    host = env.get("POSTGRES_HOST", "127.0.0.1")
+    porta = env.get("POSTGRES_PORT", "5432")
+    banco = env.get("POSTGRES_DB", PROJECT_SLUG)
+    return f"sqla+postgresql+psycopg://{usuario}:{senha}@{host}:{porta}/{banco}"
+
+
+# O nome NAO pode comecar com "CELERY_": o `config_from_object(namespace="CELERY")`
+# retira esse prefixo e repassa a chave ao Celery. `CELERY_BROKER` viraria
+# `broker`, que o Celery interpreta como URL — e o worker sobe tentando falar
+# AMQP com um host chamado "postgres". Descoberto na pratica, subindo o worker.
+BROKER_BACKEND = env.get("BROKER_BACKEND", "redis").strip().lower()
+
+if BROKER_BACKEND == "postgres":
+    CELERY_BROKER_URL = _postgres_broker_url()
+    # Forcado, e nao apenas um default: se `CELERY_RESULT_BACKEND` do .env
+    # continuasse valendo aqui, quem trocasse so o broker ficaria com o
+    # resultado ainda no Redis — meio migrado, ainda exigindo o servico que se
+    # queria evitar, e sem nenhum sintoma que denunciasse isso.
+    #
+    # `django-db` grava numa tabela do proprio Django (django-celery-results):
+    # mesma conexao, mesmas migrations, visivel no admin.
+    CELERY_RESULT_BACKEND = "django-db"
+
+    # O Celery le `os.environ` ANTES do settings do Django. De celery/app/utils.py:
+    #
+    #     def broker_url(self):
+    #         return (os.environ.get('CELERY_BROKER_URL') or
+    #                 self.first('broker_url', 'broker_host'))
+    #
+    # Como o python-dotenv injeta o `.env` em os.environ, um `CELERY_BROKER_URL`
+    # deixado la vence silenciosamente tudo o que se configure aqui: o settings
+    # diz Postgres, o worker conecta no Redis, e nada denuncia a divergencia.
+    #
+    # Por isso as variaveis sao reescritas para concordar com a decisao tomada
+    # acima, em vez de disputada com ela.
+    import os as _os
+
+    _os.environ["CELERY_BROKER_URL"] = CELERY_BROKER_URL
+    _os.environ["CELERY_RESULT_BACKEND"] = CELERY_RESULT_BACKEND
+else:
+    CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+    CELERY_RESULT_BACKEND = env.get("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
 
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -243,12 +306,25 @@ CELERY_TASK_MAX_RETRIES = 20
 # 3 extras ficam presas contando para o visibility_timeout.
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
-# O default do transporte Redis e 3600s: uma inferencia mais longa que isso faz
-# o broker REENTREGAR a mesma task. Isto e paliativo — a garantia real vem do
-# GenerationJob no banco, que e a fonte da verdade.
-CELERY_BROKER_TRANSPORT_OPTIONS = {
-    "visibility_timeout": env.integer("CELERY_VISIBILITY_TIMEOUT", 86_400),
-}
+# `visibility_timeout` e uma opcao EXCLUSIVA do transporte Redis, e passa-la a
+# outro transporte quebra o worker na inicializacao: o transporte `sqla`
+# repassa transport_options direto ao create_engine() do SQLAlchemy, que
+# rejeita argumentos que nao conhece com TypeError.
+#
+# Por isso a opcao e aplicada condicionalmente. Nao e cosmetico: e a prova de
+# que os transportes tem superficies de configuracao diferentes, e de que
+# "trocar o broker" nunca e uma troca neutra.
+#
+# Sobre o valor: o default do Redis e 3600s, entao uma inferencia mais longa
+# que isso faz o broker REENTREGAR a mesma task — dois artigos gerados, GPU
+# gasta em dobro. Isto e paliativo; a garantia real vem do GenerationJob no
+# banco, que e a fonte da verdade e independe do transporte.
+CELERY_BROKER_TRANSPORT_OPTIONS: dict[str, object] = {}
+
+if CELERY_BROKER_URL.startswith(("redis://", "rediss://", "sentinel://")):
+    CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] = env.integer(
+        "CELERY_VISIBILITY_TIMEOUT", 86_400
+    )
 
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 

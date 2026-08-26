@@ -24,3 +24,4 @@ de quem decidiu com a informacao daquele momento.
 | [0010](ADR-0010-mapa-de-apps.md) | Mapa canonico de apps e models | Aceito |
 | [0011](ADR-0011-django-5-2-lts.md) | Django 5.2 LTS | Aceito |
 | [0012](ADR-0012-inferencia-como-endpoint.md) | Inferencia como endpoints com reserva | Aceito |
+| [0013](ADR-0013-broker-postgres-em-dev.md) | Broker do Celery no PostgreSQL em desenvolvimento | Aceito |

@@ -38,6 +38,10 @@ django-celery-beat==2.9.0
 # dados de um cliente no schema de outro, silenciosamente.
 tenant-schemas-celery==5.0.0
 
+# Guarda o resultado das tasks numa tabela do Django. Necessario em producao
+# tambem: o app entra em INSTALLED_APPS independentemente do broker.
+django-celery-results==2.6.0
+
 # --- Configuracao ----------------------------------------------------------
 python-dotenv==1.2.3
 

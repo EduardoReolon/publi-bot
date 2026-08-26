@@ -6,6 +6,12 @@
 
 -r requirements.txt
 
+# --- Broker Celery sobre PostgreSQL (modo de desenvolvimento) ---------------
+# Necessario apenas quando CELERY_BROKER=postgres, que permite desenvolver sem
+# um Redis instalado — util sobretudo no Windows, onde nao existe build oficial
+# do Redis. Producao usa Redis e nao instala isto. Ver docs/adr/ADR-0013.
+SQLAlchemy==2.0.52
+
 # --- Testes ----------------------------------------------------------------
 pytest==8.4.2
 pytest-django==4.11.1
