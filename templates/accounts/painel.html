@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Painel" %} — PubliBot{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Painel" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Voce esta dentro do ambiente <code>{{ schema_name }}</code>.
+    {% endblocktranslate %}
+  </p>
+{% endblock %}

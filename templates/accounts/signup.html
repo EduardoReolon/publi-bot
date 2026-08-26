@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Criar ambiente" %} — PubliBot{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Criar seu ambiente" %}</h1>
+  <p class="sub">{% translate "Cada ambiente tem banco de dados proprio e endereco proprio." %}</p>
+
+  {% if form.non_field_errors %}
+    <div class="aviso ruim">{{ form.non_field_errors }}</div>
+  {% endif %}
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for campo in form %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <button type="submit">{% translate "Criar ambiente" %}</button>
+  </form>
+{% endblock %}

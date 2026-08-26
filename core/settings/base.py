@@ -105,6 +105,11 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Precisa vir DEPOIS do AuthenticationMiddleware: depende de request.user.
+    # Como os usuarios sao compartilhados e o cookie de sessao vale para todos
+    # os subdominios, sem isto qualquer pessoa autenticada entraria no painel
+    # de qualquer tenant apenas digitando o subdominio.
+    "apps.accounts.middleware.TenantAccessMiddleware",
 ]
 
 # O roteamento difere entre a home (apex) e um tenant (subdominio): a home tem

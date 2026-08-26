@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}PubliBot{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Conteudo fundamentado em literatura cientifica" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Converte artigos cientificos em conteudo web com curadoria e revisao
+      humana obrigatoria, publicado no seu site na cadencia que voce definir.
+    {% endblocktranslate %}
+  </p>
+
+  {% if memberships %}
+    <h2>{% translate "Seus ambientes" %}</h2>
+    <ul class="lista">
+      {% for vinculo in memberships %}
+        <li>
+          <strong>{{ vinculo.tenant.name }}</strong>
+          <div class="pre-visualizacao">
+            {{ vinculo.tenant.slug }} &middot; {{ vinculo.get_role_display }}
+            {% if vinculo.tenant.status != "active" %}
+              &middot; {{ vinculo.tenant.get_status_display }}
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p><a class="botao" href="{% url 'accounts:signup' %}">{% translate "Criar meu ambiente" %}</a></p>
+  {% endif %}
+{% endblock %}

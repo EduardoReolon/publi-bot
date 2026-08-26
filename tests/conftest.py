@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from django.conf import settings
 from django.db import connection
 
 from apps.accounts.models import Domain, Tenant, User
@@ -14,7 +15,13 @@ def public_tenant(db) -> Tenant:
         schema_name="public",
         defaults={"name": "PubliBot", "slug": "public", "status": Tenant.Status.ACTIVE},
     )
-    Domain.objects.get_or_create(domain="localhost", tenant=tenant, defaults={"is_primary": True})
+    # Derivado do settings, nunca uma constante repetida: o dominio de
+    # desenvolvimento precisa ter dois rotulos para o cookie de sessao
+    # atravessar subdominios, e fixar "localhost" aqui faria os testes
+    # divergirem silenciosamente da configuracao real.
+    Domain.objects.get_or_create(
+        domain=settings.ROOT_DOMAIN, tenant=tenant, defaults={"is_primary": True}
+    )
     return tenant
 
 
@@ -35,7 +42,9 @@ def tenant_factory(db, public_tenant):
             status=Tenant.Status.ACTIVE,
         )
         tenant.create_schema(check_if_exists=True, verbosity=0)
-        Domain.objects.create(domain=f"{tenant.slug}.localhost", tenant=tenant, is_primary=True)
+        Domain.objects.create(
+            domain=f"{tenant.slug}.{settings.ROOT_DOMAIN}", tenant=tenant, is_primary=True
+        )
         created.append(tenant)
         return tenant
 

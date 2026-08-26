@@ -1,0 +1,90 @@
+{% load i18n static %}<!doctype html>
+<html lang="{{ LANGUAGE_CODE|default:'pt-br' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}PubliBot{% endblock %}</title>
+  <style>
+    :root {
+      --fundo: #ffffff; --texto: #16181d; --suave: #5c6270;
+      --borda: #e2e5ea; --realce: #1f5eff; --erro: #c2334d; --ok: #157a4a;
+      --superficie: #f7f8fa;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fundo: #14161a; --texto: #e8eaee; --suave: #9aa1ad;
+        --borda: #2a2e36; --realce: #6c9bff; --erro: #ff8098; --ok: #4cc38a;
+        --superficie: #1b1e24;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--fundo); color: var(--texto);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .envolucro { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    header { border-bottom: 1px solid var(--borda); }
+    header .envolucro { padding: 1rem 1.25rem; display: flex; gap: 1rem; align-items: center; }
+    header a { color: inherit; text-decoration: none; font-weight: 600; }
+    header nav { margin-left: auto; display: flex; gap: 1rem; font-size: .9rem; }
+    h1 { font-size: 1.75rem; line-height: 1.25; margin: 0 0 .5rem; }
+    h2 { font-size: 1.15rem; margin: 2rem 0 .75rem; }
+    p.sub { color: var(--suave); margin-top: 0; }
+    form { margin-top: 1.5rem; }
+    label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .3rem; }
+    input[type=text], input[type=email], input[type=password] {
+      width: 100%; padding: .6rem .7rem; font-size: 1rem; color: var(--texto);
+      background: var(--fundo); border: 1px solid var(--borda); border-radius: .4rem;
+    }
+    input:focus { outline: 2px solid var(--realce); outline-offset: 1px; }
+    .campo { margin-bottom: 1.1rem; }
+    .ajuda { color: var(--suave); font-size: .85rem; margin-top: .3rem; }
+    .erro { color: var(--erro); font-size: .87rem; margin-top: .3rem; }
+    button, .botao {
+      display: inline-block; padding: .65rem 1.2rem; font-size: 1rem; font-weight: 600;
+      color: #fff; background: var(--realce); border: 0; border-radius: .4rem;
+      cursor: pointer; text-decoration: none;
+    }
+    .aviso {
+      padding: .8rem 1rem; border: 1px solid var(--borda); border-radius: .5rem;
+      background: var(--superficie); margin-bottom: 1rem;
+    }
+    .aviso.ruim { border-color: var(--erro); }
+    .lista { list-style: none; padding: 0; }
+    .lista li {
+      border: 1px solid var(--borda); border-radius: .5rem;
+      padding: .8rem 1rem; margin-bottom: .6rem;
+    }
+    code { background: var(--superficie); padding: .12rem .35rem; border-radius: .25rem; }
+    .pre-visualizacao { color: var(--suave); font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="envolucro">
+      <a href="/">PubliBot</a>
+      <nav>
+        {% if user.is_authenticated %}
+          <span class="pre-visualizacao">{{ user.email }}</span>
+          <form method="post" action="{% url 'accounts:logout' %}" style="margin:0">
+            {% csrf_token %}
+            <button type="submit" style="background:none;color:var(--realce);padding:0;font-size:.9rem">
+              {% translate "Sair" %}
+            </button>
+          </form>
+        {% else %}
+          <a href="{% url 'accounts:login' %}">{% translate "Entrar" %}</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+  <main class="envolucro">
+    {% if messages %}
+      {% for message in messages %}
+        <div class="aviso {% if message.tags == 'error' %}ruim{% endif %}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+    {% block conteudo %}{% endblock %}
+  </main>
+</body>
+</html>

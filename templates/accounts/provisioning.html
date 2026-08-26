@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Preparando" %} — PubliBot{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Preparando seu ambiente" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed with nome=tenant.name %}
+      Estamos criando o banco de dados de {{ nome }}. Isto leva menos de um
+      minuto e a pagina avisa sozinha quando terminar.
+    {% endblocktranslate %}
+  </p>
+
+  <div class="aviso" id="estado" data-url="{% url 'accounts:provisioning_status' tenant.slug %}">
+    {% translate "Criando o ambiente..." %}
+  </div>
+
+  <p id="acesso" hidden>
+    <a class="botao" href="{{ url_do_painel }}">{% translate "Ir para o painel" %}</a>
+  </p>
+
+  <script>
+    // Consulta o estado ate ficar pronto. Sem WebSocket de proposito: uma
+    // espera de menos de um minuto nao justifica manter conexao aberta.
+    (function () {
+      var caixa = document.getElementById("estado");
+      var acesso = document.getElementById("acesso");
+      var url = caixa.dataset.url;
+      var tentativas = 0;
+
+      function consultar() {
+        tentativas += 1;
+        fetch(url, { headers: { "Accept": "application/json" } })
+          .then(function (r) { return r.json(); })
+          .then(function (dados) {
+            if (dados.pronto) {
+              caixa.textContent = "{% translate 'Ambiente pronto.' %}";
+              acesso.hidden = false;
+              return;
+            }
+            if (dados.erro) {
+              caixa.classList.add("ruim");
+              caixa.textContent = "{% translate 'Falha ao preparar o ambiente:' %} " + dados.erro;
+              return;
+            }
+            if (tentativas > 120) {
+              caixa.textContent = "{% translate 'Esta demorando mais que o esperado. Atualize a pagina.' %}";
+              return;
+            }
+            setTimeout(consultar, 1500);
+          })
+          .catch(function () { setTimeout(consultar, 3000); });
+      }
+      consultar();
+    })();
+  </script>
+{% endblock %}

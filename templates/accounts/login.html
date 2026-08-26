@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Entrar" %} — PubliBot{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Entrar" %}</h1>
+  {% if form.non_field_errors %}
+    <div class="aviso ruim">{{ form.non_field_errors }}</div>
+  {% endif %}
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for campo in form %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <button type="submit">{% translate "Entrar" %}</button>
+  </form>
+{% endblock %}

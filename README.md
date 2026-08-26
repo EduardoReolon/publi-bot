@@ -179,12 +179,41 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+O tenant `public` precisa existir com o dominio raiz apontando para ele:
+
+```bash
+python manage.py shell -c "
+from apps.accounts.models import Tenant, Domain
+from django.conf import settings
+t, _ = Tenant.objects.get_or_create(schema_name='public',
+    defaults=dict(name='PubliBot', slug='public', status='active'))
+Domain.objects.get_or_create(domain=settings.ROOT_DOMAIN, tenant=t,
+    defaults=dict(is_primary=True))
+"
+```
+
+Em outro terminal, o worker — **com o mesmo `BROKER_BACKEND` do servidor web**,
+senao o cadastro despacha para um broker e o worker escuta outro, e o tenant
+fica preso em "provisionando" sem erro nenhum:
+
+```bash
+celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1
+```
+
 Note `migrate_schemas`, nao `migrate`: o comando puro do Django nao percorre os
 schemas dos tenants.
 
-Acesse `http://localhost:8000/admin/`. Um tenant chamado `acme` responderia em
-`http://acme.localhost:8000/` — navegadores resolvem qualquer subdominio de
-`.localhost` para 127.0.0.1 sem precisar editar `/etc/hosts`.
+Acesse **`http://publibot.localhost:8000/`** — nao `http://localhost:8000/`.
+Um tenant chamado `acme` responde em `http://acme.publibot.localhost:8000/`.
+Navegadores resolvem qualquer `*.localhost` para 127.0.0.1, entao nada precisa
+ser adicionado ao `/etc/hosts`.
+
+O dominio de desenvolvimento tem **dois rotulos** de proposito. Verificado com
+o Chromium: ao receber `Set-Cookie: ...; Domain=.localhost`, o navegador
+descarta o atributo `Domain` e grava o cookie como host-only, porque
+`localhost` e tratado como sufixo publico. O login funcionaria no apex e o
+subdominio do tenant devolveria a tela de login, sem nenhuma mensagem que
+apontasse a causa.
 
 ### 5. Worker do Celery
 
