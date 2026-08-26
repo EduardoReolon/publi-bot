@@ -50,6 +50,11 @@ known-first-party = ["apps", "core"]
 DJANGO_SETTINGS_MODULE = "core.settings.dev"
 python_files = ["test_*.py", "*_test.py"]
 testpaths = ["tests", "apps"]
+
+# Os testes de contrato rodam com outro settings (o no de referencia e um site
+# comum, sem multi-tenancy), entao ficam fora do testpaths padrao. Rode com:
+#   pytest tests_contrato/ --ds=core.settings.test_contract
+norecursedirs = ["tests_contrato", "docs", "venv", ".model_cache"]
 addopts = "-ra --strict-markers -m 'not integration'"
 markers = [
     "integration: exige o modelo de embedding real, ou servicos externos de verdade",

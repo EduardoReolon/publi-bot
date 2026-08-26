@@ -78,7 +78,7 @@ TENANT_APPS = [
     "apps.knowledge",
     "apps.ops",
     "apps.content",
-    # Os demais apps de dominio entram aqui conforme forem construidos:
+    "apps.integrations",
     #   "apps.integrations",
     #   "apps.ops",
 ]
