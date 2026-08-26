@@ -77,8 +77,8 @@ TENANT_APPS = [
     "django.contrib.contenttypes",
     "apps.knowledge",
     "apps.ops",
+    "apps.content",
     # Os demais apps de dominio entram aqui conforme forem construidos:
-    #   "apps.content",
     #   "apps.integrations",
     #   "apps.ops",
 ]

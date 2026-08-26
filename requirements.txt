@@ -52,6 +52,16 @@ tenant-schemas-celery==5.0.0
 # tambem: o app entra em INSTALLED_APPS independentemente do broker.
 django-celery-results==2.6.0
 
+# --- Conteudo --------------------------------------------------------------
+# Sanitizacao de HTML com lista de permissao. Binding Rust do ammonia; o
+# `bleach` esta em manutencao apenas. O HTML gerado por modelo vai direto para
+# o site de um terceiro — sem isso, uma saida maliciosa vira script permanente.
+nh3==0.3.1
+
+# Conversao de Markdown para HTML. Modelos produzem Markdown de forma muito
+# mais confiavel que HTML.
+markdown==3.10
+
 # --- Rede e criptografia ---------------------------------------------------
 # Cliente HTTP dos provedores de LLM e do contrato com os sites.
 httpx==0.28.1
