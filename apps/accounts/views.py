@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
+from apps.accounts.enderecos import url_do_tenant
 from apps.accounts.forms import SignupForm, criar_tenant_e_dono
 from apps.accounts.models import Tenant, TenantMembership
 from apps.accounts.tasks import despachar_provisionamento
@@ -23,14 +24,31 @@ logger = logging.getLogger("publibot.accounts")
 
 def landing(request: HttpRequest) -> HttpResponse:
     """Pagina inicial do dominio raiz."""
-    tenants = []
+    ambientes = []
     if request.user.is_authenticated:
-        tenants = (
+        vinculos = (
             TenantMembership.objects.filter(user=request.user, is_active=True)
             .select_related("tenant")
+            .prefetch_related("tenant__domains")
             .order_by("tenant__name")
         )
-    return render(request, "accounts/landing.html", {"memberships": tenants})
+        # O endereco vem junto porque sem ele esta lista nao serve para nada:
+        # o subdominio nao e adivinhavel a partir do que a tela mostrava. O
+        # tenant `acme` responde em `acme.publibot.localhost`, e nao em
+        # `acme.localhost`, e nada na pagina dizia isso.
+        for vinculo in vinculos:
+            pronto = vinculo.tenant.status == Tenant.Status.ACTIVE
+            ambientes.append(
+                {
+                    "tenant": vinculo.tenant,
+                    "papel": vinculo.get_role_display(),
+                    "pronto": pronto,
+                    "url": url_do_tenant(request, vinculo.tenant)
+                    if pronto
+                    else reverse("accounts:provisioning", args=[vinculo.tenant.slug]),
+                }
+            )
+    return render(request, "accounts/landing.html", {"ambientes": ambientes})
 
 
 def signup(request: HttpRequest) -> HttpResponse:
@@ -73,18 +91,10 @@ def provisioning(request: HttpRequest, slug: str) -> HttpResponse:
     if not _pode_acessar(request.user, tenant):
         raise Http404
 
-    dominio = tenant.domains.filter(is_primary=True).first()
-    porta = request.get_port()
-    sufixo_porta = f":{porta}" if porta not in {"80", "443"} else ""
-    esquema = "https" if request.is_secure() else "http"
-
     return render(
         request,
         "accounts/provisioning.html",
-        {
-            "tenant": tenant,
-            "url_do_painel": f"{esquema}://{dominio.domain}{sufixo_porta}/" if dominio else None,
-        },
+        {"tenant": tenant, "url_do_painel": url_do_tenant(request, tenant)},
     )
 
 

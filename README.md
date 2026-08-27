@@ -228,7 +228,10 @@ O comando e idempotente, entao pode entrar no roteiro de deploy junto do
 `migrate_schemas`, nao so na primeira instalacao.
 
 Acesse **`http://publibot.localhost:8000/`** — nao `http://localhost:8000/`.
-Um tenant chamado `acme` responde em `http://acme.publibot.localhost:8000/`.
+Um tenant chamado `acme` responde em `http://acme.publibot.localhost:8000/`,
+e **nao** em `http://acme.localhost:8000/`: o subdominio e do dominio raiz
+inteiro, nao de `localhost`. A home lista os ambientes com o endereco completo
+e com link, entao nao ha o que adivinhar.
 Navegadores resolvem qualquer `*.localhost` para 127.0.0.1, entao nada precisa
 ser adicionado ao `/etc/hosts`. Em `DEBUG`, abrir `localhost:8000` por reflexo
 redireciona para o dominio raiz em vez de dar 404 — mas so em `DEBUG`: em
@@ -270,7 +273,15 @@ pre-commit install    # uma vez, para rodar tudo isso a cada commit
 # fara a mesma coisa de forma assincrona, por tras do cadastro web.
 python manage.py provision_tenant acme --name="ACME Ltda"
 
-# Aplica migrations em public e em todos os tenants ja provisionados
+# O mesmo comando RETOMA um tenant que ficou pela metade — o caso de um
+# cadastro feito sem o worker rodando: a linha existe, o schema nao. Passe o
+# schema_name que aparece na home.
+python manage.py provision_tenant teste1
+
+# Aplica migrations em public e em todos os tenants ja provisionados.
+# Tenants sem schema fisico sao IGNORADOS, com aviso: sem isso, um unico
+# cadastro pela metade derruba o comando inteiro com um erro que nao nomeia
+# o tenant nem a causa (ver apps/accounts/migration_executors.py).
 python manage.py migrate_schemas
 
 # Registra o tenant `public` e aponta ROOT_DOMAIN para ele. Idempotente.
@@ -308,6 +319,11 @@ tests_contrato/  Contrato exercitado nos dois lados
 ```bash
 # Cria um tenant completo: registro, schema e migrations
 python manage.py provision_tenant acme --name="ACME Ltda"
+
+# O mesmo comando RETOMA um tenant que ficou pela metade — o caso de um
+# cadastro feito sem o worker rodando: a linha existe, o schema nao. Passe o
+# schema_name que aparece na home.
+python manage.py provision_tenant teste1
 
 # Calibra o limiar de recuperacao com o corpus real de um tenant
 python manage.py tenant_command calibrate_retrieval --schema=acme \

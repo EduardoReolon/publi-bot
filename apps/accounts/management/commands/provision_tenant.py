@@ -17,6 +17,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
+from django_tenants.utils import schema_exists
 
 from apps.accounts.models import Domain, Tenant
 
@@ -44,19 +45,43 @@ class Command(BaseCommand):
         name = options["name"] or schema_name.replace("_", " ").title()
         domain_name = options["domain"] or f"{schema_name.replace('_', '-')}.{settings.ROOT_DOMAIN}"
 
-        if Tenant.objects.filter(schema_name=schema_name).exists():
-            raise CommandError(f"Ja existe um tenant com schema_name={schema_name!r}.")
+        # Retomar um registro existente e o caso comum, nao a excecao. O
+        # cadastro web grava o Tenant e deixa o schema para uma task; se o
+        # worker nao estava rodando, ou falhou, sobra exatamente isto: a linha
+        # sem o schema. Recusar aqui — o que este comando fazia — deixava a
+        # pessoa sem nenhuma saida pelo terminal, tendo de apagar o registro
+        # para tentar de novo.
+        tenant = Tenant.objects.filter(schema_name=schema_name).first()
 
-        with transaction.atomic():
-            tenant = Tenant.objects.create(
-                schema_name=schema_name,
-                name=name,
-                slug=schema_name.replace("_", "-"),
-                status=Tenant.Status.PROVISIONING,
+        if tenant is not None:
+            if schema_exists(schema_name):
+                if tenant.status == Tenant.Status.ACTIVE:
+                    self.stdout.write(
+                        self.style.SUCCESS(f"Tenant '{schema_name}' ja esta pronto. Nada a fazer.")
+                    )
+                    return
+                # Schema no lugar, registro desatualizado: so o estado ficou
+                # para tras (o worker morreu entre criar o schema e gravar).
+                self.stdout.write(f"Schema '{schema_name}' ja existe; corrigindo o registro.")
+            else:
+                self.stdout.write(
+                    f"Registro de '{schema_name}' existe sem schema "
+                    f"(situacao: {tenant.get_status_display()}). Retomando..."
+                )
+            # O dominio pode faltar se o cadastro morreu no meio.
+            Domain.objects.get_or_create(
+                domain=domain_name, defaults={"tenant": tenant, "is_primary": True}
             )
-            Domain.objects.create(domain=domain_name, tenant=tenant, is_primary=True)
-
-        self.stdout.write(f"Registro criado. Criando schema '{schema_name}'...")
+        else:
+            with transaction.atomic():
+                tenant = Tenant.objects.create(
+                    schema_name=schema_name,
+                    name=name,
+                    slug=schema_name.replace("_", "-"),
+                    status=Tenant.Status.PROVISIONING,
+                )
+                Domain.objects.create(domain=domain_name, tenant=tenant, is_primary=True)
+            self.stdout.write(f"Registro criado. Criando schema '{schema_name}'...")
         try:
             tenant.create_schema(check_if_exists=True, verbosity=options["verbosity_schema"])
         except Exception as exc:
@@ -67,7 +92,10 @@ class Command(BaseCommand):
 
         tenant.status = Tenant.Status.ACTIVE
         tenant.provisioned_at = timezone.now()
-        tenant.save(update_fields=["status", "provisioned_at"])
+        # Limpar o erro faz parte de retomar: deixa-lo gravado mantem a tela de
+        # espera mostrando uma falha que ja foi resolvida.
+        tenant.provisioning_error = ""
+        tenant.save(update_fields=["status", "provisioned_at", "provisioning_error"])
 
         self.stdout.write(
             self.style.SUCCESS(f"Tenant '{schema_name}' pronto. Dominio: http://{domain_name}")

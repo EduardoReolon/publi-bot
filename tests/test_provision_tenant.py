@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import pytest
 from django.core.management import call_command
-from django.core.management.base import CommandError
 from django.db import connection
 
 from apps.accounts.models import Domain, Tenant
@@ -54,11 +53,28 @@ def test_provision_tenant_cria_registro_schema_e_migrations(public_tenant):
 
 
 @pytest.mark.django_db
-def test_provision_tenant_recusa_schema_name_duplicado(public_tenant, tenant_factory):
-    tenant_factory("prov_dois")
+def test_provision_tenant_num_tenant_pronto_nao_altera_nada(public_tenant, tenant_factory, capsys):
+    """Rodar de novo num tenant pronto e um no-op, nao um erro.
 
-    with pytest.raises(CommandError, match="Ja existe um tenant"):
-        call_command("provision_tenant", "prov_dois")
+    O comando ja recusou esse caso, e a recusa se mostrou errada: o mesmo
+    "ja existe" barrava tambem o registro pela metade — cadastro feito sem
+    worker, linha gravada e schema nunca criado — que e exatamente o que
+    precisa ser retomado pelo terminal. O que nao pode acontecer e o comando
+    sobrescrever um tenant existente; e isso que este teste protege.
+    """
+    pronto = tenant_factory("prov_dois")
+    nome_antes = pronto.name
+    dominios_antes = set(Domain.objects.filter(tenant=pronto).values_list("domain", flat=True))
+
+    call_command("provision_tenant", "prov_dois", "--name=Outro Nome Qualquer")
+
+    assert "Nada a fazer" in capsys.readouterr().out
+    pronto.refresh_from_db()
+    assert pronto.name == nome_antes
+    assert set(Domain.objects.filter(tenant=pronto).values_list("domain", flat=True)) == (
+        dominios_antes
+    )
+    assert Tenant.objects.filter(schema_name="prov_dois").count() == 1
 
 
 @pytest.mark.django_db

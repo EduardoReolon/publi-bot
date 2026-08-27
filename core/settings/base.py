@@ -88,6 +88,14 @@ INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in S
 TENANT_MODEL = "accounts.Tenant"
 TENANT_DOMAIN_MODEL = "accounts.Domain"
 
+# O `migrate_schemas`, ao migrar TODOS os tenants, nao confere se o schema
+# existe no banco — so o caminho com `--schema=<nome>` confere. Com
+# `auto_create_schema = False` (ADR-0001) existe uma janela em que a linha do
+# tenant ja existe e o schema ainda nao, e um unico registro nessa janela
+# derruba o comando inteiro com um erro que nao nomeia o tenant. Este executor
+# filtra a lista e informa o que ficou de fora. Ver apps/accounts/migration_executors.py.
+GET_EXECUTOR_FUNCTION = "apps.accounts.migration_executors.get_executor"
+
 # A extensao `vector` do pgvector e criada UMA VEZ no schema `extensions` e
 # alcancada por todos os tenants via search_path. Sem isto, a migration do
 # segundo tenant falha com: type "vector" does not exist.

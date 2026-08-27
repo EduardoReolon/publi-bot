@@ -28,22 +28,7 @@ from django.shortcuts import redirect
 from django.utils.translation import gettext as _
 from django_tenants.middleware.main import TenantMainMiddleware
 
-
-def url_do_dominio_raiz(request: HttpRequest, caminho: str = "/") -> str:
-    """Monta a URL absoluta do dominio raiz preservando a porta que o cliente usou.
-
-    A porta sai do cabecalho `Host`, via `request.get_host()`, e nao de
-    `request.get_port()`. A diferenca importa em producao: `get_port()` le
-    `SERVER_PORT`, que atras do nginx e a porta INTERNA do gunicorn, nao a que
-    o navegador acessou. Sem `USE_X_FORWARDED_PORT` — que este projeto nao
-    define, porque o nginx repassa o `Host` original — quem fosse
-    redirecionado daqui cairia em `https://dominio:8000/`, uma porta que nao
-    esta publicada. `get_host()` devolve o que o cliente realmente pediu.
-    """
-    _, _, porta = request.get_host().partition(":")
-    sufixo = f":{porta}" if porta and porta not in {"80", "443"} else ""
-    esquema = "https" if request.is_secure() else "http"
-    return f"{esquema}://{settings.ROOT_DOMAIN}{sufixo}{caminho}"
+from apps.accounts.enderecos import url_do_dominio_raiz
 
 
 class TenantAccessMiddleware:

@@ -9,21 +9,34 @@
     {% endblocktranslate %}
   </p>
 
-  {% if memberships %}
+  {% if ambientes %}
     <h2>{% translate "Seus ambientes" %}</h2>
     <ul class="lista">
-      {% for vinculo in memberships %}
+      {% for ambiente in ambientes %}
         <li>
-          <strong>{{ vinculo.tenant.name }}</strong>
+          {% if ambiente.url %}
+            <a href="{{ ambiente.url }}"><strong>{{ ambiente.tenant.name }}</strong></a>
+          {% else %}
+            <strong>{{ ambiente.tenant.name }}</strong>
+          {% endif %}
           <div class="pre-visualizacao">
-            {{ vinculo.tenant.slug }} &middot; {{ vinculo.get_role_display }}
-            {% if vinculo.tenant.status != "active" %}
-              &middot; {{ vinculo.tenant.get_status_display }}
+            {% comment %}
+              O endereco completo, e nao o slug: cada tenant responde num
+              subdominio do dominio raiz, e o slug sozinho nao diz qual.
+              `{# #}` nao serve aqui — so vale para uma linha, e um comentario
+              de varias linhas com essa sintaxe e impresso na pagina.
+            {% endcomment %}
+            {% if ambiente.pronto and ambiente.url %}
+              {{ ambiente.url }}
+            {% else %}
+              {{ ambiente.tenant.slug }} &middot; {{ ambiente.tenant.get_status_display }}
             {% endif %}
+            &middot; {{ ambiente.papel }}
           </div>
         </li>
       {% endfor %}
     </ul>
+    <p><a href="{% url 'accounts:signup' %}">{% translate "Criar outro ambiente" %}</a></p>
   {% else %}
     <p><a class="botao" href="{% url 'accounts:signup' %}">{% translate "Criar meu ambiente" %}</a></p>
   {% endif %}
