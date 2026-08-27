@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from django.conf import settings
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -9,11 +11,14 @@ from django.db import transaction
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
 from apps.accounts.forms import SignupForm, criar_tenant_e_dono
 from apps.accounts.models import Tenant, TenantMembership
-from apps.accounts.tasks import provision_tenant
+from apps.accounts.tasks import despachar_provisionamento
+
+logger = logging.getLogger("publibot.accounts")
 
 
 def landing(request: HttpRequest) -> HttpResponse:
@@ -55,7 +60,7 @@ def signup(request: HttpRequest) -> HttpResponse:
         # Sem isso, o worker pode buscar o tenant antes de ele existir para
         # outras conexoes e falhar com DoesNotExist — uma corrida que aparece
         # de forma intermitente e e desagradavel de diagnosticar.
-        transaction.on_commit(lambda: provision_tenant.delay(str(tenant.pk)))
+        transaction.on_commit(lambda: despachar_provisionamento(str(tenant.pk), tenant.schema_name))
 
     login(request, usuario, backend="django.contrib.auth.backends.ModelBackend")
     return redirect(reverse("accounts:provisioning", args=[tenant.slug]))
@@ -95,12 +100,61 @@ def provisioning_status(request: HttpRequest, slug: str) -> JsonResponse:
     if not _pode_acessar(request.user, tenant):
         raise Http404
 
-    return JsonResponse(
-        {
-            "status": tenant.status,
-            "pronto": tenant.status == Tenant.Status.ACTIVE,
-            "erro": tenant.provisioning_error or None,
-        }
+    corpo = {
+        "status": tenant.status,
+        "pronto": tenant.status == Tenant.Status.ACTIVE,
+        "erro": tenant.provisioning_error or None,
+    }
+
+    # A tela so pede o diagnostico depois de esperar tempo suficiente para que
+    # a demora deixe de ser normal. Criar um schema e rodar as migrations leva
+    # dezenas de segundos; perguntar antes disso so acrescentaria uma ida ao
+    # broker a cada 1,5s sem nada a dizer.
+    if request.GET.get("diagnostico") and tenant.status == Tenant.Status.PROVISIONING:
+        corpo["diagnostico"] = _diagnosticar_provisionamento(tenant)
+
+    return JsonResponse(corpo)
+
+
+def _diagnosticar_provisionamento(tenant: Tenant) -> str | None:
+    """Explica por que um provisionamento nao termina.
+
+    A causa de longe mais comum em desenvolvimento nao e um erro: e nao haver
+    nenhum worker do Celery rodando. O despacho funciona, a mensagem fica na
+    fila, e nada no console diz isso.
+    """
+    from apps.ops.broker import mensagens_pendentes
+
+    pendentes = mensagens_pendentes()
+
+    if pendentes is None:
+        # Nao conseguimos ler a fila. Quase sempre broker fora do ar — mas
+        # dizer "a fila esta vazia" aqui seria inventar.
+        logger.error("Tenant %s parado e a fila esta ilegivel.", tenant.schema_name)
+        if not settings.DEBUG:
+            return None
+        return _(
+            "Nao foi possivel consultar a fila. Verifique se o broker "
+            "(Redis, ou o PostgreSQL com BROKER_BACKEND=postgres) esta no ar."
+        )
+
+    if pendentes == 0:
+        # A mensagem foi consumida: existe worker, e ele esta lento ou morreu
+        # no meio. O log do worker e o proximo lugar a olhar.
+        return None
+
+    logger.error(
+        "Tenant %s parado com %d mensagem(ns) na fila: nenhum worker consumindo.",
+        tenant.schema_name,
+        pendentes,
+    )
+    if not settings.DEBUG:
+        return None
+    return _(
+        "A mensagem esta na fila e ninguem a consumiu — o worker do Celery "
+        "nao esta rodando. Abra outro terminal, no mesmo virtualenv e com o "
+        "mesmo BROKER_BACKEND, e rode:  "
+        "celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1"
     )
 
 

@@ -27,6 +27,22 @@ logger = logging.getLogger("publibot.accounts")
     max_retries=3,
     default_retry_delay=30,
     acks_late=True,
+    # A fonte da verdade do provisionamento e a coluna `status` do proprio
+    # Tenant, que a tela de espera consulta — o AsyncResult nunca e lido.
+    #
+    # Desligar o resultado nao e economia de espaco: e o que impede o despacho
+    # de travar a request de cadastro. Em `Celery.send_task` existe
+    #
+    #     if not ignore_result:
+    #         self.backend.on_task_call(P, task_id)
+    #
+    # e, com o Redis como result backend, esse `on_task_call` abre a conexao do
+    # consumidor de resultados. Com o Redis fora do ar ele nao falha: entra num
+    # laco de 20 tentativas de 1s. Medido — o `.delay()` bloqueou 19,5s dentro
+    # do `on_commit` do cadastro e terminou em RuntimeError, deixando o tenant
+    # em "provisionando" para sempre. Com `ignore_result`, a mesma situacao
+    # falha em 0,66s com um OperationalError que da para tratar.
+    ignore_result=True,
 )
 def provision_tenant(self, tenant_id: str) -> str:
     """Cria o schema do tenant e aplica as migrations dentro dele.
@@ -70,3 +86,28 @@ def provision_tenant(self, tenant_id: str) -> str:
 
     logger.info("Tenant %s provisionado.", tenant.schema_name)
     return tenant.schema_name
+
+
+def despachar_provisionamento(tenant_id: str, schema_name: str) -> None:
+    """Publica a task de provisionamento sem deixar o cadastro cair junto.
+
+    Roda dentro de um `transaction.on_commit`, ou seja, depois do COMMIT e
+    ainda na thread da request. Uma excecao aqui ja nao desfaz nada — o tenant,
+    o usuario e o vinculo estao gravados — mas sobe como erro 500 para quem
+    acabou de se cadastrar, sem dizer o que houve, e deixa o registro parado em
+    "provisionando" sem nenhum rastro da causa.
+
+    Broker fora do ar e o caso concreto: `kombu.exceptions.OperationalError`.
+    Gravar o motivo no proprio tenant e o que permite a tela de espera dizer
+    "nao foi possivel falar com a fila" em vez de girar por tres minutos.
+    """
+    from apps.accounts.models import Tenant
+
+    try:
+        provision_tenant.delay(tenant_id)
+    except Exception as exc:
+        logger.exception("Falha ao despachar o provisionamento de %s", schema_name)
+        Tenant.objects.filter(pk=tenant_id).update(
+            status=Tenant.Status.FAILED,
+            provisioning_error=f"Nao foi possivel publicar na fila: {exc}"[:2000],
+        )

@@ -178,12 +178,37 @@ recarga automatica e stack trace direto.
 
 ### 4. Migrar e rodar
 
+**Sao DOIS processos.** Terminal 1:
+
 ```bash
 python manage.py migrate_schemas --shared
 python manage.py bootstrap_public
 python manage.py createsuperuser
 python manage.py runserver
 ```
+
+Terminal 2, no mesmo virtualenv e com o **mesmo `BROKER_BACKEND`**:
+
+```bash
+celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1
+```
+
+No Windows, acrescente `-P solo`: o pool `prefork` nao tem suporte oficial
+desde o Celery 4 e falha de forma erratica.
+
+O worker nao e um extra para "quando for gerar artigo": o cadastro de um tenant
+ja depende dele. Criar o schema e rodar as migrations leva dezenas de segundos,
+tempo demais para uma request HTTP, entao o cadastro publica uma mensagem e a
+tela fica esperando (ADR-0001). Sem worker, a mensagem fica na fila e nada
+falha — o despacho funcionou. A tela de espera detecta isso: depois de ~30s ela
+inspeciona a fila e, se a mensagem continua la, diz que o worker nao esta
+rodando e mostra o comando. A mensagem parada nao se perde: assim que o worker
+sobe, ela e consumida e a mesma tela vira "ambiente pronto", sem refazer o
+cadastro (verificado no Chromium: 6s depois de subir o worker).
+
+Dois brokers diferentes tem o mesmo efeito e sao piores de achar: se o servidor
+web esta em `BROKER_BACKEND=redis` e o worker em `postgres`, cada um fala com
+uma fila e o diagnostico acima acusa corretamente "ninguem consumiu".
 
 Note `migrate_schemas`, nao `migrate`: o comando puro do Django nao percorre os
 schemas dos tenants.
@@ -202,14 +227,6 @@ No tenant for hostname "publibot.localhost"
 O comando e idempotente, entao pode entrar no roteiro de deploy junto do
 `migrate_schemas`, nao so na primeira instalacao.
 
-Em outro terminal, o worker — **com o mesmo `BROKER_BACKEND` do servidor web**,
-senao o cadastro despacha para um broker e o worker escuta outro, e o tenant
-fica preso em "provisionando" sem erro nenhum:
-
-```bash
-celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1
-```
-
 Acesse **`http://publibot.localhost:8000/`** — nao `http://localhost:8000/`.
 Um tenant chamado `acme` responde em `http://acme.publibot.localhost:8000/`.
 Navegadores resolvem qualquer `*.localhost` para 127.0.0.1, entao nada precisa
@@ -227,14 +244,9 @@ apontasse a causa.
 
 ### 5. Worker do Celery
 
-```bash
-celery -A core worker -l INFO --concurrency=2 --prefetch-multiplier=1
-```
-
-No Windows, acrescente `-P solo`: o pool `prefork` nao tem suporte oficial
-desde o Celery 4 e falha de forma erratica.
-
-O worker usa o broker definido por `BROKER_BACKEND` — nada muda no comando.
+Ja subiu no passo 4. Em producao ele e uma unit do systemd
+(`deploy/systemd/`), com `--concurrency=2`. O worker usa o broker definido por
+`BROKER_BACKEND` — nada muda no comando.
 
 ### Testes e lint
 

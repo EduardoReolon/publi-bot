@@ -26,12 +26,19 @@
       var url = caixa.dataset.url;
       var tentativas = 0;
 
+      // A partir daqui a demora deixa de ser normal e o servidor passa a
+      // inspecionar a fila. Criar o schema e rodar as migrations leva dezenas
+      // de segundos, entao perguntar antes disso nao teria o que responder.
+      var TENTATIVAS_ATE_DIAGNOSTICAR = 20;   // ~30s
+
       function consultar() {
         tentativas += 1;
-        fetch(url, { headers: { "Accept": "application/json" } })
+        var alvo = tentativas >= TENTATIVAS_ATE_DIAGNOSTICAR ? url + "?diagnostico=1" : url;
+        fetch(alvo, { headers: { "Accept": "application/json" } })
           .then(function (r) { return r.json(); })
           .then(function (dados) {
             if (dados.pronto) {
+              caixa.classList.remove("ruim");
               caixa.textContent = "{% translate 'Ambiente pronto.' %}";
               acesso.hidden = false;
               return;
@@ -41,8 +48,23 @@
               caixa.textContent = "{% translate 'Falha ao preparar o ambiente:' %} " + dados.erro;
               return;
             }
+            // O diagnostico nao interrompe a espera: o worker pode subir a
+            // qualquer momento e a mensagem que ja esta na fila sera consumida
+            // sem ninguem precisar recomecar o cadastro.
+            if (dados.diagnostico) {
+              caixa.classList.add("ruim");
+              caixa.textContent = dados.diagnostico;
+            } else if (caixa.classList.contains("ruim")) {
+              // O worker subiu no meio da espera: a fila esvaziou e o aviso
+              // anterior deixou de valer. Deixa-lo na tela faria parecer que o
+              // problema continua.
+              caixa.classList.remove("ruim");
+              caixa.textContent = "{% translate 'Criando o ambiente...' %}";
+            }
             if (tentativas > 120) {
-              caixa.textContent = "{% translate 'Esta demorando mais que o esperado. Atualize a pagina.' %}";
+              if (!dados.diagnostico) {
+                caixa.textContent = "{% translate 'Esta demorando mais que o esperado. Atualize a pagina.' %}";
+              }
               return;
             }
             setTimeout(consultar, 1500);
