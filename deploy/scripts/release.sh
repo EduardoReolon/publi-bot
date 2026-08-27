@@ -30,6 +30,12 @@ DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py makemigra
 echo "==> Migrations (public e todos os tenants)"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py migrate_schemas
 
+# As migrations criam as tabelas do schema public, nao a linha em
+# `accounts_tenant` que resolve o dominio raiz. Idempotente: numa instalacao ja
+# feita apenas confirma o que existe.
+echo "==> Tenant public e dominio raiz"
+DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py bootstrap_public
+
 echo "==> Arquivos estaticos"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py collectstatic --noinput
 

@@ -122,3 +122,4 @@ fi
 echo
 echo "Pronto. Proximo passo:"
 echo "  python manage.py migrate_schemas --shared"
+echo "  python manage.py bootstrap_public"

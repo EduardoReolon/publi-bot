@@ -106,7 +106,10 @@ MIDDLEWARE = [
     # infraestrutura concluiria que a aplicacao esta morta.
     "apps.ops.middleware.HealthCheckMiddleware",
     # Resolve o subdominio -> tenant e fixa o search_path da conexao.
-    "django_tenants.middleware.main.TenantMainMiddleware",
+    # Subclasse do TenantMainMiddleware: identica em producao, e em DEBUG
+    # troca o 404 `No tenant for hostname` por um redirect (host errado) ou
+    # por um erro que nomeia o comando que falta (`bootstrap_public`).
+    "apps.accounts.middleware.TenantResolutionMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",

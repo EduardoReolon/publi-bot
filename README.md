@@ -180,22 +180,27 @@ recarga automatica e stack trace direto.
 
 ```bash
 python manage.py migrate_schemas --shared
+python manage.py bootstrap_public
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-O tenant `public` precisa existir com o dominio raiz apontando para ele:
+Note `migrate_schemas`, nao `migrate`: o comando puro do Django nao percorre os
+schemas dos tenants.
 
-```bash
-python manage.py shell -c "
-from apps.accounts.models import Tenant, Domain
-from django.conf import settings
-t, _ = Tenant.objects.get_or_create(schema_name='public',
-    defaults=dict(name='PubliBot', slug='public', status='active'))
-Domain.objects.get_or_create(domain=settings.ROOT_DOMAIN, tenant=t,
-    defaults=dict(is_primary=True))
-"
+O `bootstrap_public` nao e opcional e nao da para deduzir que falta. As
+migrations criam as TABELAS do schema `public`; elas nao criam a LINHA em
+`accounts_tenant` que o django-tenants consulta para descobrir qual schema
+atende um host. Sem ela a primeira requisicao devolve um 404 cru — o mesmo
+404 que um subdominio inexistente devolve:
+
 ```
+Page not found (404)
+No tenant for hostname "publibot.localhost"
+```
+
+O comando e idempotente, entao pode entrar no roteiro de deploy junto do
+`migrate_schemas`, nao so na primeira instalacao.
 
 Em outro terminal, o worker — **com o mesmo `BROKER_BACKEND` do servidor web**,
 senao o cadastro despacha para um broker e o worker escuta outro, e o tenant
@@ -205,13 +210,13 @@ fica preso em "provisionando" sem erro nenhum:
 celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1
 ```
 
-Note `migrate_schemas`, nao `migrate`: o comando puro do Django nao percorre os
-schemas dos tenants.
-
 Acesse **`http://publibot.localhost:8000/`** — nao `http://localhost:8000/`.
 Um tenant chamado `acme` responde em `http://acme.publibot.localhost:8000/`.
 Navegadores resolvem qualquer `*.localhost` para 127.0.0.1, entao nada precisa
-ser adicionado ao `/etc/hosts`.
+ser adicionado ao `/etc/hosts`. Em `DEBUG`, abrir `localhost:8000` por reflexo
+redireciona para o dominio raiz em vez de dar 404 — mas so em `DEBUG`: em
+producao um host desconhecido continua recebendo 404 seco, sem dizer o que
+existe.
 
 O dominio de desenvolvimento tem **dois rotulos** de proposito. Verificado com
 o Chromium: ao receber `Set-Cookie: ...; Domain=.localhost`, o navegador
@@ -255,6 +260,9 @@ python manage.py provision_tenant acme --name="ACME Ltda"
 
 # Aplica migrations em public e em todos os tenants ja provisionados
 python manage.py migrate_schemas
+
+# Registra o tenant `public` e aponta ROOT_DOMAIN para ele. Idempotente.
+python manage.py bootstrap_public
 
 # Roda um comando dentro de um tenant especifico
 python manage.py tenant_command shell --schema=acme
