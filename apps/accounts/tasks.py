@@ -71,7 +71,7 @@ def provision_tenant(self, tenant_id: str) -> str:
         logger.exception("Falha ao provisionar o tenant %s", tenant.schema_name)
         Tenant.objects.filter(pk=tenant.pk).update(
             status=Tenant.Status.FAILED,
-            provisioning_error=str(exc)[:2000],
+            provisioning_error=_com_pista(str(exc))[:2000],
         )
         # Uma falha transitoria (banco reiniciando, conexao caida) merece nova
         # tentativa; depois dos retries o estado FAILED permanece visivel.
@@ -111,3 +111,22 @@ def despachar_provisionamento(tenant_id: str, schema_name: str) -> None:
             status=Tenant.Status.FAILED,
             provisioning_error=f"Nao foi possivel publicar na fila: {exc}"[:2000],
         )
+
+
+def _com_pista(erro: str) -> str:
+    """Acrescenta a causa quando a mensagem do Postgres nao a revela.
+
+    `type "vector" does not exist` chega assim, dentro de um `CREATE TABLE` de
+    trinta colunas, sem dizer que falta uma EXTENSAO — nem qual, nem como
+    instalar. E o primeiro erro que qualquer pessoa encontra ao apontar o
+    projeto para um PostgreSQL recem-instalado, e a mensagem crua nao ajuda
+    ninguem a sair dele.
+    """
+    if 'type "vector" does not exist' in erro or 'tipo "vector"' in erro:
+        return (
+            f"{erro}\n\n"
+            "A extensao pgvector nao esta instalada ou nao esta alcancavel. "
+            "Rode  python manage.py check_db  para ver o diagnostico e os "
+            "comandos exatos."
+        )
+    return erro

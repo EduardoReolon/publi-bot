@@ -161,6 +161,28 @@ segundo tenant. O primeiro funciona e o segundo falha com
 settings fecha o circuito.
 
 <details>
+<summary>pgvector no Windows, sem container</summary>
+
+Nao ha binario oficial do pgvector para Windows: ele precisa ser compilado uma
+vez. Com o "C++ support" do Visual Studio instalado, abra o **x64 Native Tools
+Command Prompt** como administrador (o prompt comum falha com
+`error C2196: case value '4' already used`) e rode:
+
+```bat
+set "PGROOT=C:\Program Files\PostgreSQL\16"
+git clone --branch v0.8.6 https://github.com/pgvector/pgvector.git
+cd pgvector
+nmake /F Makefile.win
+nmake /F Makefile.win install
+```
+
+Ajuste o `16` para a sua versao do PostgreSQL. Depois, no `psql` como
+superusuario, rode o SQL que o `python manage.py check_db` imprime — ele monta
+os comandos com o nome do seu banco e do seu usuario.
+
+</details>
+
+<details>
 <summary>Alternativa em container (util no Windows)</summary>
 
 Compilar o pgvector no Windows exige MSVC e os headers do PostgreSQL. Se voce
@@ -184,6 +206,28 @@ python manage.py bootstrap_public
 python manage.py createsuperuser
 python manage.py dev
 ```
+
+O `dev` confere o banco antes de subir e recusa sair do lugar se faltar alguma
+coisa, imprimindo os comandos exatos. A verificacao avulsa e:
+
+```bash
+python manage.py check_db
+```
+
+Vale rodar isso primeiro num PostgreSQL que voce nao preparou. A verificacao
+principal nao consulta catalogo: ela CRIA uma coluna `vector`, que e o que a
+migration faz. So passa quando a extensao existe, esta no `search_path` E o
+usuario tem `USAGE` no schema dela — tres condicoes que, quando faltam,
+produzem a MESMA mensagem, e uma que nao menciona extensao nenhuma:
+
+```
+django.db.utils.ProgrammingError: tipo "vector" nao existe
+LINE 1: ... "embedding" vector(1024)...
+```
+
+Pior ainda, esse erro chega tarde: as migrations compartilhadas passam sem
+reclamar, e a falha so acontece ao provisionar o primeiro tenant, dentro de uma
+task do worker.
 
 **`dev`, e nao `runserver`.** Este sistema sao dois processos: o servidor web e
 o worker do Celery. O `dev` sobe os dois no mesmo terminal e o Ctrl+C encerra

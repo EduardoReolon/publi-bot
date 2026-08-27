@@ -72,7 +72,9 @@ def test_dev_sobe_web_e_worker(monkeypatch):
         return processo
 
     monkeypatch.setattr("subprocess.Popen", falso_popen)
-    call_command("dev", "127.0.0.1:8123")
+    # `sem_conferir`: estes testes olham o lancamento dos processos. A conferencia
+    # do banco tem os testes dela em test_check_db.py e exigiria banco aqui.
+    call_command("dev", "127.0.0.1:8123", sem_conferir=True)
 
     assert len(lancados) == 2
     worker, web = lancados
@@ -91,7 +93,7 @@ def test_dev_sem_worker_sobe_so_o_servidor(monkeypatch):
         return processo
 
     monkeypatch.setattr("subprocess.Popen", falso_popen)
-    call_command("dev", sem_worker=True)
+    call_command("dev", sem_worker=True, sem_conferir=True)
 
     assert len(lancados) == 1
     assert "runserver" in lancados[0]
@@ -114,7 +116,7 @@ def test_dev_usa_pool_solo_no_windows(monkeypatch):
 
     monkeypatch.setattr("subprocess.Popen", falso_popen)
     monkeypatch.setattr(sys, "platform", "win32")
-    call_command("dev")
+    call_command("dev", sem_conferir=True)
 
     assert "-P" in lancados[0]
     assert lancados[0][lancados[0].index("-P") + 1] == "solo"

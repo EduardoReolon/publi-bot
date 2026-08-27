@@ -23,6 +23,7 @@ import sys
 import time
 
 from django.conf import settings
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 
 
@@ -44,6 +45,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--concurrency", type=int, default=1, help="Processos do worker. Default: 1."
         )
+        parser.add_argument(
+            "--sem-conferir",
+            action="store_true",
+            help="Pula o check_db do banco antes de subir.",
+        )
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
@@ -54,6 +60,20 @@ class Command(BaseCommand):
                 "O comando `dev` e so para desenvolvimento (DEBUG=True). "
                 "Em producao use as units do systemd em deploy/systemd/."
             )
+
+        if not options["sem_conferir"]:
+            # Conferir antes de subir, e nao depois: sem a extensao `vector` o
+            # servidor sobe normalmente, o cadastro e aceito, e a falha so
+            # aparece dentro da task do worker, como um traceback de
+            # `CREATE TABLE` que nao menciona extensao nenhuma.
+            try:
+                call_command("check_db")
+            except SystemExit as exc:
+                raise CommandError(
+                    "O banco nao esta pronto (detalhes acima). Resolva e rode de novo, "
+                    "ou use --sem-conferir para subir assim mesmo."
+                ) from exc
+            self.stdout.write("")
 
         web = [sys.executable, "manage.py", "runserver", options["addrport"]]
 
