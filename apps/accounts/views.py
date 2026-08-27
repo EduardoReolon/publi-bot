@@ -160,12 +160,17 @@ def _diagnosticar_provisionamento(tenant: Tenant) -> str | None:
     )
     if not settings.DEBUG:
         return None
+    # Nomear o broker importa: a segunda causa mais comum nao e a falta de
+    # worker, e sim um worker ligado a OUTRO broker — um terminal aberto antes
+    # de o .env mudar continua no broker antigo, e os dois lados parecem
+    # saudaveis enquanto falam com filas diferentes.
     return _(
-        "A mensagem esta na fila e ninguem a consumiu — o worker do Celery "
-        "nao esta rodando. Abra outro terminal, no mesmo virtualenv e com o "
-        "mesmo BROKER_BACKEND, e rode:  "
-        "celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1"
-    )
+        "A mensagem esta na fila (%(broker)s) e ninguem a consumiu: nenhum "
+        "worker do Celery esta ligado a ela. Pare este servidor e suba os dois "
+        "processos juntos com  python manage.py dev  — ou deixe um segundo "
+        "terminal aberto com  celery -A core worker -l INFO --concurrency=1 "
+        "--prefetch-multiplier=1  . Para conferir: python manage.py broker_status"
+    ) % {"broker": settings.BROKER_BACKEND}
 
 
 def _pode_acessar(usuario, tenant: Tenant) -> bool:

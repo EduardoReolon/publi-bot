@@ -178,37 +178,52 @@ recarga automatica e stack trace direto.
 
 ### 4. Migrar e rodar
 
-**Sao DOIS processos.** Terminal 1:
-
 ```bash
 python manage.py migrate_schemas --shared
 python manage.py bootstrap_public
 python manage.py createsuperuser
-python manage.py runserver
+python manage.py dev
 ```
 
-Terminal 2, no mesmo virtualenv e com o **mesmo `BROKER_BACKEND`**:
+**`dev`, e nao `runserver`.** Este sistema sao dois processos: o servidor web e
+o worker do Celery. O `dev` sobe os dois no mesmo terminal e o Ctrl+C encerra
+os dois — os filhos herdam o grupo de processo do console, entao isso funciona
+sem supervisor nenhum, no Linux, no macOS e no Windows. No Windows ele ja
+acrescenta `-P solo` ao worker, porque o pool `prefork` nao tem suporte oficial
+desde o Celery 4 e falha de forma erratica.
+
+Rodar os dois a mao continua valendo (`runserver` num terminal, o `celery`
+abaixo em outro) — o `dev` so evita o esquecimento:
 
 ```bash
 celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1
 ```
 
-No Windows, acrescente `-P solo`: o pool `prefork` nao tem suporte oficial
-desde o Celery 4 e falha de forma erratica.
+O worker nao e um extra para "quando for gerar artigo": **o cadastro de um
+tenant ja depende dele**. Criar o schema e rodar as migrations leva dezenas de
+segundos, tempo demais para uma request HTTP, entao o cadastro publica uma
+mensagem e a tela fica esperando (ADR-0001).
 
-O worker nao e um extra para "quando for gerar artigo": o cadastro de um tenant
-ja depende dele. Criar o schema e rodar as migrations leva dezenas de segundos,
-tempo demais para uma request HTTP, entao o cadastro publica uma mensagem e a
-tela fica esperando (ADR-0001). Sem worker, a mensagem fica na fila e nada
-falha — o despacho funcionou. A tela de espera detecta isso: depois de ~30s ela
-inspeciona a fila e, se a mensagem continua la, diz que o worker nao esta
-rodando e mostra o comando. A mensagem parada nao se perde: assim que o worker
-sobe, ela e consumida e a mesma tela vira "ambiente pronto", sem refazer o
-cadastro (verificado no Chromium: 6s depois de subir o worker).
+Sem worker nada falha — e esse e o problema. O despacho funciona, a mensagem
+entra na fila e fica la. A tela de espera detecta isso: depois de ~30s ela
+inspeciona a profundidade da fila e, se a mensagem continua parada, nomeia a
+causa e o comando. A mensagem nao se perde: assim que um worker sobe, ela e
+consumida e a mesma tela vira "ambiente pronto", sem refazer o cadastro
+(verificado no Chromium: 6s depois de subir o worker).
 
-Dois brokers diferentes tem o mesmo efeito e sao piores de achar: se o servidor
-web esta em `BROKER_BACKEND=redis` e o worker em `postgres`, cada um fala com
-uma fila e o diagnostico acima acusa corretamente "ninguem consumiu".
+Dois brokers diferentes tem exatamente o mesmo efeito e sao piores de achar:
+com o servidor web em `BROKER_BACKEND=redis` e o worker em `postgres`, cada um
+fala com uma fila e os dois parecem saudaveis. Cada processo le o `.env` na
+hora em que sobe, entao um terminal aberto antes de voce editar o `.env`
+continua no broker antigo. Para conferir, de dentro do mesmo virtualenv:
+
+```bash
+python manage.py broker_status
+```
+
+Ele mostra o broker deste processo e quantas mensagens esperam um worker. O
+numero nao cair e a prova de que ninguem esta consumindo aquela fila; compare
+com a linha `transport:` do banner do worker.
 
 Note `migrate_schemas`, nao `migrate`: o comando puro do Django nao percorre os
 schemas dos tenants.
@@ -247,9 +262,11 @@ apontasse a causa.
 
 ### 5. Worker do Celery
 
-Ja subiu no passo 4. Em producao ele e uma unit do systemd
-(`deploy/systemd/`), com `--concurrency=2`. O worker usa o broker definido por
-`BROKER_BACKEND` — nada muda no comando.
+Ja sobe junto no `manage.py dev`. Em producao ele e uma unit do systemd
+(`deploy/systemd/`), com `--concurrency=2` — la os dois processos sao
+independentes de proposito, e o `dev` recusa rodar fora do `DEBUG` por isso: ele
+amarra o ciclo de vida dos dois, e derrubar o site porque o worker morreu seria
+o oposto do que se quer em producao.
 
 ### Testes e lint
 
