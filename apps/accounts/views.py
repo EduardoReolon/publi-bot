@@ -8,6 +8,7 @@ from django.conf import settings
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.db.models import Count
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -186,11 +187,45 @@ def _pode_acessar(usuario, tenant: Tenant) -> bool:
 
 @login_required
 def painel(request: HttpRequest) -> HttpResponse:
-    """Pagina inicial dentro de um tenant."""
+    """Pagina inicial dentro de um tenant.
+
+    Nao ha interface propria para operar o produto: o que existe hoje e o admin
+    do Django, que ja enxerga os 25 models deste schema. Esta pagina deixa isso
+    explicito e serve de ponto de partida, em vez de ser uma tela vazia que
+    parece um erro. As contagens saem do banco do proprio tenant, entao ela
+    tambem funciona como prova de que o isolamento por schema esta de pe.
+    """
     from django.db import connection
+
+    from apps.content.models import Article, Question
+    from apps.integrations.models import Site
+    from apps.knowledge.models import Document, SuperChunk
+
+    artigos = dict(Article.objects.values_list("status").annotate(total=Count("status")).order_by())
+
+    resumo = [
+        (_("Documentos na base"), Document.objects.count(), "knowledge/document"),
+        (_("Trechos indexados"), SuperChunk.objects.count(), "knowledge/superchunk"),
+        (
+            _("Artigos aguardando revisao"),
+            artigos.get(Article.Status.PENDING_REVIEW, 0),
+            "content/article",
+        ),
+        (
+            _("Artigos publicados"),
+            artigos.get(Article.Status.PUBLISHED, 0),
+            "content/article",
+        ),
+        (
+            _("Perguntas sem resposta"),
+            Question.objects.filter(answer__isnull=True).count(),
+            "content/question",
+        ),
+        (_("Sites conectados"), Site.objects.count(), "integrations/site"),
+    ]
 
     return render(
         request,
         "accounts/painel.html",
-        {"schema_name": connection.schema_name},
+        {"schema_name": connection.schema_name, "resumo": resumo},
     )

@@ -8,6 +8,11 @@ terceiros.
 >
 > Este README descreve **o que existe hoje**, nao o que esta planejado.
 >
+> **O motor esta pronto; a interface de operacao, nao.** Tudo abaixo marcado
+> como pronto e codigo de servidor coberto por testes. Quem opera o produto hoje
+> usa o **admin do Django**, dentro do subdominio do tenant — ha telas proprias
+> so para cadastro, espera de provisionamento e login.
+>
 > | Bloco | Estado |
 > |---|---|
 > | Fundacao: configuracao, Celery, PostgreSQL, infraestrutura de dev | **Pronto** |
@@ -17,14 +22,17 @@ terceiros.
 > | Conteudo: prompts versionados, tese, redacao, sanitizacao | **Pronto** |
 > | Contrato `/api/v1` e no de referencia | **Pronto** |
 > | Cadencia, perguntas e respostas, sondas de saude, deploy | **Pronto** |
+> | Interface de operacao do tenant (envio, curadoria, revisao, sites) | A fazer — hoje via admin |
 > | Ligacao ponta a ponta com GPU real | A fazer — depende de hardware |
 > | Geracao de imagem | A fazer |
 > | Metricas de desempenho do conteudo publicado | A fazer |
 >
 > As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/), com o
-> raciocinio e as consequencias de cada uma.
+> raciocinio e as consequencias de cada uma. As falhas que so aparecem ao rodar
+> — e os erros que apontam para o lugar errado — estao em
+> [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md).
 >
-> **192 testes**, em tres suites (`./scripts/test-all.sh`).
+> **263 testes**, em tres suites (`./scripts/test-all.sh`).
 
 ## O problema
 
@@ -311,6 +319,18 @@ Ja sobe junto no `manage.py dev`. Em producao ele e uma unit do systemd
 independentes de proposito, e o `dev` recusa rodar fora do `DEBUG` por isso: ele
 amarra o ciclo de vida dos dois, e derrubar o site porque o worker morreu seria
 o oposto do que se quer em producao.
+
+### Quando algo nao funciona
+
+```bash
+python manage.py check_db        # banco, extensoes, tenant public
+python manage.py broker_status   # broker deste processo e profundidade da fila
+```
+
+[`docs/ARMADILHAS.md`](docs/ARMADILHAS.md) lista as falhas reais deste projeto
+com o sintoma literal, a causa e onde ela esta tratada. Vale a leitura antes de
+diagnosticar do zero: varias tem mensagens de erro que apontam para o lugar
+errado, e tres causas diferentes chegam a produzir texto identico.
 
 ### Testes e lint
 

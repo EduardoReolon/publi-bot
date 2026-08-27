@@ -4,7 +4,35 @@
   <h1>{% translate "Painel" %}</h1>
   <p class="sub">
     {% blocktranslate trimmed %}
-      Voce esta dentro do ambiente <code>{{ schema_name }}</code>.
+      Ambiente <code>{{ schema_name }}</code>. Os numeros abaixo saem do schema
+      deste tenant — nenhum outro cliente aparece aqui.
     {% endblocktranslate %}
   </p>
+
+  <ul class="lista">
+    {% for rotulo, total, caminho in resumo %}
+      <li>
+        <a href="/admin/{{ caminho }}/"><strong>{{ rotulo }}</strong></a>
+        <div class="pre-visualizacao">{{ total }}</div>
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% comment %}
+    Dizer o que NAO existe e mais util que uma tela vazia. O motor esta
+    construido e testado; a interface propria de operacao ainda nao, e quem
+    abre esta pagina precisa saber por onde trabalhar enquanto isso.
+  {% endcomment %}
+  <div class="aviso">
+    <p>
+      {% blocktranslate trimmed %}
+        Ainda nao existe interface propria para operar o produto — enviar
+        documentos, curar trechos, revisar e aprovar artigos, configurar sites e
+        cadencia. Todo esse motor esta construido e coberto por testes, e por
+        enquanto se opera pelo
+        <a href="/admin/">admin do Django</a>, que ja enxerga os models deste
+        tenant.
+      {% endblocktranslate %}
+    </p>
+  </div>
 {% endblock %}
