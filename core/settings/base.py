@@ -97,8 +97,15 @@ PG_EXTRA_SEARCH_PATHS = ["extensions"]
 # Middleware
 # ---------------------------------------------------------------------------
 MIDDLEWARE = [
-    # Precisa vir antes de tudo: resolve o subdominio -> tenant e fixa o
-    # search_path da conexao para o resto da request.
+    # Primeiro de todos, para que TODA linha de log da requisicao — inclusive
+    # as emitidas por middlewares seguintes — carregue o identificador.
+    "apps.ops.middleware.RequestIDMiddleware",
+    # ANTES da resolucao de tenant: o balanceador e o orquestrador consultam
+    # por IP ou nome interno, que nunca corresponde ao dominio de um cliente.
+    # Depois do TenantMainMiddleware, as sondas devolveriam 404 e a
+    # infraestrutura concluiria que a aplicacao esta morta.
+    "apps.ops.middleware.HealthCheckMiddleware",
+    # Resolve o subdominio -> tenant e fixa o search_path da conexao.
     "django_tenants.middleware.main.TenantMainMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -338,6 +345,41 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+# O beat tem poucas entradas fixas, todas de INFRAESTRUTURA. A cadencia de cada
+# site vive no banco, em PublicationSchedule: o beat da o batimento cardiaco, o
+# banco da a cadencia. Fosse ao contrario, mudar o horario de um cliente
+# exigiria implantacao.
+CELERY_BEAT_SCHEDULE = {
+    "tick-publication-scheduler": {
+        "task": "apps.integrations.tasks.tick_publication_scheduler",
+        "schedule": 60.0,
+        # Descarta o tique se o worker estiver ocupado: um acumulo de tiques
+        # atrasados nao ajuda, e a proxima execucao pega tudo de qualquer forma
+        # (a consulta e por `<=`, nao por igualdade de minuto).
+        "options": {"expires": 55},
+    },
+    "check-publication-buffer": {
+        "task": "apps.integrations.tasks.check_publication_buffer",
+        "schedule": 900.0,
+        "options": {"expires": 600},
+    },
+    "sweep-stalled-jobs": {
+        "task": "apps.ops.tasks.sweep_stalled_jobs",
+        "schedule": 300.0,
+        "options": {"expires": 240},
+    },
+    "release-expired-leases": {
+        "task": "apps.ops.tasks.release_expired_leases",
+        "schedule": 300.0,
+        "options": {"expires": 240},
+    },
+    "purge-expired-questions": {
+        "task": "apps.integrations.tasks.purge_expired_questions",
+        # Uma vez por dia: e uma obrigacao de retencao, nao algo urgente.
+        "schedule": 86_400.0,
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Interruptor geral de publicacao
 # ---------------------------------------------------------------------------
@@ -403,9 +445,14 @@ RAG_MAX_COSINE_DISTANCE = env.decimal("RAG_MAX_COSINE_DISTANCE", 0.16)
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "request_id": {"()": "apps.ops.middleware.FiltroDeRequestID"},
+    },
     "formatters": {
         "verbose": {
-            "format": "{levelname} {asctime} {name} {message}",
+            # O request_id permite ligar o erro de um worker a requisicao que o
+            # originou. Sem ele, diagnosticar vira correlacionar horarios na mao.
+            "format": "{levelname} {asctime} [{request_id}] {name} {message}",
             "style": "{",
         },
     },
@@ -413,6 +460,7 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
+            "filters": ["request_id"],
         },
     },
     "root": {"handlers": ["console"], "level": env.get("LOG_LEVEL", "INFO")},

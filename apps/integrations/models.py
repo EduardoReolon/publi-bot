@@ -239,3 +239,111 @@ class PublishAttempt(models.Model):
 
     def __str__(self) -> str:
         return f"{self.article} #{self.attempt_number} -> {self.http_status or 'simulado'}"
+
+
+class PublicationSchedule(models.Model):
+    """Cadencia de publicacao de um site.
+
+    O fuso vem de `Site.site_timezone`, nunca duplicado aqui: dois lugares
+    guardando o mesmo fuso divergem, e o sintoma seria publicacao no horario
+    errado sem causa aparente.
+    """
+
+    class Mode(models.TextChoices):
+        WEEKLY_SLOTS = "weekly_slots", _("Dias e horarios fixos")
+        INTERVAL_DAYS = "interval_days", _("A cada N dias")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    site = models.OneToOneField(
+        Site, on_delete=models.CASCADE, related_name="schedule", verbose_name=_("site")
+    )
+    mode = models.CharField(
+        _("modo"), max_length=16, choices=Mode.choices, default=Mode.WEEKLY_SLOTS
+    )
+
+    # 0 = segunda, 6 = domingo.
+    weekdays = models.JSONField(_("dias da semana"), default=list, blank=True)
+    times_of_day = models.JSONField(
+        _("horarios"),
+        default=list,
+        blank=True,
+        help_text=_("Lista de 'HH:MM' no fuso do site."),
+    )
+    interval_days = models.PositiveSmallIntegerField(_("intervalo em dias"), default=7)
+    max_per_day = models.PositiveSmallIntegerField(_("maximo por dia"), default=1)
+
+    # Quando o numero de artigos prontos cai abaixo disto, o sistema avisa que
+    # e hora de produzir mais.
+    buffer_threshold = models.PositiveSmallIntegerField(_("reserva minima"), default=2)
+
+    # Se uma resposta a pergunta ocupa um horario da cadencia. Se nao ocupar, o
+    # site publica mais do que o configurado e o calculo da reserva fica errado.
+    qa_consumes_slot = models.BooleanField(_("resposta ocupa horario"), default=True)
+
+    is_active = models.BooleanField(_("ativa"), default=True)
+    created_at = models.DateTimeField(_("criada em"), default=django_timezone.now)
+
+    class Meta:
+        verbose_name = _("cadencia de publicacao")
+        verbose_name_plural = _("cadencias de publicacao")
+
+    def __str__(self) -> str:
+        return f"Cadencia de {self.site}"
+
+
+class PublicationSlot(models.Model):
+    """Um horario reservado para publicar algo.
+
+    Aponta para um artigo OU para uma resposta, nunca os dois. A restricao fica
+    no banco: uma checagem em Python nao impediria dois processos de preencher
+    o mesmo horario com coisas diferentes.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, related_name="slots", verbose_name=_("site")
+    )
+
+    # Sempre em UTC. O horario local fica guardado apenas para exibicao — o
+    # calculo e a comparacao acontecem em UTC, sempre.
+    slot_at = models.DateTimeField(_("momento (UTC)"), db_index=True)
+    local_slot_at = models.DateTimeField(_("momento local"), null=True, blank=True)
+
+    article = models.ForeignKey(
+        "content.Article",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="slots",
+        verbose_name=_("artigo"),
+    )
+    answer = models.ForeignKey(
+        "content.Answer",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="slots",
+        verbose_name=_("resposta"),
+    )
+
+    filled_at = models.DateTimeField(_("preenchido em"), null=True, blank=True)
+    created_at = models.DateTimeField(_("criado em"), default=django_timezone.now)
+
+    class Meta:
+        verbose_name = _("horario de publicacao")
+        verbose_name_plural = _("horarios de publicacao")
+        ordering = ["slot_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["site", "slot_at"], name="uniq_horario_por_site"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(article__isnull=False, answer__isnull=True)
+                    | models.Q(article__isnull=True, answer__isnull=False)
+                    | models.Q(article__isnull=True, answer__isnull=True)
+                ),
+                name="horario_com_artigo_ou_resposta",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.site} @ {self.slot_at:%d/%m %H:%M}"

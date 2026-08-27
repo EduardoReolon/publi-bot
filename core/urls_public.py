@@ -12,5 +12,8 @@ from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Sondas de saude, sem autenticacao de proposito: o orquestrador e o
+    # balanceador precisam alcanca-las antes de qualquer sessao existir.
+    path("", include("apps.ops.urls", namespace="ops")),
     path("", include("apps.accounts.urls_public", namespace="accounts")),
 ]

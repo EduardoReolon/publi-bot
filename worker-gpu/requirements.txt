@@ -1,0 +1,11 @@
+# Dependencias do servico de conversao.
+#
+# Instalar SOMENTE na maquina com GPU. A nuvem nao precisa de nada disto.
+
+fastapi==0.121.2
+uvicorn[standard]==0.41.0
+python-multipart==0.0.20
+
+# Conversao de PDF com analise de layout. Traz torch como dependencia — cerca
+# de 2 GB, e o motivo de este arquivo ser separado do requirements da nuvem.
+docling==2.60.0

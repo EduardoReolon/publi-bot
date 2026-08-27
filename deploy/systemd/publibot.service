@@ -1,0 +1,35 @@
+[Unit]
+Description=PubliBot (Gunicorn)
+Requires=publibot.socket
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=notify
+User=publibot
+Group=www-data
+RuntimeDirectory=publibot
+WorkingDirectory=/srv/publibot
+
+# Modo 0600: o arquivo contem a SECRET_KEY, a senha do banco e a chave que
+# cifra as credenciais dos clientes.
+EnvironmentFile=/etc/publibot/env
+Environment=DJANGO_SETTINGS_MODULE=core.settings.prod
+
+ExecStart=/srv/publibot/venv/bin/gunicorn \
+    --config /srv/publibot/deploy/gunicorn/gunicorn.conf.py \
+    core.wsgi:application
+
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=45
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/publibot/media /srv/publibot/staticfiles /run/publibot
+
+[Install]
+WantedBy=multi-user.target

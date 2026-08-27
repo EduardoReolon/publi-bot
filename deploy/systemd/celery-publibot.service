@@ -1,0 +1,34 @@
+[Unit]
+Description=PubliBot — worker Celery
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=publibot
+Group=publibot
+WorkingDirectory=/srv/publibot
+EnvironmentFile=/etc/publibot/env
+Environment=DJANGO_SETTINGS_MODULE=core.settings.prod
+
+ExecStart=/srv/publibot/venv/bin/celery -A core worker \
+    --loglevel=INFO \
+    --concurrency=4 \
+    --prefetch-multiplier=1 \
+    --max-tasks-per-child=100
+
+# CRITICO: precisa ser MAIOR que a tarefa mais longa. Com `acks_late=True`,
+# matar o worker no meio de uma tarefa faz o broker reentregar a mensagem — e
+# uma implantacao publicaria o mesmo conteudo duas vezes.
+TimeoutStopSec=600
+KillMode=mixed
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/publibot/media
+
+[Install]
+WantedBy=multi-user.target

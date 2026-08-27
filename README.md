@@ -4,22 +4,27 @@ Orquestrador multi-tenant que transforma literatura cientifica em conteudo web
 fundamentado, com revisao humana obrigatoria e publicacao agendada em sites de
 terceiros.
 
-> ### Status: em construcao — Fase 0 concluida
+> ### Status
 >
-> Este README descreve **o que existe hoje**, nao o que esta planejado. O que
-> ainda nao foi construido esta marcado como tal.
+> Este README descreve **o que existe hoje**, nao o que esta planejado.
 >
 > | Bloco | Estado |
 > |---|---|
-> | Fundacao: configuracao, Celery, Postgres, infraestrutura de dev | **Pronto** |
-> | Tenancy: Tenant, Domain, User, TenantMembership, isolamento por schema | **Pronto** |
-> | Cadastro autonomo por subdominio | A fazer |
-> | Base de conhecimento e RAG | A fazer |
-> | Geracao de conteudo | A fazer |
-> | Contrato de integracao com os sites | A fazer |
-> | Motor de cadencia, perguntas e respostas, imagem, deploy | A fazer |
+> | Fundacao: configuracao, Celery, PostgreSQL, infraestrutura de dev | **Pronto** |
+> | Tenancy: schema por tenant, cadastro por subdominio, isolamento | **Pronto** |
+> | Base de conhecimento: documentos, curadoria, RAG com pgvector | **Pronto** |
+> | Inferencia: conexoes, reserva de capacidade, retomada de trabalhos | **Pronto** |
+> | Conteudo: prompts versionados, tese, redacao, sanitizacao | **Pronto** |
+> | Contrato `/api/v1` e no de referencia | **Pronto** |
+> | Cadencia, perguntas e respostas, sondas de saude, deploy | **Pronto** |
+> | Ligacao ponta a ponta com GPU real | A fazer — depende de hardware |
+> | Geracao de imagem | A fazer |
+> | Metricas de desempenho do conteudo publicado | A fazer |
 >
-> As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/).
+> As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/), com o
+> raciocinio e as consequencias de cada uma.
+>
+> **192 testes**, em tres suites (`./scripts/test-all.sh`).
 
 ## O problema
 
@@ -259,18 +264,37 @@ python manage.py tenant_command shell --schema=acme
 
 ```
 apps/
-  accounts/       Tenant, Domain, User, TenantMembership (schema public)
+  accounts/      Tenant, Domain, User, TenantMembership  (schema public)
+  inference/     Conexoes de inferencia e reservas       (schema public)
+  knowledge/     Documentos, trechos curados, RAG        (por tenant)
+  content/       Prompts, artigos, perguntas, respostas  (por tenant)
+  integrations/  Sites, contrato, cadencia               (por tenant)
+  ops/           Trabalhos de geracao, sondas de saude   (por tenant)
 core/
-  settings/       base, dev, prod
-  celery.py       app do Celery, com propagacao de tenant
-  urls_public.py  rotas do dominio raiz
-  urls_tenants.py rotas de um tenant
-deploy/
-  postgres/init/  criacao do schema `extensions` e das extensoes
+  settings/      base, dev, prod, test_contract
+  celery.py      app do Celery, com propagacao de tenant
+deploy/          Nginx, systemd, Gunicorn, scripts
 docs/
-  ARCHITECTURE.md especificacao do sistema
-  adr/            decisoes de arquitetura
-tests/            isolamento entre tenants e propagacao de schema
+  ARCHITECTURE.md    especificacao original, com as revisoes marcadas
+  adr/               decisoes de arquitetura
+  contrato/          contrato /api/v1, OpenAPI e implementacao de referencia
+worker-gpu/      Servicos HTTP da maquina com GPU
+tests/           Suite principal
+tests_contrato/  Contrato exercitado nos dois lados
+```
+
+## Comandos uteis
+
+```bash
+# Cria um tenant completo: registro, schema e migrations
+python manage.py provision_tenant acme --name="ACME Ltda"
+
+# Calibra o limiar de recuperacao com o corpus real de um tenant
+python manage.py tenant_command calibrate_retrieval --schema=acme \
+    --consulta "sua consulta de teste"
+
+# Roda as tres suites
+./scripts/test-all.sh
 ```
 
 ## Licenca

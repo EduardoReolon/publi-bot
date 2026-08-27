@@ -5,12 +5,15 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from apps.content.models import (
+    Answer,
+    AnswerCitation,
     Article,
     ArticleCitation,
     ArticleRevision,
     PromptRun,
     PromptTemplate,
     PromptVersion,
+    Question,
     Topic,
 )
 
@@ -190,3 +193,67 @@ class ArticleAdmin(admin.ModelAdmin):
             anfitriao = urlparse(url).hostname or "?"
             itens.append(format_html("<li><strong>{}</strong> — {}</li>", anfitriao, url))
         return format_html("<ul>{}</ul>", format_html("".join(itens)))
+
+
+@admin.register(Question)
+class QuestionAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "site", "status", "best_similarity", "retention_until", "purged_at")
+    list_filter = ("status", "site", "purged_at")
+    readonly_fields = ("site", "remote_id", "submitted_at", "imported_at", "purged_at")
+
+    fieldsets = (
+        (None, {"fields": ("site", "remote_id", "status", "question_text")}),
+        (
+            _("Identificacao"),
+            {
+                "fields": ("author_pseudonym", "consent_at"),
+                "description": _(
+                    "O nome de quem perguntou nao e necessario para produzir o "
+                    "conteudo. So e guardado com consentimento registrado no site de "
+                    "origem, e ainda assim apenas o primeiro nome."
+                ),
+            },
+        ),
+        (
+            _("Retencao"),
+            {
+                "fields": ("retention_until", "purged_at"),
+                "description": _(
+                    "Apos o prazo, o texto e a identificacao sao apagados. A linha "
+                    "permanece: sem ela, a proxima coleta reimportaria a mesma "
+                    "pergunta como se fosse nova."
+                ),
+            },
+        ),
+        (_("Recuperacao"), {"fields": ("best_similarity",)}),
+        (_("Datas"), {"fields": ("submitted_at", "imported_at")}),
+    )
+
+
+class AnswerCitationInline(admin.TabularInline):
+    model = AnswerCitation
+    extra = 0
+    fields = ("rank", "source_title", "source_url", "distance", "used_as_primary")
+    readonly_fields = fields
+
+
+@admin.register(Answer)
+class AnswerAdmin(admin.ModelAdmin):
+    list_display = (
+        "question",
+        "status",
+        "author_name",
+        "human_edit_ratio",
+        "scheduled_for",
+        "published_at",
+    )
+    list_filter = ("status",)
+    inlines = [AnswerCitationInline]
+    readonly_fields = (
+        "idempotency_key",
+        "remote_id",
+        "published_url",
+        "published_at",
+        "publish_attempts",
+        "last_publish_error",
+    )

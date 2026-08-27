@@ -5,7 +5,14 @@ from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
 from apps.inference.security import cifrar
-from apps.integrations.models import PublishAttempt, Site, SiteApiCall, SitePost
+from apps.integrations.models import (
+    PublicationSchedule,
+    PublicationSlot,
+    PublishAttempt,
+    Site,
+    SiteApiCall,
+    SitePost,
+)
 from apps.integrations.signing import impressao_da_chave
 
 
@@ -202,3 +209,49 @@ class PublishAttemptAdmin(admin.ModelAdmin):
     )
     list_filter = ("site", "succeeded", "dry_run", "error_code")
     readonly_fields = [f.name for f in PublishAttempt._meta.fields]
+
+
+@admin.register(PublicationSchedule)
+class PublicationScheduleAdmin(admin.ModelAdmin):
+    list_display = (
+        "site",
+        "mode",
+        "max_per_day",
+        "buffer_threshold",
+        "qa_consumes_slot",
+        "is_active",
+    )
+    list_filter = ("mode", "is_active", "qa_consumes_slot")
+
+    fieldsets = (
+        (None, {"fields": ("site", "mode", "is_active")}),
+        (
+            _("Quando publicar"),
+            {
+                "fields": ("weekdays", "times_of_day", "interval_days", "max_per_day"),
+                "description": _(
+                    "Dias da semana: 0 = segunda, 6 = domingo. Horarios no formato "
+                    "'HH:MM', no fuso do site — que vem do cadastro do site, nunca "
+                    "duplicado aqui."
+                ),
+            },
+        ),
+        (
+            _("Reserva"),
+            {
+                "fields": ("buffer_threshold", "qa_consumes_slot"),
+                "description": _(
+                    "Se a resposta a pergunta nao ocupar horario, o site publica mais "
+                    "do que o configurado e o calculo da reserva fica errado."
+                ),
+            },
+        ),
+    )
+
+
+@admin.register(PublicationSlot)
+class PublicationSlotAdmin(admin.ModelAdmin):
+    list_display = ("slot_at", "local_slot_at", "site", "article", "answer", "filled_at")
+    list_filter = ("site",)
+    date_hierarchy = "slot_at"
+    readonly_fields = ("created_at",)

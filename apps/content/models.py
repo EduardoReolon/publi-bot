@@ -412,3 +412,184 @@ class ArticleCitation(models.Model):
 
     def __str__(self) -> str:
         return f"#{self.rank} {self.source_title[:40]}"
+
+
+class Question(models.Model):
+    """Duvida deixada por um visitante do site.
+
+    Duas decisoes de tratamento de dado, ambas com consequencia pratica:
+
+    **O nome de quem perguntou nao e necessario para produzir o conteudo.** Ele
+    so e guardado quando ha consentimento registrado no site de origem, e ainda
+    assim pseudonimizado por padrao. Guardar o que nao se usa e risco sem
+    contrapartida.
+
+    **O texto tem prazo.** `retention_until` marca quando a pergunta deve ser
+    apagada — perguntas costumam conter informacao pessoal que o produto nao
+    precisa reter depois de responder.
+    """
+
+    class Status(models.TextChoices):
+        IMPORTED = "imported", _("Importada")
+        NEEDS_MORE_SOURCES = "needs_more_sources", _("Requer novas fontes")
+        DRAFTING = "drafting", _("Em producao")
+        PENDING_REVIEW = "pending_review", _("Aguardando revisao")
+        ANSWERED = "answered", _("Respondida")
+        DISCARDED = "discarded", _("Descartada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    site = models.ForeignKey(
+        "integrations.Site",
+        on_delete=models.CASCADE,
+        related_name="questions",
+        verbose_name=_("site"),
+    )
+    # Identificador do lado do site. A unicidade por site impede reimportar a
+    # mesma pergunta a cada ciclo de coleta.
+    remote_id = models.CharField(_("id remoto"), max_length=120)
+
+    question_text = models.TextField(_("pergunta"), max_length=500)
+
+    # Pseudonimo, nao o nome real, salvo consentimento explicito.
+    author_pseudonym = models.CharField(_("identificacao"), max_length=80, blank=True)
+    consent_at = models.DateTimeField(
+        _("consentimento em"),
+        null=True,
+        blank=True,
+        help_text=_("Sem isto, o nome nao e exibido nem guardado."),
+    )
+
+    submitted_at = models.DateTimeField(_("enviada em"))
+    imported_at = models.DateTimeField(_("importada em"), default=timezone.now)
+
+    status = models.CharField(
+        _("situacao"), max_length=20, choices=Status.choices, default=Status.IMPORTED
+    )
+    best_similarity = models.FloatField(
+        _("melhor similaridade"),
+        null=True,
+        blank=True,
+        help_text=_("Menor distancia encontrada no acervo. Sustenta a regra do limiar."),
+    )
+
+    retention_until = models.DateTimeField(
+        _("reter ate"),
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=_("Apos esta data o texto e a identificacao sao apagados."),
+    )
+    purged_at = models.DateTimeField(_("expurgada em"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("pergunta")
+        verbose_name_plural = _("perguntas")
+        ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["site", "remote_id"], name="uniq_pergunta_por_site")
+        ]
+        indexes = [models.Index(fields=["status", "-submitted_at"])]
+
+    def __str__(self) -> str:
+        return self.question_text[:60] or f"Pergunta {self.pk}"
+
+
+class Answer(models.Model):
+    """Conteudo produzido a partir de uma duvida.
+
+    Enquadrado como conteudo informativo SOBRE O TEMA, e nao como resposta
+    dirigida a pessoa. Isso reduz simultaneamente o risco regulatorio e a
+    necessidade de tratar dado de terceiro.
+    """
+
+    class Status(models.TextChoices):
+        DRAFTING = "drafting", _("Em producao")
+        PENDING_REVIEW = "pending_review", _("Aguardando revisao")
+        APPROVED_SCHEDULED = "approved_scheduled", _("Aprovada e agendada")
+        PUBLISHED = "published", _("Publicada")
+        PUSH_FAILED = "push_failed", _("Falha na publicacao")
+        REJECTED = "rejected", _("Rejeitada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    question = models.OneToOneField(
+        Question, on_delete=models.CASCADE, related_name="answer", verbose_name=_("pergunta")
+    )
+
+    body_markdown = models.TextField(_("corpo (markdown)"), blank=True)
+    body_html = models.TextField(_("corpo (html)"), blank=True)
+
+    outbound_link_url = models.URLField(_("link de saida"), max_length=500, blank=True)
+    anchor_text = models.CharField(_("texto-ancora"), max_length=200, blank=True)
+
+    status = models.CharField(
+        _("situacao"), max_length=24, choices=Status.choices, default=Status.DRAFTING
+    )
+
+    author_name = models.CharField(_("autor"), max_length=150, blank=True)
+    author_credentials = models.CharField(_("credenciais"), max_length=200, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_answers",
+        verbose_name=_("revisada por"),
+    )
+    reviewed_at = models.DateTimeField(_("revisada em"), null=True, blank=True)
+    review_seconds = models.PositiveIntegerField(_("segundos de revisao"), default=0)
+    human_edit_ratio = models.FloatField(_("proporcao editada"), default=0.0)
+
+    scheduled_for = models.DateTimeField(_("agendada para"), null=True, blank=True, db_index=True)
+    published_at = models.DateTimeField(_("publicada em"), null=True, blank=True)
+    published_url = models.URLField(_("URL publicada"), max_length=500, blank=True)
+    remote_id = models.CharField(_("id remoto"), max_length=120, blank=True)
+
+    idempotency_key = models.UUIDField(_("chave de idempotencia"), default=uuid.uuid4, unique=True)
+    publish_attempts = models.PositiveSmallIntegerField(_("tentativas"), default=0)
+    last_publish_error = models.TextField(_("ultimo erro"), blank=True)
+    last_error_code = models.CharField(_("codigo do erro"), max_length=40, blank=True)
+    next_retry_at = models.DateTimeField(_("proxima tentativa"), null=True, blank=True)
+
+    created_at = models.DateTimeField(_("criada em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("resposta")
+        verbose_name_plural = _("respostas")
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "scheduled_for"])]
+
+    def __str__(self) -> str:
+        return f"Resposta a {self.question}"
+
+
+class AnswerCitation(models.Model):
+    """Qual trecho sustentou a resposta."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    answer = models.ForeignKey(
+        Answer, on_delete=models.CASCADE, related_name="citations", verbose_name=_("resposta")
+    )
+    super_chunk = models.ForeignKey(
+        "knowledge.SuperChunk",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="answer_citations",
+        verbose_name=_("trecho"),
+    )
+    rank = models.PositiveSmallIntegerField(_("posicao"))
+    distance = models.FloatField(_("distancia"))
+    used_as_primary = models.BooleanField(_("fonte primaria"), default=False)
+    source_title = models.CharField(_("titulo"), max_length=500, blank=True)
+    source_url = models.URLField(_("URL"), max_length=500, blank=True)
+
+    class Meta:
+        verbose_name = _("citacao de resposta")
+        verbose_name_plural = _("citacoes de resposta")
+        ordering = ["answer", "rank"]
+        constraints = [
+            models.UniqueConstraint(fields=["answer", "rank"], name="uniq_citacao_resposta_posicao")
+        ]
+
+    def __str__(self) -> str:
+        return f"#{self.rank} {self.source_title[:40]}"

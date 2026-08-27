@@ -1,0 +1,30 @@
+[Unit]
+Description=PubliBot — agendador Celery Beat
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=publibot
+Group=publibot
+WorkingDirectory=/srv/publibot
+EnvironmentFile=/etc/publibot/env
+Environment=DJANGO_SETTINGS_MODULE=core.settings.prod
+
+# UMA unica instancia. Duas emitiriam os mesmos tiques em duplicata, e cada
+# publicacao seria despachada duas vezes.
+ExecStart=/srv/publibot/venv/bin/celery -A core beat \
+    --loglevel=INFO \
+    --scheduler django_celery_beat.schedulers:DatabaseScheduler \
+    --pidfile=/run/publibot/beat.pid
+
+RuntimeDirectory=publibot
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

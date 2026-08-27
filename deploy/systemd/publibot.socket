@@ -1,0 +1,11 @@
+[Unit]
+Description=Socket do PubliBot
+
+[Socket]
+ListenStream=/run/publibot/publibot.sock
+SocketUser=publibot
+SocketGroup=www-data
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target

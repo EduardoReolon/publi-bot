@@ -1,0 +1,13 @@
+/var/log/publibot/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 publibot publibot
+    sharedscripts
+    postrotate
+        systemctl reload publibot.service > /dev/null 2>&1 || true
+    endscript
+}

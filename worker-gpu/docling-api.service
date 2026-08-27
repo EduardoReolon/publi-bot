@@ -1,0 +1,32 @@
+[Unit]
+Description=PubliBot — servico Docling
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=publibot
+WorkingDirectory=/srv/publibot-worker
+EnvironmentFile=/srv/publibot-worker/.env
+
+# `--host` vem do .env e precisa ser o IP da Tailscale, NUNCA 0.0.0.0. Um
+# endpoint que aceita PDF e roda modelo, aberto na internet, deixa a GPU
+# disponivel para qualquer pessoa.
+ExecStart=/srv/publibot-worker/venv/bin/uvicorn docling_api:app \
+    --host ${BIND_HOST} \
+    --port ${BIND_PORT} \
+    --workers 1
+
+# UM worker. Dois processos significam duas conversoes simultaneas, e a VRAM
+# nao comporta.
+Restart=always
+RestartSec=10
+
+# Maior que a conversao mais longa: matar no meio perde o trabalho.
+TimeoutStopSec=300
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
