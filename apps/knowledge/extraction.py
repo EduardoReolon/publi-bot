@@ -16,12 +16,17 @@ digitalizado nao ha camada de texto nenhuma.
 O metodo usado fica gravado no proprio documento e a tela de curadoria avisa em
 destaque quando foi o caminho fraco — sem isso a degradacao seria silenciosa, e
 e essa a parte perigosa: o texto parece correto sem estar.
+
+O caminho de emergencia devolve **texto puro, nunca Markdown**. A distincao
+parece formal e nao e: num artigo real o simbolo (c) foi decodificado como `#`,
+e interpretar aquilo como Markdown fez a linha de copyright virar titulo de
+secao e titulo da obra. Quem consome isto olha `Document.texto_e_markdown`.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -50,6 +55,10 @@ class ResultadoDaExtracao:
     markdown: str
     metodo: str
     duracao_ms: int = 0
+    # Metadados que o proprio arquivo declara (o dicionario de Info do PDF).
+    # Sao mais confiaveis que qualquer heuristica sobre o texto extraido:
+    # foram gravados pelo editor, e nao adivinhados a partir do layout.
+    metadados: dict = field(default_factory=dict)
 
 
 def conexao_de_conversao() -> InferenceConnection | None:
@@ -158,7 +167,8 @@ def _extrair_localmente(document) -> ResultadoDaExtracao:
         return ResultadoDaExtracao(markdown=bruto.decode("utf-8", errors="replace"), metodo="texto")
 
     if nome.endswith(".pdf"):
-        return ResultadoDaExtracao(markdown=_pdf_para_texto(bruto), metodo="pypdf")
+        texto, metadados = _pdf_para_texto(bruto)
+        return ResultadoDaExtracao(markdown=texto, metodo="pypdf", metadados=metadados)
 
     raise ExtracaoIndisponivel(
         f"nao sei converter {nome!r} sem o worker de conversao. "
@@ -166,7 +176,7 @@ def _extrair_localmente(document) -> ResultadoDaExtracao:
     )
 
 
-def _pdf_para_texto(bruto: bytes) -> str:
+def _pdf_para_texto(bruto: bytes) -> tuple[str, dict]:
     import io
 
     try:
@@ -184,6 +194,14 @@ def _pdf_para_texto(bruto: bytes) -> str:
     leitor = PdfReader(io.BytesIO(bruto))
     paginas = [(pagina.extract_text() or "").strip() for pagina in leitor.pages]
     texto = "\n\n".join(p for p in paginas if p)
+    # `getattr` e nao acesso direto: um PDF pode nao trazer dicionario de Info,
+    # e o caminho de emergencia nao pode quebrar por causa de um campo opcional
+    # que so serve para pre-preencher a tela.
+    try:
+        info = dict(getattr(leitor, "metadata", None) or {})
+    except Exception:
+        info = {}
+    metadados = {str(chave): str(valor) for chave, valor in info.items() if valor}
 
     if not texto.strip():
         # Digitalizacao sem camada de texto. Dizer isso e melhor que devolver
@@ -192,4 +210,4 @@ def _pdf_para_texto(bruto: bytes) -> str:
             "o PDF nao tem camada de texto (provavelmente digitalizado). "
             "A conversao exige o worker com Docling, que faz OCR."
         )
-    return texto
+    return texto, metadados

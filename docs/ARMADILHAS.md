@@ -356,6 +356,53 @@ legitima. Os dois numeros que denunciam sao a **fracao de buscas sem fonte** e a
 tenant, e nao so na tela de busca, porque quem precisa ve-los nao esta
 procurando por eles.
 
+### O simbolo (c) vira `#` e o texto puro passa a ter "titulos"
+
+Achado num artigo real da Springer. O pypdf decodificou `(c) Springer Science+
+Business Media B.V. 2017` como `# Springer Science+Business Media B.V . 2017`,
+e a divisao em blocos, que procurava cabecalho Markdown, partiu o documento
+naquela linha. **Foi a unica linha com `#` no PDF inteiro**, e ela virou:
+
+- o segundo bloco da curadoria, com 51.690 dos 52.041 caracteres;
+- o **titulo** do documento, porque `sugerir_metadados` prefere o primeiro `#`;
+- os **autores**, tirados da linha seguinte, que era o comeco do resumo.
+
+O sistema declarou `campos_encontrados: 4`. Nada levantou erro. So o Docling
+exporta Markdown; texto do extrator local nunca deve ser lido como tal — e
+`Document.texto_e_markdown` que decide.
+
+### A estrutura do artigo se recupera da numeracao, nao do layout
+
+Sem analise de layout nao ha tamanho de fonte nem negrito, mas a numeracao das
+secoes faz parte do proprio texto: `1 Introduction`, `2.2.1 ...`. Nesse artigo
+isso rendeu 15 blocos corretos onde antes havia 2 falsos. Quatro regras evitam
+o falso positivo, e cada uma saiu de um caso real do mesmo PDF:
+
+| Impostor | O que o denuncia |
+|---|---|
+| `400 Climatic Change (2017) 145:397-412` | repete em toda pagina |
+| `1 School of Sustainability, Arizona State University, Tempe, AZ, USA` | virgula em serie |
+| `5 Discouraging` (celula de tabela) | seguido de fragmento curto, nao de prosa |
+| `4 Flood storage Vegetated bioretention` | numero ja usado por outra secao |
+
+A checagem de prosa olha ate tres linhas curtas antes de desistir, porque o
+proprio titulo quebra: `2.1 ... and Phoenix case` / `study`. E, ao descer um
+nivel, nao se exige comecar em `.1` — se `2.1` for recusado por outro criterio,
+exigir isso derrubaria `2.2` tambem, e o erro se propagaria ate o fim.
+
+### O `/Title` do PDF vale mais que qualquer heuristica
+
+O dicionario de Info do PDF traz `/Title`, `/Author` e frequentemente o DOI em
+`/Subject`. Foi gravado pelo editor, nao adivinhado a partir do layout, e por
+isso vem primeiro. Duas ressalvas: `/Author` costuma trazer so o primeiro nome
+da lista (por isso o texto ganha quando rende mais nomes), e `/Title` as vezes
+traz o nome do arquivo.
+
+A lista de autores tambem quebra em varias linhas, cada uma terminando no
+proprio separador (`... Eisenberg 2 &`). Ler so a primeira dava dois nomes de um
+artigo com seis — e `A e B` no lugar de `A et al.`, que e atribuicao de autoria
+errada no site do cliente.
+
 ### A suite precisa do broker no ar
 
 `test_redespachar_retoma_do_passo_em_que_parou` chama uma view que faz

@@ -384,3 +384,72 @@ def test_reconverter_tira_os_trechos_antigos_do_indice(tenant_com_categoria):
     assert chunk.is_active is False
     # Desativado, nao apagado: o texto continua visivel para comparacao.
     assert chunk.content == "Recorte feito a partir do texto antigo."
+
+
+@pytest.mark.django_db
+def test_metadados_do_pdf_vencem_a_heuristica(tenant_com_categoria, monkeypatch):
+    """O `/Title` foi gravado pelo editor; a heuristica adivinha a partir do
+    texto. Quando as duas discordam, a que nao adivinha ganha."""
+
+    class Pagina:
+        def extract_text(self):
+            return (
+                "Fail-safe and safe-to-fail adaptation: decision-making\n"
+                "for urban flooding under climate change\n"
+                "Yeowon Kim1 & Daniel A. Eisenberg 2 &\n"
+                "Emily N. Bondank 2 & Mikhail V . Chester2 &\n"
+                "Giuseppe Mascaro2 & B. Shane Underwood 3\n"
+                "# Springer Science+Business Media B.V . 2017\n"
+                "Abstract As climate change affects precipitation patterns, urban\n"
+                "infrastructure may become more vulnerable to flooding.\n"
+            )
+
+    class LeitorFalso:
+        def __init__(self, *a, **k):
+            self.pages = [Pagina()]
+            self.metadata = {
+                "/Title": (
+                    "Fail-safe and safe-to-fail adaptation: decision-making for "
+                    "urban flooding under climate change"
+                ),
+                "/Author": "Yeowon Kim",
+                "/Subject": "Climatic Change, doi:10.1007/s10584-017-2090-1",
+            }
+
+    monkeypatch.setattr("pypdf.PdfReader", LeitorFalso)
+    documento = _documento("artigo.pdf", b"%PDF-1.4")
+    job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
+    avancar(str(job.pk))
+
+    documento.refresh_from_db()
+    # O defeito antigo elegia a linha de copyright como titulo, porque o
+    # simbolo (c) foi decodificado como `#`.
+    assert documento.title.startswith("Fail-safe and safe-to-fail")
+    assert "Springer" not in documento.title
+    # Seis autores na lista, que quebra em tres linhas: "et al.", nao "A e B".
+    assert documento.authors == "Yeowon Kim et al."
+    assert documento.doi == "10.1007/s10584-017-2090-1"
+
+
+@pytest.mark.django_db
+def test_pdf_sem_dicionario_de_info_nao_quebra(tenant_com_categoria, monkeypatch):
+    """Metadados sao opcionais no formato. O caminho de emergencia nao pode
+    falhar por causa de um campo que so serve para pre-preencher a tela."""
+
+    class Pagina:
+        def extract_text(self):
+            return "Um titulo qualquer de artigo\nTexto do corpo do documento."
+
+    class LeitorFalso:
+        def __init__(self, *a, **k):
+            self.pages = [Pagina()]
+            self.metadata = None
+
+    monkeypatch.setattr("pypdf.PdfReader", LeitorFalso)
+    documento = _documento("sem_info.pdf", b"%PDF-1.4")
+    job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
+    avancar(str(job.pk))
+
+    documento.refresh_from_db()
+    assert documento.status == Document.Status.PENDING_CURATION
+    assert documento.title == "Um titulo qualquer de artigo"

@@ -1,4 +1,4 @@
-"""Divide o Markdown convertido em blocos, e blocos em paragrafos.
+"""Divide o texto convertido em blocos, e blocos em paragrafos.
 
 Duas divisoes com propositos diferentes.
 
@@ -6,6 +6,15 @@ Duas divisoes com propositos diferentes.
 titulo — a estrutura que o Docling reconhece na pagina. E o que a curadoria
 marca: "use a discussao e a conclusao, ignore os metodos". Nao ha lista fixa de
 titulos aceitos: o titulo e o que o documento disser, em qualquer idioma.
+
+Ha **dois caminhos de divisao**, e confundi-los sai caro. Do Docling vem
+Markdown, com cabecalho `#`. Do extrator local vem texto puro, onde `#` nao
+significa nada — num artigo da Springer o simbolo (c) chegou como `#` e, lido
+como Markdown, partiu o documento na linha de copyright e elegeu a editora como
+titulo da obra, sem erro nenhum no caminho. Para o texto puro a estrutura se
+recupera da numeracao das secoes (`1 Introduction`, `2.2.1 ...`), que faz parte
+do texto e sobrevive a extracao; quando nao ha numeracao, o documento vira um
+bloco so — que e a verdade sobre ele.
 
 **Paragrafos** sao para o indice. Cada paragrafo marcado vira um vetor, e nao o
 bloco inteiro. O motivo e mecanico: um embedding e UM vetor de tamanho fixo, e
@@ -32,10 +41,67 @@ from dataclasses import dataclass, field
 
 from django.conf import settings
 
-# Titulo ATX (`## Discussao`). O Docling exporta assim; o extrator local nao
-# exporta titulo nenhum, e por isso um PDF lido sem analise de layout aparece
-# na tela como um unico bloco disforme — o que e a verdade sobre ele.
+# Titulo ATX (`## Discussao`). So o Docling exporta Markdown; o extrator local
+# devolve texto puro, e aplicar este padrao nele e um erro caro — ver
+# `dividir_em_blocos`.
 PADRAO_DE_TITULO = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
+
+# Secao numerada de artigo: "1 Introduction", "2.2.1 Roadway vulnerability".
+# E o unico sinal de estrutura que sobrevive a extracao sem analise de layout,
+# porque o numero faz parte do texto e nao da formatacao.
+PADRAO_DE_SECAO = re.compile(r"^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+(\S.*)$")
+
+# Um titulo de secao e uma linha curta. Acima disto e paragrafo que por acaso
+# comeca com numero.
+MAXIMO_DE_TITULO_DE_SECAO = 90
+
+# Cabecalho de pagina ("400 Climatic Change (2017) 145:397-412") tambem comeca
+# com numero e tambem e curto. O que o distingue e repetir: um titulo de secao
+# aparece uma vez, o cabecalho aparece em toda pagina.
+MAXIMO_DE_REPETICOES = 2
+
+# Um titulo de secao e seguido de prosa. Celula de tabela ("4 Flood storage")
+# e seguida de outro fragmento curto — foi assim que se separou uma da outra
+# num artigo real, e nao por suposicao.
+MINIMO_DE_PROSA_SEGUINTE = 60
+
+# Lista de afiliacoes ("1 School of Sustainability, Arizona State University,
+# Tempe, AZ, USA") tem a mesma forma de uma secao numerada. Virgula em serie e
+# o que a denuncia: titulo de secao quase nunca tem duas.
+MAXIMO_DE_VIRGULAS = 1
+
+# Secoes finais sem numero. Nao entram por completude: separar as referencias
+# importa porque elas sao o maior bloco de texto do artigo e o de menor valor
+# para o indice — misturadas na conclusao, quem cura marca as duas juntas.
+# Secoes de abertura que aparecem GRUDADAS ao proprio texto ("Abstract As
+# climate change affects..."), e nao numa linha propria. Separa-las importa
+# porque o resumo e o trecho de maior valor do artigo e sem isto ele fica
+# misturado com titulo, autores, filiacao e cabecalho da revista.
+PADRAO_DE_ABERTURA = re.compile(
+    r"^(Abstract|Resumo|Summary|Keywords|Key words|Palavras-chave)\b[\s:.\u2013\u2014-]*(.*)$",
+    re.IGNORECASE,
+)
+
+# So no comeco do documento: "Abstract" tambem aparece dentro das referencias.
+# O piso em linhas existe porque a fracao sozinha nao cobre documento curto —
+# num texto de oito linhas, 25% para antes do resumo.
+FRACAO_INICIAL_DO_DOCUMENTO = 0.25
+MINIMO_DE_LINHAS_INICIAIS = 40
+
+SECOES_FINAIS = {
+    "references",
+    "bibliography",
+    "acknowledgements",
+    "acknowledgments",
+    "referencias",
+    "referências",
+    "agradecimentos",
+    "bibliografia",
+    "appendix",
+    "anexo",
+    "apendice",
+    "apêndice",
+}
 
 # Paragrafos separados por linha em branco.
 PADRAO_DE_PARAGRAFO = re.compile(r"\n\s*\n")
@@ -82,12 +148,206 @@ class Bloco:
         return len(self.paragrafos)
 
 
-def dividir_em_blocos(markdown: str) -> list[Bloco]:
-    """Quebra o Markdown nos titulos, preservando a ordem do documento.
+def _numero_da_secao(rotulo: str) -> tuple[int, ...]:
+    return tuple(int(parte) for parte in rotulo.split("."))
+
+
+def _sequencia_faz_sentido(anterior: tuple[int, ...], atual: tuple[int, ...]) -> bool:
+    """A numeracao progride como a de um artigo, e nao por acaso.
+
+    E esta regra que separa "2 Methodology" de "400 Climatic Change (2017)":
+    ambos sao linha curta comecando por numero, mas so um continua a contagem
+    do anterior. Sem ela, todo cabecalho de pagina viraria uma secao.
+    """
+    if not anterior:
+        # A primeira secao de um artigo e 1 (ou 1.x). Aceitar qualquer numero
+        # aqui deixaria o numero de pagina abrir a contagem.
+        return atual[0] == 1
+
+    # Mesmo nivel: continua ou avanca um.
+    if len(atual) == len(anterior):
+        return atual[:-1] == anterior[:-1] and atual[-1] in (anterior[-1], anterior[-1] + 1)
+
+    # Desce um nivel: "2" -> "2.1". Nao se exige comecar em 1: se "2.1" foi
+    # recusado por outro criterio, exigir isso derrubaria "2.2" tambem, e o
+    # erro se propagaria ate o fim do documento. O prefixo igual ja e a
+    # restricao forte.
+    if len(atual) == len(anterior) + 1:
+        return atual[:-1] == anterior
+
+    # Sobe um ou mais niveis: "2.2.1" -> "3". O prefixo precisa continuar a
+    # contagem daquele nivel.
+    if len(atual) < len(anterior):
+        prefixo = anterior[: len(atual)]
+        return atual[:-1] == prefixo[:-1] and atual[-1] == prefixo[-1] + 1
+
+    return False
+
+
+def _vem_prosa_depois(linhas: list[str], indice: int) -> bool:
+    """Se a proxima linha com conteudo e texto corrido, ou outro titulo.
+
+    E o que separa "5 Conclusion", seguido de paragrafo, de "5 Discouraging",
+    que e celula de tabela e vem seguida de "subsidence". As duas tem a mesma
+    forma; so o que vem depois as distingue.
+    """
+    vistas = 0
+    for seguinte in linhas[indice + 1 : indice + 8]:
+        crua = seguinte.strip()
+        if not crua:
+            continue
+        if len(crua) >= MINIMO_DE_PROSA_SEGUINTE:
+            return True
+        # Um titulo pode ser seguido direto do seu primeiro subtitulo.
+        if PADRAO_DE_SECAO.match(crua):
+            return True
+        # Olhar mais de uma linha e necessario porque o proprio titulo quebra:
+        # "2.1 ... and Phoenix case" / "study". Parar na primeira linha curta
+        # descartaria toda secao de titulo longo.
+        vistas += 1
+        if vistas >= 3:
+            return False
+    return False
+
+
+@dataclass
+class Secao:
+    """Um titulo achado em texto sem formatacao."""
+
+    linha: int
+    titulo: str
+    nivel: int
+    # O que sobrou na propria linha do titulo. Vazio quando o titulo ocupa a
+    # linha inteira; preenchido em "Abstract As climate change afeta...", onde
+    # o texto comeca colado ao rotulo.
+    inicio: str = ""
+
+
+def detectar_secoes(texto: str) -> list[Secao]:
+    """Acha "Abstract", "1 Introduction", "2.2.1 ..." e "References".
+
+    Conservador de proposito: um falso positivo parte o documento no lugar
+    errado e a pessoa cura um bloco que nao existe, o que e pior que nao achar
+    secao nenhuma.
+    """
+    linhas = texto.splitlines()
+
+    # Quantas vezes cada linha curta aparece. Cabecalho de pagina se repete.
+    repeticoes: dict[str, int] = {}
+    for linha in linhas:
+        chave = linha.strip()
+        if chave:
+            repeticoes[chave] = repeticoes.get(chave, 0) + 1
+
+    achados: list[Secao] = []
+    anterior: tuple[int, ...] = ()
+    limite_inicial = max(int(len(linhas) * FRACAO_INICIAL_DO_DOCUMENTO), MINIMO_DE_LINHAS_INICIAIS)
+
+    for indice, linha in enumerate(linhas):
+        crua = linha.strip()
+        if not crua:
+            continue
+
+        # O rotulo de abertura vem colado ao texto, entao a linha e longa e as
+        # checagens de titulo curto nao se aplicam a ele.
+        if indice <= limite_inicial:
+            abertura = PADRAO_DE_ABERTURA.match(crua)
+            if abertura is not None:
+                achados.append(
+                    Secao(
+                        linha=indice,
+                        titulo=abertura.group(1).title(),
+                        nivel=1,
+                        inicio=abertura.group(2).strip(),
+                    )
+                )
+                continue
+
+        if len(crua) > MAXIMO_DE_TITULO_DE_SECAO:
+            continue
+        if repeticoes.get(crua, 0) > MAXIMO_DE_REPETICOES:
+            continue
+
+        if crua.lower().rstrip(":") in SECOES_FINAIS:
+            achados.append(Secao(linha=indice, titulo=crua.rstrip(":"), nivel=1))
+            continue
+
+        achado = PADRAO_DE_SECAO.match(crua)
+        if achado is None:
+            continue
+
+        resto = achado.group(2).strip()
+        # Um titulo de secao nao termina em ponto nem comeca em minuscula: as
+        # duas coisas denunciam uma frase que so por acaso comeca com numero.
+        if resto.endswith((".", ",", ";", ":")) or not resto[:1].isupper():
+            continue
+        if resto.count(",") > MAXIMO_DE_VIRGULAS:
+            continue
+        if not _vem_prosa_depois(linhas, indice):
+            continue
+
+        numero = _numero_da_secao(achado.group(1))
+        if not _sequencia_faz_sentido(anterior, numero):
+            continue
+
+        anterior = numero
+        achados.append(Secao(linha=indice, titulo=f"{achado.group(1)} {resto}", nivel=len(numero)))
+
+    return achados
+
+
+def dividir_texto_puro(texto: str) -> list[Bloco]:
+    """Blocos de um texto que NAO e Markdown.
+
+    Quando nao ha secao numerada reconhecivel o documento vira um bloco so — e
+    essa e a verdade sobre ele, nao uma falha. Inventar divisao onde nao ha
+    estrutura daria a quem cura a impressao de que o PDF foi entendido.
+    """
+    if not texto or not texto.strip():
+        return []
+
+    secoes = detectar_secoes(texto)
+    if not secoes:
+        return [Bloco(ordem=0, nivel=0, titulo="", conteudo=texto.strip())]
+
+    linhas = texto.splitlines()
+    blocos: list[Bloco] = []
+
+    cabecalho = "\n".join(linhas[: secoes[0].linha]).strip()
+    if cabecalho:
+        blocos.append(Bloco(ordem=0, nivel=0, titulo="", conteudo=cabecalho))
+
+    for posicao, secao in enumerate(secoes):
+        fim = secoes[posicao + 1].linha if posicao + 1 < len(secoes) else len(linhas)
+        corpo = "\n".join(linhas[secao.linha + 1 : fim]).strip()
+        conteudo = f"{secao.inicio}\n{corpo}".strip() if secao.inicio else corpo
+        titulo, nivel = secao.titulo, secao.nivel
+        # Secao que so contem subsecoes nao entra: seria uma caixa de marcar
+        # que nao leva trecho nenhum ao indice. A hierarquia continua legivel
+        # pela propria numeracao dos filhos ("2.2.1").
+        if not conteudo:
+            continue
+        blocos.append(Bloco(ordem=len(blocos), nivel=nivel, titulo=titulo, conteudo=conteudo))
+
+    return blocos
+
+
+def dividir_em_blocos(markdown: str, *, e_markdown: bool = True) -> list[Bloco]:
+    """Quebra o texto convertido em blocos, preservando a ordem do documento.
+
+    `e_markdown=False` para o que veio do extrator local, e a distincao nao e
+    cosmetica. Texto puro nao tem cabecalho ATX, mas pode conter uma linha
+    comecando por `#` — num artigo real da Springer o simbolo (c) foi decodificado
+    como `#`, e a linha de copyright virou "titulo", partindo o documento ali e
+    sendo eleita titulo da obra. O texto parecia estruturado sem estar, que e o
+    modo de falhar mais caro que existe nesta tela.
 
     O texto antes do primeiro titulo vira um bloco sem titulo — e onde costuma
     ficar o cabecalho do artigo, com autores e filiacao.
     """
+    if not e_markdown:
+        return dividir_texto_puro(markdown)
+
     if not markdown or not markdown.strip():
         return []
 
@@ -210,7 +470,10 @@ def preparar_blocos(document) -> list[Bloco]:
     cliente = get_embedding_client()
     limite = settings.EMBEDDING_MAX_TOKENS
 
-    blocos = dividir_em_blocos(document.markdown_full or "")
+    # Só o Docling exporta Markdown. O extrator local devolve texto puro, e
+    # interpretá-lo como Markdown inventa estrutura a partir de acidentes de
+    # decodificação.
+    blocos = dividir_em_blocos(document.markdown_full or "", e_markdown=document.texto_e_markdown)
     for bloco in blocos:
         prefixo = prefixo_de_contexto(document.title or "", bloco.titulo)
         for texto in dividir_em_paragrafos(bloco.conteudo):

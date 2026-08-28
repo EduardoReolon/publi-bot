@@ -259,6 +259,18 @@ class Document(models.Model):
         }
 
     @property
+    def texto_e_markdown(self) -> bool:
+        """Se o texto guardado tem marcacao, ou e texto corrido.
+
+        Pergunta diferente de `extracao_e_confiavel`, ainda que as respostas
+        coincidam hoje: aquela e sobre qualidade, esta e sobre formato. O
+        extrator local devolve texto puro, e interpreta-lo como Markdown faz
+        qualquer linha iniciada por `#` virar titulo de secao — inclusive o
+        simbolo (c) quando o PDF o decodifica assim.
+        """
+        return self.extraction_method != self.ExtractionMethod.PYPDF
+
+    @property
     def nome_do_arquivo(self) -> str:
         """So o nome, sem o caminho `documents/2026/08/` do upload_to."""
         import os

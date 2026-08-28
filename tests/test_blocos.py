@@ -380,3 +380,149 @@ def test_licenca_que_permite_guardar_nao_mostra_o_aviso(documento, client):
     ).content.decode()
 
     assert "apagar o texto integral" not in corpo
+
+
+# ---------------------------------------------------------------------------
+# Texto sem analise de layout
+# ---------------------------------------------------------------------------
+def test_texto_puro_nao_e_lido_como_markdown():
+    """O caso que motivou a separacao, tirado de um artigo real da Springer.
+
+    O pypdf decodificou o simbolo de copyright como `#`, e a linha de direitos
+    autorais virou titulo de secao: o documento foi partido ali e o nome da
+    editora foi eleito titulo da obra. Nada disso levantou erro — o texto
+    parecia estruturado sem estar.
+    """
+    texto = (
+        "Fail-safe and safe-to-fail adaptation\n"
+        "Yeowon Kim & Daniel A. Eisenberg\n"
+        "# Springer Science+Business Media B.V . 2017\n"
+        "Abstract As climate change affects precipitation patterns, urban\n"
+        "infrastructure may become more vulnerable to flooding.\n"
+    )
+
+    como_markdown = dividir_em_blocos(texto)
+    assert any("Springer" in b.titulo for b in como_markdown), "o defeito antigo sumiu do teste"
+
+    blocos = dividir_em_blocos(texto, e_markdown=False)
+    assert not any("Springer" in b.titulo for b in blocos)
+
+
+def test_secoes_numeradas_saem_do_texto_corrido():
+    texto = (
+        "Titulo do artigo\n"
+        "Autor Um & Autor Dois\n"
+        "1 Introduction\n"
+        "As cidades crescem e a infraestrutura envelhece junto com elas, o que\n"
+        "muda o risco de alagamento em toda a malha viaria da regiao estudada.\n"
+        "1.1 Urban growth\n"
+        "A populacao urbana dobrou no periodo analisado, segundo os dados do\n"
+        "censo, e a area impermeavel acompanhou esse crescimento de perto.\n"
+        "2 Methodology\n"
+        "Foram simulados eventos de precipitacao com o modelo hidrologico, para\n"
+        "cada um dos cenarios climaticos considerados neste trabalho.\n"
+    )
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert "1.1 Urban growth" in titulos
+    assert "2 Methodology" in titulos
+
+
+def test_cabecalho_de_pagina_nao_vira_secao():
+    """ "400 Climatic Change (2017) 145:397-412" tem a forma de uma secao: linha
+    curta comecando por numero. O que a denuncia e repetir em toda pagina."""
+    corpo = (
+        "Texto corrido da secao, com tamanho suficiente para nao ser confundido\n"
+        "com um titulo solto de tabela ou legenda de figura qualquer.\n"
+    )
+    texto = "Titulo\n1 Introduction\n" + corpo
+    for _ in range(5):
+        texto += "400 Climatic Change (2017) 145:397-412\n" + corpo
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert titulos == ["", "1 Introduction"]
+
+
+def test_afiliacao_de_autor_nao_vira_secao():
+    """ "1 School of Sustainability, Arizona State University, Tempe, AZ, USA"
+    comeca com 1 e e curta. Virgula em serie e o que a separa de um titulo."""
+    texto = (
+        "Titulo do artigo\n"
+        "1 School of Sustainability, Arizona State University, Tempe, AZ, USA\n"
+        "2 Civil Engineering, Arizona State University, Tempe, AZ, USA\n"
+        "1 Introduction\n"
+        "O texto da introducao vem aqui, com comprimento suficiente para passar\n"
+        "pela checagem de prosa que separa secao de celula de tabela.\n"
+    )
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert "1 Introduction" in titulos
+    assert not any("School of Sustainability" in t for t in titulos)
+
+
+def test_celula_de_tabela_nao_vira_secao():
+    """ "5 Discouraging" e "5 Conclusion" tem a mesma forma. So o que vem depois
+    as distingue: uma e seguida de fragmento curto, a outra de paragrafo."""
+    texto = (
+        "Titulo\n"
+        "1 Adaptation strategy decision-making\n"
+        "A combinacao de revisao de literatura e avaliacao de vulnerabilidade\n"
+        "mostra como as recomendacoes mudam conforme a perspectiva adotada.\n"
+        "2 Discouraging\n"
+        "subsidence\n"
+        "RWIS Discouraging\n"
+        "subsidence\n"
+        "2 Conclusion\n"
+        "Dada a vulnerabilidade especifica de cada infraestrutura, e possivel\n"
+        "priorizar recomendacoes espacialmente explicitas para a cidade toda.\n"
+    )
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert "2 Conclusion" in titulos
+    assert "2 Discouraging" not in titulos
+
+
+def test_abstract_sai_do_cabecalho():
+    """O resumo e o trecho de maior valor do artigo e vem colado ao rotulo, na
+    mesma linha. Sem separa-lo ele fica no meio de autores e filiacao."""
+    texto = (
+        "Titulo do artigo sobre alagamento urbano\n"
+        "Autor Um & Autor Dois\n"
+        "Abstract As mudancas climaticas afetam os padroes de precipitacao e a\n"
+        "infraestrutura urbana pode ficar mais vulneravel a alagamentos.\n"
+        "1 Introduction\n"
+        "As cidades crescem e a infraestrutura envelhece junto com elas, o que\n"
+        "muda o risco de alagamento em toda a malha viaria estudada.\n"
+    )
+
+    blocos = {b.titulo: b.conteudo for b in dividir_em_blocos(texto, e_markdown=False)}
+    assert "Abstract" in blocos
+    assert blocos["Abstract"].startswith("As mudancas climaticas")
+    assert "Autor Um" not in blocos["Abstract"]
+
+
+def test_referencias_ficam_num_bloco_proprio():
+    """Sao o maior bloco do artigo e o de menor valor para o indice. Juntas na
+    conclusao, quem cura marca as duas de uma vez."""
+    texto = (
+        "Titulo\n"
+        "1 Introduction\n"
+        "O texto da introducao vem aqui com comprimento suficiente para passar\n"
+        "pela checagem de prosa e ser reconhecido como secao de verdade.\n"
+        "References\n"
+        "Ahern J (2011) From fail-safe to safe-to-fail. Landsc Urban Plan\n"
+        "IPCC (2014) Climate change 2014: impacts, adaptation and vulnerability\n"
+    )
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert "References" in titulos
+
+
+def test_sem_secao_reconhecivel_vira_um_bloco_so():
+    """Nao inventar divisao onde nao ha estrutura: um bloco disforme e a
+    verdade sobre o documento, e quem cura precisa ver isso."""
+    texto = "Um paragrafo qualquer.\n\nOutro paragrafo qualquer, tambem sem numeracao."
+
+    blocos = dividir_em_blocos(texto, e_markdown=False)
+    assert len(blocos) == 1
+    assert blocos[0].titulo == ""

@@ -37,16 +37,30 @@
     <div class="aviso ruim">
       <strong>{% translate "Texto extraido sem analise de layout." %}</strong>
       {% blocktranslate trimmed %}
-        Este PDF foi lido pelo extrator local, que devolve a camada de texto do
-        arquivo sem interpretar a estrutura da pagina. Ele nao distingue coluna,
-        cabecalho, rodape, legenda de figura nem tabela, e a ordem de leitura nao
-        e garantida. E por isso que abaixo aparece um bloco unico, em vez das
-        secoes do artigo.
+        Nenhuma conexao de conversao (Docling) esta cadastrada, entao este PDF
+        foi lido pelo extrator local, que devolve a camada de texto do arquivo
+        sem interpretar a estrutura da pagina. Ele nao distingue coluna,
+        cabecalho, rodape, legenda de figura nem tabela, e a ordem de leitura
+        nao e garantida.
       {% endblocktranslate %}
-      <form method="post" action="{% url 'knowledge:reprocessar' documento.pk %}" style="margin-top:.6rem">
-        {% csrf_token %}
-        <button type="submit" class="botao secundario">{% translate "Converter de novo" %}</button>
-      </form>
+      {% blocktranslate trimmed %}
+        As secoes abaixo foram deduzidas da numeracao do proprio texto
+        ("1 Introducao", "2.1 ..."), que e o unico sinal de estrutura que
+        sobrevive a esse caminho. Confira o conteudo antes de marcar: palavras
+        podem chegar emendadas ou com aspas trocadas por simbolos.
+      {% endblocktranslate %}
+      <div class="acoes">
+        <form method="post" action="{% url 'knowledge:reprocessar' documento.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="botao secundario">{% translate "Converter de novo" %}</button>
+        </form>
+        <span class="pre-visualizacao">
+          {% blocktranslate trimmed %}
+            Converter de novo so muda o resultado depois que o worker de
+            conversao existir; sem ele, o caminho e o mesmo.
+          {% endblocktranslate %}
+        </span>
+      </div>
     </div>
   {% endif %}
 

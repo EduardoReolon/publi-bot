@@ -27,6 +27,9 @@ logger = logging.getLogger("publibot.knowledge")
 # Um ano de publicacao plausivel. Sem a faixa, "Figura 1988x2" vira ano.
 PADRAO_DE_ANO = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
 
+# Digito de filiacao colado ao nome: "Mikhail V . Chester2", "Yeowon Kim1".
+PADRAO_DE_FILIACAO = re.compile(r"\s*\d+\s*$")
+
 
 def passo_converter(job: GenerationJob) -> dict:
     """Converte o arquivo em Markdown e pre-preenche o que der.
@@ -56,7 +59,11 @@ def passo_converter(job: GenerationJob) -> dict:
         )
         raise
 
-    sugestoes = sugerir_metadados(resultado.markdown)
+    sugestoes = sugerir_metadados(
+        resultado.markdown,
+        metadados_do_arquivo=resultado.metadados,
+        e_markdown=resultado.metodo != Document.ExtractionMethod.PYPDF,
+    )
 
     document.markdown_full = resultado.markdown
     document.extraction_method = resultado.metodo
@@ -94,40 +101,96 @@ def passo_converter(job: GenerationJob) -> dict:
     }
 
 
-def sugerir_metadados(markdown: str) -> dict:
-    """Le o cabecalho do Markdown e propoe titulo, autores, ano e DOI.
+def _titulo_do_arquivo(metadados: dict) -> str:
+    """O titulo que o proprio PDF declara, quando serve.
 
-    Heuristica simples e assumida como tal: o primeiro cabecalho `#` ou a
-    primeira linha longa e o titulo; a linha seguinte com virgulas e a lista de
-    autores. `campos_encontrados` diz a tela de curadoria o quanto insistir na
-    conferencia.
+    Muitos PDFs trazem aqui o nome do arquivo ou o nome do programa que gerou
+    o documento; por isso a checagem de tamanho e a recusa de algo que pareca
+    nome de arquivo.
     """
+    bruto = (metadados.get("/Title") or "").strip()
+    if not 10 <= len(bruto) <= 500:
+        return ""
+    if bruto.lower().endswith((".pdf", ".doc", ".docx", ".tex", ".indd")):
+        return ""
+    return bruto
+
+
+def _autores_do_texto(cabecalho: list[str], titulo: str) -> str:
+    """A linha de autores logo abaixo do titulo.
+
+    Separa por `&` alem de virgula porque e assim que varias revistas listam
+    (`Yeowon Kim1 & Daniel A. Eisenberg 2 &`), e o digito de filiacao colado ao
+    sobrenome sai fora — ele iria para o texto-ancora do link publicado.
+    """
+    if not titulo:
+        return ""
+    try:
+        inicio = next(i for i, linha in enumerate(cabecalho) if titulo[:40] in linha)
+    except StopIteration:
+        inicio = 0
+
+    janela = cabecalho[inicio + 1 : inicio + 8]
+    for posicao, linha in enumerate(janela):
+        if linha.startswith("#") or len(linha) >= 300:
+            continue
+        separador = "&" if "&" in linha else ("," if "," in linha else "")
+        if not separador:
+            continue
+
+        # A lista de autores quebra em varias linhas, e cada uma termina no
+        # proprio separador ("... Eisenberg 2 &"). Ler so a primeira linha dava
+        # dois nomes de um artigo com seis — e "A e B" no lugar de "A et al.",
+        # que e uma atribuicao de autoria errada no site do cliente.
+        completa = linha
+        for continuacao in janela[posicao + 1 :]:
+            if not completa.rstrip().endswith(separador):
+                break
+            completa = f"{completa} {continuacao}"
+
+        nomes = [PADRAO_DE_FILIACAO.sub("", p).strip() for p in completa.split(separador)]
+        nomes = [n for n in nomes if len(n) > 2]
+        if nomes:
+            return formatar_autores(nomes)
+    return ""
+
+
+def sugerir_metadados(
+    markdown: str, *, metadados_do_arquivo: dict | None = None, e_markdown: bool = True
+) -> dict:
+    """Propoe titulo, autores, ano e DOI para a tela de curadoria conferir.
+
+    Duas fontes, nesta ordem. Primeiro o que o **arquivo declara** — o
+    dicionario de Info do PDF, gravado pelo editor. Depois a heuristica sobre o
+    texto, que e adivinhacao e esta assumida como tal.
+
+    `e_markdown` importa: so o Docling exporta cabecalho `#`. Procurar `#` em
+    texto puro elegeu, num artigo real, a linha de copyright como titulo da
+    obra — o simbolo (c) tinha sido decodificado como `#`.
+    """
+    metadados_do_arquivo = metadados_do_arquivo or {}
     linhas = [linha.strip() for linha in markdown.splitlines()]
     cabecalho = [linha for linha in linhas[:60] if linha]
 
-    titulo = ""
-    for linha in cabecalho:
-        if linha.startswith("#"):
-            titulo = linha.lstrip("#").strip()
-            break
+    titulo = _titulo_do_arquivo(metadados_do_arquivo)
+    if not titulo and e_markdown:
+        for linha in cabecalho:
+            if linha.startswith("#"):
+                titulo = linha.lstrip("#").strip()
+                break
     if not titulo:
         for linha in cabecalho:
             if 20 <= len(linha) <= 300:
                 titulo = linha
                 break
 
-    autores = ""
-    if titulo:
-        # A linha de autores costuma ser a primeira com virgulas logo abaixo do
-        # titulo. Procurar no documento inteiro pegaria qualquer enumeracao.
-        try:
-            inicio = next(i for i, linha in enumerate(cabecalho) if titulo in linha)
-        except StopIteration:
-            inicio = 0
-        for linha in cabecalho[inicio + 1 : inicio + 6]:
-            if "," in linha and len(linha) < 300 and not linha.startswith("#"):
-                autores = formatar_autores([p.strip() for p in linha.split(",") if p.strip()])
-                break
+    autores = (metadados_do_arquivo.get("/Author") or "").strip()
+    do_texto = _autores_do_texto(cabecalho, titulo)
+    # O `/Author` do PDF costuma trazer so o primeiro nome da lista. Quando o
+    # texto rende mais nomes, ele ganha: e a lista completa que sustenta o
+    # "et al." da citacao.
+    if do_texto and (not autores or "et al." in do_texto or " e " in do_texto):
+        autores = do_texto
 
     ano = None
     achados = PADRAO_DE_ANO.findall("\n".join(cabecalho))
@@ -137,6 +200,10 @@ def sugerir_metadados(markdown: str) -> dict:
         ano = max(int(a) for a in achados)
 
     doi = extrair_doi(markdown[:5000]) or ""
+    if not doi:
+        # Varias editoras gravam o DOI no /Subject ("Climatic Change,
+        # doi:10.1007/s10584-017-2090-1").
+        doi = extrair_doi(" ".join(metadados_do_arquivo.values())) or ""
 
     return {
         "title": titulo[:500],
