@@ -90,7 +90,6 @@ def enviar_documento(request: HttpRequest) -> HttpResponse:
         arquivo=form.cleaned_data["arquivo"],
         category=form.cleaned_data["category"],
         uploaded_by=request.user,
-        title=form.cleaned_data["title"],
     )
 
     if resultado.ja_existia:
@@ -109,7 +108,10 @@ def enviar_documento(request: HttpRequest) -> HttpResponse:
     iniciar_ingestao(resultado.document)
     messages.success(
         request,
-        _("Documento recebido. A conversao roda em segundo plano e a lista avisa quando terminar."),
+        _(
+            "Documento recebido. Titulo, autores, ano e DOI serao lidos do "
+            "arquivo; confira na curadoria quando a conversao terminar."
+        ),
     )
     return redirect("knowledge:documentos")
 

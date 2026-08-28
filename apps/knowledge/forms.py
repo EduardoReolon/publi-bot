@@ -22,11 +22,10 @@ class EnvioDeDocumento(forms.Form):
         label=_("Categoria"),
         empty_label=None,
     )
-    title = forms.CharField(
-        label=_("Titulo"),
-        required=False,
-        help_text=_("Opcional: o sistema tenta ler do proprio documento."),
-    )
+    # Nao ha campo de titulo aqui de proposito. O titulo sai do proprio arquivo
+    # — do `/Title` do PDF ou das primeiras linhas do texto — e a curadoria
+    # confirma ou corrige. Pedi-lo no envio era trabalho duplicado: a pessoa
+    # digitava o que o documento ja dizia.
     source_url = forms.URLField(
         label=_("URL de origem"),
         required=False,

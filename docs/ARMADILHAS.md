@@ -403,6 +403,18 @@ proprio separador (`... Eisenberg 2 &`). Ler so a primeira dava dois nomes de um
 artigo com seis — e `A e B` no lugar de `A et al.`, que e atribuicao de autoria
 errada no site do cliente.
 
+### "Campo preenchido" nao e o mesmo que "conferido por alguem"
+
+O passo de conversao so preenchia campo vazio, para nao passar por cima de
+correcao humana. A intencao estava certa, o criterio nao: uma sugestao **errada**
+da extracao anterior tambem deixava o campo preenchido, e portanto protegido.
+Reconverter — que e exatamente o que se faz quando o resultado anterior estava
+errado — mantinha no lugar o valor que motivou a reconversao. Num artigo real os
+"autores" eram a primeira linha do resumo, e nenhuma reconversao consertava.
+
+Quem decide e `metadata_confidence`: `MANUAL` e intocavel, `AUTO` cede para a
+sugestao nova.
+
 ### A suite precisa do broker no ar
 
 `test_redespachar_retoma_do_passo_em_que_parou` chama uma view que faz

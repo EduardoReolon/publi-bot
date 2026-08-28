@@ -30,6 +30,10 @@ PADRAO_DE_ANO = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
 # Digito de filiacao colado ao nome: "Mikhail V . Chester2", "Yeowon Kim1".
 PADRAO_DE_FILIACAO = re.compile(r"\s*\d+\s*$")
 
+# O mesmo marcador visto no meio da linha, que denuncia uma lista de autores:
+# "Yeowon Kim1 & Daniel A. Eisenberg 2 &".
+PADRAO_DE_AUTOR_COM_FILIACAO = re.compile(r"[a-zA-Z]\s?\d\b")
+
 
 def passo_converter(job: GenerationJob) -> dict:
     """Converte o arquivo em Markdown e pre-preenche o que der.
@@ -69,22 +73,35 @@ def passo_converter(job: GenerationJob) -> dict:
     document.extraction_method = resultado.metodo
     document.status = Document.Status.PENDING_CURATION
     document.failure_reason = ""
-    # So preenche o que esta vazio: se alguem ja corrigiu a mao, a sugestao
-    # automatica nao pode sobrescrever.
-    if not document.title:
-        document.title = sugestoes["title"]
-    if not document.authors:
-        document.authors = sugestoes["authors"]
-    if not document.year:
-        document.year = sugestoes["year"]
-    if not document.doi and sugestoes["doi"]:
+
+    # O que uma PESSOA confirmou e intocavel. O que a extracao anterior sugeriu,
+    # nao: quem reconverte esta justamente dizendo que o resultado anterior
+    # estava errado, e proteger a sugestao velha deixaria no lugar o valor que
+    # motivou a reconversao. Foi o que aconteceu com um artigo real cujos
+    # "autores" eram a primeira linha do resumo — reconverter nao consertava.
+    conferido = document.metadata_confidence == Document.MetadataConfidence.MANUAL
+
+    def _manter(valor) -> bool:
+        return bool(valor) and conferido
+
+    if not _manter(document.title):
+        document.title = sugestoes["title"] or document.title
+    if not _manter(document.authors):
+        document.authors = sugestoes["authors"] or document.authors
+    if not _manter(document.year):
+        document.year = sugestoes["year"] or document.year
+    if not _manter(document.doi) and sugestoes["doi"]:
         # O DOI e unico no tenant; um segundo documento com o mesmo DOI
         # quebraria a gravacao inteira por causa de uma sugestao.
         if not Document.objects.filter(doi=sugestoes["doi"]).exclude(pk=document.pk).exists():
             document.doi = sugestoes["doi"]
-    # AUTO e a procedencia, nao um julgamento de qualidade: vira MANUAL
-    # quando a curadoria confirmar os campos.
-    document.metadata_confidence = Document.MetadataConfidence.AUTO
+
+    # AUTO e a procedencia, nao um julgamento de qualidade: vira MANUAL quando a
+    # curadoria confirmar os campos. Um documento ja conferido continua
+    # conferido — o texto foi reconvertido, a decisao humana sobre a
+    # identificacao da obra nao.
+    if not conferido:
+        document.metadata_confidence = Document.MetadataConfidence.AUTO
     document.save()
 
     logger.info(
@@ -114,6 +131,47 @@ def _titulo_do_arquivo(metadados: dict) -> str:
     if bruto.lower().endswith((".pdf", ".doc", ".docx", ".tex", ".indd")):
         return ""
     return bruto
+
+
+def _parece_linha_de_autores(linha: str) -> bool:
+    """Onde o titulo termina.
+
+    Nome de autor vem com marcador de filiacao (`Chester2`), separado por `&`
+    ou virgula, ou precedido de `*`. Titulo de artigo nao tem nada disso — e
+    e por isso que esta funcao serve de fronteira entre os dois.
+    """
+    if PADRAO_DE_AUTOR_COM_FILIACAO.search(linha):
+        return True
+    if linha.startswith(("*", "†", "‡")):
+        return True
+    return linha.count("&") >= 1
+
+
+def _titulo_do_texto(cabecalho: list[str]) -> str:
+    """As primeiras linhas ate onde comecam os autores.
+
+    Pegar so a primeira linha devolvia titulo cortado ao meio — "Fail-safe and
+    safe-to-fail adaptation: decision-making", sem "for urban flooding under
+    climate change". Um titulo truncado vira o texto do link publicado e o
+    prefixo de contexto de todo trecho vetorizado do documento.
+    """
+    partes: list[str] = []
+    for linha in cabecalho[:8]:
+        if _parece_linha_de_autores(linha) or linha.startswith("#"):
+            break
+        if not 3 <= len(linha) <= 300:
+            break
+        # Linha que termina em ponto e frase, nao continuacao de titulo. Parar
+        # ANTES de junta-la: sem isso, num documento em que o titulo nao e
+        # seguido de autores, o primeiro paragrafo entrava no titulo.
+        if partes and linha.endswith((".", "?", "!")):
+            break
+        partes.append(linha)
+        if linha.endswith((".", "?", "!")) or len(" ".join(partes)) > 300:
+            break
+
+    titulo = " ".join(partes).strip()
+    return titulo if len(titulo) >= 10 else ""
 
 
 def _autores_do_texto(cabecalho: list[str], titulo: str) -> str:
@@ -179,10 +237,7 @@ def sugerir_metadados(
                 titulo = linha.lstrip("#").strip()
                 break
     if not titulo:
-        for linha in cabecalho:
-            if 20 <= len(linha) <= 300:
-                titulo = linha
-                break
+        titulo = _titulo_do_texto(cabecalho)
 
     autores = (metadados_do_arquivo.get("/Author") or "").strip()
     do_texto = _autores_do_texto(cabecalho, titulo)

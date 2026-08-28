@@ -250,10 +250,19 @@ def test_fluxo_para_em_aguardando_curadoria(tenant_com_categoria):
 
 
 @pytest.mark.django_db
-def test_metadados_ja_preenchidos_nao_sao_sobrescritos(tenant_com_categoria):
-    """Correcao humana vence heuristica, sempre."""
+def test_metadados_conferidos_nao_sao_sobrescritos(tenant_com_categoria):
+    """Correcao humana vence heuristica, sempre.
+
+    O que marca a decisao humana e `metadata_confidence`, e nao o campo estar
+    preenchido: usar "nao vazio" como proxy protegia tambem a sugestao errada
+    da extracao anterior, e era ela que reconverter precisava trocar.
+    """
     documento = _documento("estudo.md", MARKDOWN_DE_ARTIGO.encode())
-    Document.objects.filter(pk=documento.pk).update(title="Titulo conferido a mao", year=1999)
+    Document.objects.filter(pk=documento.pk).update(
+        title="Titulo conferido a mao",
+        year=1999,
+        metadata_confidence=Document.MetadataConfidence.MANUAL,
+    )
 
     job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
     avancar(str(job.pk))
@@ -261,6 +270,8 @@ def test_metadados_ja_preenchidos_nao_sao_sobrescritos(tenant_com_categoria):
     documento.refresh_from_db()
     assert documento.title == "Titulo conferido a mao"
     assert documento.year == 1999
+    # Reconverter troca o texto; nao rebaixa a decisao ja tomada sobre a obra.
+    assert documento.metadata_confidence == Document.MetadataConfidence.MANUAL
 
 
 @pytest.mark.django_db
@@ -453,3 +464,75 @@ def test_pdf_sem_dicionario_de_info_nao_quebra(tenant_com_categoria, monkeypatch
     documento.refresh_from_db()
     assert documento.status == Document.Status.PENDING_CURATION
     assert documento.title == "Um titulo qualquer de artigo"
+
+
+@pytest.mark.django_db
+def test_reconverter_corrige_metadados_ainda_nao_conferidos(tenant_com_categoria, monkeypatch):
+    """Quem reconverte esta dizendo que o resultado anterior estava errado.
+
+    Proteger a sugestao antiga por ela nao estar vazia deixava no lugar
+    exatamente o valor que motivou a reconversao — num artigo real, "autores"
+    era a primeira linha do resumo, e reconverter nao consertava.
+    """
+
+    class Pagina:
+        def extract_text(self):
+            return (
+                "Titulo verdadeiro do artigo cientifico\n"
+                "Ana Silva & Bruno Costa\n"
+                "Abstract Este resumo descreve o metodo aplicado no estudo.\n"
+            )
+
+    class LeitorFalso:
+        def __init__(self, *a, **k):
+            self.pages = [Pagina()]
+            self.metadata = {}
+
+    monkeypatch.setattr("pypdf.PdfReader", LeitorFalso)
+    documento = _documento("artigo.pdf", b"%PDF-1.4")
+    Document.objects.filter(pk=documento.pk).update(
+        title="Springer Science+Business Media B.V . 2017",
+        authors="Abstract Este resumo descreve o metodo",
+        metadata_confidence=Document.MetadataConfidence.AUTO,
+    )
+
+    job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
+    avancar(str(job.pk))
+
+    documento.refresh_from_db()
+    assert documento.title == "Titulo verdadeiro do artigo cientifico"
+    assert documento.authors == "Ana Silva e Bruno Costa"
+
+
+@pytest.mark.django_db
+def test_titulo_quebrado_em_varias_linhas_vem_inteiro(tenant_com_categoria, monkeypatch):
+    """O titulo de artigo quase sempre quebra. Pegar so a primeira linha dava
+    um titulo cortado ao meio — que vira o texto do link publicado e o prefixo
+    de contexto de todo trecho vetorizado."""
+
+    class Pagina:
+        def extract_text(self):
+            return (
+                "Fail-safe and safe-to-fail adaptation: decision-making\n"
+                "for urban flooding under climate change\n"
+                "Yeowon Kim1 & Daniel A. Eisenberg 2 &\n"
+                "Emily N. Bondank 2 & Mikhail V . Chester2 &\n"
+                "Abstract As climate change affects precipitation patterns.\n"
+            )
+
+    class LeitorFalso:
+        def __init__(self, *a, **k):
+            self.pages = [Pagina()]
+            self.metadata = {}  # sem /Title: e o caso dificil
+
+    monkeypatch.setattr("pypdf.PdfReader", LeitorFalso)
+    documento = _documento("artigo.pdf", b"%PDF-1.4")
+    job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
+    avancar(str(job.pk))
+
+    documento.refresh_from_db()
+    assert documento.title == (
+        "Fail-safe and safe-to-fail adaptation: decision-making "
+        "for urban flooding under climate change"
+    )
+    assert documento.authors == "Yeowon Kim et al."
