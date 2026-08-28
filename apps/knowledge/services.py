@@ -27,6 +27,13 @@ logger = logging.getLogger("publibot.knowledge")
 # Um DOI comeca sempre por "10." seguido do prefixo do registrante.
 PADRAO_DOI = re.compile(r"\b(10\.\d{4,9}/[-._;()/:a-zA-Z0-9]+)\b")
 
+# A extracao sem analise de layout troca a barra por variantes tipograficas e
+# as vezes deixa um espaco depois dela. Num artigo do JAWRA o DOI saiu como
+# "10.1111\u2044 j.1752-1688.2007.00027.x" e simplesmente nao era encontrado —
+# o documento ficava sem o unico identificador estavel que ele tem.
+BARRAS_EQUIVALENTES = str.maketrans({"\u2044": "/", "\u2215": "/", "\uff0f": "/"})
+PADRAO_DE_ESPACO_APOS_BARRA = re.compile(r"(?<=\b10\.\d{4})(/)\s+")
+
 
 def calcular_sha256(arquivo) -> str:
     """Hash do arquivo, lido em blocos.
@@ -62,8 +69,15 @@ def calcular_impressao_do_conteudo(titulo: str, autores: str, ano: int | None) -
 
 
 def extrair_doi(texto: str) -> str | None:
-    """Primeiro DOI encontrado no texto, se houver."""
-    achado = PADRAO_DOI.search(texto or "")
+    """Primeiro DOI encontrado no texto, se houver.
+
+    Normaliza antes de procurar: a barra pode ter virado uma variante
+    tipografica e pode haver espaco depois dela, e nos dois casos o DOI existe
+    no documento mas nao seria achado.
+    """
+    normalizado = (texto or "").translate(BARRAS_EQUIVALENTES)
+    normalizado = PADRAO_DE_ESPACO_APOS_BARRA.sub(r"\1", normalizado)
+    achado = PADRAO_DOI.search(normalizado)
     if not achado:
         return None
     # DOIs costumam vir grudados a pontuacao final da frase.

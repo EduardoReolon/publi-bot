@@ -97,11 +97,10 @@ class Document(models.Model):
         OWN = "own", _("Obra propria")
         UNKNOWN = "unknown", _("Desconhecido")
 
-    # Licencas que permitem guardar o Markdown completo. Para as demais,
-    # `markdown_full` e descartado apos a curadoria e so o Super Chunk fica.
-    LICENCAS_QUE_PERMITEM_TEXTO_INTEGRAL = frozenset(
-        {License.CC_BY, License.CC_BY_NC, License.OPEN_ACCESS, License.OWN}
-    )
+    # Licencas cujo texto integral e descartado ao concluir a curadoria. Quem
+    # decide e o `settings`, e a lista vem VAZIA por padrao: descartar e uma
+    # politica editorial de quem opera o sistema, nao uma regra do software.
+    # Ver LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL em core/settings/base.py.
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -279,8 +278,14 @@ class Document(models.Model):
 
     @property
     def pode_guardar_texto_integral(self) -> bool:
-        """Se o Markdown completo pode ser retido apos a curadoria."""
-        return self.license in self.LICENCAS_QUE_PERMITEM_TEXTO_INTEGRAL
+        """Se o Markdown completo fica guardado apos a curadoria.
+
+        Guardar e o padrao. Descartar so acontece para as licencas listadas em
+        `LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL`, que vem vazia: e uma decisao de
+        quem opera o acervo, e o efeito e irreversivel — sem o texto integral
+        nao ha como remarcar blocos sem reenviar o arquivo.
+        """
+        return self.license not in settings.LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL
 
 
 class SuperChunk(models.Model):

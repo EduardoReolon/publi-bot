@@ -524,3 +524,70 @@ def test_painel_separa_pendencia_de_defeito(ambiente):
 
     assert "Precisa de atencao" in corpo
     assert "Esperando voce" in corpo
+
+
+# ---------------------------------------------------------------------------
+# Excluir documento
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_exclusao_pede_confirmacao_antes(ambiente):
+    """GET nao apaga. Um link seguido de clique certo nao pode ser suficiente
+    para uma acao irreversivel."""
+    _, _, client = ambiente
+    documento = _documento_curado()
+
+    resposta = client.get(
+        reverse("knowledge:excluir", args=[documento.pk], urlconf="core.urls_tenants")
+    )
+
+    assert resposta.status_code == 200
+    assert Document.objects.filter(pk=documento.pk).exists()
+
+
+@pytest.mark.django_db
+def test_exclusao_leva_os_trechos_junto(ambiente):
+    """Deixar trecho orfao no indice faria a busca devolver conteudo de um
+    documento que nao existe mais — e a citacao apontaria para o vazio."""
+    _, _, client = ambiente
+    documento = _documento_curado()
+    assert SuperChunk.objects.filter(document=documento).exists()
+
+    client.post(reverse("knowledge:excluir", args=[documento.pk], urlconf="core.urls_tenants"))
+
+    assert not Document.objects.filter(pk=documento.pk).exists()
+    assert not SuperChunk.objects.filter(document_id=documento.pk).exists()
+
+
+@pytest.mark.django_db
+def test_exclusao_nao_quebra_artigo_publicado(ambiente):
+    """A citacao guarda titulo e URL copiados no momento em que foi feita.
+
+    Sem isso, limpar o acervo estragaria texto ja publicado — e ninguem
+    limparia o acervo.
+    """
+    from apps.content.models import ArticleCitation
+
+    _, _, client = ambiente
+    documento = _documento_curado()
+    trecho = SuperChunk.objects.filter(document=documento).first()
+    artigo = Article.objects.create(
+        title="Artigo publicado",
+        slug="artigo-publicado",
+        status=Article.Status.PUBLISHED,
+        body_markdown="corpo",
+    )
+    citacao = ArticleCitation.objects.create(
+        article=artigo,
+        super_chunk=trecho,
+        rank=1,
+        distance=0.1,
+        source_title="Estudo sobre o efeito",
+        source_url="https://revista.exemplo.org/estudo",
+    )
+
+    client.post(reverse("knowledge:excluir", args=[documento.pk], urlconf="core.urls_tenants"))
+
+    citacao.refresh_from_db()
+    assert citacao.super_chunk_id is None
+    assert citacao.source_title == "Estudo sobre o efeito"
+    assert citacao.source_url == "https://revista.exemplo.org/estudo"

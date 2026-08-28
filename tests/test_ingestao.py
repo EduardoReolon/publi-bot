@@ -536,3 +536,65 @@ def test_titulo_quebrado_em_varias_linhas_vem_inteiro(tenant_com_categoria, monk
         "for urban flooding under climate change"
     )
     assert documento.authors == "Yeowon Kim et al."
+
+
+@pytest.mark.django_db
+def test_titulo_de_producao_da_grafica_e_recusado(tenant_com_categoria, monkeypatch):
+    """O `/Title` do JAWRA era `jawr_027 346..358`: revista, artigo e faixa de
+    paginas. Tem tamanho plausivel e nao termina em `.pdf`, entao passava por
+    qualquer checagem de forma. O que o denuncia e nao ser feito de palavras."""
+
+    class Pagina:
+        def extract_text(self):
+            return (
+                "MULTI-CRITERIA DECISION SUPPORT SYSTEMS FOR FLOOD HAZARD\n"
+                "MITIGATION AND EMERGENCY RESPONSE IN URBAN WATERSHEDS1\n"
+                "Jason K. Levy, Jens Hartmann, Kevin W. Li, Yunbi An, and Ali Asgary2\n"
+                "ABSTRACT: Flood management problems are inherently complex.\n"
+            )
+
+    class LeitorFalso:
+        def __init__(self, *a, **k):
+            self.pages = [Pagina()]
+            self.metadata = {"/Title": "jawr_027 346..358"}
+
+    monkeypatch.setattr("pypdf.PdfReader", LeitorFalso)
+    documento = _documento("artigo.pdf", b"%PDF-1.4")
+    job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
+    avancar(str(job.pk))
+
+    documento.refresh_from_db()
+    assert documento.title == (
+        "MULTI-CRITERIA DECISION SUPPORT SYSTEMS FOR FLOOD HAZARD "
+        "MITIGATION AND EMERGENCY RESPONSE IN URBAN WATERSHEDS"
+    )
+    assert documento.authors == "Jason K. Levy et al."
+
+
+def test_titulo_em_versal_nao_e_confundido_com_autores():
+    """ "...URBAN WATERSHEDS1" traz o marcador da nota de rodape colado, que tem
+    a mesma forma do marcador de filiacao ("Chester2"). Antes disso cortar o
+    titulo na primeira linha, o que sobrava era metade do titulo."""
+    texto = (
+        "MULTI-CRITERIA DECISION SUPPORT SYSTEMS FOR FLOOD HAZARD\n"
+        "MITIGATION AND EMERGENCY RESPONSE IN URBAN WATERSHEDS1\n"
+        "Jason K. Levy, Jens Hartmann, and Ali Asgary2\n"
+    )
+
+    sugestoes = sugerir_metadados(texto, e_markdown=False)
+
+    assert sugestoes["title"].endswith("URBAN WATERSHEDS")
+    assert sugestoes["authors"] == "Jason K. Levy et al."
+
+
+def test_doi_com_barra_de_fracao_e_encontrado():
+    """A extracao sem layout troca `/` por variantes tipograficas e as vezes
+    deixa espaco depois. O DOI existe no documento e simplesmente nao era
+    achado — e ele e o unico identificador estavel que o artigo tem."""
+    texto = (
+        "Levy, Jason K., 2007. Multi-Criteria Decision Support Systems.\n"
+        "Water Resources Association(JAWRA) 43(2):346-358. "
+        "DOI: 10.1111\u2044 j.1752-1688.2007.00027.x\n"  # barra de fracao, como no PDF
+    )
+
+    assert sugerir_metadados(texto, e_markdown=False)["doi"] == "10.1111/j.1752-1688.2007.00027.x"

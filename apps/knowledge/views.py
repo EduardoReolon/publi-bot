@@ -217,6 +217,54 @@ def reprocessar(request: HttpRequest, pk) -> HttpResponse:
 
 
 @login_required
+def excluir_documento(request: HttpRequest, pk) -> HttpResponse:
+    """Tira o documento do acervo, com o arquivo e os trechos indexados.
+
+    Em duas etapas de proposito. O GET mostra o que sai junto — e o que NAO sai:
+    artigos ja publicados guardam titulo e URL da fonte copiados no momento da
+    citacao, entao o texto publicado nao fica com referencia quebrada.
+    """
+    documento = get_object_or_404(Document.objects.select_related("category"), pk=pk)
+
+    if request.method != "POST":
+        return render(
+            request,
+            "knowledge/excluir.html",
+            {
+                "aba": "documentos",
+                "documento": documento,
+                "trechos": documento.chunks.count(),
+                "citacoes": _citacoes_do_documento(documento),
+            },
+        )
+
+    titulo = documento.title or documento.nome_do_arquivo
+    arquivo = documento.original_file
+
+    documento.delete()
+    # O registro sai do banco por cascata; o arquivo no disco, nao. Deixa-lo
+    # para tras faria a media/ crescer com PDFs que nada mais referencia.
+    if arquivo:
+        arquivo.delete(save=False)
+
+    logger.info("Documento %s excluido por %s.", pk, request.user.pk)
+    messages.success(request, _("Documento %(titulo)s excluido do acervo.") % {"titulo": titulo})
+    return redirect("knowledge:documentos")
+
+
+def _citacoes_do_documento(documento) -> int:
+    """Quantas citacoes publicadas apontam para trechos deste documento."""
+    from apps.content.models import AnswerCitation, ArticleCitation
+
+    ids = list(documento.chunks.values_list("pk", flat=True))
+    if not ids:
+        return 0
+    return ArticleCitation.objects.filter(super_chunk_id__in=ids).count() + (
+        AnswerCitation.objects.filter(super_chunk_id__in=ids).count()
+    )
+
+
+@login_required
 def categorias(request: HttpRequest) -> HttpResponse:
     """Categorias do acervo — o agrupamento que orienta a curadoria."""
     if request.method == "POST":

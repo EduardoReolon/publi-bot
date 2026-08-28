@@ -438,6 +438,20 @@ EMBEDDING_LOCAL_FILES_ONLY = env.boolean("EMBEDDING_LOCAL_FILES_ONLY", False)
 # evita carregar 2 GB de modelo a cada execucao da suite.
 EMBEDDING_CLIENT = env.get("EMBEDDING_CLIENT", "apps.knowledge.embeddings.FastEmbedClient")
 
+# Licencas cujo texto integral e APAGADO ao concluir a curadoria. Vazia por
+# padrao: o sistema guarda tudo.
+#
+# O descarte existia embutido no codigo, com a justificativa de que o Brasil nao
+# tem fair use e a citacao de pequeno trecho (Art. 46 VIII da Lei 9.610) nao
+# cobre guardar a obra inteira. Continua sendo verdade e continua sendo uma
+# decisao de quem opera o acervo, nao do software — que nao tem como saber que
+# acordo existe com cada editora.
+#
+# O efeito e irreversivel: sem `markdown_full` nao ha como remarcar blocos sem
+# reenviar o arquivo. Valores possiveis sao os codigos de `Document.License`:
+# cc_by, cc_by_nc, open_access, proprietary, own, unknown.
+LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL = env.csv_list("LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL")
+
 RAG_TOP_K = env.integer("RAG_TOP_K", 3)
 
 # MEDIDO, nao herdado de recomendacao generica.

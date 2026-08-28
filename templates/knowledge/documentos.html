@@ -86,6 +86,9 @@
                     </button>
                   </form>
                 {% endif %}
+                <div class="pre-visualizacao" style="margin-top:.4rem">
+                  <a href="{% url 'knowledge:excluir' documento.pk %}">{% translate "Excluir" %}</a>
+                </div>
               </td>
             </tr>
           {% endfor %}

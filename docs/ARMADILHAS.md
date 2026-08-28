@@ -390,18 +390,65 @@ proprio titulo quebra: `2.1 ... and Phoenix case` / `study`. E, ao descer um
 nivel, nao se exige comecar em `.1` — se `2.1` for recusado por outro criterio,
 exigir isso derrubaria `2.2` tambem, e o erro se propagaria ate o fim.
 
+### Cada revista estrutura o artigo de um jeito
+
+Dois artigos reais, duas gramaticas diferentes, e o detector precisa das duas:
+
+| Revista | Como marca as secoes |
+|---|---|
+| Climatic Change (Springer) | numeradas: `1 Introduction`, `2.2.1 ...` |
+| JAWRA | versal sem numero: `INTRODUCTION`, `DATABASE COMPONENT` |
+
+Cada estilo traz o proprio impostor. No versal foi o cabecalho da revista, que
+sai da extracao **ora inteiro, ora partido**: `JAWRA 346 JOURNAL OF THE AMERICAN
+WATER RESOURCES ASSOCIATION` repete e cai na contagem, mas o pedaco `JOURNAL OF
+THE AMERICAN WATER RESOURCES ASSOCIATION` aparece uma vez so e virava secao —
+levando 41 mil caracteres do artigo junto. A regra e recusar candidato que seja
+trecho de uma linha frequente.
+
+Formula desmontada tambem sai em versal (`W11 W12 /C1/C1/C1 W1N`): o que a
+separa de um titulo e a proporcao de letras. E `1 C2,C 3 and C4. Outer-dependence
+in the` tem a forma de secao numerada; o que a denuncia e o fim de frase no
+meio.
+
+### A prosa se mede em palavras, nao em caracteres
+
+O primeiro criterio para "isto e seguido de texto corrido" era 60 caracteres na
+linha seguinte, calibrado num artigo de coluna unica. Revista de coluna dupla
+quebra a prosa em ~45 caracteres, e o criterio reprovava o corpo do texto junto
+com a celula de tabela — `INTRODUCTION` deixava de ser secao porque a linha
+abaixo dela tinha 41 caracteres. Contar palavras nao depende da largura da
+coluna.
+
 ### O `/Title` do PDF vale mais que qualquer heuristica
 
 O dicionario de Info do PDF traz `/Title`, `/Author` e frequentemente o DOI em
 `/Subject`. Foi gravado pelo editor, nao adivinhado a partir do layout, e por
-isso vem primeiro. Duas ressalvas: `/Author` costuma trazer so o primeiro nome
-da lista (por isso o texto ganha quando rende mais nomes), e `/Title` as vezes
-traz o nome do arquivo.
+isso vem primeiro. Tres ressalvas. `/Author` costuma trazer so o primeiro nome
+da lista, por isso o texto ganha quando rende mais nomes. `/Title` as vezes traz
+o nome do arquivo — ou o codigo de producao da grafica: num artigo do JAWRA veio
+`jawr_027 346..358`, que tem tamanho plausivel e nao termina em `.pdf`, entao
+passava por qualquer checagem de forma; o que o denuncia e nao ser feito de
+palavras. E o DOI pode vir com barra de fracao (`10.1111\u2044 j.1752-...`), que
+nao e a barra normal — sem normalizar, o unico identificador estavel do artigo
+se perdia.
 
 A lista de autores tambem quebra em varias linhas, cada uma terminando no
 proprio separador (`... Eisenberg 2 &`). Ler so a primeira dava dois nomes de um
 artigo com seis — e `A e B` no lugar de `A et al.`, que e atribuicao de autoria
 errada no site do cliente.
+
+### Descartar o texto integral virou politica, e nao regra do codigo
+
+O sistema apagava `markdown_full` de licenca proprietaria ou desconhecida ao
+concluir a curadoria. A justificativa continua valendo — o Brasil nao tem fair
+use, a Lei 9.610/98 traz lista fechada no Art. 46 e a citacao de pequeno trecho
+do inciso VIII nao cobre guardar a obra inteira — mas a decisao e de quem opera
+o acervo: o software nao tem como saber que acordo existe com cada editora.
+
+Hoje quem manda e `LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL`, **vazia por padrao**.
+Listar uma licenca reativa o descarte, que e irreversivel: sem o texto integral
+nao ha como remarcar blocos sem reenviar o arquivo.
 
 ### "Campo preenchido" nao e o mesmo que "conferido por alguem"
 

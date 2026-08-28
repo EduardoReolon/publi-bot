@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Excluir documento" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Excluir documento" %}</h1>
+  <p class="sub">{{ documento.title|default:documento.nome_do_arquivo }}</p>
+
+  <div class="aviso ruim">
+    <strong>{% translate "Isto nao tem volta." %}</strong>
+    {% blocktranslate trimmed with total=trechos %}
+      Saem junto o arquivo enviado, o texto convertido e {{ total }} trecho(s) do
+      indice de busca. Para voltar atras seria preciso reenviar o PDF e curar de
+      novo.
+    {% endblocktranslate %}
+  </div>
+
+  {% if citacoes %}
+    {% comment %}
+      A citacao guarda titulo e URL copiados no momento em que foi feita, e a
+      FK para o trecho e SET_NULL. Dizer isso evita que alguem deixe de limpar
+      o acervo com medo de quebrar um artigo ja publicado.
+    {% endcomment %}
+    <div class="aviso">
+      {% blocktranslate trimmed with total=citacoes %}
+        {{ total }} citacao(oes) publicada(s) apontam para trechos deste
+        documento. Elas continuam de pe: titulo e URL da fonte foram copiados no
+        momento da citacao, entao nenhum texto ja publicado fica com referencia
+        quebrada.
+      {% endblocktranslate %}
+    </div>
+  {% endif %}
+
+  <ul class="lista">
+    <li>
+      <strong>{% translate "Autores" %}</strong>
+      <div class="pre-visualizacao">{{ documento.authors|default:"—" }}</div>
+    </li>
+    <li>
+      <strong>{% translate "Situacao" %}</strong>
+      <div class="pre-visualizacao">{{ documento.get_status_display }}</div>
+    </li>
+    <li>
+      <strong>{% translate "Arquivo" %}</strong>
+      <div class="pre-visualizacao">{{ documento.nome_do_arquivo }}</div>
+    </li>
+  </ul>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="acoes">
+      <button type="submit" class="botao perigo">{% translate "Excluir mesmo assim" %}</button>
+      <a class="botao secundario" href="{% url 'knowledge:curar' documento.pk %}">
+        {% translate "Cancelar" %}
+      </a>
+    </div>
+  </form>
+{% endblock %}

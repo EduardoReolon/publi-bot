@@ -205,18 +205,18 @@
 
     {% if blocos and not documento.pode_guardar_texto_integral %}
       {% comment %}
-        A regra de retencao apaga o texto integral ao concluir, e a licenca
-        padrao e "Desconhecido" — entao o caminho mais provavel leva a uma
-        perda irreversivel. Avisar antes do clique e o minimo: depois nao ha
-        como voltar para ajustar os blocos sem reenviar o arquivo.
+        So aparece quando alguem configurou o descarte para esta licenca em
+        LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL. Por padrao a lista e vazia e este
+        aviso nunca aparece — mas quando aparece precisa aparecer antes do
+        clique, porque depois nao ha como remarcar blocos sem reenviar o arquivo.
       {% endcomment %}
       <div class="aviso ruim">
         <strong>{% translate "Concluir vai apagar o texto integral." %}</strong>
         {% blocktranslate trimmed %}
-          A licenca escolhida nao permite guardar o documento inteiro, entao ao
-          concluir so os trechos marcados sobrevivem — e nao havera como
-          remarcar blocos sem reenviar o arquivo. Se a obra for de acesso
-          aberto ou sua, ajuste a licenca acima antes.
+          Esta instalacao esta configurada para descartar o documento inteiro nesta
+          licenca, entao ao concluir so os trechos marcados sobrevivem — e nao
+          havera como remarcar blocos sem reenviar o arquivo. Mude a licenca acima,
+          ou tire-a de LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL.
         {% endblocktranslate %}
       </div>
     {% endif %}
@@ -230,4 +230,14 @@
       </button>
     </div>
   </form>
+
+  {% comment %}
+    Fora do formulario de curadoria, e como link: dentro dele viraria mais um
+    botao de submit ao lado de "Concluir", e o clique errado seria irreversivel.
+  {% endcomment %}
+  <p class="pre-visualizacao" style="margin-top:2rem">
+    <a href="{% url 'knowledge:excluir' documento.pk %}">
+      {% translate "Excluir este documento do acervo" %}
+    </a>
+  </p>
 {% endblock %}

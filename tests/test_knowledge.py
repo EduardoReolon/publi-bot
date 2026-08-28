@@ -221,19 +221,23 @@ def test_salvar_o_mesmo_tipo_duas_vezes_atualiza_em_vez_de_duplicar(categoria):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "licenca,mantem_texto",
+    "licenca",
     [
-        (Document.License.OPEN_ACCESS, True),
-        (Document.License.CC_BY, True),
-        (Document.License.OWN, True),
-        (Document.License.PROPRIETARY, False),
-        (Document.License.UNKNOWN, False),
+        Document.License.OPEN_ACCESS,
+        Document.License.CC_BY,
+        Document.License.OWN,
+        Document.License.PROPRIETARY,
+        Document.License.UNKNOWN,
     ],
 )
-def test_texto_integral_so_e_retido_com_licenca_que_permite(categoria, user, licenca, mantem_texto):
-    """O Brasil nao tem fair use: a Lei 9.610/98 traz lista fechada no Art. 46,
-    e nenhuma limitacao cobre copia integral armazenada para geracao comercial.
-    O trecho citado se sustenta pelo Art. 46 VIII; a copia completa nao."""
+def test_por_padrao_o_texto_integral_e_sempre_guardado(categoria, user, licenca, settings):
+    """Descartar e politica de quem opera o acervo, nao regra do software.
+
+    O sistema nao tem como saber que acordo existe com cada editora, e o
+    descarte e irreversivel: sem o texto integral nao ha como remarcar blocos
+    sem reenviar o arquivo.
+    """
+    settings.LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL = []
     documento = _documento(
         categoria,
         f"lic-{licenca}",
@@ -244,9 +248,43 @@ def test_texto_integral_so_e_retido_com_licenca_que_permite(categoria, user, lic
     marcar_curado(document=documento, revisado_por=user, segundos=300)
     documento.refresh_from_db()
 
-    assert bool(documento.markdown_full) is mantem_texto
+    assert documento.markdown_full
     assert documento.curation_seconds == 300
     assert documento.status == Document.Status.CURATED
+
+
+@pytest.mark.django_db
+def test_licenca_listada_perde_o_texto_integral_ao_concluir(categoria, user, settings):
+    """Quem quiser a politica antiga — o Brasil nao tem fair use, e a citacao de
+    pequeno trecho do Art. 46 VIII nao cobre guardar a obra inteira — lista as
+    licencas e o descarte volta a acontecer."""
+    settings.LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL = [
+        Document.License.PROPRIETARY,
+        Document.License.UNKNOWN,
+    ]
+
+    descartado = _documento(
+        categoria,
+        "lic-descarta",
+        title="T",
+        license=Document.License.PROPRIETARY,
+        markdown_full="# Documento inteiro convertido",
+    )
+    guardado = _documento(
+        categoria,
+        "lic-guarda",
+        title="T",
+        license=Document.License.CC_BY,
+        markdown_full="# Documento inteiro convertido",
+    )
+
+    marcar_curado(document=descartado, revisado_por=user)
+    marcar_curado(document=guardado, revisado_por=user)
+    descartado.refresh_from_db()
+    guardado.refresh_from_db()
+
+    assert descartado.markdown_full == ""
+    assert guardado.markdown_full
 
 
 # ---------------------------------------------------------------------------

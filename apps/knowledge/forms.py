@@ -76,8 +76,10 @@ class CuradoriaDeDocumento(forms.ModelForm):
                 "recebe o link de saida do artigo."
             ),
             "license": _(
-                "Documentos proprietarios ou de licenca desconhecida perdem o "
-                "texto integral ao serem curados; o trecho selecionado fica."
+                "Registro do que a fonte permite. Nao apaga nada por conta "
+                "propria: o descarte do texto integral so acontece para as "
+                "licencas listadas em LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL, "
+                "vazia por padrao."
             ),
         }
 

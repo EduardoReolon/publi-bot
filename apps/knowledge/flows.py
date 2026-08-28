@@ -34,6 +34,19 @@ PADRAO_DE_FILIACAO = re.compile(r"\s*\d+\s*$")
 # "Yeowon Kim1 & Daniel A. Eisenberg 2 &".
 PADRAO_DE_AUTOR_COM_FILIACAO = re.compile(r"[a-zA-Z]\s?\d\b")
 
+# Inicial abreviada de nome proprio: "Jason K. Levy".
+PADRAO_DE_INICIAL = re.compile(r"\b[A-Z]\.")
+
+# O "and"/"e" que antecede o ultimo autor da lista.
+PADRAO_DE_CONJUNCAO = re.compile(r",\s+(and|e)\s+\S", re.IGNORECASE)
+
+# Palavra de verdade, para distinguir titulo de codigo de producao.
+PADRAO_DE_PALAVRA = re.compile(r"[A-Za-z\u00c0-\u024f]{3,}")
+MINIMO_DE_PALAVRAS_NO_TITULO = 4
+
+# Marcador de nota de rodape colado no fim do titulo: "...URBAN WATERSHEDS1".
+PADRAO_DE_NOTA_NO_TITULO = re.compile(r"(?<=[a-z\u00e0-\u00ff])\d{1,2}$|(?<=[A-Z])\d{1,2}$")
+
 
 def passo_converter(job: GenerationJob) -> dict:
     """Converte o arquivo em Markdown e pre-preenche o que der.
@@ -121,30 +134,52 @@ def passo_converter(job: GenerationJob) -> dict:
 def _titulo_do_arquivo(metadados: dict) -> str:
     """O titulo que o proprio PDF declara, quando serve.
 
-    Muitos PDFs trazem aqui o nome do arquivo ou o nome do programa que gerou
-    o documento; por isso a checagem de tamanho e a recusa de algo que pareca
-    nome de arquivo.
+    Frequentemente nao serve: o campo guarda o nome do arquivo ou o codigo de
+    producao da grafica. Num artigo do JAWRA veio `jawr_027 346..358` — revista,
+    artigo e faixa de paginas — e o campo tem tamanho plausivel e nao termina em
+    `.pdf`, entao passava por qualquer checagem de forma.
+
+    O que separa os dois e o conteudo: titulo de artigo e feito de palavras.
     """
     bruto = (metadados.get("/Title") or "").strip()
     if not 10 <= len(bruto) <= 500:
         return ""
     if bruto.lower().endswith((".pdf", ".doc", ".docx", ".tex", ".indd")):
         return ""
+    if len(PADRAO_DE_PALAVRA.findall(bruto)) < MINIMO_DE_PALAVRAS_NO_TITULO:
+        return ""
     return bruto
+
+
+def _e_caixa_alta(linha: str) -> bool:
+    """Linha sem nenhuma letra minuscula, ignorando digitos e pontuacao."""
+    letras = [c for c in linha if c.isalpha()]
+    return bool(letras) and all(c.isupper() for c in letras)
 
 
 def _parece_linha_de_autores(linha: str) -> bool:
     """Onde o titulo termina.
 
-    Nome de autor vem com marcador de filiacao (`Chester2`), separado por `&`
-    ou virgula, ou precedido de `*`. Titulo de artigo nao tem nada disso — e
-    e por isso que esta funcao serve de fronteira entre os dois.
+    A checagem de caixa alta vem primeiro e nao e detalhe. Titulo impresso em
+    versal carrega o marcador de nota de rodape colado na ultima palavra
+    (`...URBAN WATERSHEDS1`), que tem exatamente a forma do marcador de
+    filiacao de autor (`Chester2`). Sem distinguir os dois, o titulo era cortado
+    na primeira linha. Nome de pessoa vem em caixa mista; titulo em versal, nao.
     """
-    if PADRAO_DE_AUTOR_COM_FILIACAO.search(linha):
-        return True
     if linha.startswith(("*", "†", "‡")):
         return True
-    return linha.count("&") >= 1
+    if _e_caixa_alta(linha):
+        return False
+    if "&" in linha:
+        return True
+    if PADRAO_DE_AUTOR_COM_FILIACAO.search(linha):
+        return True
+    # Virgula sozinha nao basta: titulo tambem tem virgula. O que denuncia a
+    # lista de autores e a inicial abreviada ("Jason K. Levy") ou o "and"/"e"
+    # antes do ultimo nome.
+    if "," in linha:
+        return bool(PADRAO_DE_INICIAL.search(linha)) or bool(PADRAO_DE_CONJUNCAO.search(linha))
+    return False
 
 
 def _titulo_do_texto(cabecalho: list[str]) -> str:
@@ -170,7 +205,7 @@ def _titulo_do_texto(cabecalho: list[str]) -> str:
         if linha.endswith((".", "?", "!")) or len(" ".join(partes)) > 300:
             break
 
-    titulo = " ".join(partes).strip()
+    titulo = PADRAO_DE_NOTA_NO_TITULO.sub("", " ".join(partes).strip()).strip()
     return titulo if len(titulo) >= 10 else ""
 
 

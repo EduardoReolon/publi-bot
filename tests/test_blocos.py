@@ -327,18 +327,19 @@ def test_citacao_publicada_sobrevive_a_reindexacao(documento):
 
 
 @pytest.mark.django_db
-def test_a_tela_avisa_antes_de_apagar_o_texto_integral(documento, client):
-    """A licenca padrao e "Desconhecido", e concluir com ela e irreversivel.
+def test_a_tela_avisa_antes_de_apagar_o_texto_integral(documento, client, settings):
+    """Quando o descarte esta configurado, ele e irreversivel — e precisa ser
+    dito antes do clique, nao depois.
 
-    Sem o aviso, o caminho mais provavel — aceitar o default e clicar em
-    concluir — apagaria o texto integral sem a pessoa saber que perdeu a
-    possibilidade de remarcar blocos.
+    Por padrao a lista e vazia e este aviso nao aparece; o teste liga o
+    descarte para exercitar o caminho em que ele existe.
     """
     from django.conf import settings as configuracao
     from django.urls import reverse
 
     from apps.accounts.models import Tenant, TenantMembership, User
 
+    settings.LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL = [Document.License.UNKNOWN]
     Document.objects.filter(pk=documento.pk).update(license=Document.License.UNKNOWN)
     documento.refresh_from_db()
 
@@ -526,3 +527,84 @@ def test_sem_secao_reconhecivel_vira_um_bloco_so():
     blocos = dividir_em_blocos(texto, e_markdown=False)
     assert len(blocos) == 1
     assert blocos[0].titulo == ""
+
+
+def test_secoes_em_versal_sem_numeracao():
+    """O outro estilo comum de revista: titulo em caixa alta, sem numero.
+
+    Num artigo do JAWRA e o unico sinal de estrutura que existe — sem isto o
+    documento inteiro virava um bloco so.
+    """
+    texto = (
+        "MULTI-CRITERIA DECISION SUPPORT SYSTEMS FOR FLOOD HAZARD\n"
+        "Jason K. Levy, Jens Hartmann, and Ali Asgary2\n"
+        "ABSTRACT: Flood management problems are inherently complex and\n"
+        "envolvem muitos tomadores de decisao com prioridades conflitantes.\n"
+        "INTRODUCTION\n"
+        "In many regions of the world, flooding is a frequent, widespread and\n"
+        "severe natural hazard that affects millions of people every year.\n"
+        "DATABASE COMPONENT\n"
+        "The database component stores the spatial and temporal information\n"
+        "that the decision support system needs to evaluate each alternative.\n"
+    )
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert "INTRODUCTION" in titulos
+    assert "DATABASE COMPONENT" in titulos
+
+
+def test_titulo_em_versal_quebrado_em_duas_linhas_vira_um_bloco():
+    """ "MCDSS ARCHITECTURE FOR FLOOD HAZARD" / "MANAGEMENT IN URBAN
+    WATERSHSEDS" e um titulo que quebrou na largura da coluna. Tratados como
+    duas secoes, a primeira ficaria vazia."""
+    texto = (
+        "TITULO DO ARTIGO EM VERSAL\n"
+        "Ana Silva, Bruno Costa, and Carla Dias2\n"
+        "Abstract Este resumo apresenta o metodo e os resultados do estudo.\n"
+        "MCDSS ARCHITECTURE FOR FLOOD HAZARD\n"
+        "MANAGEMENT IN URBAN WATERSHSEDS\n"
+        "A arquitetura proposta combina tres componentes distintos que operam\n"
+        "de forma integrada para apoiar a decisao em situacoes de emergencia.\n"
+    )
+
+    blocos = {b.titulo: b.conteudo for b in dividir_em_blocos(texto, e_markdown=False)}
+    assert "MCDSS ARCHITECTURE FOR FLOOD HAZARD MANAGEMENT IN URBAN WATERSHSEDS" in blocos
+    corpo = blocos["MCDSS ARCHITECTURE FOR FLOOD HAZARD MANAGEMENT IN URBAN WATERSHSEDS"]
+    assert corpo.startswith("A arquitetura proposta")
+    assert "WATERSHSEDS" not in corpo
+
+
+def test_pedaco_de_cabecalho_de_revista_nao_vira_secao():
+    """O cabecalho sai ora inteiro, ora partido. O inteiro repete e e filtrado
+    pela contagem; o pedaco aparece uma vez e levava o artigo junto."""
+    corpo = (
+        "O texto corrido da secao vem aqui com palavras suficientes para ser\n"
+        "reconhecido como prosa de verdade pelo detector de secoes.\n"
+    )
+    texto = "TITULO\nAna Silva e Bruno Costa2\nAbstract Um resumo qualquer do estudo.\n"
+    for pagina in range(1, 6):
+        texto += (
+            f"JAWRA {340 + pagina} JOURNAL OF THE AMERICAN WATER RESOURCES ASSOCIATION\n" + corpo
+        )
+    texto += "JOURNAL OF THE AMERICAN WATER RESOURCES ASSOCIATION\n" + corpo
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert not any("JOURNAL OF THE AMERICAN" in t for t in titulos)
+
+
+def test_formula_desmontada_nao_vira_secao():
+    """A extracao sem layout desmonta formula em fragmentos que tem a forma de
+    titulo: "1 C2,C 3 and C4. Outer-dependence in the"."""
+    texto = (
+        "TITULO DO ARTIGO\n"
+        "Ana Silva e Bruno Costa2\n"
+        "Abstract Um resumo do estudo com o metodo aplicado.\n"
+        "1 C2,C 3 and C4. Outer-dependence in the\n"
+        "W11 W12 /C1/C1/C1 W1N\n"
+        "O texto corrido continua depois da formula com palavras suficientes\n"
+        "para ser reconhecido como prosa pelo detector de secoes do sistema.\n"
+    )
+
+    titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
+    assert not any("Outer-dependence" in t for t in titulos)
+    assert not any("W11" in t for t in titulos)

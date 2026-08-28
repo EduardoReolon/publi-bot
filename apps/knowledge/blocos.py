@@ -58,12 +58,35 @@ MAXIMO_DE_TITULO_DE_SECAO = 90
 # Cabecalho de pagina ("400 Climatic Change (2017) 145:397-412") tambem comeca
 # com numero e tambem e curto. O que o distingue e repetir: um titulo de secao
 # aparece uma vez, o cabecalho aparece em toda pagina.
+#
+# A contagem ignora digitos porque o numero da pagina muda a cada ocorrencia:
+# "JAWRA 346 JOURNAL OF..." e "JAWRA 348 JOURNAL OF..." sao literalmente
+# diferentes e cada uma apareceria uma vez so.
 MAXIMO_DE_REPETICOES = 2
+PADRAO_DE_DIGITOS = re.compile(r"\d+")
+
+# Titulo de secao em versal, sem numeracao: "INTRODUCTION", "DATABASE
+# COMPONENT". E o outro estilo comum em revista cientifica, e o unico sinal que
+# resta quando o artigo nao numera as secoes.
+#
+# Formula quebrada pela extracao ("W11 W12 /C1/C1/C1 W1N") tambem sai em versal.
+# O que a separa de um titulo e a proporcao de letras.
+MINIMO_DE_FRACAO_DE_LETRAS = 0.6
+MINIMO_DE_CARACTERES_NO_TITULO = 4
+PADRAO_DE_PALAVRA_LONGA = re.compile(r"[A-Za-z\u00c0-\u024f]{4,}")
+
+# Antes disto esta o titulo do artigo, que tambem vem em versal. So vale quando
+# nao houver secao de abertura para servir de marco.
+PRIMEIRA_LINHA_PARA_VERSAL = 3
 
 # Um titulo de secao e seguido de prosa. Celula de tabela ("4 Flood storage")
 # e seguida de outro fragmento curto — foi assim que se separou uma da outra
 # num artigo real, e nao por suposicao.
-MINIMO_DE_PROSA_SEGUINTE = 60
+#
+# A medida e em PALAVRAS, e nao em caracteres: revista de coluna dupla quebra
+# a prosa em linhas de ~45 caracteres, e um limite por tamanho reprovava o
+# corpo do texto junto com a celula de tabela.
+MINIMO_DE_PALAVRAS_NA_PROSA = 6
 
 # Lista de afiliacoes ("1 School of Sustainability, Arizona State University,
 # Tempe, AZ, USA") tem a mesma forma de uma secao numerada. Virgula em serie e
@@ -184,22 +207,62 @@ def _sequencia_faz_sentido(anterior: tuple[int, ...], atual: tuple[int, ...]) ->
     return False
 
 
-def _vem_prosa_depois(linhas: list[str], indice: int) -> bool:
-    """Se a proxima linha com conteudo e texto corrido, ou outro titulo.
+def _chave_de_repeticao(linha: str) -> str:
+    """A linha sem digitos, para o cabecalho de pagina se reconhecer como um so."""
+    return PADRAO_DE_DIGITOS.sub("", linha.strip())
+
+
+def _e_pedaco_de_cabecalho(linha: str, frequentes: list[str]) -> bool:
+    """Se a linha e um trecho de algum cabecalho de pagina.
+
+    O cabecalho sai da extracao ora inteiro, ora partido:
+    "JAWRA 346 JOURNAL OF THE AMERICAN WATER RESOURCES ASSOCIATION" repete e e
+    filtrado pela contagem, mas o pedaco "JOURNAL OF THE AMERICAN WATER
+    RESOURCES ASSOCIATION" aparece sozinho uma vez e passaria por titulo de
+    secao — levando junto quarenta mil caracteres do artigo.
+    """
+    chave = _chave_de_repeticao(linha)
+    return any(chave != f and chave in f for f in frequentes)
+
+
+def _e_versal(linha: str) -> bool:
+    """Linha inteiramente em maiusculas, com letras o bastante para ser texto.
+
+    A proporcao de letras e o que separa "DATABASE COMPONENT" de
+    "W11 W12 /C1/C1/C1 W1N", que e uma formula desmontada pela extracao e sai
+    igualmente em versal.
+    """
+    if len(linha) < MINIMO_DE_CARACTERES_NO_TITULO:
+        return False
+    sem_espaco = [c for c in linha if not c.isspace()]
+    letras = [c for c in sem_espaco if c.isalpha()]
+    if not letras or not all(c.isupper() for c in letras):
+        return False
+    if len(letras) / len(sem_espaco) < MINIMO_DE_FRACAO_DE_LETRAS:
+        return False
+    return bool(PADRAO_DE_PALAVRA_LONGA.search(linha))
+
+
+def _vem_prosa_depois(linhas: list[str], indice: int, *, aceitar_secao: bool = True) -> bool:
+    """Se logo abaixo vem texto corrido, ou outro titulo.
 
     E o que separa "5 Conclusion", seguido de paragrafo, de "5 Discouraging",
     que e celula de tabela e vem seguida de "subsidence". As duas tem a mesma
     forma; so o que vem depois as distingue.
+
+    `aceitar_secao` existe porque a saida "e seguido de outro titulo" so serve
+    para titulo numerado, onde "2.2" vem colado em "2.2.1". Para titulo em
+    versal ela abriria um buraco: numa tabela, "RWIS" e seguido de
+    "2 RWIS Discouraging", que tem a forma de secao numerada.
     """
     vistas = 0
     for seguinte in linhas[indice + 1 : indice + 8]:
         crua = seguinte.strip()
         if not crua:
             continue
-        if len(crua) >= MINIMO_DE_PROSA_SEGUINTE:
+        if len(crua.split()) >= MINIMO_DE_PALAVRAS_NA_PROSA:
             return True
-        # Um titulo pode ser seguido direto do seu primeiro subtitulo.
-        if PADRAO_DE_SECAO.match(crua):
+        if aceitar_secao and PADRAO_DE_SECAO.match(crua):
             return True
         # Olhar mais de uma linha e necessario porque o proprio titulo quebra:
         # "2.1 ... and Phoenix case" / "study". Parar na primeira linha curta
@@ -221,6 +284,14 @@ class Secao:
     # linha inteira; preenchido em "Abstract As climate change afeta...", onde
     # o texto comeca colado ao rotulo.
     inicio: str = ""
+    # Ultima linha ocupada pelo titulo. Difere de `linha` quando o titulo
+    # quebrou na largura da coluna; e daqui que o conteudo comeca, senao a
+    # segunda metade do titulo entraria no corpo do bloco.
+    ultima_linha: int | None = None
+
+    @property
+    def fim_do_titulo(self) -> int:
+        return self.linha if self.ultima_linha is None else self.ultima_linha
 
 
 def detectar_secoes(texto: str) -> list[Secao]:
@@ -232,12 +303,15 @@ def detectar_secoes(texto: str) -> list[Secao]:
     """
     linhas = texto.splitlines()
 
-    # Quantas vezes cada linha curta aparece. Cabecalho de pagina se repete.
+    # Quantas vezes cada linha aparece, ignorando digitos. Cabecalho de pagina
+    # se repete; titulo de secao, nao.
     repeticoes: dict[str, int] = {}
     for linha in linhas:
-        chave = linha.strip()
+        chave = _chave_de_repeticao(linha)
         if chave:
             repeticoes[chave] = repeticoes.get(chave, 0) + 1
+
+    frequentes = [chave for chave, total in repeticoes.items() if total > MAXIMO_DE_REPETICOES]
 
     achados: list[Secao] = []
     anterior: tuple[int, ...] = ()
@@ -265,7 +339,7 @@ def detectar_secoes(texto: str) -> list[Secao]:
 
         if len(crua) > MAXIMO_DE_TITULO_DE_SECAO:
             continue
-        if repeticoes.get(crua, 0) > MAXIMO_DE_REPETICOES:
+        if repeticoes.get(_chave_de_repeticao(crua), 0) > MAXIMO_DE_REPETICOES:
             continue
 
         if crua.lower().rstrip(":") in SECOES_FINAIS:
@@ -274,6 +348,17 @@ def detectar_secoes(texto: str) -> list[Secao]:
 
         achado = PADRAO_DE_SECAO.match(crua)
         if achado is None:
+            # Sem numeracao resta o versal, que e como boa parte das revistas
+            # imprime titulo de secao. So depois da abertura do artigo: o
+            # proprio titulo da obra tambem vem em versal.
+            piso = achados[0].linha if achados else PRIMEIRA_LINHA_PARA_VERSAL
+            if (
+                indice > piso
+                and _e_versal(crua)
+                and not _e_pedaco_de_cabecalho(crua, frequentes)
+                and _vem_prosa_depois(linhas, indice, aceitar_secao=False)
+            ):
+                achados.append(Secao(linha=indice, titulo=crua, nivel=1))
             continue
 
         resto = achado.group(2).strip()
@@ -282,6 +367,11 @@ def detectar_secoes(texto: str) -> list[Secao]:
         if resto.endswith((".", ",", ";", ":")) or not resto[:1].isupper():
             continue
         if resto.count(",") > MAXIMO_DE_VIRGULAS:
+            continue
+        # Fim de frase no meio denuncia texto corrido, nao titulo. Foi assim
+        # que uma formula desmontada pela extracao ("1 C2,C 3 and C4.
+        # Outer-dependence in the") deixou de virar secao.
+        if ". " in resto:
             continue
         if not _vem_prosa_depois(linhas, indice):
             continue
@@ -294,6 +384,35 @@ def detectar_secoes(texto: str) -> list[Secao]:
         achados.append(Secao(linha=indice, titulo=f"{achado.group(1)} {resto}", nivel=len(numero)))
 
     return achados
+
+
+def _juntar_titulos_quebrados(secoes: list[Secao]) -> list[Secao]:
+    """Duas secoes seguidas na mesma altura do texto sao um titulo so.
+
+    "MCDSS ARCHITECTURE FOR FLOOD HAZARD" / "MANAGEMENT IN URBAN WATERSHSEDS"
+    e um titulo que quebrou na largura da coluna, e nao duas secoes — a segunda
+    ficaria com o conteudo e a primeira, vazia.
+    """
+    juntadas: list[Secao] = []
+    for secao in secoes:
+        anterior = juntadas[-1] if juntadas else None
+        contigua = (
+            anterior is not None
+            and secao.linha == anterior.linha + 1
+            and not anterior.inicio
+            and _e_versal(anterior.titulo)
+            and _e_versal(secao.titulo)
+        )
+        if contigua:
+            juntadas[-1] = Secao(
+                linha=anterior.linha,
+                titulo=f"{anterior.titulo} {secao.titulo}",
+                nivel=anterior.nivel,
+                ultima_linha=secao.linha,
+            )
+            continue
+        juntadas.append(secao)
+    return juntadas
 
 
 def dividir_texto_puro(texto: str) -> list[Bloco]:
@@ -317,9 +436,11 @@ def dividir_texto_puro(texto: str) -> list[Bloco]:
     if cabecalho:
         blocos.append(Bloco(ordem=0, nivel=0, titulo="", conteudo=cabecalho))
 
+    secoes = _juntar_titulos_quebrados(secoes)
+
     for posicao, secao in enumerate(secoes):
         fim = secoes[posicao + 1].linha if posicao + 1 < len(secoes) else len(linhas)
-        corpo = "\n".join(linhas[secao.linha + 1 : fim]).strip()
+        corpo = "\n".join(linhas[secao.fim_do_titulo + 1 : fim]).strip()
         conteudo = f"{secao.inicio}\n{corpo}".strip() if secao.inicio else corpo
         titulo, nivel = secao.titulo, secao.nivel
         # Secao que so contem subsecoes nao entra: seria uma caixa de marcar

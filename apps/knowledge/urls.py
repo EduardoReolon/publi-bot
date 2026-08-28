@@ -15,4 +15,5 @@ urlpatterns = [
     path("busca/", views.qualidade_da_busca, name="busca"),
     path("<uuid:pk>/", views.curar_documento, name="curar"),
     path("<uuid:pk>/reprocessar/", views.reprocessar, name="reprocessar"),
+    path("<uuid:pk>/excluir/", views.excluir_documento, name="excluir"),
 ]
