@@ -390,6 +390,16 @@ proprio titulo quebra: `2.1 ... and Phoenix case` / `study`. E, ao descer um
 nivel, nao se exige comecar em `.1` — se `2.1` for recusado por outro criterio,
 exigir isso derrubaria `2.2` tambem, e o erro se propagaria ate o fim.
 
+### As heuristicas de extracao nao aprendem sozinhas
+
+Cada regra saiu de alguem olhar um PDF real e achar o discriminante. O risco
+disso e conhecido e nao e teorico: **consertar um artigo quebra outro**, em
+silencio, e ninguem descobre ate o proximo documento sair torto.
+
+Antes de mexer em qualquer constante de `blocos.py` ou `flows.py`, leia
+[`docs/EXTRACAO.md`](EXTRACAO.md) e rode `manage.py conferir_extracao --pasta`.
+`--acervo` lista de graca os casos que a curadoria ja rotulou.
+
 ### Cada revista estrutura o artigo de um jeito
 
 Dois artigos reais, duas gramaticas diferentes, e o detector precisa das duas:

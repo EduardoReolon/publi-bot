@@ -84,6 +84,15 @@ def passo_converter(job: GenerationJob) -> dict:
 
     document.markdown_full = resultado.markdown
     document.extraction_method = resultado.metodo
+    # Congelado aqui, antes de qualquer correcao humana. E o unico jeito de
+    # saber depois o que a extracao errou neste documento.
+    document.metadata_suggested = {
+        "title": sugestoes["title"],
+        "authors": sugestoes["authors"],
+        "year": sugestoes["year"],
+        "doi": sugestoes["doi"],
+        "metodo": resultado.metodo,
+    }
     document.status = Document.Status.PENDING_CURATION
     document.failure_reason = ""
 

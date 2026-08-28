@@ -161,6 +161,12 @@ class Document(models.Model):
         CROSSREF = "crossref", _("Confirmado no Crossref")
         MANUAL = "manual", _("Informado por humano")
 
+    # O que a extracao PROPOS, congelado no momento da conversao. Comparado com
+    # os campos atuais depois da curadoria, diz quais deles uma pessoa precisou
+    # corrigir — e esses sao exatamente os casos contra os quais as heuristicas
+    # precisam ser calibradas, coletados sem ninguem ter que reportar nada.
+    metadata_suggested = models.JSONField(_("sugestao da extracao"), default=dict, blank=True)
+
     metadata_confidence = models.CharField(
         _("confianca dos metadados"),
         max_length=12,

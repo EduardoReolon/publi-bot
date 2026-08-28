@@ -84,3 +84,7 @@ desktop.ini
 # desta pasta em vez do container.
 appendonlydir/
 dump.rdb
+
+# PDFs de conferencia da extracao: obras de terceiros, cada um mantem os seus.
+# Os resultados esperados ficam em fixtures/extracao/ e entram no git.
+casos/

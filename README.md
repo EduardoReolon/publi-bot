@@ -26,9 +26,12 @@ terceiros.
 > As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/), com o
 > raciocinio e as consequencias de cada uma. As falhas que so aparecem ao rodar
 > — e os erros que apontam para o lugar errado — estao em
-> [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md).
+> [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md). Quem for mexer na leitura de PDF
+> comeca por [`docs/EXTRACAO.md`](docs/EXTRACAO.md), que explica cada heuristica,
+> contra que impostor ela existe e como calibrar sem quebrar os artigos que ja
+> funcionavam.
 >
-> **303 testes**, em tres suites (`./scripts/test-all.sh`).
+> **360 testes**, em tres suites (`./scripts/test-all.sh`).
 
 ## O problema
 
@@ -427,8 +430,12 @@ core/
 deploy/          Nginx, systemd, Gunicorn, scripts
 docs/
   ARCHITECTURE.md    especificacao original, com as revisoes marcadas
+  ARMADILHAS.md      as falhas reais, e onde cada uma esta tratada
+  EXTRACAO.md        as heuristicas de leitura de PDF e como ajusta-las
   adr/               decisoes de arquitetura
   contrato/          contrato /api/v1, OpenAPI e implementacao de referencia
+fixtures/
+  extracao/          resultado esperado da extracao, por PDF de conferencia
 worker-gpu/      Servicos HTTP da maquina com GPU
 tests/           Suite principal
 tests_contrato/  Contrato exercitado nos dois lados
@@ -444,6 +451,15 @@ python manage.py provision_tenant acme --name="ACME Ltda"
 # cadastro feito sem o worker rodando: a linha existe, o schema nao. Passe o
 # schema_name que aparece na home.
 python manage.py provision_tenant teste1
+
+# Confere as heuristicas de extracao contra PDFs reais, sem tocar no banco.
+# Ver docs/EXTRACAO.md para o ciclo de ajuste.
+python manage.py conferir_extracao --pasta casos/
+python manage.py conferir_extracao --pasta casos/ --gravar
+
+# Lista os documentos em que a curadoria corrigiu a extracao. Nao precisa de
+# PDF: a conferencia humana ja e o gabarito.
+python manage.py tenant_command conferir_extracao --schema=acme --acervo
 
 # Mede as distancias do corpus de um tenant, para escolher o limiar. O valor
 # escolhido se grava pela tela Documentos > Qualidade da busca, que registra
