@@ -301,9 +301,35 @@ A tela de curadoria trata isso e diz que o problema e o modelo, e nao o trecho.
 transacao de cada teste. Um `DROP` explicito roda ainda dentro dessa transacao.
 Nao faca o drop.
 
+### O modelo de embedding trunca em 512 tokens sem avisar
+
+Nao levanta erro: descarta o excedente. Vetorizar uma secao de 1100 tokens
+significa vetorizar a primeira metade dela acreditando ter vetorizado o todo — e
+sem forma de saber qual metade entrou. E o motivo de o indice ser alimentado por
+paragrafo, e nao por bloco
+([ADR-0015](adr/ADR-0015-vetorizacao-por-paragrafo.md)).
+
+### Um paragrafo recuperado sozinho nao diz de onde veio
+
+"esse efeito foi observado em 240 adultos" — de que estudo, de que secao? Cada
+trecho e vetorizado com um prefixo de contexto (titulo do documento e do bloco).
+O `content` guardado continua sendo o paragrafo puro: o prefixo serve a busca, e
+mostra-lo em toda citacao seria ruido.
+
+### Concluir a curadoria pode apagar o texto integral
+
+A licenca padrao e "Desconhecido", e ela **nao** permite guardar o documento
+inteiro. Concluir com ela descarta o `markdown_full`, e sem ele nao ha como
+remarcar blocos — so reenviando o arquivo. A tela avisa antes do clique, mas a
+operacao e irreversivel.
+
 ### O limiar de recuperacao medido e 0.16, nao 0.35
 
 Com 0.35 uma **receita de bolo** passava, a distancia 0.2004, como fonte
 cientifica valida. O valor foi medido com corpus real. Ver
 [`ADR-0014`](adr/ADR-0014-limiar-de-recuperacao.md) e
 `manage.py calibrate_retrieval`.
+
+**O valor precisa ser remedido depois do ADR-0015.** Ele foi medido com um
+trecho longo por documento; trechos por paragrafo mudam a distribuicao das
+distancias.

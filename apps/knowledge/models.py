@@ -145,6 +145,18 @@ class Document(models.Model):
         help_text=_("Idioma da fonte (pode diferir do idioma de publicacao)."),
     )
 
+    class ExtractionMethod(models.TextChoices):
+        DOCLING = "docling", _("Docling (analise de layout)")
+        PYPDF = "pypdf", _("Texto do PDF, sem analise de layout")
+        TEXT = "texto", _("Arquivo ja em texto")
+
+    # Registrado no documento, e nao so no trabalho que o converteu, porque e
+    # informacao que a curadoria precisa ver: o `pypdf` devolve a camada de
+    # texto sem interpretar a estrutura da pagina — nao distingue coluna,
+    # cabecalho, rodape nem tabela, e a ordem de leitura nao e garantida. Sem
+    # isto exposto, alguem curaria texto mal lido sem saber, e a citacao
+    # publicada apontaria para uma fonte cujo conteudo foi lido errado.
+
     class MetadataConfidence(models.TextChoices):
         AUTO = "auto", _("Extraido automaticamente")
         CROSSREF = "crossref", _("Confirmado no Crossref")
@@ -174,6 +186,12 @@ class Document(models.Model):
     # hibrida), LIKE, re-chunking por SQL, e obrigaria descompressao na
     # aplicacao a cada leitura.
     markdown_full = models.TextField(_("markdown completo"), blank=True)
+    extraction_method = models.CharField(
+        _("metodo de extracao"),
+        max_length=16,
+        choices=ExtractionMethod.choices,
+        blank=True,
+    )
 
     # --- Direitos ----------------------------------------------------------
     license = models.CharField(
@@ -232,6 +250,15 @@ class Document(models.Model):
         return self.title or f"Documento {self.pk}"
 
     @property
+    def extracao_e_confiavel(self) -> bool:
+        """Se o metodo usado da conta de um artigo cientifico de verdade."""
+        return self.extraction_method in {
+            self.ExtractionMethod.DOCLING,
+            self.ExtractionMethod.TEXT,
+            "",
+        }
+
+    @property
     def nome_do_arquivo(self) -> str:
         """So o nome, sem o caminho `documents/2026/08/` do upload_to."""
         import os
@@ -261,7 +288,10 @@ class SuperChunk(models.Model):
     document = models.ForeignKey(
         Document, on_delete=models.CASCADE, related_name="chunks", verbose_name=_("documento")
     )
-    kind = models.CharField(_("tipo"), max_length=12, choices=Kind.choices)
+    # Mantido por compatibilidade e para o `abstract`/`conclusion` de quem
+    # curou antes dos blocos. A curadoria nao pede mais este campo: o titulo do
+    # bloco carrega o significado, e nada na busca ramifica por tipo.
+    kind = models.CharField(_("tipo"), max_length=12, choices=Kind.choices, default=Kind.CUSTOM)
     content = models.TextField(_("conteudo"))
     char_start = models.PositiveIntegerField(_("inicio"), default=0)
     char_end = models.PositiveIntegerField(_("fim"), default=0)
@@ -283,13 +313,22 @@ class SuperChunk(models.Model):
     source_url = models.URLField(_("URL da fonte"), max_length=500, blank=True)
     source_authority = models.PositiveSmallIntegerField(_("autoridade da fonte"), default=50)
 
+    # De que parte do documento este trecho saiu. O titulo e o que o proprio
+    # documento disser — "Abstract", "Discussao", o que for, em qualquer idioma
+    # — e nao uma classificacao escolhida numa lista fixa. Ele aparece na tela
+    # de revisao junto da citacao e tambem entra na vetorizacao como prefixo de
+    # contexto, porque um paragrafo sozinho nao diz de que estudo veio.
+    heading = models.CharField(_("titulo do bloco"), max_length=300, blank=True)
+    block_index = models.PositiveSmallIntegerField(_("bloco"), default=0)
+    paragraph_index = models.PositiveSmallIntegerField(_("trecho no bloco"), default=0)
+
     is_active = models.BooleanField(_("ativo"), default=True)
     created_at = models.DateTimeField(_("criado em"), default=timezone.now)
 
     class Meta:
         verbose_name = _("super chunk")
         verbose_name_plural = _("super chunks")
-        ordering = ["document", "kind"]
+        ordering = ["document", "block_index", "paragraph_index"]
         constraints = [
             # Um resumo e uma conclusao por documento; "outro trecho" pode
             # repetir.

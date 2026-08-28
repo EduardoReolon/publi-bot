@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
@@ -13,14 +14,15 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
-from apps.knowledge.forms import CuradoriaDeDocumento, EnvioDeDocumento, SelecaoDeTrecho
-from apps.knowledge.models import Document, DocumentCategory, SuperChunk
+from apps.knowledge.blocos import preparar_blocos
+from apps.knowledge.forms import CuradoriaDeDocumento, EnvioDeDocumento
+from apps.knowledge.models import Document, DocumentCategory
 from apps.knowledge.services import (
-    ChunkGrandeDemais,
+    blocos_marcados,
+    indexar_blocos,
     ingerir_documento,
     marcar_curado,
     possiveis_duplicatas,
-    salvar_super_chunk,
 )
 from apps.knowledge.tasks import iniciar_ingestao
 
@@ -113,45 +115,42 @@ def enviar_documento(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def curar_documento(request: HttpRequest, pk) -> HttpResponse:
-    """Confirma os metadados e escolhe o trecho que representa o documento."""
+    """Confere os metadados e escolhe que partes do documento vao para o indice.
+
+    A tela e o documento na ordem em que ele foi escrito: primeiro o que
+    identifica a obra, depois os blocos que a extracao reconheceu. Marcar um
+    bloco significa "esta parte pode sustentar um artigo".
+    """
     documento = get_object_or_404(Document.objects.select_related("category"), pk=pk)
 
     if request.method == "POST":
         return _processar_curadoria(request, documento)
 
-    return render(
-        request,
-        "knowledge/curar.html",
-        {
-            "aba": "documentos",
-            "documento": documento,
-            "form": CuradoriaDeDocumento(instance=documento),
-            "form_trecho": SelecaoDeTrecho(),
-            "trechos": documento.chunks.order_by("kind"),
-            "duplicatas": possiveis_duplicatas(documento),
-        },
-    )
+    return render(request, "knowledge/curar.html", _contexto_da_curadoria(documento))
+
+
+def _contexto_da_curadoria(documento: Document, form=None) -> dict:
+    return {
+        "aba": "documentos",
+        "documento": documento,
+        "form": form or CuradoriaDeDocumento(instance=documento),
+        "blocos": preparar_blocos(documento),
+        "marcados": blocos_marcados(documento),
+        "trechos": documento.chunks.order_by("block_index", "paragraph_index"),
+        "duplicatas": possiveis_duplicatas(documento),
+        "limite_de_tokens": settings.EMBEDDING_MAX_TOKENS,
+    }
 
 
 def _processar_curadoria(request: HttpRequest, documento: Document) -> HttpResponse:
     acao = request.POST.get("acao", "salvar")
-
-    if acao == "trecho":
-        return _gravar_trecho(request, documento)
 
     form = CuradoriaDeDocumento(request.POST, instance=documento)
     if not form.is_valid():
         return render(
             request,
             "knowledge/curar.html",
-            {
-                "aba": "documentos",
-                "documento": documento,
-                "form": form,
-                "form_trecho": SelecaoDeTrecho(),
-                "trechos": documento.chunks.order_by("kind"),
-                "duplicatas": possiveis_duplicatas(documento),
-            },
+            _contexto_da_curadoria(documento, form=form),
             status=400,
         )
 
@@ -160,76 +159,43 @@ def _processar_curadoria(request: HttpRequest, documento: Document) -> HttpRespo
     # uma pessoa confirma os campos.
     documento.metadata_confidence = Document.MetadataConfidence.MANUAL
     documento.save()
-    # Os metadados sao copiados para os trechos na gravacao; refaze-los aqui
-    # mantem a citacao coerente com o que acabou de ser corrigido.
-    documento.chunks.update(
-        source_title=documento.title,
-        source_authors=documento.authors,
-        source_year=documento.year,
-        source_url=documento.source_url,
-        source_authority=documento.authority_score,
-    )
 
-    if acao == "concluir":
-        if not documento.chunks.exists():
-            messages.error(
-                request,
-                _("Selecione ao menos um trecho antes de concluir: e ele que vai para o indice."),
-            )
-            return redirect("knowledge:curar", pk=documento.pk)
-
-        marcar_curado(document=documento, revisado_por=request.user)
-        messages.success(request, _("Documento curado e disponivel para gerar conteudo."))
-        return redirect("knowledge:documentos")
-
-    messages.success(request, _("Metadados salvos."))
-    return redirect("knowledge:curar", pk=documento.pk)
-
-
-def _gravar_trecho(request: HttpRequest, documento: Document) -> HttpResponse:
-    form = SelecaoDeTrecho(request.POST)
-    if not form.is_valid():
-        messages.error(request, _("Trecho invalido."))
-        return redirect("knowledge:curar", pk=documento.pk)
+    marcados = {int(v) for v in request.POST.getlist("bloco") if v.isdigit()}
 
     try:
-        salvar_super_chunk(
-            document=documento,
-            kind=form.cleaned_data["kind"],
-            content=form.cleaned_data["content"],
-        )
-    except ChunkGrandeDemais as exc:
-        # O modelo truncaria o excedente em silencio. Dizer o tamanho e o
-        # limite e o que permite a pessoa dividir o trecho com criterio.
-        messages.error(request, str(exc))
-        return redirect("knowledge:curar", pk=documento.pk)
+        criados = indexar_blocos(document=documento, blocos_marcados=marcados)
     except Exception as exc:
-        # Indexar depende de carregar o modelo de embedding — 2 GB, baixados na
-        # primeira vez. Sem rede, ou com o download bloqueado, isso levanta uma
-        # excecao de HTTP no meio da requisicao e a pessoa recebia um 500 sem
-        # nenhuma pista de que o problema era o modelo, e nao o trecho.
-        logger.exception("Falha ao indexar trecho do documento %s", documento.pk)
+        # Indexar carrega o modelo de embedding — 2 GB, baixados na primeira
+        # utilizacao. Sem rede isso levantava uma excecao de HTTP no meio da
+        # requisicao e virava 500, sem nenhuma pista de que o problema era o
+        # modelo e nao o texto.
+        logger.exception("Falha ao indexar blocos do documento %s", documento.pk)
         messages.error(
             request,
             _(
-                "Nao foi possivel gerar o vetor do trecho: %(erro)s. O modelo de "
-                "embedding e baixado na primeira utilizacao (cerca de 2 GB) e "
-                "precisa de rede para isso."
+                "Nao foi possivel vetorizar: %(erro)s. O modelo de embedding e "
+                "baixado na primeira utilizacao (cerca de 2 GB) e precisa de rede."
             )
             % {"erro": str(exc)[:200]},
         )
         return redirect("knowledge:curar", pk=documento.pk)
 
-    messages.success(request, _("Trecho indexado."))
-    return redirect("knowledge:curar", pk=documento.pk)
+    if acao == "concluir":
+        if not criados:
+            messages.error(
+                request,
+                _("Marque ao menos um bloco: sem trecho no indice o documento nao e citavel."),
+            )
+            return redirect("knowledge:curar", pk=documento.pk)
 
+        marcar_curado(document=documento, revisado_por=request.user)
+        messages.success(
+            request,
+            _("Documento curado com %(total)s trecho(s) no indice.") % {"total": criados},
+        )
+        return redirect("knowledge:documentos")
 
-@login_required
-@require_POST
-def remover_trecho(request: HttpRequest, pk, chunk_pk) -> HttpResponse:
-    documento = get_object_or_404(Document, pk=pk)
-    get_object_or_404(SuperChunk, pk=chunk_pk, document=documento).delete()
-    messages.success(request, _("Trecho removido do indice."))
+    messages.success(request, _("Salvo. %(total)s trecho(s) no indice.") % {"total": criados})
     return redirect("knowledge:curar", pk=documento.pk)
 
 

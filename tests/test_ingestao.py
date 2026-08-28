@@ -22,7 +22,7 @@ from apps.knowledge.extraction import (
     extrair_markdown,
 )
 from apps.knowledge.flows import sugerir_metadados
-from apps.knowledge.models import Document, DocumentCategory
+from apps.knowledge.models import Document, DocumentCategory, SuperChunk
 from apps.ops.models import GenerationJob
 from apps.ops.orchestrator import avancar, criar_job
 
@@ -36,6 +36,17 @@ Revista Brasileira de Fisiologia, 2023. doi:10.1000/exemplo.2023.42
 
 O estudo acompanhou 120 participantes durante doze meses.
 """
+
+
+@pytest.fixture(autouse=True)
+def embedding_falso(settings):
+    """Indexar um trecho carrega 2 GB de modelo; aqui nada disso importa."""
+    settings.EMBEDDING_CLIENT = "apps.knowledge.embeddings.FakeEmbeddingClient"
+    from apps.knowledge.embeddings import get_embedding_client
+
+    get_embedding_client.cache_clear()
+    yield
+    get_embedding_client.cache_clear()
 
 
 @pytest.fixture
@@ -263,3 +274,113 @@ def test_falha_de_conversao_fica_registrada_no_documento(tenant_com_categoria):
     documento.refresh_from_db()
     assert documento.status == Document.Status.FAILED
     assert "Docling" in documento.failure_reason
+
+
+# ---------------------------------------------------------------------------
+# O metodo de extracao precisa ser visivel
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_metodo_fica_gravado_no_documento(tenant_com_categoria):
+    """No trabalho nao basta: quem cura olha o documento, nao o job."""
+    documento = _documento("estudo.md", MARKDOWN_DE_ARTIGO.encode())
+    job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
+    avancar(str(job.pk))
+
+    documento.refresh_from_db()
+    assert documento.extraction_method == Document.ExtractionMethod.TEXT
+    assert documento.extracao_e_confiavel is True
+
+
+@pytest.mark.django_db
+def test_pdf_lido_sem_docling_e_marcado_como_nao_confiavel(tenant_com_categoria, monkeypatch):
+    """O texto parece normal; o que nao aparece e a ordem trocada das colunas.
+
+    Sem esta marca, alguem curaria texto embaralhado sem saber e a citacao
+    publicada apontaria para uma fonte cujo conteudo foi lido errado.
+    """
+
+    class Pagina:
+        def extract_text(self):
+            return "Texto de uma coluna qualquer."
+
+    class LeitorFalso:
+        def __init__(self, *a, **k):
+            self.pages = [Pagina()]
+
+    monkeypatch.setattr("pypdf.PdfReader", LeitorFalso)
+    documento = _documento("artigo.pdf", b"%PDF-1.4")
+    job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
+    avancar(str(job.pk))
+
+    documento.refresh_from_db()
+    assert documento.extraction_method == Document.ExtractionMethod.PYPDF
+    assert documento.extracao_e_confiavel is False
+
+
+@pytest.mark.django_db
+def test_extracao_local_desligada_recusa_pdf(tenant_com_categoria, settings):
+    """Em producao so o Docling converte PDF.
+
+    Aceitar o caminho local la significaria indexar coluna dupla embaralhada e
+    publicar citando uma fonte cujo conteudo foi lido errado.
+    """
+    settings.PERMITIR_EXTRACAO_LOCAL = False
+    documento = _documento("artigo.pdf", b"%PDF-1.4")
+
+    with pytest.raises(ExtracaoIndisponivel, match="Docling"):
+        extrair_markdown(documento)
+
+
+@pytest.mark.django_db
+def test_extracao_local_desligada_ainda_aceita_texto(tenant_com_categoria, settings):
+    """A trava e sobre PDF: `.md` nao passa por extracao nenhuma."""
+    settings.PERMITIR_EXTRACAO_LOCAL = False
+    documento = _documento("notas.md", b"# Titulo\n\nCorpo.")
+
+    assert extrair_markdown(documento).metodo == "texto"
+
+
+@pytest.mark.django_db
+def test_pypdf_ausente_diz_o_que_fazer(tenant_com_categoria, monkeypatch):
+    """`No module named 'pypdf'` nao diz que e preciso reiniciar o worker."""
+    import builtins
+
+    original = builtins.__import__
+
+    def sem_pypdf(nome, *args, **kwargs):
+        if nome == "pypdf":
+            raise ImportError("No module named 'pypdf'")
+        return original(nome, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", sem_pypdf)
+    documento = _documento("artigo.pdf", b"%PDF-1.4")
+
+    with pytest.raises(ExtracaoIndisponivel, match="reinicie o worker"):
+        extrair_markdown(documento)
+
+
+@pytest.mark.django_db
+def test_reconverter_tira_os_trechos_antigos_do_indice(tenant_com_categoria):
+    """O recorte veio do texto anterior, que a reconversao substitui.
+
+    Deixa-los ativos manteria no indice um trecho que nao corresponde mais ao
+    documento — e o motivo mais comum de reconverter e o texto anterior estar
+    errado.
+    """
+    from apps.knowledge.services import salvar_super_chunk
+    from apps.knowledge.tasks import iniciar_ingestao
+
+    documento = _documento("estudo.md", MARKDOWN_DE_ARTIGO.encode())
+    chunk = salvar_super_chunk(
+        document=documento,
+        kind=SuperChunk.Kind.ABSTRACT,
+        content="Recorte feito a partir do texto antigo.",
+    )
+    assert chunk.is_active is True
+
+    iniciar_ingestao(documento)
+
+    chunk.refresh_from_db()
+    assert chunk.is_active is False
+    # Desativado, nao apagado: o texto continua visivel para comparacao.
+    assert chunk.content == "Recorte feito a partir do texto antigo."

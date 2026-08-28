@@ -14,5 +14,4 @@ urlpatterns = [
     path("categorias/", views.categorias, name="categorias"),
     path("<uuid:pk>/", views.curar_documento, name="curar"),
     path("<uuid:pk>/reprocessar/", views.reprocessar, name="reprocessar"),
-    path("<uuid:pk>/trecho/<uuid:chunk_pk>/remover/", views.remover_trecho, name="remover_trecho"),
 ]

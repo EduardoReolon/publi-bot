@@ -40,3 +40,8 @@ EMAIL_PORT = env.integer("EMAIL_PORT", 587)
 EMAIL_HOST_USER = env.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env.boolean("EMAIL_USE_TLS", True)
+
+# Em producao so o Docling converte PDF. Aceitar o caminho local aqui
+# significaria indexar texto de coluna dupla embaralhado e publicar citando uma
+# fonte cujo conteudo foi lido errado — sem nada no site indicando isso.
+PERMITIR_EXTRACAO_LOCAL = env.boolean("PERMITIR_EXTRACAO_LOCAL", False)

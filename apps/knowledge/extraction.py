@@ -8,11 +8,14 @@ devolve Markdown estruturado. E o que um artigo cientifico de verdade exige.
 
 O caminho **de emergencia** roda aqui mesmo, sem GPU, e serve para o sistema
 ser testavel antes de a maquina de inferencia existir. Para `.txt` e `.md` nao
-ha o que converter. Para PDF ele usa o `pypdf`, que extrai a camada de texto na
-ordem em que ela esta no arquivo — em PDF de coluna dupla isso embaralha as
-colunas, e num PDF digitalizado nao ha camada de texto nenhuma. O resultado vai
-para curadoria humana marcado com o metodo usado, para ninguem confundir um
-com o outro.
+ha o que converter. Para PDF ele usa o `pypdf`, que devolve a camada de texto
+**sem interpretar a estrutura da pagina**: nao distingue coluna, cabecalho,
+rodape, legenda nem tabela, e a ordem de leitura nao e garantida. Num PDF
+digitalizado nao ha camada de texto nenhuma.
+
+O metodo usado fica gravado no proprio documento e a tela de curadoria avisa em
+destaque quando foi o caminho fraco — sem isso a degradacao seria silenciosa, e
+e essa a parte perigosa: o texto parece correto sem estar.
 """
 
 from __future__ import annotations
@@ -61,10 +64,29 @@ def conexao_de_conversao() -> InferenceConnection | None:
 
 
 def extrair_markdown(document, *, timeout: float = 600.0) -> ResultadoDaExtracao:
-    """Converte o arquivo do documento em Markdown."""
+    """Converte o arquivo do documento em Markdown.
+
+    Prefere sempre o Docling. So cai no caminho local quando nao ha conexao de
+    conversao cadastrada E `PERMITIR_EXTRACAO_LOCAL` esta ligado — em producao
+    ele vem desligado, para ninguem indexar por engano texto lido sem analise
+    de layout.
+    """
+    from django.conf import settings
+
     conexao = conexao_de_conversao()
     if conexao is not None:
         return _extrair_com_docling(document, conexao, timeout=timeout)
+
+    nome = (document.nome_do_arquivo or "").lower()
+
+    if nome.endswith(".pdf") and not settings.PERMITIR_EXTRACAO_LOCAL:
+        raise ExtracaoIndisponivel(
+            "nenhuma conexao de conversao (Docling) esta cadastrada, e a "
+            "extracao local de PDF esta desligada. Cadastre a conexao em "
+            "Inferencia, ou ligue PERMITIR_EXTRACAO_LOCAL para aceitar texto "
+            "lido sem analise de layout."
+        )
+
     return _extrair_localmente(document)
 
 
@@ -147,7 +169,17 @@ def _extrair_localmente(document) -> ResultadoDaExtracao:
 def _pdf_para_texto(bruto: bytes) -> str:
     import io
 
-    from pypdf import PdfReader
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        # Dependencia acrescentada depois da primeira instalacao. O
+        # `ModuleNotFoundError` cru nao diz o que fazer.
+        raise ExtracaoIndisponivel(
+            "o pypdf nao esta instalado neste ambiente. Rode "
+            "`pip install -r requirements.txt` e reinicie o worker — ele carrega "
+            "as bibliotecas na hora em que sobe, entao instalar sem reiniciar "
+            "nao muda nada."
+        ) from exc
 
     leitor = PdfReader(io.BytesIO(bruto))
     paginas = [(pagina.extract_text() or "").strip() for pagina in leitor.pages]

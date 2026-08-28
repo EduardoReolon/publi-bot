@@ -356,8 +356,18 @@ O caminho completo, na ordem:
 1. **Documentos > Categorias**: crie ao menos uma.
 2. **Documentos > Enviar**: um PDF, `.txt` ou `.md`. A conversao roda no worker.
 3. **Documentos > (o documento)**: confira titulo, autores, ano e **URL de
-   origem** — sao esses campos que viram o link publicado — cole o resumo ou a
-   conclusao no campo de trecho, indexe e conclua a curadoria.
+   origem** — sao esses campos que viram o link publicado, e a URL e a unica
+   que o documento nao tem como informar sozinho. Abaixo aparecem os blocos que
+   a extracao reconheceu: marque os que podem sustentar um artigo e conclua.
+
+   Cada **paragrafo** de um bloco marcado vira um vetor proprio, e nao o bloco
+   inteiro ([ADR-0015](docs/adr/ADR-0015-vetorizacao-por-paragrafo.md)). Se um
+   PDF aparecer como um unico bloco disforme, foi lido sem analise de layout —
+   a propria forma da tela diz isso.
+
+   Atencao a licenca: concluir a curadoria de documento proprietario ou de
+   licenca desconhecida **apaga o texto integral** e nao ha como remarcar blocos
+   depois sem reenviar o arquivo. A tela avisa antes.
 4. **Pautas**: crie uma e clique em *Gerar artigo*.
 5. **Artigos**: revise, preencha o autor e aprove. Sem autor identificado nao
    ha publicacao.

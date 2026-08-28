@@ -59,6 +59,7 @@ def passo_converter(job: GenerationJob) -> dict:
     sugestoes = sugerir_metadados(resultado.markdown)
 
     document.markdown_full = resultado.markdown
+    document.extraction_method = resultado.metodo
     document.status = Document.Status.PENDING_CURATION
     document.failure_reason = ""
     # So preenche o que esta vazio: se alguem ja corrigiu a mao, a sugestao

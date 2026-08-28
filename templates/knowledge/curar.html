@@ -10,6 +10,11 @@
     {% if documento.metadata_confidence == 'auto' %}
       <span class="selo espera">{% translate "metadados sugeridos, nao conferidos" %}</span>
     {% endif %}
+    {% if documento.extraction_method %}
+      <span class="selo {% if not documento.extracao_e_confiavel %}ruim{% endif %}">
+        {{ documento.get_extraction_method_display }}
+      </span>
+    {% endif %}
   </p>
 
   {% if documento.failure_reason %}
@@ -18,6 +23,29 @@
       <form method="post" action="{% url 'knowledge:reprocessar' documento.pk %}" style="margin-top:.6rem">
         {% csrf_token %}
         <button type="submit" class="botao secundario">{% translate "Tentar converter de novo" %}</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if not documento.extracao_e_confiavel %}
+    {% comment %}
+      O aviso e alto de proposito. O texto abaixo parece normal; o que nao
+      aparece e que a estrutura da pagina foi ignorada. Curar isso em silencio
+      produz uma citacao publicada apontando para uma fonte cujo conteudo foi
+      lido errado.
+    {% endcomment %}
+    <div class="aviso ruim">
+      <strong>{% translate "Texto extraido sem analise de layout." %}</strong>
+      {% blocktranslate trimmed %}
+        Este PDF foi lido pelo extrator local, que devolve a camada de texto do
+        arquivo sem interpretar a estrutura da pagina. Ele nao distingue coluna,
+        cabecalho, rodape, legenda de figura nem tabela, e a ordem de leitura nao
+        e garantida. E por isso que abaixo aparece um bloco unico, em vez das
+        secoes do artigo.
+      {% endblocktranslate %}
+      <form method="post" action="{% url 'knowledge:reprocessar' documento.pk %}" style="margin-top:.6rem">
+        {% csrf_token %}
+        <button type="submit" class="botao secundario">{% translate "Converter de novo" %}</button>
       </form>
     </div>
   {% endif %}
@@ -37,89 +65,155 @@
     </div>
   {% endif %}
 
-  <div class="duas-colunas">
-    <div>
-      <h2>{% translate "Texto convertido" %}</h2>
-      {% if documento.markdown_full %}
-        <p class="pre-visualizacao">
-          {% blocktranslate trimmed %}
-            Copie daqui o resumo e a conclusao para o campo de trecho ao lado.
-          {% endblocktranslate %}
-        </p>
-        <textarea readonly style="min-height:34rem">{{ documento.markdown_full }}</textarea>
-      {% elif documento.status == 'queued' or documento.status == 'parsing' %}
-        <p class="vazio">{% translate "Conversao em andamento. Atualize a pagina em instantes." %}</p>
-      {% else %}
-        <p class="vazio">{% translate "Nada convertido ainda." %}</p>
-      {% endif %}
-    </div>
+  <form method="post">
+    {% csrf_token %}
 
-    <div>
-      <h2>{% translate "Metadados" %}</h2>
-      <p class="pre-visualizacao">
-        {% blocktranslate trimmed %}
-          Autores e ano formam o texto-ancora do link; a URL e o destino dele.
-          Um erro aqui sai publicado com aparencia de fonte conferida.
-        {% endblocktranslate %}
-      </p>
-      <form method="post">
-        {% csrf_token %}
-        {% for campo in form %}
-          <div class="campo">
+    {% comment %}
+      Os metadados vem primeiro porque identificam a obra e porque o titulo
+      entra como prefixo de contexto de cada trecho: corrigi-lo depois de
+      vetorizar mudaria o que foi para o indice.
+    {% endcomment %}
+    <h2>{% translate "Identificacao" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Preenchidos pela extracao, para voce conferir. Autores e ano formam o
+        texto-ancora do link publicado; a URL e o destino dele — e a unica que o
+        documento nao tem como informar sozinho.
+      {% endblocktranslate %}
+    </p>
+    {% comment %}
+      Titulo e URL ocupam a linha inteira: sao os dois campos longos, e num
+      grid de colunas iguais ambos apareciam cortados — justamente os dois que
+      precisam ser lidos por inteiro para serem conferidos.
+    {% endcomment %}
+    {% for campo in form %}
+      {% if campo.name == 'title' or campo.name == 'source_url' %}
+        <div class="campo">
+          <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+          {{ campo }}
+          {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+          {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+    <div class="cartoes">
+      {% for campo in form %}
+        {% if campo.name != 'title' and campo.name != 'source_url' %}
+          <div>
             <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
             {{ campo }}
             {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
             {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
           </div>
-        {% endfor %}
-        <div class="acoes">
-          <button type="submit" name="acao" value="salvar" class="botao secundario">
-            {% translate "Salvar" %}
-          </button>
-          <button type="submit" name="acao" value="concluir">
-            {% translate "Concluir curadoria" %}
-          </button>
-        </div>
-      </form>
+        {% endif %}
+      {% endfor %}
+    </div>
 
-      <h2>{% translate "Trechos no indice" %}</h2>
-      <p class="pre-visualizacao">
-        {% blocktranslate trimmed %}
-          O trecho e o que o sistema compara com a pauta na hora de buscar
-          fontes. Um por tipo.
-        {% endblocktranslate %}
+    <h2>{% translate "O que vai para a busca" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Marque as partes que podem sustentar um artigo. Cada paragrafo marcado
+        vira um vetor proprio, e nao o bloco inteiro: um vetor unico cobrindo uma
+        secao longa vira uma media que nao fica perto de nenhuma pergunta.
+        Salvar substitui o indice deste documento pelo que estiver marcado.
+      {% endblocktranslate %}
+    </p>
+
+    {% if blocos %}
+      <ul class="lista">
+        {% for bloco in blocos %}
+          <li>
+            <label style="display:flex; gap:.6rem; align-items:flex-start; font-weight:400">
+              <input type="checkbox" name="bloco" value="{{ bloco.ordem }}"
+                     {% if bloco.ordem in marcados %}checked{% endif %}
+                     style="width:auto; margin-top:.4rem">
+              <span style="flex:1">
+                <strong>
+                  {% if bloco.titulo %}{{ bloco.titulo }}{% else %}{% translate "(sem titulo)" %}{% endif %}
+                </strong>
+                <span class="selo">
+                  {{ bloco.total_de_trechos }} {% translate "trecho(s)" %}
+                </span>
+                {% if bloco.tem_trecho_partido %}
+                  {% comment %}
+                    Paragrafo longo demais para a janela do modelo. Cortar em
+                    frases e melhor que deixar o modelo truncar, o que ele faz
+                    sem avisar — mas quem cura precisa saber que aquele trecho
+                    chega partido ao indice.
+                  {% endcomment %}
+                  <span class="selo espera">{% translate "paragrafo longo, cortado em frases" %}</span>
+                {% endif %}
+                <div class="pre-visualizacao" style="margin-top:.4rem">
+                  {{ bloco.conteudo|truncatechars:400 }}
+                </div>
+                {% if bloco.paragrafos %}
+                  <details style="margin-top:.4rem">
+                    <summary class="pre-visualizacao">
+                      {% translate "ver os trechos que este bloco produz" %}
+                    </summary>
+                    <ol class="pre-visualizacao">
+                      {% for paragrafo in bloco.paragrafos %}
+                        <li style="margin-bottom:.5rem">
+                          <span class="selo">{{ paragrafo.tokens }}/{{ limite_de_tokens }} tokens</span>
+                          {{ paragrafo.texto }}
+                        </li>
+                      {% endfor %}
+                    </ol>
+                  </details>
+                {% endif %}
+              </span>
+            </label>
+          </li>
+        {% endfor %}
+      </ul>
+    {% elif documento.status == 'queued' or documento.status == 'parsing' %}
+      <p class="vazio">{% translate "Conversao em andamento. Atualize a pagina em instantes." %}</p>
+    {% elif trechos %}
+      {% comment %}
+        Documento proprietario ja curado: o texto integral foi descartado pela
+        regra de retencao e so os trechos indexados ficaram.
+      {% endcomment %}
+      <p class="vazio">
+        {% translate "O texto integral foi descartado pela licenca deste documento. Os trechos indexados continuam:" %}
       </p>
       <ul class="lista">
         {% for trecho in trechos %}
           <li>
-            <strong>{{ trecho.get_kind_display }}</strong>
-            <span class="selo">{{ trecho.token_count }} {% translate "tokens" %}</span>
-            <div class="pre-visualizacao">{{ trecho.content|truncatechars:220 }}</div>
-            <form method="post" action="{% url 'knowledge:remover_trecho' documento.pk trecho.pk %}"
-                  style="margin-top:.5rem">
-              {% csrf_token %}
-              <button type="submit" class="botao secundario">{% translate "Remover" %}</button>
-            </form>
-          </li>
-        {% empty %}
-          <li class="vazio">
-            {% translate "Nenhum trecho selecionado. Sem ao menos um, o documento nao pode ser citado." %}
+            <strong>{{ trecho.heading|default:"—" }}</strong>
+            <span class="selo">{{ trecho.token_count }} tokens</span>
+            <div class="pre-visualizacao">{{ trecho.content|truncatechars:300 }}</div>
           </li>
         {% endfor %}
       </ul>
+    {% else %}
+      <p class="vazio">{% translate "Nada convertido ainda." %}</p>
+    {% endif %}
 
-      <form method="post">
-        {% csrf_token %}
-        <input type="hidden" name="acao" value="trecho">
-        {% for campo in form_trecho %}
-          <div class="campo">
-            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
-            {{ campo }}
-            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
-          </div>
-        {% endfor %}
-        <button type="submit" class="botao secundario">{% translate "Indexar trecho" %}</button>
-      </form>
+    {% if blocos and not documento.pode_guardar_texto_integral %}
+      {% comment %}
+        A regra de retencao apaga o texto integral ao concluir, e a licenca
+        padrao e "Desconhecido" — entao o caminho mais provavel leva a uma
+        perda irreversivel. Avisar antes do clique e o minimo: depois nao ha
+        como voltar para ajustar os blocos sem reenviar o arquivo.
+      {% endcomment %}
+      <div class="aviso ruim">
+        <strong>{% translate "Concluir vai apagar o texto integral." %}</strong>
+        {% blocktranslate trimmed %}
+          A licenca escolhida nao permite guardar o documento inteiro, entao ao
+          concluir so os trechos marcados sobrevivem — e nao havera como
+          remarcar blocos sem reenviar o arquivo. Se a obra for de acesso
+          aberto ou sua, ajuste a licenca acima antes.
+        {% endblocktranslate %}
+      </div>
+    {% endif %}
+
+    <div class="acoes">
+      <button type="submit" name="acao" value="salvar" class="botao secundario">
+        {% translate "Salvar" %}
+      </button>
+      <button type="submit" name="acao" value="concluir">
+        {% translate "Concluir curadoria" %}
+      </button>
     </div>
-  </div>
+  </form>
 {% endblock %}

@@ -64,10 +64,11 @@ markdown==3.10
 
 # Extracao de texto de PDF SEM GPU — o caminho de emergencia da ingestao.
 # O caminho bom e o Docling no worker com GPU (ADR-0007), que faz analise de
-# layout. O pypdf le a camada de texto na ordem em que ela esta no arquivo:
-# embaralha coluna dupla e nao ve nada num PDF digitalizado. Existe para o
-# sistema ser testavel antes de a maquina de inferencia existir, e o metodo
-# usado fica registrado no trabalho para ninguem confundir os dois.
+# layout. O pypdf devolve a camada de texto sem interpretar a estrutura da
+# pagina — coluna, cabecalho, rodape e tabela viram texto corrido — e nao ve
+# nada num PDF digitalizado. Existe para o sistema ser testavel antes de a
+# maquina de inferencia existir, e o metodo usado fica gravado no documento,
+# com aviso em destaque na curadoria.
 pypdf==6.1.3
 
 # --- Rede e criptografia ---------------------------------------------------

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from pgvector.django import CosineDistance
 
 from apps.knowledge.embeddings import get_embedding_client
 from apps.knowledge.models import Document, RetrievalHit, RetrievalQuery, SuperChunk
+
+logger = logging.getLogger("publibot.knowledge")
 
 # Um DOI comeca sempre por "10." seguido do prefixo do registrante.
 PADRAO_DOI = re.compile(r"\b(10\.\d{4,9}/[-._;()/:a-zA-Z0-9]+)\b")
@@ -255,3 +258,67 @@ def possiveis_duplicatas(document: Document):
     if not document.title:
         return Document.objects.none()
     return Document.objects.filter(content_fingerprint=impressao).exclude(pk=document.pk)
+
+
+@transaction.atomic
+def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
+    """Refaz o indice do documento a partir dos blocos marcados.
+
+    Substitui tudo, em vez de acrescentar: o conjunto marcado na tela e a
+    verdade sobre o documento. Acrescentar deixaria no indice trecho de bloco
+    que a pessoa acabou de desmarcar, e ela nao teria como saber.
+
+    Substituir e seguro porque a citacao de um artigo ja publicado aponta para
+    o chunk com `SET_NULL` e guarda titulo e URL copiados — apagar o chunk nao
+    apaga a referencia do que foi ao ar.
+
+    Cada paragrafo vira um vetor, e nao o bloco inteiro. Ver `blocos.py` para o
+    porque.
+    """
+    from apps.knowledge.blocos import montar_texto_vetorizavel, preparar_blocos
+
+    cliente = get_embedding_client()
+    blocos = preparar_blocos(document)
+
+    document.chunks.all().delete()
+
+    criados = 0
+    for bloco in blocos:
+        if bloco.ordem not in blocos_marcados:
+            continue
+
+        for posicao, paragrafo in enumerate(bloco.paragrafos):
+            texto = montar_texto_vetorizavel(
+                paragrafo.texto,
+                titulo_do_documento=document.title or "",
+                titulo_do_bloco=bloco.titulo,
+            )
+            SuperChunk.objects.create(
+                document=document,
+                kind=SuperChunk.Kind.CUSTOM,
+                content=paragrafo.texto,
+                heading=bloco.titulo[:300],
+                block_index=bloco.ordem,
+                paragraph_index=posicao,
+                # O vetor cobre o texto COM o prefixo de contexto; o `content`
+                # guarda so o paragrafo, que e o que o revisor precisa ler.
+                embedding=cliente.embed_passage([texto])[0],
+                embedding_model=cliente.model_name,
+                embedding_dim=cliente.dimensions,
+                token_count=paragrafo.tokens,
+                source_title=document.title,
+                source_authors=document.authors,
+                source_year=document.year,
+                source_url=document.source_url,
+                source_authority=document.authority_score,
+                is_active=True,
+            )
+            criados += 1
+
+    logger.info("Documento %s: %s trecho(s) indexados.", document.pk, criados)
+    return criados
+
+
+def blocos_marcados(document: Document) -> set[int]:
+    """Quais blocos ja estao no indice, para a tela voltar marcada."""
+    return set(document.chunks.values_list("block_index", flat=True))

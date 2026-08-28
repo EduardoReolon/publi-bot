@@ -5,7 +5,7 @@ from __future__ import annotations
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from apps.knowledge.models import Document, DocumentCategory, SuperChunk
+from apps.knowledge.models import Document, DocumentCategory
 
 # O que a extracao sem GPU consegue ler. Recusar aqui e melhor que aceitar e
 # falhar minutos depois, dentro do worker, com o arquivo ja gravado.
@@ -97,18 +97,3 @@ class CuradoriaDeDocumento(forms.ModelForm):
         if not dados.get("authors"):
             self.add_error("authors", _("Os autores formam o texto-ancora do link."))
         return dados
-
-
-class SelecaoDeTrecho(forms.Form):
-    """O Super Chunk: o pedaco que representa o documento no indice.
-
-    Um por tipo. O modelo de embedding trunca em 512 tokens sem avisar, entao
-    o tamanho e conferido com o tokenizador real na gravacao.
-    """
-
-    kind = forms.ChoiceField(choices=SuperChunk.Kind.choices, label=_("Tipo do trecho"))
-    content = forms.CharField(
-        widget=forms.Textarea,
-        label=_("Trecho"),
-        help_text=_("Cole aqui o resumo ou a conclusao, copiado do texto ao lado."),
-    )

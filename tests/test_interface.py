@@ -183,13 +183,24 @@ def test_nao_da_para_concluir_curadoria_sem_trecho(ambiente):
 
 @pytest.mark.django_db
 def test_curadoria_marca_metadados_como_conferidos(ambiente):
+    """Corrigir os metadados tem de alcancar o que esta no indice.
+
+    Os trechos carregam titulo, autores, ano e URL copiados, porque e deles que
+    sai a citacao publicada. Antes, a correcao ficava so no documento e os
+    trechos guardavam a versao errada.
+    """
     _, _, client = ambiente
     documento = _documento_curado()
+    Document.objects.filter(pk=documento.pk).update(
+        markdown_full="## Conclusao\n\n" + ("O achado principal do estudo. " * 12)
+    )
+    documento.refresh_from_db()
 
     client.post(
         reverse("knowledge:curar", args=[documento.pk], urlconf="core.urls_tenants"),
         {
             "acao": "concluir",
+            "bloco": "0",
             "title": "Estudo revisado",
             "authors": "Souza, M. et al.",
             "year": "2024",
@@ -203,9 +214,48 @@ def test_curadoria_marca_metadados_como_conferidos(ambiente):
     documento.refresh_from_db()
     assert documento.status == Document.Status.CURATED
     assert documento.metadata_confidence == Document.MetadataConfidence.MANUAL
-    # Os trechos carregam a citacao; corrigir o documento tem de corrigi-los.
-    assert documento.chunks.first().source_authors == "Souza, M. et al."
-    assert documento.chunks.first().source_authority == 70
+
+    chunk = documento.chunks.first()
+    assert chunk.heading == "Conclusao"
+    assert chunk.source_authors == "Souza, M. et al."
+    assert chunk.source_authority == 70
+
+
+@pytest.mark.django_db
+def test_bloco_nao_marcado_sai_do_indice(ambiente):
+    """Salvar substitui o indice pelo que estiver marcado.
+
+    Acrescentar deixaria no indice trecho de bloco que a pessoa acabou de
+    desmarcar, sem nada na tela indicando isso.
+    """
+    _, _, client = ambiente
+    documento = _documento_curado()
+    Document.objects.filter(pk=documento.pk).update(
+        markdown_full="## Resumo\n\n" + ("Primeiro bloco com corpo. " * 12)
+    )
+    documento.refresh_from_db()
+
+    dados = {
+        "title": "Estudo",
+        "authors": "Souza, M.",
+        "year": "2024",
+        "source_url": "https://revista.exemplo.org/estudo",
+        "language": "pt",
+        "license": "cc_by",
+        "authority_score": "50",
+    }
+
+    client.post(
+        reverse("knowledge:curar", args=[documento.pk], urlconf="core.urls_tenants"),
+        {**dados, "acao": "salvar", "bloco": "0"},
+    )
+    assert documento.chunks.exists()
+
+    client.post(
+        reverse("knowledge:curar", args=[documento.pk], urlconf="core.urls_tenants"),
+        {**dados, "acao": "salvar"},
+    )
+    assert not documento.chunks.exists()
 
 
 # ---------------------------------------------------------------------------

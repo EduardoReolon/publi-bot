@@ -411,6 +411,15 @@ PUBLISH_DRY_RUN = env.boolean("PUBLISH_DRY_RUN", False)
 # multilingual-e5-large: 1024 dimensoes, MIT, ~100 idiomas, roda em CPU na
 # nuvem via ONNX. Mesma dimensao do bge-m3, entao trocar de modelo depois nao
 # exige ALTER TYPE nem recriar o indice HNSW — so re-embutir o corpus.
+# Aceitar PDF sem o worker de conversao. O caminho local usa o pypdf, que le a
+# camada de texto sem interpretar a estrutura da pagina — coluna, cabecalho,
+# rodape e tabela viram texto corrido — e nao ve nada num PDF digitalizado.
+#
+# Fica ligado por padrao para o sistema ser testavel antes de a maquina com GPU
+# existir, e DESLIGADO em producao (ver prod.py): la, indexar texto lido assim
+# significaria publicar citando uma fonte cujo conteudo foi lido errado.
+PERMITIR_EXTRACAO_LOCAL = env.boolean("PERMITIR_EXTRACAO_LOCAL", True)
+
 EMBEDDING_MODEL = env.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)
 

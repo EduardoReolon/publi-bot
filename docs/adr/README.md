@@ -26,3 +26,4 @@ de quem decidiu com a informacao daquele momento.
 | [0012](ADR-0012-inferencia-como-endpoint.md) | Inferencia como endpoints com reserva | Aceito |
 | [0013](ADR-0013-broker-postgres-em-dev.md) | Broker do Celery no PostgreSQL em desenvolvimento | Aceito |
 | [0014](ADR-0014-limiar-de-recuperacao.md) | Limiar de recuperacao calibrado por medicao | Aceito |
+| [0015](ADR-0015-vetorizacao-por-paragrafo.md) | Vetorizar por paragrafo, com prefixo de contexto | Aceito |

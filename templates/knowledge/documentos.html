@@ -39,6 +39,7 @@
             <th>{% translate "Ano" %}</th>
             <th>{% translate "Situacao" %}</th>
             <th class="numero">{% translate "Trechos" %}</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -61,11 +62,30 @@
                   {% elif documento.status == 'pending_curation' %}espera{% endif %}">
                   {{ documento.get_status_display }}
                 </span>
+                {% if not documento.extracao_e_confiavel %}
+                  <span class="selo ruim">{% translate "sem analise de layout" %}</span>
+                {% endif %}
                 {% if documento.failure_reason %}
                   <div class="pre-visualizacao">{{ documento.failure_reason|truncatechars:120 }}</div>
                 {% endif %}
               </td>
               <td class="numero">{{ documento.chunks.count }}</td>
+              <td>
+                {% comment %}
+                  A retentativa fica aqui, e nao so na tela de curadoria: e
+                  desta lista que se ve o que falhou, e obrigar a abrir cada
+                  documento para achar o botao esconde a acao onde ninguem
+                  procura.
+                {% endcomment %}
+                {% if documento.status == 'failed' or not documento.extracao_e_confiavel %}
+                  <form method="post" action="{% url 'knowledge:reprocessar' documento.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="botao secundario">
+                      {% translate "Converter de novo" %}
+                    </button>
+                  </form>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
