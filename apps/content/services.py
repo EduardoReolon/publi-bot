@@ -6,6 +6,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from django.db import transaction
 from django.utils import timezone
@@ -338,3 +339,89 @@ def garantir_prompts_padrao() -> None:
                 temperature=dados.get("temperatura", 0.2),
                 is_active=True,
             )
+
+
+@transaction.atomic
+def aplicar_rascunho_de_resposta(question, markdown_bruto: str, *, trechos, site=None):
+    """Grava a resposta a uma pergunta, com as mesmas travas do artigo.
+
+    Uma resposta publicada no site de um cliente tem o mesmo peso editorial que
+    um artigo: sai do mesmo acervo, leva link para a mesma fonte primaria e
+    passa pela mesma revisao humana. Reaproveitar as travas aqui — em vez de
+    escrever um caminho mais curto — e o que impede a resposta de virar a porta
+    dos fundos por onde um link alucinado chega ao ar.
+    """
+    from apps.content.models import Answer, AnswerCitation
+
+    validar_saida_do_modelo(markdown_bruto)
+
+    answer, _ = Answer.objects.get_or_create(question=question)
+
+    # As citacoes vem antes da substituicao: sao elas que definem para onde
+    # cada marcador aponta.
+    answer.citations.all().delete()
+    ordenados = sorted(trechos, key=lambda t: _chunk_de(t).source_authority, reverse=True)
+    chunk_primario = _chunk_de(ordenados[0]) if ordenados else None
+
+    for t in trechos:
+        chunk = _chunk_de(t)
+        AnswerCitation.objects.create(
+            answer=answer,
+            super_chunk=chunk,
+            rank=getattr(t, "posicao", 1),
+            distance=getattr(t, "distancia", 0.0),
+            used_as_primary=chunk_primario is not None and chunk.pk == chunk_primario.pk,
+            source_title=chunk.source_title,
+            source_url=chunk.source_url,
+        )
+
+    fontes = {
+        c.rank: Fonte(url=c.source_url, anchor=_texto_ancora(c.super_chunk))
+        for c in answer.citations.order_by("rank")
+        if c.source_url
+    }
+    markdown_final = substituir_marcadores(markdown_bruto, fontes)
+
+    dominios = {
+        (urlparse(c.source_url).hostname or "").lower().removeprefix("www.")
+        for c in answer.citations.all()
+        if c.source_url
+    }
+    html = markdown_para_html(markdown_final)
+    if dominios := {d for d in dominios if d}:
+        from apps.content.rendering import sanitizar_html
+
+        html = sanitizar_html(html, dominios_permitidos=dominios)
+
+    answer.body_markdown = markdown_final
+    answer.body_html = html
+    if chunk_primario is not None:
+        answer.outbound_link_url = chunk_primario.source_url
+        answer.anchor_text = _texto_ancora(chunk_primario)
+    if not answer.author_name:
+        answer.author_name = getattr(site, "default_author", "") or ""
+        answer.author_credentials = getattr(site, "default_author_credentials", "") or ""
+    answer.status = Answer.Status.PENDING_REVIEW
+    answer.save()
+    return answer
+
+
+def _chunk_de(trecho):
+    """Aceita tanto `TrechoRecuperado` quanto o proprio `SuperChunk`."""
+    return trecho.chunk if hasattr(trecho, "chunk") else trecho
+
+
+def aprovar_resposta_e_agendar(answer, *, revisor, quando, exige_revisor_tecnico: bool = False):
+    """Mesma porta de aprovacao do artigo, aplicada a resposta."""
+    if exige_revisor_tecnico and not getattr(revisor, "is_technical_reviewer", False):
+        raise RevisaoInsuficiente("este site exige revisor com credencial tecnica registrada.")
+
+    if not answer.author_name:
+        raise RevisaoInsuficiente("a resposta precisa de autor identificado antes de publicar.")
+
+    answer.status = answer.Status.APPROVED_SCHEDULED
+    answer.reviewed_by = revisor
+    answer.reviewed_at = timezone.now()
+    answer.scheduled_for = quando
+    answer.save()
+    return answer
