@@ -51,6 +51,46 @@
     {% endfor %}
   </div>
 
+  {% comment %}
+    A busca fica junto do acervo porque e a mesma pergunta vista de dois lados:
+    "o que existe para citar" e "o que esta sendo achado". O cartao aparece
+    sempre, e nao so quando ha problema — a folga ate o corte encolhendo aos
+    poucos e o unico aviso antecipado que existe.
+  {% endcomment %}
+  <h2>{% translate "Busca" %}</h2>
+  <div class="cartoes">
+    <a class="cartao {% if busca.atual.percentual_sem_resultado >= 30 %}atencao{% endif %}"
+       href="{% url 'knowledge:busca' %}">
+      <div class="valor">{{ busca.atual.percentual_sem_resultado }}%</div>
+      <div class="rotulo">
+        {% blocktranslate trimmed with dias=busca.janela_em_dias %}
+          buscas sem fonte em {{ dias }} dias
+        {% endblocktranslate %}
+      </div>
+    </a>
+    <a class="cartao {% if busca.margem_esta_apertada %}atencao{% endif %}"
+       href="{% url 'knowledge:busca' %}">
+      <div class="valor">
+        {% if busca.margem_ate_o_limiar %}{{ busca.margem_ate_o_limiar|floatformat:3 }}{% else %}—{% endif %}
+      </div>
+      <div class="rotulo">{% translate "folga ate o corte" %}</div>
+    </a>
+    <a class="cartao {% if busca.documentos_nunca_citados %}acao{% endif %}"
+       href="{% url 'knowledge:busca' %}">
+      <div class="valor">{{ busca.documentos_nunca_citados }}</div>
+      <div class="rotulo">{% translate "curados e nunca citados" %}</div>
+    </a>
+    <a class="cartao" href="{% url 'knowledge:busca' %}">
+      <div class="valor">{{ busca.config.max_cosine_distance|floatformat:3 }}</div>
+      <div class="rotulo">
+        {% translate "limiar em uso" %}
+        {% if not busca.config.foi_calibrado %}
+          <br><span class="pre-visualizacao">{% translate "valor de fabrica" %}</span>
+        {% endif %}
+      </div>
+    </a>
+  </div>
+
   <h2>{% translate "Proximas publicacoes" %}</h2>
   {% if resumo.proximas_publicacoes %}
     <ul class="lista">

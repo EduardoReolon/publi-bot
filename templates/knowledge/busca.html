@@ -1,0 +1,274 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Qualidade da busca" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Qualidade da busca" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Antes de escrever, o sistema procura no acervo os trechos que sustentam o
+      texto. Se essa busca vai mal, nada depois disso conserta — e ela nao
+      levanta erro quando vai mal.
+    {% endblocktranslate %}
+  </p>
+
+  {% for alerta in alertas %}
+    <div class="aviso ruim">{{ alerta }}</div>
+  {% endfor %}
+
+  {% comment %}
+    O acervo vem primeiro porque as metricas de busca so significam alguma
+    coisa depois de existir o que buscar. Num acervo vazio, "0% sem resultado"
+    e verdadeiro e inutil.
+  {% endcomment %}
+  <h2>{% translate "O que existe para citar" %}</h2>
+  <div class="cartoes">
+    <a class="cartao" href="{% url 'knowledge:documentos' %}">
+      <div class="valor">{{ resumo.documentos_indexados }}</div>
+      <div class="rotulo">{% translate "documentos no indice" %}</div>
+    </a>
+    <div class="cartao">
+      <div class="valor">{{ resumo.trechos_ativos }}</div>
+      <div class="rotulo">{% translate "trechos vetorizados" %}</div>
+    </div>
+    <div class="cartao {% if resumo.documentos_nunca_citados %}acao{% endif %}">
+      <div class="valor">{{ resumo.documentos_nunca_citados }}</div>
+      <div class="rotulo">{% translate "curados e nunca citados" %}</div>
+    </div>
+    <div class="cartao {% if resumo.trechos_sem_vetor %}atencao{% endif %}">
+      <div class="valor">{{ resumo.trechos_sem_vetor }}</div>
+      <div class="rotulo">{% translate "trechos sem vetor" %}</div>
+    </div>
+  </div>
+
+  <h2>{% translate "Como as buscas se sairam" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed with dias=resumo.janela_em_dias %}
+      Ultimos {{ dias }} dias, comparados com os {{ dias }} anteriores.
+    {% endblocktranslate %}
+  </p>
+
+  {% if resumo.atual.consultas %}
+    <div class="cartoes">
+      <div class="cartao">
+        <div class="valor">{{ resumo.atual.consultas }}</div>
+        <div class="rotulo">{% translate "buscas feitas" %}</div>
+      </div>
+      {% comment %}
+        A busca sem resultado e a falha visivel: o trabalho para antes de
+        chamar o modelo. A outra metrica, a mediana encostando no limiar, e a
+        falha invisivel — e por isso as duas ficam lado a lado.
+      {% endcomment %}
+      <div class="cartao {% if resumo.atual.percentual_sem_resultado >= 30 or resumo.piorou %}atencao{% endif %}">
+        <div class="valor">{{ resumo.atual.percentual_sem_resultado }}%</div>
+        <div class="rotulo">
+          {% translate "sem nenhuma fonte" %}
+          {% if resumo.anterior.consultas %}
+            <br><span class="pre-visualizacao">
+              {% blocktranslate trimmed with antes=resumo.anterior.percentual_sem_resultado %}
+                antes: {{ antes }}%
+              {% endblocktranslate %}
+            </span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="cartao">
+        <div class="valor">
+          {% if resumo.atual.distancia_mediana %}{{ resumo.atual.distancia_mediana|floatformat:4 }}{% else %}—{% endif %}
+        </div>
+        <div class="rotulo">{% translate "distancia tipica aceita" %}</div>
+      </div>
+      <div class="cartao {% if resumo.margem_esta_apertada %}atencao{% endif %}">
+        <div class="valor">
+          {% if resumo.margem_ate_o_limiar %}{{ resumo.margem_ate_o_limiar|floatformat:4 }}{% else %}—{% endif %}
+        </div>
+        <div class="rotulo">{% translate "folga ate o corte" %}</div>
+      </div>
+      {% comment %}
+        Achou fonte, mas menos do que pediu. Nao e falha — o artigo sai — mas e
+        o sinal de que o acervo esta raso para o tema, e um texto apoiado numa
+        fonte so nao tem como passar pelo filtro de consenso.
+      {% endcomment %}
+      <div class="cartao {% if resumo.atual.abaixo_do_alvo %}acao{% endif %}">
+        <div class="valor">{{ resumo.atual.abaixo_do_alvo }}</div>
+        <div class="rotulo">{% translate "acharam menos fontes que o pedido" %}</div>
+      </div>
+    </div>
+
+    {% if resumo.faixas %}
+      <h2>{% translate "Onde as distancias caem" %}</h2>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Em verde o que o limiar aceita, em cinza o que ele recusa. Se a massa
+          verde estiver colada na borda do corte, o filtro esta no limite.
+        {% endblocktranslate %}
+        {% if resumo.atual.distancia_p90 %}
+          {% blocktranslate trimmed with p90=resumo.atual.distancia_p90|floatformat:4 %}
+            Nove em cada dez fontes aceitas ficaram abaixo de {{ p90 }}.
+          {% endblocktranslate %}
+        {% endif %}
+      </p>
+      <div class="histograma">
+        {% for faixa in resumo.faixas %}
+          <div class="barra {% if not faixa.aceita %}fora{% endif %}"
+               title="{{ faixa.rotulo }}: {{ faixa.total }}">
+            <div class="preenchimento" style="height: {{ faixa.altura }}%"></div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="eixo">
+        {% for faixa in resumo.faixas %}<span>{{ faixa.inicio|floatformat:2 }}</span>{% endfor %}
+      </div>
+    {% endif %}
+  {% else %}
+    <p class="vazio">
+      {% translate "Nenhuma busca registrada ainda. Os numeros aparecem depois da primeira geracao de artigo ou resposta." %}
+    </p>
+  {% endif %}
+
+  <h2>{% translate "Testar uma consulta" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Mede a distancia entre a consulta e cada trecho do acervo. Nao gera
+      artigo, nao grava nada e nao entra nas metricas acima — serve so para
+      voce ver onde a lista deixa de ser relevante.
+    {% endblocktranslate %}
+  </p>
+  <form method="get">
+    <div class="campo">
+      {{ teste.consulta }}
+      <div class="ajuda">{{ teste.consulta.help_text }}</div>
+      {% for erro in teste.consulta.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+    </div>
+    <button type="submit">{% translate "Medir" %}</button>
+  </form>
+
+  {% if medicao %}
+    {% comment %}
+      "Entrariam" conta trechos entre os mais proximos listados, e nao fontes: a
+      recuperacao de verdade ainda descarta trechos repetidos do mesmo
+      documento, porque dois trechos do mesmo estudo nao sao duas fontes.
+    {% endcomment %}
+    <p class="pre-visualizacao" style="margin-top:1.2rem">
+      {% blocktranslate trimmed with total=medicao.aceitos exibidos=medicao.exibidos limiar=medicao.limiar|floatformat:4 modelo=medicao.modelo %}
+        Entre os {{ exibidos }} trechos mais proximos, {{ total }} ficam dentro do
+        limiar atual ({{ limiar }}). Na geracao, trechos do mesmo documento contam
+        como uma fonte so. Modelo: {{ modelo }}.
+      {% endblocktranslate %}
+    </p>
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th class="numero">{% translate "Distancia" %}</th>
+            <th>{% translate "Entra?" %}</th>
+            <th>{% translate "Fonte" %}</th>
+            <th>{% translate "Trecho" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linha in medicao.trechos %}
+            <tr class="{% if not linha.aceito %}fora{% endif %}">
+              <td class="numero">{{ linha.distancia|floatformat:4 }}</td>
+              <td>
+                {% if linha.aceito %}
+                  <span class="selo ok">{% translate "entra" %}</span>
+                {% else %}
+                  <span class="selo">{% translate "fora" %}</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{% url 'knowledge:curar' linha.documento_id %}">{{ linha.titulo|truncatechars:60 }}</a>
+                {% if linha.heading %}
+                  <div class="pre-visualizacao">{{ linha.heading }}</div>
+                {% endif %}
+              </td>
+              <td class="pre-visualizacao">{{ linha.conteudo|truncatechars:180 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        O corte certo fica entre a ultima linha que voce considera relevante e a
+        primeira que nao e. A faixa costuma ser estreita: com este modelo, ate
+        um texto de outro assunto raramente passa de 0.20 — um limiar generoso
+        nao filtra nada.
+      {% endblocktranslate %}
+    </p>
+  {% endif %}
+
+  <h2>{% translate "Limiar deste ambiente" %}</h2>
+  <form method="post">
+    {% csrf_token %}
+    {% comment %}
+      A consulta testada viaja junto no POST para ficar gravada ao lado do
+      numero. Sem ela, meses depois, o limiar e um valor sem historia — e
+      ninguem sabe se conferir de novo ou nao.
+    {% endcomment %}
+    {% if medicao %}
+      <input type="hidden" name="consulta" value="{{ medicao.consulta }}">
+    {% endif %}
+    <div class="cartoes">
+      {% for campo in form %}
+        <div>
+          <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+          {{ campo }}
+          {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+          {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+    <div class="acoes">
+      <button type="submit">{% translate "Salvar limiar" %}</button>
+    </div>
+  </form>
+
+  <p class="pre-visualizacao">
+    {% if config.foi_calibrado %}
+      {% blocktranslate trimmed with quando=config.calibrated_at|date:"d/m/Y H:i" quem=config.calibrated_by modelo=config.calibrated_model %}
+        Ajustado em {{ quando }} por {{ quem }}, com o modelo {{ modelo }}.
+      {% endblocktranslate %}
+      {% if config.calibration_query %}
+        <br>{% translate "Consulta usada:" %} <code>{{ config.calibration_query|truncatechars:120 }}</code>
+      {% endif %}
+    {% else %}
+      {% translate "Nunca ajustado neste ambiente: o valor atual veio do padrao da instalacao." %}
+    {% endif %}
+  </p>
+
+  {% if consultas_recentes %}
+    <h2>{% translate "Ultimas buscas reais" %}</h2>
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Quando" %}</th>
+            <th>{% translate "Origem" %}</th>
+            <th>{% translate "Consulta" %}</th>
+            <th class="numero">{% translate "Fontes" %}</th>
+            <th class="numero">{% translate "Limiar usado" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for consulta in consultas_recentes %}
+            <tr class="{% if not consulta.encontradas %}fora{% endif %}">
+              <td class="pre-visualizacao">{{ consulta.created_at|date:"d/m H:i" }}</td>
+              <td class="pre-visualizacao">{{ consulta.get_origin_display }}</td>
+              <td>{{ consulta.query_text|truncatechars:80 }}</td>
+              <td class="numero">
+                {% if consulta.encontradas %}
+                  {{ consulta.encontradas }}
+                {% else %}
+                  <span class="selo ruim">{% translate "nenhuma" %}</span>
+                {% endif %}
+              </td>
+              <td class="numero pre-visualizacao">{{ consulta.max_distance|floatformat:4 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}

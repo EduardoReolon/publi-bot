@@ -5,7 +5,7 @@ from __future__ import annotations
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from apps.knowledge.models import Document, DocumentCategory
+from apps.knowledge.models import Document, DocumentCategory, RetrievalSettings
 
 # O que a extracao sem GPU consegue ler. Recusar aqui e melhor que aceitar e
 # falhar minutos depois, dentro do worker, com o arquivo ja gravado.
@@ -97,3 +97,38 @@ class CuradoriaDeDocumento(forms.ModelForm):
         if not dados.get("authors"):
             self.add_error("authors", _("Os autores formam o texto-ancora do link."))
         return dados
+
+
+class ConfiguracaoDeBusca(forms.ModelForm):
+    """O limiar e quantas fontes sustentam um texto.
+
+    Sao dois numeros com efeito oposto sobre o mesmo risco. Apertar o limiar
+    reduz a chance de citar algo que so tangencia o assunto, ao custo de mais
+    geracoes falharem por falta de fonte; afrouxa-lo faz o inverso, e o segundo
+    caso e o perigoso, porque nao aparece como erro.
+    """
+
+    class Meta:
+        model = RetrievalSettings
+        fields = ["max_cosine_distance", "top_k"]
+        widgets = {
+            "max_cosine_distance": forms.NumberInput(
+                attrs={"step": "0.005", "min": "0", "max": "2"}
+            ),
+            "top_k": forms.NumberInput(attrs={"step": "1", "min": "1", "max": "20"}),
+        }
+
+
+class TesteDeBusca(forms.Form):
+    """Uma consulta de mentira, para ver as distancias antes de fixar o corte."""
+
+    consulta = forms.CharField(
+        label=_("Consulta de teste"),
+        widget=forms.TextInput(
+            attrs={"placeholder": _("ex.: monitoramento de pressao alta na gravidez")}
+        ),
+        help_text=_(
+            "Escreva como uma pauta real chegaria. O resultado nao entra nas "
+            "metricas nem gera artigo."
+        ),
+    )

@@ -332,4 +332,47 @@ cientifica valida. O valor foi medido com corpus real. Ver
 
 **O valor precisa ser remedido depois do ADR-0015.** Ele foi medido com um
 trecho longo por documento; trechos por paragrafo mudam a distribuicao das
-distancias.
+distancias. Desde o [ADR-0016](adr/ADR-0016-limiar-por-tenant-e-saude-da-busca.md)
+o limiar vive no schema do tenant, e a medicao se faz pela tela **Documentos >
+Qualidade da busca**; `RAG_MAX_COSINE_DISTANCE` no `.env` virou o padrao de
+fabrica com que um tenant novo nasce.
+
+### Trocar o modelo de embedding invalida o limiar em silencio
+
+Familias diferentes comprimem a similaridade de formas diferentes. O limiar
+antigo nao erra por pouco: ele deixa de querer dizer alguma coisa. Por isso a
+calibracao grava **com que modelo** foi feita, e o painel avisa quando os dois
+divergem. Pela mesma razao, um indice com vetores de dois modelos e alertado: as
+distancias deixam de ser comparaveis entre si e a ordenacao vira sorteio, sem
+erro nenhum no caminho.
+
+### O limiar errado nao produz sintoma nenhum
+
+Apertado demais, as geracoes falham por "sem fonte" e alguem conclui que o
+acervo e pequeno. Solto demais, o texto sai apoiado em trechos que so tangenciam
+o assunto — e isso a tela de revisao nao denuncia, porque a citacao parece
+legitima. Os dois numeros que denunciam sao a **fracao de buscas sem fonte** e a
+**folga entre a distancia tipica aceita e o corte**; ambos ficam no painel do
+tenant, e nao so na tela de busca, porque quem precisa ve-los nao esta
+procurando por eles.
+
+### A suite precisa do broker no ar
+
+`test_redespachar_retoma_do_passo_em_que_parou` chama uma view que faz
+`.delay()`. Sem Redis (ou o Postgres como broker) o despacho falha e o teste
+quebra com uma mensagem que nao menciona broker nenhum. Se um teste de interface
+falhar sozinho, confira `redis-cli ping` antes de procurar no codigo.
+
+### Barra de grafico em % dentro de um pai de altura automatica some
+
+Num flex em linha com `align-items: flex-end`, os itens ficam com altura
+automatica — e uma altura em `%` no filho passa a nao ter contra o que resolver.
+A barra colapsa para o `min-height`, o grafico some e **nao ha erro nenhum**: nem
+no console, nem no HTML, que sai correto. O histograma da tela de busca depende
+do `align-items` padrao (`stretch`).
+
+### Calibrar nao pode passar por `recuperar()`
+
+`recuperar()` grava `RetrievalQuery`. Se o teste de consulta da tela usasse esse
+caminho, cada calibracao entraria nas metricas que a propria tela mostra — e
+calibrar pioraria o diagnostico. A medicao roda por fora e nao grava nada.

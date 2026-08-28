@@ -11,6 +11,7 @@ from django.db.models import Count
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
@@ -235,3 +236,135 @@ def categorias(request: HttpRequest) -> HttpResponse:
             ),
         },
     )
+
+
+@login_required
+def qualidade_da_busca(request: HttpRequest) -> HttpResponse:
+    """Como o indice esta respondendo, e o ajuste do limiar deste tenant.
+
+    O teste de consulta usa GET de proposito: o resultado fica linkavel e
+    recarregavel, e nenhuma medicao muda o estado do sistema.
+    """
+    from apps.knowledge.forms import ConfiguracaoDeBusca, TesteDeBusca
+    from apps.knowledge.models import RetrievalSettings
+    from apps.knowledge.saude import alertas_da_busca, montar_resumo_da_busca
+
+    config = RetrievalSettings.carregar()
+
+    if request.method == "POST":
+        return _salvar_configuracao_de_busca(request, config)
+
+    resumo = montar_resumo_da_busca()
+
+    teste = TesteDeBusca(request.GET or None)
+    medicao = None
+    if teste.is_valid():
+        medicao = _medir_consulta(request, teste.cleaned_data["consulta"], config)
+
+    return render(
+        request,
+        "knowledge/busca.html",
+        {
+            "aba": "documentos",
+            "resumo": resumo,
+            "config": config,
+            "form": ConfiguracaoDeBusca(instance=config),
+            "teste": teste,
+            "medicao": medicao,
+            "alertas": alertas_da_busca(resumo),
+            "consultas_recentes": _consultas_recentes(),
+        },
+    )
+
+
+def _salvar_configuracao_de_busca(request: HttpRequest, config) -> HttpResponse:
+    from apps.knowledge.forms import ConfiguracaoDeBusca
+
+    form = ConfiguracaoDeBusca(request.POST, instance=config)
+    if not form.is_valid():
+        messages.error(request, _("Valor invalido: %(erro)s") % {"erro": form.errors.as_text()})
+        return redirect("knowledge:busca")
+
+    config = form.save(commit=False)
+    # Guardar QUEM, QUANDO e COM QUE MODELO nao e auditoria por formalidade: e
+    # o unico jeito de detectar depois que o limiar sobreviveu a uma troca de
+    # modelo e virou um numero sem significado.
+    config.calibrated_at = timezone.now()
+    config.calibrated_by = request.user
+    config.calibrated_model = settings.EMBEDDING_MODEL
+    config.calibration_query = (request.POST.get("consulta") or "")[:2000]
+    config.save()
+
+    messages.success(
+        request,
+        _("Limiar salvo em %(valor).4f. Vale para as proximas geracoes deste ambiente.")
+        % {"valor": config.max_cosine_distance},
+    )
+    return redirect("knowledge:busca")
+
+
+def _medir_consulta(request: HttpRequest, consulta: str, config):
+    """As distancias reais entre uma consulta e o corpus, sem registrar nada.
+
+    Nao passa por `recuperar()` porque `recuperar()` grava `RetrievalQuery` — e
+    uma medicao de calibracao poluiria exatamente as metricas que esta tela
+    existe para mostrar.
+    """
+    from pgvector.django import CosineDistance
+
+    from apps.knowledge.embeddings import get_embedding_client
+    from apps.knowledge.models import SuperChunk
+
+    try:
+        cliente = get_embedding_client()
+        vetor = cliente.embed_query(consulta)
+    except Exception as exc:
+        logger.exception("Falha ao vetorizar consulta de calibracao")
+        messages.error(
+            request,
+            _(
+                "Nao foi possivel vetorizar a consulta: %(erro)s. O modelo de "
+                "embedding e baixado na primeira utilizacao (cerca de 2 GB)."
+            )
+            % {"erro": str(exc)[:200]},
+        )
+        return None
+
+    trechos = list(
+        SuperChunk.objects.filter(is_active=True, embedding__isnull=False)
+        .annotate(distancia=CosineDistance("embedding", vetor))
+        .order_by("distancia")[:40]
+    )
+
+    if not trechos:
+        messages.info(request, _("Nenhum trecho vetorizado no acervo ainda."))
+        return None
+
+    limiar = config.max_cosine_distance
+    return {
+        "consulta": consulta,
+        "modelo": cliente.model_name,
+        "trechos": [
+            {
+                "distancia": float(t.distancia),
+                "aceito": float(t.distancia) <= limiar,
+                "titulo": t.source_title or str(t.document_id),
+                "heading": t.heading,
+                "conteudo": t.content,
+                "documento_id": t.document_id,
+            }
+            for t in trechos
+        ],
+        "aceitos": sum(1 for t in trechos if float(t.distancia) <= limiar),
+        "exibidos": len(trechos),
+        "limiar": limiar,
+    }
+
+
+def _consultas_recentes(limite: int = 15):
+    """As ultimas buscas de verdade, com quantas fontes cada uma achou."""
+    from apps.knowledge.models import RetrievalQuery
+
+    return RetrievalQuery.objects.annotate(encontradas=Count("hits")).order_by("-created_at")[
+        :limite
+    ]

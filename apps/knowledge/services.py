@@ -14,7 +14,13 @@ from django.utils import timezone
 from pgvector.django import CosineDistance
 
 from apps.knowledge.embeddings import get_embedding_client
-from apps.knowledge.models import Document, RetrievalHit, RetrievalQuery, SuperChunk
+from apps.knowledge.models import (
+    Document,
+    RetrievalHit,
+    RetrievalQuery,
+    RetrievalSettings,
+    SuperChunk,
+)
 
 logger = logging.getLogger("publibot.knowledge")
 
@@ -177,9 +183,14 @@ def recuperar(
     mesmo artigo nao sao duas fontes independentes. Sem a deduplicacao, o
     filtro de consenso trataria o mesmo estudo como confirmacao de si mesmo.
     """
-    top_k = top_k if top_k is not None else settings.RAG_TOP_K
+    # O limiar vem do tenant, e nao do `settings`: a distancia que separa
+    # "sustenta o texto" de "so fala do mesmo assunto" e propriedade do acervo.
+    # Num corpus de tema unico todas as distancias encolhem, e o valor que
+    # filtra bem num cliente aceita tudo no outro.
+    config = RetrievalSettings.carregar()
+    top_k = top_k if top_k is not None else config.top_k
     distancia_maxima = (
-        distancia_maxima if distancia_maxima is not None else settings.RAG_MAX_COSINE_DISTANCE
+        distancia_maxima if distancia_maxima is not None else config.max_cosine_distance
     )
 
     cliente = get_embedding_client()

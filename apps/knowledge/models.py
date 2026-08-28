@@ -380,6 +380,10 @@ class RetrievalQuery(models.Model):
         verbose_name = _("consulta de recuperacao")
         verbose_name_plural = _("consultas de recuperacao")
         ordering = ["-created_at"]
+        # O painel de saude da busca le sempre uma janela recente. Sem indice,
+        # a tela fica mais lenta a cada geracao — justamente o efeito que faria
+        # alguem parar de abri-la.
+        indexes = [models.Index(fields=["-created_at"])]
 
     def __str__(self) -> str:
         return self.query_text[:60]
@@ -407,3 +411,96 @@ class RetrievalHit(models.Model):
 
     def __str__(self) -> str:
         return f"#{self.rank} d={self.distance:.4f}"
+
+
+def _limiar_padrao() -> float:
+    """O `settings` deixa de ser o valor vigente e vira apenas o ponto de partida.
+
+    Cada tenant tem um acervo diferente, e a distancia que separa "sustenta o
+    texto" de "so fala do mesmo assunto" e propriedade do corpus, nao da
+    instalacao. Manter isto como callable — e nao copiar o numero para dentro da
+    migration — faz um tenant novo nascer com o padrao atual do deploy.
+    """
+    return float(settings.RAG_MAX_COSINE_DISTANCE)
+
+
+def _top_k_padrao() -> int:
+    return int(settings.RAG_TOP_K)
+
+
+class RetrievalSettings(models.Model):
+    """O limiar de recuperacao deste tenant, e o registro de como foi medido.
+
+    Linha unica por schema. Existe porque a distancia de cosseno NAO e
+    comparavel entre corpora: o mesmo 0.16 que separa bem num acervo de
+    cardiologia deixa passar tudo num acervo de tema unico, onde todo trecho
+    fala da mesma coisa e todas as distancias encolhem.
+
+    Os campos de calibracao nao sao decorativos. Sem saber com que modelo o
+    limiar foi medido, uma troca de `EMBEDDING_MODEL` deixa para tras um numero
+    que parece conferido e nao e — e o modo de falhar e silencioso: o filtro
+    passa a aceitar tudo, ou a recusar tudo, sem erro nenhum.
+    """
+
+    id = models.SmallAutoField(primary_key=True)
+
+    max_cosine_distance = models.FloatField(
+        _("distancia maxima"),
+        default=_limiar_padrao,
+        validators=[MinValueValidator(0.0), MaxValueValidator(2.0)],
+        help_text=_(
+            "Acima desta distancia o trecho e descartado. Distancia de cosseno "
+            "vai de 0 (identico) a 2 (oposto)."
+        ),
+    )
+    top_k = models.PositiveSmallIntegerField(
+        _("fontes por consulta"),
+        default=_top_k_padrao,
+        validators=[MinValueValidator(1), MaxValueValidator(20)],
+        help_text=_("Quantos documentos distintos, no maximo, sustentam um texto."),
+    )
+
+    calibrated_at = models.DateTimeField(_("calibrado em"), null=True, blank=True)
+    calibrated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("calibrado por"),
+    )
+    # Com que modelo a medicao foi feita. Comparar com o modelo em uso e a
+    # unica forma de detectar um limiar herdado de outra escala.
+    calibrated_model = models.CharField(_("modelo na calibracao"), max_length=120, blank=True)
+    calibration_query = models.TextField(_("consulta usada"), blank=True)
+
+    class Meta:
+        verbose_name = _("configuracao de busca")
+        verbose_name_plural = _("configuracao de busca")
+
+    def __str__(self) -> str:
+        return f"limiar {self.max_cosine_distance:.4f}, top {self.top_k}"
+
+    @classmethod
+    def carregar(cls) -> RetrievalSettings:
+        """A linha do schema em uso, criada com os padroes se ainda nao existir."""
+        objeto, _criado = cls.objects.get_or_create(pk=1)
+        return objeto
+
+    @property
+    def foi_calibrado(self) -> bool:
+        return self.calibrated_at is not None
+
+    @property
+    def modelo_em_uso(self) -> str:
+        return settings.EMBEDDING_MODEL
+
+    @property
+    def calibracao_e_de_outro_modelo(self) -> bool:
+        """Limiar medido numa escala que nao e mais a vigente.
+
+        Nao e sutil: familias diferentes de modelo comprimem a similaridade de
+        formas diferentes, entao o numero antigo nao erra por pouco — ele passa
+        a nao querer dizer nada.
+        """
+        return bool(self.calibrated_model) and self.calibrated_model != self.modelo_em_uso

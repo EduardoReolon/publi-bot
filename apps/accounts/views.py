@@ -195,9 +195,15 @@ def painel(request: HttpRequest) -> HttpResponse:
     """
     from django.db import connection
 
+    from apps.knowledge.saude import alertas_da_busca, montar_resumo_da_busca
     from apps.ops.painel import alertas_do_site, montar_resumo
 
     resumo = montar_resumo()
+
+    # Os alertas da busca entram aqui, e nao so na tela deles: um limiar errado
+    # nao produz sintoma nenhum na propria tela de busca — produz artigo ruim
+    # do outro lado do sistema. Quem precisa ver isso nao esta procurando.
+    busca = montar_resumo_da_busca()
 
     return render(
         request,
@@ -206,6 +212,7 @@ def painel(request: HttpRequest) -> HttpResponse:
             "aba": "painel",
             "schema_name": connection.schema_name,
             "resumo": resumo,
-            "alertas": alertas_do_site(resumo.site),
+            "alertas": alertas_do_site(resumo.site) + alertas_da_busca(busca),
+            "busca": busca,
         },
     )

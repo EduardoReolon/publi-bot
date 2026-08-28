@@ -19,7 +19,7 @@ import statistics
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.knowledge.embeddings import get_embedding_client
-from apps.knowledge.models import SuperChunk
+from apps.knowledge.models import RetrievalSettings, SuperChunk
 
 
 class Command(BaseCommand):
@@ -46,17 +46,32 @@ class Command(BaseCommand):
             .order_by("distancia")[: options["limite"]]
         )
 
+        config = RetrievalSettings.carregar()
+        limiar = config.max_cosine_distance
+
         self.stdout.write(f"Modelo: {cliente.model_name}")
         self.stdout.write(f"Corpus: {total} trechos indexados")
+        self.stdout.write(f"Limiar deste tenant: {limiar:.4f}")
+        if config.calibracao_e_de_outro_modelo:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  ATENCAO: medido com {config.calibrated_model}, que nao e o "
+                    "modelo em uso. O valor nao e comparavel."
+                )
+            )
+        elif not config.foi_calibrado:
+            self.stdout.write("  (valor de fabrica: nunca medido neste acervo)")
         self.stdout.write(f"Consulta: {options['consulta']!r}\n")
-        self.stdout.write(f"{'dist':>8}  {'doc':>4}  titulo")
+        self.stdout.write(f"{'dist':>8}  {'entra':>5}  titulo")
         self.stdout.write("-" * 66)
 
         distancias = []
         for t in trechos:
-            distancias.append(float(t.distancia))
+            distancia = float(t.distancia)
+            distancias.append(distancia)
             titulo = (t.source_title or str(t.document_id))[:44]
-            self.stdout.write(f"{t.distancia:8.4f}  {t.kind[:4]:>4}  {titulo}")
+            marca = "sim" if distancia <= limiar else "-"
+            self.stdout.write(f"{distancia:8.4f}  {marca:>5}  {titulo}")
 
         if len(distancias) < 2:
             return
@@ -69,5 +84,7 @@ class Command(BaseCommand):
             "\nEscolha o limiar OLHANDO a lista: o valor certo fica entre a "
             "ultima linha que voce considera relevante e a primeira que nao e. "
             "A faixa costuma ser estreita, entao um limiar generoso nao filtra "
-            "nada."
+            "nada.\n\nPara gravar o valor escolhido, use a tela Documentos > "
+            "Qualidade da busca: ela guarda tambem com que modelo a medicao foi "
+            "feita, que e o que permite detectar depois um limiar orfao."
         )

@@ -28,6 +28,7 @@ ROTAS_DO_MENU = [
     "knowledge:documentos",
     "knowledge:enviar",
     "knowledge:categorias",
+    "knowledge:busca",
     "content:pautas",
     "content:artigos",
     "content:perguntas",

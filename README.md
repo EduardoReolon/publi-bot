@@ -445,7 +445,9 @@ python manage.py provision_tenant acme --name="ACME Ltda"
 # schema_name que aparece na home.
 python manage.py provision_tenant teste1
 
-# Calibra o limiar de recuperacao com o corpus real de um tenant
+# Mede as distancias do corpus de um tenant, para escolher o limiar. O valor
+# escolhido se grava pela tela Documentos > Qualidade da busca, que registra
+# tambem com que modelo a medicao foi feita (ADR-0016).
 python manage.py tenant_command calibrate_retrieval --schema=acme \
     --consulta "sua consulta de teste"
 
