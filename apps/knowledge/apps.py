@@ -9,3 +9,7 @@ class KnowledgeConfig(AppConfig):
     name = "apps.knowledge"
     label = "knowledge"
     verbose_name = _("Base de conhecimento")
+
+    def ready(self) -> None:
+        # Registra o fluxo de ingestao no orquestrador.
+        from apps.knowledge import flows  # noqa: F401

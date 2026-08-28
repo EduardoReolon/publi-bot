@@ -232,6 +232,13 @@ class Document(models.Model):
         return self.title or f"Documento {self.pk}"
 
     @property
+    def nome_do_arquivo(self) -> str:
+        """So o nome, sem o caminho `documents/2026/08/` do upload_to."""
+        import os
+
+        return os.path.basename(self.original_file.name or "")
+
+    @property
     def pode_guardar_texto_integral(self) -> bool:
         """Se o Markdown completo pode ser retido apos a curadoria."""
         return self.license in self.LICENCAS_QUE_PERMITEM_TEXTO_INTEGRAL

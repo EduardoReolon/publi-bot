@@ -60,6 +60,9 @@ def guardar_chave(objeto, valor: str, *, campo: str = "api_key_ciphertext") -> N
 
     Os ultimos 4 permitem a uma pessoa confirmar *qual* chave esta cadastrada
     sem que o sistema precise exibi-la.
+
+    **Nao grava no banco**: apenas preenche os campos do objeto. Quem chama
+    decide quando salvar — no admin isso acontece no `save_model` seguinte.
     """
     setattr(objeto, campo, cifrar(valor))
     if hasattr(objeto, "api_key_last4"):
