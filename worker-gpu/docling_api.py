@@ -6,6 +6,18 @@ PubliBot — este servico so executa.
 
 Roda uma conversao por vez. Numa placa de 8 GB, duas simultaneas estouram a
 VRAM e o processamento cai para CPU sem emitir erro.
+
+**Roda em CPU tambem**, e essa e a forma de comecar sem placa nenhuma. A analise
+de layout — que e o que distingue este caminho do extrator local — nao depende de
+GPU; a GPU muda o tempo, nao o resultado. Trocar depois e uma linha no `.env`:
+
+    DOCLING_DEVICE=cpu    # comeco, sem placa
+    DOCLING_DEVICE=cuda   # quando a placa existir
+    DOCLING_DEVICE=auto   # usa a placa se houver
+
+Nada muda no PubliBot: ele fala HTTP com este servico e nao sabe onde o modelo
+roda. Por isso vale subir em CPU agora — o caminho ja fica montado, e a troca
+para GPU nao mexe em codigo nem em fila.
 """
 
 from __future__ import annotations
@@ -26,6 +38,17 @@ logger = logging.getLogger("docling-api")
 SEGREDO = os.environ.get("WORKER_SHARED_SECRET", "")
 TAMANHO_MAXIMO = int(os.environ.get("MAX_PDF_BYTES", 100 * 1024 * 1024))
 
+# cpu | cuda | auto. Ver o cabecalho do modulo.
+DISPOSITIVO = os.environ.get("DOCLING_DEVICE", "auto").lower()
+
+# Numero de threads na CPU. Ignorado em GPU. Zero deixa o Docling decidir.
+THREADS = int(os.environ.get("DOCLING_THREADS", 0))
+
+# OCR le a imagem da pagina, para PDF digitalizado que nao tem camada de texto.
+# E de longe a parte mais cara em CPU, e a maioria dos artigos cientificos nao
+# precisa dela. Ligue quando encontrar um PDF escaneado.
+OCR = os.environ.get("DOCLING_OCR", "false").lower() in {"1", "true", "yes", "sim"}
+
 app = FastAPI(title="PubliBot — servico Docling", version="1.0.0")
 
 # Uma conversao por vez. Nao e ajuste de desempenho: duas simultaneas estouram
@@ -36,16 +59,51 @@ _conversor = None
 _trava_do_conversor = threading.Lock()
 
 
+def _montar_conversor():
+    """O conversor com o dispositivo e o OCR que o ambiente pediu."""
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import (
+        AcceleratorDevice,
+        AcceleratorOptions,
+        PdfPipelineOptions,
+    )
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+
+    dispositivos = {
+        "cpu": AcceleratorDevice.CPU,
+        "cuda": AcceleratorDevice.CUDA,
+        "auto": AcceleratorDevice.AUTO,
+    }
+    if DISPOSITIVO not in dispositivos:
+        raise RuntimeError(f"DOCLING_DEVICE={DISPOSITIVO!r} nao existe. Use cpu, cuda ou auto.")
+
+    acelerador = AcceleratorOptions(device=dispositivos[DISPOSITIVO])
+    if THREADS:
+        acelerador.num_threads = THREADS
+
+    opcoes = PdfPipelineOptions()
+    opcoes.accelerator_options = acelerador
+    opcoes.do_ocr = OCR
+    opcoes.do_table_structure = True
+
+    return DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opcoes)}
+    )
+
+
 def _obter_conversor():
     """Carga preguicosa: o modelo leva dezenas de segundos para subir."""
     global _conversor
     if _conversor is None:
         with _trava_do_conversor:
             if _conversor is None:
-                from docling.document_converter import DocumentConverter
-
-                logger.info("Carregando o Docling...")
-                _conversor = DocumentConverter()
+                logger.info(
+                    "Carregando o Docling (dispositivo=%s, ocr=%s, threads=%s)...",
+                    DISPOSITIVO,
+                    OCR,
+                    THREADS or "auto",
+                )
+                _conversor = _montar_conversor()
                 logger.info("Docling pronto.")
     return _conversor
 
@@ -68,6 +126,11 @@ async def health():
         "status": "ok",
         "service": "docling-api",
         "busy": not _uma_por_vez._value,
+        # Util para conferir de fora se o servico esta mesmo na GPU depois de
+        # trocar o .env — sem isso a troca falha em silencio e so aparece como
+        # "esta demorando muito".
+        "device": DISPOSITIVO,
+        "ocr": OCR,
     }
 
 

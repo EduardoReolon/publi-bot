@@ -38,6 +38,8 @@ def documentos(request: HttpRequest) -> HttpResponse:
     consulta = Document.objects.select_related("category").order_by("-created_at")
     if situacao:
         consulta = consulta.filter(status=situacao)
+    if request.GET.get("extracao") == "marcada":
+        consulta = consulta.filter(extraction_flagged_at__isnull=False)
 
     # A contagem por situacao vem da tabela inteira, e nao do resultado
     # filtrado: senao o filtro escolhido zera todos os outros na tela.
@@ -57,6 +59,8 @@ def documentos(request: HttpRequest) -> HttpResponse:
                 for valor, rotulo in Document.Status.choices
             ],
             "tem_categoria": DocumentCategory.objects.exists(),
+            "marcados": Document.objects.filter(extraction_flagged_at__isnull=False).count(),
+            "filtro_extracao": request.GET.get("extracao", ""),
         },
     )
 
@@ -142,6 +146,7 @@ def _contexto_da_curadoria(documento: Document, form=None) -> dict:
         "trechos": documento.chunks.order_by("block_index", "paragraph_index"),
         "duplicatas": possiveis_duplicatas(documento),
         "limite_de_tokens": settings.EMBEDDING_MAX_TOKENS,
+        "problemas": Document.ProblemaDeExtracao.choices,
     }
 
 
@@ -214,6 +219,65 @@ def reprocessar(request: HttpRequest, pk) -> HttpResponse:
     iniciar_ingestao(documento)
     messages.success(request, _("Documento devolvido a fila de conversao."))
     return redirect(reverse("knowledge:curar", args=[documento.pk]))
+
+
+@login_required
+@require_POST
+def marcar_extracao(request: HttpRequest, pk) -> HttpResponse:
+    """Registra que a extracao saiu ruim neste documento.
+
+    Nao dispara nada nem tenta consertar: e triagem. Existe porque a comparacao
+    automatica entre o que a extracao propos e o que a curadoria gravou e cega
+    para os dois piores casos — bloco dividido no lugar errado e texto
+    embaralhado nao mudam campo nenhum de metadado, e passariam por acerto.
+
+    Quem marca e quem esta olhando o documento; quem conserta olha depois, com
+    `manage.py exportar_casos`.
+    """
+    documento = get_object_or_404(Document, pk=pk)
+
+    if request.POST.get("acao") == "desmarcar":
+        documento.extraction_flagged_at = None
+        documento.extraction_flagged_by = None
+        documento.extraction_problem = ""
+        documento.extraction_note = ""
+        documento.save(
+            update_fields=[
+                "extraction_flagged_at",
+                "extraction_flagged_by",
+                "extraction_problem",
+                "extraction_note",
+            ]
+        )
+        messages.success(request, _("Marcacao removida."))
+        return redirect("knowledge:curar", pk=documento.pk)
+
+    problema = request.POST.get("problema", "")
+    if problema not in Document.ProblemaDeExtracao.values:
+        problema = Document.ProblemaDeExtracao.OUTRO
+
+    documento.extraction_flagged_at = timezone.now()
+    documento.extraction_flagged_by = request.user
+    documento.extraction_problem = problema
+    documento.extraction_note = (request.POST.get("observacao") or "")[:2000]
+    documento.save(
+        update_fields=[
+            "extraction_flagged_at",
+            "extraction_flagged_by",
+            "extraction_problem",
+            "extraction_note",
+        ]
+    )
+
+    logger.info("Documento %s marcado como extracao ruim (%s).", documento.pk, problema)
+    messages.success(
+        request,
+        _(
+            "Marcado. O documento entra na lista de casos para calibrar; "
+            "a curadoria dele continua normal."
+        ),
+    )
+    return redirect("knowledge:curar", pk=documento.pk)
 
 
 @login_required

@@ -104,6 +104,45 @@ Ordem das fontes: **o que o arquivo declara** primeiro, heuristica depois.
 | lista de autores continua nas linhas seguintes | — | `... Eisenberg 2 &` quebra em 3 linhas |
 | DOI aceita barra de fracao | `BARRAS_EQUIVALENTES` | `10.1111⁄ j.1752-1688...` |
 
+## O caminho de verdade: Docling em CPU hoje, GPU depois
+
+Antes de ajustar qualquer regra, saiba que existe uma saida melhor e ela nao
+exige placa.
+
+O Docling faz analise de **layout**: tamanho de fonte, peso, posicao, coluna. E
+o que estas heuristicas nao tem e nunca terao, porque o extrator local entrega
+texto corrido. A GPU muda o **tempo** da conversao, nao o resultado — entao da
+para subir o servico em CPU agora e trocar depois.
+
+```bash
+# worker-gpu/.env
+DOCLING_DEVICE=cpu     # comece assim, sem placa
+DOCLING_THREADS=4      # so em CPU; 0 deixa o Docling decidir
+DOCLING_OCR=false      # OCR e a parte mais cara e artigo com texto nao precisa
+```
+
+Quando a placa existir, e uma linha:
+
+```bash
+DOCLING_DEVICE=cuda
+sudo systemctl restart docling-api
+curl -s http://127.0.0.1:8100/health/   # confere: {"device": "cuda", ...}
+```
+
+**Nada muda no PubliBot.** Ele fala HTTP com o servico e nao sabe onde o modelo
+roda; a fila do Celery, o adiamento por worker ocupado e o `X-Expected-Sha256`
+continuam iguais. E por isso que vale montar o caminho cedo, mesmo lento: a
+troca depois nao mexe em codigo nem em fila.
+
+O `/health/` responde `device` e `ocr` de proposito. Sem isso, um `.env` mal
+editado deixa o servico na CPU sem ninguem perceber — o sintoma seria so "esta
+demorando muito".
+
+**Meca antes de decidir.** Um artigo de 16 paginas em CPU pode levar de dezenas
+de segundos a poucos minutos, dependendo da maquina. Como a conversao roda em
+segundo plano e o documento espera curadoria de qualquer jeito, "lento" aqui
+costuma ser aceitavel.
+
 ## O ciclo de ajuste
 
 O risco de calibrar a mao e conhecido: **consertar um artigo quebra outro**. O
@@ -126,6 +165,52 @@ olha, decide, e regrava com `--gravar`.
 
 Os esperados vao para `fixtures/extracao/<nome>.json` e **entram no git**; os
 PDFs, nao.
+
+### Marcar um caso na tela
+
+Na curadoria, no fim da pagina: **"A extracao errou neste documento?"**. Escolhe
+o tipo do problema, escreve uma observacao e pronto. Nao muda nada no documento
+e nao atrapalha curar.
+
+Existe porque a comparacao automatica da secao seguinte e **cega para os dois
+piores casos**: bloco dividido no lugar errado e texto embaralhado nao mudam
+campo nenhum de metadado, entao passariam por acerto. So uma pessoa olhando
+percebe.
+
+| Tipo | O que costuma resolver |
+|---|---|
+| Divisao em blocos errada | calibrar heuristica (este documento) |
+| Texto corrompido | so o Docling |
+| Metadados errados | um dos dois |
+
+### Tirar os casos do servidor
+
+O servidor de producao e um **deploy, nao um clone**: nao ha `casos/` la, e os
+PDFs estao no storage. O comando faz a ponte.
+
+```bash
+# no servidor
+python manage.py tenant_command exportar_casos --schema=acme --destino=/tmp/casos
+
+# na sua maquina
+scp -r servidor:/tmp/casos/* casos/
+python manage.py conferir_extracao --pasta casos/
+```
+
+Cada caso vira dois arquivos de mesmo nome: o **PDF** e um **JSON** com o que a
+extracao propos, o que a curadoria corrigiu, o problema apontado e os blocos que
+sairam. O JSON e o gabarito — sem ele o PDF sozinho nao diz o que era esperado.
+
+Duas opcoes uteis:
+
+- `--todos` inclui tambem os documentos que ninguem marcou mas em que a curadoria
+  corrigiu algum campo. Sao casos de verdade que so ninguem se deu ao trabalho de
+  marcar.
+- `--sem-pdf` grava so o JSON, para quando o arquivo nao pode sair do servidor.
+
+Os PDFs **nao** entram no git — sao obras de terceiros, e `casos/` esta no
+`.gitignore`. O que entra e o esperado que voce gera depois com
+`conferir_extracao --gravar`, em `fixtures/extracao/`.
 
 ### Os casos que o acervo coleta sozinho
 

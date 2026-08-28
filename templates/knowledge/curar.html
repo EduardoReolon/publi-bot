@@ -232,9 +232,61 @@
   </form>
 
   {% comment %}
-    Fora do formulario de curadoria, e como link: dentro dele viraria mais um
-    botao de submit ao lado de "Concluir", e o clique errado seria irreversivel.
+    Fora do formulario de curadoria porque nao faz parte dele: marcar a extracao
+    nao muda o documento nem impede curar. E um recado para quem ajusta as
+    heuristicas depois, e o unico jeito de registrar os dois erros que a
+    comparacao automatica nao ve — bloco no lugar errado e texto embaralhado
+    nao mudam campo nenhum de metadado.
   {% endcomment %}
+  <h2>{% translate "A extracao errou neste documento?" %}</h2>
+
+  {% if documento.extracao_marcada %}
+    <div class="aviso">
+      <strong>{% translate "Marcado como extracao ruim." %}</strong>
+      {{ documento.get_extraction_problem_display }}
+      &middot; {{ documento.extraction_flagged_at|date:"d/m/Y H:i" }}
+      {% if documento.extraction_flagged_by %}
+        {% translate "por" %} {{ documento.extraction_flagged_by }}
+      {% endif %}
+      {% if documento.extraction_note %}
+        <div class="pre-visualizacao">{{ documento.extraction_note }}</div>
+      {% endif %}
+      <form method="post" action="{% url 'knowledge:marcar_extracao' documento.pk %}"
+            style="margin-top:.6rem">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="desmarcar">
+        <button type="submit" class="botao secundario">{% translate "Desmarcar" %}</button>
+      </form>
+    </div>
+  {% else %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Marcar nao muda nada neste documento e nao atrapalha a curadoria. Guarda
+        o caso para quem for ajustar a leitura de PDF depois — sem isso, um
+        bloco dividido no lugar errado nao deixa rastro nenhum.
+      {% endblocktranslate %}
+    </p>
+    <form method="post" action="{% url 'knowledge:marcar_extracao' documento.pk %}">
+      {% csrf_token %}
+      <div class="campo">
+        <label for="problema">{% translate "O que saiu errado" %}</label>
+        <select name="problema" id="problema">
+          {% for valor, rotulo in problemas %}
+            <option value="{{ valor }}">{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="observacao">{% translate "Observacao (opcional)" %}</label>
+        <input type="text" name="observacao" id="observacao"
+               placeholder="{% translate 'ex.: juntou a conclusao com as referencias' %}">
+      </div>
+      <button type="submit" class="botao secundario">
+        {% translate "Marcar extracao como ruim" %}
+      </button>
+    </form>
+  {% endif %}
+
   <p class="pre-visualizacao" style="margin-top:2rem">
     <a href="{% url 'knowledge:excluir' documento.pk %}">
       {% translate "Excluir este documento do acervo" %}

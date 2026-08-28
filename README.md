@@ -461,6 +461,10 @@ python manage.py conferir_extracao --pasta casos/ --gravar
 # PDF: a conferencia humana ja e o gabarito.
 python manage.py tenant_command conferir_extracao --schema=acme --acervo
 
+# Tira do servidor os casos marcados na tela (PDF + gabarito), para calibrar
+# na sua maquina. O servidor e deploy, nao clone.
+python manage.py tenant_command exportar_casos --schema=acme --destino=/tmp/casos
+
 # Mede as distancias do corpus de um tenant, para escolher o limiar. O valor
 # escolhido se grava pela tela Documentos > Qualidade da busca, que registra
 # tambem com que modelo a medicao foi feita (ADR-0016).

@@ -204,3 +204,152 @@ def test_comando_do_acervo_sem_documento_curado_explica(tenant_de_conferencia, c
         call_command("conferir_extracao", acervo=True)
 
     assert "precisa da conferencia humana" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Marcacao humana e exportacao
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_marcacao_registra_o_que_a_comparacao_nao_ve(tenant_de_conferencia):
+    """Divisao de blocos errada nao muda campo nenhum de metadado.
+
+    Sem a marcacao, esse caso — que e o pior de todos — passaria por acerto na
+    comparacao automatica.
+    """
+    from django.conf import settings as configuracao
+    from django.test import Client
+    from django.urls import reverse
+
+    from apps.accounts.models import TenantMembership, User
+
+    with schema_context(tenant_de_conferencia.schema_name):
+        documento = _documento(
+            title="Titulo certo",
+            authors="Silva, A.",
+            metadata_suggested={
+                "title": "Titulo certo",
+                "authors": "Silva, A.",
+                "year": None,
+                "doi": "",
+            },
+            metadata_confidence=Document.MetadataConfidence.MANUAL,
+        )
+        # A extracao acertou todo campo de metadado deste documento.
+        assert comparar_com_a_curadoria(documento) == []
+
+        usuario = User.objects.create_user(
+            email="dev@exemplo.com", password="uma-senha-longa-de-teste", full_name="Dev"
+        )
+        TenantMembership.objects.create(tenant=tenant_de_conferencia, user=usuario, is_active=True)
+        cliente = Client()
+        cliente.force_login(usuario)
+        cliente.defaults["HTTP_HOST"] = f"{tenant_de_conferencia.slug}.{configuracao.ROOT_DOMAIN}"
+
+        cliente.post(
+            reverse("knowledge:marcar_extracao", args=[documento.pk], urlconf="core.urls_tenants"),
+            {"problema": "blocos", "observacao": "juntou conclusao com referencias"},
+        )
+
+        documento.refresh_from_db()
+        assert documento.extracao_marcada
+        assert documento.extraction_problem == Document.ProblemaDeExtracao.BLOCOS
+        assert documento.extraction_flagged_by == usuario
+        assert "referencias" in documento.extraction_note
+
+
+@pytest.mark.django_db
+def test_desmarcar_limpa_tudo(tenant_de_conferencia):
+    from django.conf import settings as configuracao
+    from django.test import Client
+    from django.urls import reverse
+
+    from apps.accounts.models import TenantMembership, User
+
+    with schema_context(tenant_de_conferencia.schema_name):
+        documento = _documento(
+            title="T",
+            extraction_flagged_at=timezone.now(),
+            extraction_problem=Document.ProblemaDeExtracao.TEXTO,
+            extraction_note="algo",
+        )
+        usuario = User.objects.create_user(
+            email="dev2@exemplo.com", password="uma-senha-longa-de-teste", full_name="Dev"
+        )
+        TenantMembership.objects.create(tenant=tenant_de_conferencia, user=usuario, is_active=True)
+        cliente = Client()
+        cliente.force_login(usuario)
+        cliente.defaults["HTTP_HOST"] = f"{tenant_de_conferencia.slug}.{configuracao.ROOT_DOMAIN}"
+
+        cliente.post(
+            reverse("knowledge:marcar_extracao", args=[documento.pk], urlconf="core.urls_tenants"),
+            {"acao": "desmarcar"},
+        )
+
+        documento.refresh_from_db()
+        assert not documento.extracao_marcada
+        assert documento.extraction_problem == ""
+
+
+@pytest.mark.django_db
+def test_exportar_gera_pdf_e_gabarito(tenant_de_conferencia, tmp_path):
+    """O servidor e deploy, nao clone: o caso precisa sair de la em arquivo.
+
+    O JSON e o que torna o PDF util — sozinho ele nao diz o que era para ter
+    saido.
+    """
+    with schema_context(tenant_de_conferencia.schema_name):
+        _documento(
+            title="Titulo conferido",
+            authors="Silva, A.",
+            markdown_full=(
+                "1 Introducao\nTexto do corpo com palavras suficientes para virar prosa.\n"
+            ),
+            extraction_method=Document.ExtractionMethod.PYPDF,
+            extraction_flagged_at=timezone.now(),
+            extraction_problem=Document.ProblemaDeExtracao.BLOCOS,
+            metadata_suggested={
+                "title": "jawr_027 346..358",
+                "authors": "Silva, A.",
+                "year": None,
+                "doi": "",
+            },
+            metadata_confidence=Document.MetadataConfidence.MANUAL,
+        )
+
+        call_command("exportar_casos", destino=str(tmp_path))
+
+    pdfs = list(tmp_path.glob("*.pdf"))
+    jsons = list(tmp_path.glob("*.json"))
+    assert len(pdfs) == 1
+    assert len(jsons) == 1
+    # Mesmo nome nos dois: e o que amarra o gabarito ao arquivo.
+    assert pdfs[0].stem == jsons[0].stem
+
+    caso = json.loads(jsons[0].read_text(encoding="utf-8"))
+    assert caso["problema"] == "blocos"
+    assert caso["extraiu"]["title"] == "jawr_027 346..358"
+    assert caso["conferido"]["title"] == "Titulo conferido"
+    assert caso["corrigidos"] == ["title"]
+
+
+@pytest.mark.django_db
+def test_exportar_sem_pdf_quando_o_arquivo_nao_pode_sair(tenant_de_conferencia, tmp_path):
+    with schema_context(tenant_de_conferencia.schema_name):
+        _documento(
+            title="T",
+            extraction_flagged_at=timezone.now(),
+            extraction_problem=Document.ProblemaDeExtracao.TEXTO,
+        )
+
+        call_command("exportar_casos", destino=str(tmp_path), sem_pdf=True)
+
+    assert list(tmp_path.glob("*.pdf")) == []
+    assert len(list(tmp_path.glob("*.json"))) == 1
+
+
+@pytest.mark.django_db
+def test_exportar_sem_nada_marcado_explica(tenant_de_conferencia, tmp_path, capsys):
+    with schema_context(tenant_de_conferencia.schema_name):
+        call_command("exportar_casos", destino=str(tmp_path))
+
+    assert "Marque a extracao" in capsys.readouterr().out

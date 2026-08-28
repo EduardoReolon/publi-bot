@@ -390,6 +390,28 @@ proprio titulo quebra: `2.1 ... and Phoenix case` / `study`. E, ao descer um
 nivel, nao se exige comecar em `.1` — se `2.1` for recusado por outro criterio,
 exigir isso derrubaria `2.2` tambem, e o erro se propagaria ate o fim.
 
+### O Docling nao exige GPU, e adiar por isso custa caro
+
+A analise de layout roda em CPU. A placa muda o tempo, nao o resultado. Como o
+PubliBot so fala HTTP com o servico, subir em `DOCLING_DEVICE=cpu` hoje e trocar
+para `cuda` depois nao mexe em codigo nem em fila — e enquanto isso todo PDF
+convertido pelo extrator local carrega os defeitos que nenhuma heuristica
+conserta.
+
+O `/health/` devolve `device` e `ocr` justamente porque a troca falha em
+silencio: um `.env` mal editado deixa o servico na CPU e o unico sintoma e
+"esta demorando muito".
+
+### A comparacao automatica e cega para os dois piores erros
+
+Comparar o que a extracao propos com o que a curadoria gravou pega metadado
+errado. Nao pega **bloco dividido no lugar errado** nem **texto embaralhado** —
+nenhum dos dois muda campo de metadado, entao ambos passam por acerto. Sao,
+justamente, os erros que estragam o artigo gerado.
+
+Por isso existe o botao de marcar na curadoria. E por isso a taxa de acerto de
+`conferir_extracao --acervo` mede menos do que parece medir.
+
 ### As heuristicas de extracao nao aprendem sozinhas
 
 Cada regra saiu de alguem olhar um PDF real e achar o discriminante. O risco

@@ -18,6 +18,20 @@
     <a class="botao secundario" href="{% url 'knowledge:busca' %}">{% translate "Qualidade da busca" %}</a>
   </div>
 
+  {% if marcados %}
+    <p class="pre-visualizacao" style="margin-top:1rem">
+      <a href="?extracao=marcada" {% if filtro_extracao %}style="font-weight:600"{% endif %}>
+        {% blocktranslate trimmed count total=marcados %}
+          {{ total }} documento com extracao marcada como ruim
+        {% plural %}
+          {{ total }} documentos com extracao marcada como ruim
+        {% endblocktranslate %}
+      </a>
+      &middot;
+      <code>manage.py tenant_command exportar_casos --schema=&lt;tenant&gt; --destino=casos/</code>
+    </p>
+  {% endif %}
+
   <p class="pre-visualizacao" style="margin-top:1.2rem">
     <a href="{% url 'knowledge:documentos' %}">{% translate "Todos" %}</a>
     {% for valor, rotulo, total in situacoes %}

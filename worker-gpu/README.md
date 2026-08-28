@@ -59,6 +59,39 @@ sudo cp docling-api.service /etc/systemd/system/
 sudo systemctl enable --now docling-api
 ```
 
+#### Sem placa, por enquanto
+
+**O Docling nao exige GPU.** A analise de layout — que e o que o distingue do
+extrator local — roda em CPU; a placa muda o tempo, nao o resultado. Da para
+subir este servico numa maquina comum, inclusive na mesma da aplicacao, e
+trocar depois.
+
+```bash
+DOCLING_DEVICE=cpu     # cpu | cuda | auto
+DOCLING_THREADS=4      # so em CPU; 0 deixa o Docling decidir
+DOCLING_OCR=false      # OCR e a parte mais cara; artigo com texto nao precisa
+```
+
+Quando a placa existir:
+
+```bash
+DOCLING_DEVICE=cuda
+sudo systemctl restart docling-api
+curl -s http://127.0.0.1:8100/health/    # {"device": "cuda", "ocr": false, ...}
+```
+
+**Nada muda no PubliBot**: ele fala HTTP e nao sabe onde o modelo roda. A fila do
+Celery, o adiamento quando o worker esta ocupado e a conferencia de `sha256`
+continuam iguais. E por isso que vale montar o caminho cedo, mesmo lento.
+
+O `/health/` devolve `device` e `ocr` de proposito: sem isso, um `.env` mal
+editado deixa o servico na CPU sem ninguem perceber, e o sintoma seria apenas
+"esta demorando muito".
+
+A primeira conversao baixa os modelos de layout do HuggingFace (algumas centenas
+de MB). Numa rede que bloqueie `huggingface.co` isso falha com `ProxyError` no
+meio da conversao — nao no boot.
+
 ## Cadastro no PubliBot
 
 No painel, em Conexoes de inferencia:

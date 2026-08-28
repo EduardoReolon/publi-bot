@@ -161,6 +161,41 @@ class Document(models.Model):
         CROSSREF = "crossref", _("Confirmado no Crossref")
         MANUAL = "manual", _("Informado por humano")
 
+    class ProblemaDeExtracao(models.TextChoices):
+        """Como a extracao errou. Serve de triagem, nao de diagnostico.
+
+        Os tres primeiros exigem tratamentos diferentes e por isso sao
+        separados: bloco errado se conserta calibrando heuristica, texto
+        corrompido so o Docling resolve, e metadado errado pode ser qualquer um
+        dos dois.
+        """
+
+        BLOCOS = "blocos", _("Divisao em blocos errada")
+        TEXTO = "texto", _("Texto corrompido ou embaralhado")
+        METADADOS = "metadados", _("Titulo, autores, ano ou DOI errados")
+        OUTRO = "outro", _("Outro")
+
+    # Marcacao humana de que a extracao saiu ruim. Existe porque a comparacao
+    # automatica (sugestao x correcao) e cega para os dois piores casos: bloco
+    # dividido no lugar errado e texto embaralhado nao mudam campo nenhum de
+    # metadado, entao passariam por acerto.
+    extraction_flagged_at = models.DateTimeField(_("marcado em"), null=True, blank=True)
+    extraction_flagged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("marcado por"),
+    )
+    extraction_problem = models.CharField(
+        _("problema na extracao"),
+        max_length=12,
+        choices=ProblemaDeExtracao.choices,
+        blank=True,
+    )
+    extraction_note = models.TextField(_("observacao"), blank=True)
+
     # O que a extracao PROPOS, congelado no momento da conversao. Comparado com
     # os campos atuais depois da curadoria, diz quais deles uma pessoa precisou
     # corrigir — e esses sao exatamente os casos contra os quais as heuristicas
@@ -262,6 +297,10 @@ class Document(models.Model):
             self.ExtractionMethod.TEXT,
             "",
         }
+
+    @property
+    def extracao_marcada(self) -> bool:
+        return self.extraction_flagged_at is not None
 
     @property
     def texto_e_markdown(self) -> bool:

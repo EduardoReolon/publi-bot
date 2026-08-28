@@ -16,4 +16,5 @@ urlpatterns = [
     path("<uuid:pk>/", views.curar_documento, name="curar"),
     path("<uuid:pk>/reprocessar/", views.reprocessar, name="reprocessar"),
     path("<uuid:pk>/excluir/", views.excluir_documento, name="excluir"),
+    path("<uuid:pk>/marcar/", views.marcar_extracao, name="marcar_extracao"),
 ]
