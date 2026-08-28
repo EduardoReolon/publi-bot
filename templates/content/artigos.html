@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Artigos" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Artigos" %}</h1>
+  <p class="sub">{% translate "Nenhum artigo e publicado sem passar pela revisao." %}</p>
+
+  <p class="pre-visualizacao">
+    <a href="{% url 'content:artigos' %}">{% translate "Todos" %}</a>
+    {% for valor, rotulo, total in situacoes %}
+      {% if total %}
+        &middot;
+        <a href="?situacao={{ valor }}" {% if situacao == valor %}style="font-weight:600"{% endif %}>
+          {{ rotulo }} ({{ total }})
+        </a>
+      {% endif %}
+    {% endfor %}
+  </p>
+
+  {% if artigos %}
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Titulo" %}</th>
+            <th>{% translate "Situacao" %}</th>
+            <th>{% translate "Fontes" %}</th>
+            <th class="numero">{% translate "Palavras" %}</th>
+            <th>{% translate "Agendado" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for artigo in artigos %}
+            <tr>
+              <td><a href="{% url 'content:revisar' artigo.pk %}">{{ artigo.title }}</a></td>
+              <td>
+                <span class="selo
+                  {% if artigo.status == 'published' %}ok
+                  {% elif artigo.status == 'push_failed' or artigo.status == 'rejected' %}ruim
+                  {% elif artigo.status == 'pending_review' %}espera{% endif %}">
+                  {{ artigo.get_status_display }}
+                </span>
+                {% if artigo.last_publish_error %}
+                  <div class="pre-visualizacao">{{ artigo.last_publish_error|truncatechars:100 }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="selo {% if artigo.consensus == 'conflict' %}ruim{% endif %}">
+                  {{ artigo.get_consensus_display }}
+                </span>
+                {% if artigo.single_source %}
+                  <span class="selo espera">{% translate "fonte unica" %}</span>
+                {% endif %}
+              </td>
+              <td class="numero">{{ artigo.word_count }}</td>
+              <td class="pre-visualizacao">{{ artigo.scheduled_for|date:"d/m H:i"|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="vazio">
+      {% translate "Nenhum artigo aqui. Crie uma pauta e gere o primeiro." %}
+    </p>
+  {% endif %}
+{% endblock %}

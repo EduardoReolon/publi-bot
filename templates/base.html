@@ -23,6 +23,7 @@
       font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
     }
     .envolucro { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    .envolucro.largo { max-width: 72rem; }
     header { border-bottom: 1px solid var(--borda); }
     header .envolucro { padding: 1rem 1.25rem; display: flex; gap: 1rem; align-items: center; }
     header a { color: inherit; text-decoration: none; font-weight: 600; }
@@ -57,6 +58,69 @@
     }
     code { background: var(--superficie); padding: .12rem .35rem; border-radius: .25rem; }
     .pre-visualizacao { color: var(--suave); font-size: .9rem; }
+    /* --- Navegacao do tenant ------------------------------------------- */
+    .menu { border-bottom: 1px solid var(--borda); background: var(--superficie); }
+    .menu .envolucro {
+      display: flex; gap: 1.25rem; padding: .6rem 1.25rem; flex-wrap: wrap;
+      font-size: .92rem; max-width: 72rem;
+    }
+    .menu a { color: var(--suave); text-decoration: none; }
+    .menu a:hover { color: var(--texto); }
+    .menu a.ativo { color: var(--realce); font-weight: 600; }
+    .menu .contagem {
+      background: var(--realce); color: #fff; border-radius: 1rem;
+      padding: 0 .4rem; font-size: .75rem; margin-left: .25rem;
+    }
+
+    /* --- Tabelas -------------------------------------------------------- */
+    .rolagem { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+    th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--borda); }
+    th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
+    td.numero { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:hover { background: var(--superficie); }
+
+    /* --- Selos de situacao ---------------------------------------------- */
+    .selo {
+      display: inline-block; padding: .1rem .5rem; border-radius: 1rem;
+      font-size: .78rem; font-weight: 600; border: 1px solid var(--borda);
+      background: var(--superficie); color: var(--suave); white-space: nowrap;
+    }
+    .selo.ok { color: var(--ok); border-color: var(--ok); }
+    .selo.ruim { color: var(--erro); border-color: var(--erro); }
+    .selo.espera { color: var(--realce); border-color: var(--realce); }
+
+    /* --- Cartoes de pendencia ------------------------------------------- */
+    .cartoes { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+    .cartao {
+      border: 1px solid var(--borda); border-radius: .5rem; padding: .9rem 1rem;
+      text-decoration: none; color: inherit; display: block; background: var(--fundo);
+    }
+    .cartao:hover { border-color: var(--realce); }
+    .cartao .valor { font-size: 1.9rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .cartao .rotulo { color: var(--suave); font-size: .88rem; }
+    .cartao.atencao { border-left: 3px solid var(--erro); }
+    .cartao.acao { border-left: 3px solid var(--realce); }
+
+    /* --- Revisao lado a lado -------------------------------------------- */
+    .duas-colunas { display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
+    @media (min-width: 62rem) { .duas-colunas { grid-template-columns: 3fr 2fr; } }
+    textarea {
+      width: 100%; min-height: 26rem; padding: .7rem; border-radius: .4rem;
+      border: 1px solid var(--borda); background: var(--fundo); color: var(--texto);
+      font: .92rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical;
+    }
+    select, input[type=url], input[type=number], input[type=datetime-local] {
+      width: 100%; padding: .6rem .7rem; font-size: 1rem; color: var(--texto);
+      background: var(--fundo); border: 1px solid var(--borda); border-radius: .4rem;
+    }
+    .renderizado { border: 1px solid var(--borda); border-radius: .5rem; padding: 1rem 1.2rem; }
+    .renderizado img { max-width: 100%; }
+    .botao.secundario { background: none; color: var(--realce); border: 1px solid var(--borda); }
+    .botao.perigo { background: var(--erro); }
+    .acoes { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+    .vazio { color: var(--suave); padding: 1.5rem 0; }
+
   </style>
 </head>
 <body>
@@ -78,7 +142,8 @@
       </nav>
     </div>
   </header>
-  <main class="envolucro">
+  {% block menu %}{% endblock %}
+  <main class="envolucro {% block largura %}{% endblock %}">
     {% if messages %}
       {% for message in messages %}
         <div class="aviso {% if message.tags == 'error' %}ruim{% endif %}">{{ message }}</div>

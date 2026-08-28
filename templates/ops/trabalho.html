@@ -1,0 +1,70 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Trabalho" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{{ trabalho.get_kind_display }}</h1>
+  <p class="sub">
+    <span class="selo {% if trabalho.status == 'failed' %}ruim{% elif trabalho.status == 'done' %}ok{% endif %}">
+      {{ trabalho.get_status_display }}
+    </span>
+    <span class="selo">{% translate "passo" %} {{ trabalho.current_step }}/{{ trabalho.total_steps }}</span>
+    <span class="selo">{{ trabalho.attempt_count }} {% translate "tentativa(s)" %}</span>
+  </p>
+
+  {% if trabalho.last_error %}
+    <div class="aviso ruim"><strong>{% translate "Ultimo erro:" %}</strong> {{ trabalho.last_error }}</div>
+  {% endif %}
+
+  <h2>{% translate "Passos" %}</h2>
+  <ul class="lista">
+    {% for passo in passos %}
+      <li>
+        <strong>{{ passo.numero }}. {{ passo.nome }}</strong>
+        {% if passo.numero < trabalho.current_step %}
+          <span class="selo ok">{% translate "concluido" %}</span>
+        {% elif passo.numero == trabalho.current_step %}
+          <span class="selo espera">{% translate "atual" %}</span>
+        {% endif %}
+      </li>
+    {% empty %}
+      <li class="vazio">{% translate "Nenhum fluxo registrado para este tipo." %}</li>
+    {% endfor %}
+  </ul>
+
+  {% if trabalho.step_payloads %}
+    <h2>{% translate "O que cada passo gravou" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        E daqui que um passo le o que o anterior produziu — nunca da memoria.
+        Por isso o trabalho retoma de onde parou depois de uma interrupcao.
+      {% endblocktranslate %}
+    </p>
+    <textarea readonly style="min-height:14rem">{{ trabalho.step_payloads }}</textarea>
+  {% endif %}
+
+  {% if inferencias %}
+    <h2>{% translate "Chamadas ao modelo neste trabalho" %}</h2>
+    <ul class="lista">
+      {% for log in inferencias %}
+        <li>
+          <strong>{{ log.model_name }}</strong>
+          <span class="selo {% if log.succeeded %}ok{% else %}ruim{% endif %}">
+            {{ log.latency_ms }} ms
+          </span>
+          <div class="pre-visualizacao">
+            {{ log.input_tokens }} → {{ log.output_tokens }} {% translate "tokens" %}
+            {% if log.error %}<br>{{ log.error }}{% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if trabalho.status == 'failed' or trabalho.status == 'waiting_capacity' %}
+    <form method="post" action="{% url 'operacao:redespachar' trabalho.pk %}">
+      {% csrf_token %}
+      <button type="submit">{% translate "Redespachar do passo atual" %}</button>
+    </form>
+  {% endif %}
+{% endblock %}

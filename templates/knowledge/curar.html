@@ -1,0 +1,125 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Curadoria" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{{ documento.title|default:documento.nome_do_arquivo }}</h1>
+  <p class="sub">
+    <span class="selo">{{ documento.get_status_display }}</span>
+    <span class="selo">{{ documento.category.name }}</span>
+    {% if documento.metadata_confidence == 'auto' %}
+      <span class="selo espera">{% translate "metadados sugeridos, nao conferidos" %}</span>
+    {% endif %}
+  </p>
+
+  {% if documento.failure_reason %}
+    <div class="aviso ruim">
+      <strong>{% translate "A conversao falhou." %}</strong> {{ documento.failure_reason }}
+      <form method="post" action="{% url 'knowledge:reprocessar' documento.pk %}" style="margin-top:.6rem">
+        {% csrf_token %}
+        <button type="submit" class="botao secundario">{% translate "Tentar converter de novo" %}</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if duplicatas %}
+    {% comment %}
+      Mesmo titulo, autores e ano. Dois registros do mesmo estudo no indice
+      fariam o filtro de consenso tratar a mesma fonte como confirmacao de si
+      mesma — o oposto do que ele existe para medir.
+    {% endcomment %}
+    <div class="aviso ruim">
+      <strong>{% translate "Possivel duplicata." %}</strong>
+      {% translate "Ja existe documento com o mesmo titulo, autores e ano:" %}
+      {% for outro in duplicatas %}
+        <a href="{% url 'knowledge:curar' outro.pk %}">{{ outro.title }}</a>{% if not forloop.last %},{% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="duas-colunas">
+    <div>
+      <h2>{% translate "Texto convertido" %}</h2>
+      {% if documento.markdown_full %}
+        <p class="pre-visualizacao">
+          {% blocktranslate trimmed %}
+            Copie daqui o resumo e a conclusao para o campo de trecho ao lado.
+          {% endblocktranslate %}
+        </p>
+        <textarea readonly style="min-height:34rem">{{ documento.markdown_full }}</textarea>
+      {% elif documento.status == 'queued' or documento.status == 'parsing' %}
+        <p class="vazio">{% translate "Conversao em andamento. Atualize a pagina em instantes." %}</p>
+      {% else %}
+        <p class="vazio">{% translate "Nada convertido ainda." %}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <h2>{% translate "Metadados" %}</h2>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Autores e ano formam o texto-ancora do link; a URL e o destino dele.
+          Um erro aqui sai publicado com aparencia de fonte conferida.
+        {% endblocktranslate %}
+      </p>
+      <form method="post">
+        {% csrf_token %}
+        {% for campo in form %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+        <div class="acoes">
+          <button type="submit" name="acao" value="salvar" class="botao secundario">
+            {% translate "Salvar" %}
+          </button>
+          <button type="submit" name="acao" value="concluir">
+            {% translate "Concluir curadoria" %}
+          </button>
+        </div>
+      </form>
+
+      <h2>{% translate "Trechos no indice" %}</h2>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          O trecho e o que o sistema compara com a pauta na hora de buscar
+          fontes. Um por tipo.
+        {% endblocktranslate %}
+      </p>
+      <ul class="lista">
+        {% for trecho in trechos %}
+          <li>
+            <strong>{{ trecho.get_kind_display }}</strong>
+            <span class="selo">{{ trecho.token_count }} {% translate "tokens" %}</span>
+            <div class="pre-visualizacao">{{ trecho.content|truncatechars:220 }}</div>
+            <form method="post" action="{% url 'knowledge:remover_trecho' documento.pk trecho.pk %}"
+                  style="margin-top:.5rem">
+              {% csrf_token %}
+              <button type="submit" class="botao secundario">{% translate "Remover" %}</button>
+            </form>
+          </li>
+        {% empty %}
+          <li class="vazio">
+            {% translate "Nenhum trecho selecionado. Sem ao menos um, o documento nao pode ser citado." %}
+          </li>
+        {% endfor %}
+      </ul>
+
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="trecho">
+        {% for campo in form_trecho %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+          </div>
+        {% endfor %}
+        <button type="submit" class="botao secundario">{% translate "Indexar trecho" %}</button>
+      </form>
+    </div>
+  </div>
+{% endblock %}

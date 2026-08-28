@@ -1,0 +1,179 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Revisao" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{{ artigo.title }}</h1>
+  <p class="sub">
+    <span class="selo {% if artigo.status == 'pending_review' %}espera{% endif %}">
+      {{ artigo.get_status_display }}
+    </span>
+    <span class="selo {% if artigo.consensus == 'conflict' %}ruim{% endif %}">
+      {{ artigo.get_consensus_display }}
+    </span>
+    {% if artigo.single_source %}<span class="selo espera">{% translate "fonte unica" %}</span>{% endif %}
+    <span class="selo">{{ artigo.word_count }} {% translate "palavras" %}</span>
+    {% if artigo.human_edit_ratio %}
+      <span class="selo">{{ artigo.human_edit_ratio|floatformat:2 }} {% translate "editado" %}</span>
+    {% endif %}
+  </p>
+
+  {% if artigo.exige_confirmacao_de_divergencia %}
+    {% comment %}
+      Sem este aviso o revisor leria um texto aparentemente pacifico sobre algo
+      que as fontes contradizem — e a trava de aprovacao recusaria sem que ele
+      soubesse por que.
+    {% endcomment %}
+    <div class="aviso ruim">
+      <strong>{% translate "As fontes divergem entre si." %}</strong>
+      {% translate "O texto precisa apresentar a divergencia, e nao escolher um lado. Confirme isso na aprovacao." %}
+      {% if artigo.thesis_json.pontos_divergentes %}
+        <ul>
+          {% for ponto in artigo.thesis_json.pontos_divergentes %}<li>{{ ponto }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if artigo.single_source %}
+    <div class="aviso">
+      {% translate "O texto se apoia num unico documento. Uma fonte nao confirma a si mesma." %}
+    </div>
+  {% endif %}
+
+  {% if artigo.last_publish_error %}
+    <div class="aviso ruim">
+      <strong>{% translate "Falha na ultima publicacao:" %}</strong>
+      {{ artigo.last_publish_error }}
+      {% if artigo.next_retry_at %}
+        <div class="pre-visualizacao">
+          {% translate "Proxima tentativa:" %} {{ artigo.next_retry_at|date:"d/m H:i" }}
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="duas-colunas">
+      <div>
+        <h2>{% translate "Texto" %}</h2>
+        {% for campo in form %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+
+        <h2>{% translate "Como vai sair" %}</h2>
+        <p class="pre-visualizacao">
+          {% blocktranslate trimmed %}
+            HTML ja sanitizado, com os links vindos das citacoes. Salve para
+            atualizar esta previa.
+          {% endblocktranslate %}
+        </p>
+        <div class="renderizado">{{ artigo.body_html|safe }}</div>
+      </div>
+
+      <div>
+        <h2>{% translate "Fontes citadas" %}</h2>
+        <p class="pre-visualizacao">
+          {% blocktranslate trimmed %}
+            A distancia mede o quanto o trecho se afasta da pauta: menor e mais
+            proximo. A fonte primaria e a de maior autoridade, e e a unica cuja
+            URL vira link no texto.
+          {% endblocktranslate %}
+        </p>
+        <ul class="lista">
+          {% for citacao in citacoes %}
+            <li>
+              <strong>[[FONTE_{{ citacao.rank }}]]</strong>
+              {% if citacao.used_as_primary %}
+                <span class="selo ok">{% translate "primaria" %}</span>
+              {% endif %}
+              <span class="selo">{{ citacao.distance|floatformat:4 }}</span>
+              <div>{{ citacao.source_title }}</div>
+              <div class="pre-visualizacao">
+                {% if citacao.source_url %}
+                  <a href="{{ citacao.source_url }}" target="_blank" rel="noopener">
+                    {{ citacao.source_url|truncatechars:60 }}
+                  </a>
+                {% else %}
+                  {% translate "sem URL: nao pode virar link" %}
+                {% endif %}
+              </div>
+              {% if citacao.super_chunk %}
+                <details>
+                  <summary class="pre-visualizacao">{% translate "ver o trecho usado" %}</summary>
+                  <p class="pre-visualizacao">{{ citacao.super_chunk.content }}</p>
+                </details>
+              {% endif %}
+            </li>
+          {% empty %}
+            <li class="vazio">{% translate "Nenhuma citacao registrada." %}</li>
+          {% endfor %}
+        </ul>
+
+        {% if artigo.thesis_json.tese %}
+          <h2>{% translate "Tese consolidada" %}</h2>
+          <p class="pre-visualizacao">{{ artigo.thesis_json.tese }}</p>
+        {% endif %}
+
+        <h2>{% translate "Aprovar" %}</h2>
+        {% if site and site.is_sensitive %}
+          <div class="aviso">
+            {% translate "Este site trata de tema sensivel: so um revisor com credencial tecnica registrada pode aprovar." %}
+          </div>
+        {% endif %}
+        {% for campo in agendamento %}
+          {% comment %}
+            A confirmacao de divergencia so aparece quando ha divergencia. Pedir
+            sempre transformaria a pergunta em ruido, e ruido e como uma
+            confirmacao que importa acaba marcada sem ser lida.
+          {% endcomment %}
+          {% if campo.name != 'confirmar_divergencia' or artigo.exige_confirmacao_de_divergencia %}
+            <div class="campo">
+              <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+              {{ campo }}
+              {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+              {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <p class="pre-visualizacao">
+          {% translate "Proximo horario livre:" %} {{ proximo_horario|date:"d/m/Y H:i" }}
+        </p>
+
+        <div class="acoes">
+          <button type="submit" name="acao" value="salvar" class="botao secundario">
+            {% translate "Salvar" %}
+          </button>
+          <button type="submit" name="acao" value="aprovar">
+            {% translate "Aprovar e agendar" %}
+          </button>
+          <button type="submit" name="acao" value="rejeitar" class="botao perigo">
+            {% translate "Rejeitar" %}
+          </button>
+        </div>
+
+        {% if revisoes %}
+          <h2>{% translate "Versoes" %}</h2>
+          <ul class="lista">
+            {% for revisao in revisoes %}
+              <li>
+                <strong>v{{ revisao.version }}</strong>
+                <span class="selo">{{ revisao.get_source_display }}</span>
+                <div class="pre-visualizacao">
+                  {{ revisao.created_at|date:"d/m H:i" }}
+                  {% if revisao.editor %}&middot; {{ revisao.editor.email }}{% endif %}
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </form>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Operacao" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Operacao" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Cada geracao e um trabalho que avanca um passo por vez, guardando o
+      resultado de cada passo. Por isso um trabalho que falhou pode voltar a
+      fila de onde parou, sem refazer — nem pagar de novo — o que ja rodou.
+    {% endblocktranslate %}
+  </p>
+
+  <p class="pre-visualizacao">
+    <a href="{% url 'operacao:trabalhos' %}">{% translate "Todos" %}</a>
+    {% for valor, rotulo in situacoes %}
+      &middot;
+      <a href="?situacao={{ valor }}" {% if situacao == valor %}style="font-weight:600"{% endif %}>{{ rotulo }}</a>
+    {% endfor %}
+  </p>
+
+  {% if trabalhos %}
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Tipo" %}</th>
+            <th>{% translate "Passo" %}</th>
+            <th>{% translate "Situacao" %}</th>
+            <th>{% translate "Ultimo erro" %}</th>
+            <th>{% translate "Atualizado" %}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for trabalho in trabalhos %}
+            <tr>
+              <td><a href="{% url 'operacao:trabalho' trabalho.pk %}">{{ trabalho.get_kind_display }}</a></td>
+              <td class="numero">{{ trabalho.current_step }}/{{ trabalho.total_steps }}</td>
+              <td>
+                <span class="selo
+                  {% if trabalho.status == 'failed' %}ruim
+                  {% elif trabalho.status == 'done' %}ok
+                  {% elif trabalho.status == 'waiting_capacity' %}espera{% endif %}">
+                  {{ trabalho.get_status_display }}
+                </span>
+              </td>
+              <td class="pre-visualizacao">{{ trabalho.last_error|truncatechars:120|default:"—" }}</td>
+              <td class="pre-visualizacao">{{ trabalho.updated_at|date:"d/m H:i" }}</td>
+              <td>
+                {% if trabalho.status == 'failed' or trabalho.status == 'waiting_capacity' %}
+                  <form method="post" action="{% url 'operacao:redespachar' trabalho.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="botao secundario">{% translate "Redespachar" %}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="vazio">{% translate "Nenhum trabalho nesta situacao." %}</p>
+  {% endif %}
+
+  {% if inferencias %}
+    <h2>{% translate "Ultimas chamadas ao modelo" %}</h2>
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Quando" %}</th>
+            <th>{% translate "Modelo" %}</th>
+            <th>{% translate "Conexao" %}</th>
+            <th class="numero">{% translate "Tokens" %}</th>
+            <th class="numero">{% translate "Latencia" %}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in inferencias %}
+            <tr>
+              <td class="pre-visualizacao">{{ log.created_at|date:"d/m H:i" }}</td>
+              <td class="pre-visualizacao">{{ log.model_name }}</td>
+              <td class="pre-visualizacao">{{ log.connection.name|default:"—" }}</td>
+              <td class="numero">{{ log.input_tokens }}/{{ log.output_tokens }}</td>
+              <td class="numero">{{ log.latency_ms }} ms</td>
+              <td>
+                <span class="selo {% if log.succeeded %}ok{% else %}ruim{% endif %}">
+                  {% if log.succeeded %}{% translate "ok" %}{% else %}{% translate "falhou" %}{% endif %}
+                </span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if tentativas %}
+    <h2>{% translate "Tentativas de publicacao" %}</h2>
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Quando" %}</th>
+            <th>{% translate "Artigo" %}</th>
+            <th class="numero">{% translate "Tentativa" %}</th>
+            <th>{% translate "Resultado" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tentativa in tentativas %}
+            <tr>
+              <td class="pre-visualizacao">{{ tentativa.created_at|date:"d/m H:i" }}</td>
+              <td class="pre-visualizacao">{{ tentativa.article.title|truncatechars:50|default:"—" }}</td>
+              <td class="numero">{{ tentativa.attempt_number }}</td>
+              <td>
+                <span class="selo {% if tentativa.succeeded %}ok{% else %}ruim{% endif %}">
+                  {{ tentativa.http_status|default:tentativa.error_code|default:"—" }}
+                </span>
+                {% if tentativa.dry_run %}<span class="selo">{% translate "simulacao" %}</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Enviar documento" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Enviar documento" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      O arquivo e convertido em Markdown em segundo plano e depois espera
+      curadoria. Nada entra no indice automaticamente.
+    {% endblocktranslate %}
+  </p>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% for campo in form %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="acoes">
+      <button type="submit">{% translate "Enviar" %}</button>
+      <a class="botao secundario" href="{% url 'knowledge:documentos' %}">{% translate "Cancelar" %}</a>
+    </div>
+  </form>
+{% endblock %}

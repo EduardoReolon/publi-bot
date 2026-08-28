@@ -1,38 +1,67 @@
 {% extends "base.html" %}{% load i18n %}
 {% block titulo %}{% translate "Painel" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
 {% block conteudo %}
   <h1>{% translate "Painel" %}</h1>
   <p class="sub">
     {% blocktranslate trimmed %}
-      Ambiente <code>{{ schema_name }}</code>. Os numeros abaixo saem do schema
-      deste tenant — nenhum outro cliente aparece aqui.
+      Ambiente <code>{{ schema_name }}</code>. Tudo abaixo sai do schema deste
+      tenant — nenhum outro cliente e alcancavel daqui.
     {% endblocktranslate %}
   </p>
 
-  <ul class="lista">
-    {% for rotulo, total, caminho in resumo %}
-      <li>
-        <a href="/admin/{{ caminho }}/"><strong>{{ rotulo }}</strong></a>
-        <div class="pre-visualizacao">{{ total }}</div>
-      </li>
-    {% endfor %}
-  </ul>
+  {% for alerta in alertas %}
+    <div class="aviso ruim">{{ alerta }}</div>
+  {% endfor %}
 
-  {% comment %}
-    Dizer o que NAO existe e mais util que uma tela vazia. O motor esta
-    construido e testado; a interface propria de operacao ainda nao, e quem
-    abre esta pagina precisa saber por onde trabalhar enquanto isso.
-  {% endcomment %}
-  <div class="aviso">
-    <p>
-      {% blocktranslate trimmed %}
-        Ainda nao existe interface propria para operar o produto — enviar
-        documentos, curar trechos, revisar e aprovar artigos, configurar sites e
-        cadencia. Todo esse motor esta construido e coberto por testes, e por
-        enquanto se opera pelo
-        <a href="/admin/">admin do Django</a>, que ja enxerga os models deste
-        tenant.
-      {% endblocktranslate %}
-    </p>
+  {% if resumo.tem_problema %}
+    <h2>{% translate "Precisa de atencao" %}</h2>
+    <div class="cartoes">
+      {% for item in resumo.problemas %}
+        {% if item.total %}
+          <a class="cartao {% if item.atencao %}atencao{% endif %}" href="{{ item.url }}">
+            <div class="valor">{{ item.total }}</div>
+            <div class="rotulo">{{ item.rotulo }}</div>
+            {% if item.detalhe %}<div class="pre-visualizacao">{{ item.detalhe }}</div>{% endif %}
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <h2>{% translate "Esperando voce" %}</h2>
+  <div class="cartoes">
+    {% for item in resumo.acoes %}
+      <a class="cartao {% if item.total %}acao{% endif %}" href="{{ item.url }}">
+        <div class="valor">{{ item.total }}</div>
+        <div class="rotulo">{{ item.rotulo }}</div>
+        {% if item.detalhe %}<div class="pre-visualizacao">{{ item.detalhe }}</div>{% endif %}
+      </a>
+    {% endfor %}
   </div>
+
+  <h2>{% translate "Acervo e producao" %}</h2>
+  <div class="cartoes">
+    {% for item in resumo.acervo %}
+      <a class="cartao" href="{{ item.url }}">
+        <div class="valor">{{ item.total }}</div>
+        <div class="rotulo">{{ item.rotulo }}</div>
+      </a>
+    {% endfor %}
+  </div>
+
+  <h2>{% translate "Proximas publicacoes" %}</h2>
+  {% if resumo.proximas_publicacoes %}
+    <ul class="lista">
+      {% for artigo in resumo.proximas_publicacoes %}
+        <li>
+          <a href="{% url 'content:revisar' artigo.pk %}"><strong>{{ artigo.title }}</strong></a>
+          <div class="pre-visualizacao">{{ artigo.scheduled_for|date:"d/m/Y H:i" }}</div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="vazio">{% translate "Nada agendado. Aprove um artigo para colocar na fila." %}</p>
+  {% endif %}
 {% endblock %}

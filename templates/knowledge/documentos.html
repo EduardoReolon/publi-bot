@@ -1,0 +1,83 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Documentos" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Acervo" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Tudo o que o sistema pode citar sai daqui. Um documento so entra no
+      indice depois de alguem confirmar autores, ano e URL — sao esses campos
+      que viram o link publicado.
+    {% endblocktranslate %}
+  </p>
+
+  <div class="acoes">
+    <a class="botao" href="{% url 'knowledge:enviar' %}">{% translate "Enviar documento" %}</a>
+    <a class="botao secundario" href="{% url 'knowledge:categorias' %}">{% translate "Categorias" %}</a>
+  </div>
+
+  <p class="pre-visualizacao" style="margin-top:1.2rem">
+    <a href="{% url 'knowledge:documentos' %}">{% translate "Todos" %}</a>
+    {% for valor, rotulo, total in situacoes %}
+      {% if total %}
+        &middot;
+        <a href="?situacao={{ valor }}" {% if situacao == valor %}style="font-weight:600"{% endif %}>
+          {{ rotulo }} ({{ total }})
+        </a>
+      {% endif %}
+    {% endfor %}
+  </p>
+
+  {% if documentos %}
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Titulo" %}</th>
+            <th>{% translate "Autores" %}</th>
+            <th>{% translate "Ano" %}</th>
+            <th>{% translate "Situacao" %}</th>
+            <th class="numero">{% translate "Trechos" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for documento in documentos %}
+            <tr>
+              <td>
+                <a href="{% url 'knowledge:curar' documento.pk %}">
+                  {{ documento.title|default:documento.nome_do_arquivo }}
+                </a>
+                {% if not documento.source_url %}
+                  <div class="pre-visualizacao">{% translate "sem URL de origem" %}</div>
+                {% endif %}
+              </td>
+              <td class="pre-visualizacao">{{ documento.authors|default:"—" }}</td>
+              <td class="pre-visualizacao">{{ documento.year|default:"—" }}</td>
+              <td>
+                <span class="selo
+                  {% if documento.status == 'failed' %}ruim
+                  {% elif documento.status == 'curated' or documento.status == 'embedded' %}ok
+                  {% elif documento.status == 'pending_curation' %}espera{% endif %}">
+                  {{ documento.get_status_display }}
+                </span>
+                {% if documento.failure_reason %}
+                  <div class="pre-visualizacao">{{ documento.failure_reason|truncatechars:120 }}</div>
+                {% endif %}
+              </td>
+              <td class="numero">{{ documento.chunks.count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="vazio">
+      {% if situacao %}
+        {% translate "Nenhum documento nesta situacao." %}
+      {% else %}
+        {% translate "O acervo esta vazio. Sem documentos nao ha o que citar, e a geracao de artigo falha antes de chamar o modelo." %}
+      {% endif %}
+    </p>
+  {% endif %}
+{% endblock %}

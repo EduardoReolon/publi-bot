@@ -1,0 +1,127 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Site e cadencia" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Site de destino" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Um tenant publica em um site. Um cliente com tres sites usa tres
+      tenants — por isso aqui nao ha lista.
+    {% endblocktranslate %}
+  </p>
+
+  {% for alerta in alertas %}
+    <div class="aviso ruim">{{ alerta }}</div>
+  {% endfor %}
+
+  <div class="duas-colunas">
+    <div>
+      <h2>{% translate "Cadastro e credenciais" %}</h2>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="secao" value="site">
+        {% for campo in form %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+        {% if site.api_key_last4 %}
+          <p class="pre-visualizacao">
+            {% translate "Chave cadastrada terminando em" %} <code>{{ site.api_key_last4 }}</code>
+          </p>
+        {% endif %}
+        <div class="acoes">
+          <button type="submit">{% translate "Salvar site" %}</button>
+        </div>
+      </form>
+
+      {% if site %}
+        <form method="post" action="{% url 'integrations:testar' %}" style="margin-top:1rem">
+          {% csrf_token %}
+          <button type="submit" class="botao secundario">{% translate "Testar conexao agora" %}</button>
+          <div class="ajuda">
+            {% blocktranslate trimmed %}
+              Descobrir uma assinatura errada agora e barato. Descobrir na
+              primeira publicacao agendada significa um artigo aprovado parado
+              sem ninguem olhando.
+            {% endblocktranslate %}
+          </div>
+        </form>
+      {% endif %}
+    </div>
+
+    <div>
+      <h2>{% translate "Cadencia" %}</h2>
+      {% if site %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="secao" value="cadencia">
+          {% for campo in cadencia %}
+            <div class="campo">
+              <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+              {{ campo }}
+              {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+              {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+            </div>
+          {% endfor %}
+          {% for erro in cadencia.non_field_errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          <button type="submit" class="botao secundario">{% translate "Salvar cadencia" %}</button>
+        </form>
+
+        <h2>{% translate "Proximos horarios" %}</h2>
+        <form method="post" action="{% url 'integrations:gerar_horarios' %}">
+          {% csrf_token %}
+          <button type="submit" class="botao secundario">{% translate "Gerar horarios" %}</button>
+        </form>
+        <ul class="lista" style="margin-top:.8rem">
+          {% for horario in horarios %}
+            <li>
+              <strong>{{ horario.slot_at|date:"d/m/Y H:i" }}</strong>
+              <div class="pre-visualizacao">
+                {% if horario.article %}
+                  {{ horario.article.title|truncatechars:60 }}
+                {% elif horario.answer %}
+                  {% translate "resposta" %}
+                {% else %}
+                  {% translate "livre" %}
+                {% endif %}
+              </div>
+            </li>
+          {% empty %}
+            <li class="vazio">{% translate "Nenhum horario futuro gerado." %}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="vazio">{% translate "Cadastre o site ao lado para configurar a cadencia." %}</p>
+      {% endif %}
+
+      {% if chamadas %}
+        <h2>{% translate "Ultimas chamadas ao site" %}</h2>
+        <div class="rolagem">
+          <table>
+            <thead>
+              <tr><th>{% translate "Quando" %}</th><th>{% translate "Rota" %}</th><th>{% translate "Status" %}</th></tr>
+            </thead>
+            <tbody>
+              {% for chamada in chamadas %}
+                <tr>
+                  <td class="pre-visualizacao">{{ chamada.created_at|date:"d/m H:i" }}</td>
+                  <td class="pre-visualizacao">{{ chamada.method }} {{ chamada.path }}</td>
+                  <td>
+                    <span class="selo {% if chamada.error_code %}ruim{% else %}ok{% endif %}">
+                      {{ chamada.http_status|default:chamada.error_code }}
+                    </span>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

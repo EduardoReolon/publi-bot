@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Perguntas" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Perguntas dos visitantes" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Importadas do site. A resposta sai do mesmo acervo e passa pela mesma
+      revisao de um artigo — uma resposta publicada tem o mesmo peso.
+    {% endblocktranslate %}
+  </p>
+
+  {% if perguntas %}
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Pergunta" %}</th>
+            <th>{% translate "Situacao" %}</th>
+            <th>{% translate "Retencao ate" %}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pergunta in perguntas %}
+            <tr>
+              <td>
+                {{ pergunta.question_text|truncatechars:160 }}
+                {% if pergunta.author_pseudonym %}
+                  <div class="pre-visualizacao">{{ pergunta.author_pseudonym }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="selo
+                  {% if pergunta.status == 'answered' %}ok
+                  {% elif pergunta.status == 'discarded' %}ruim
+                  {% elif pergunta.status == 'pending_review' %}espera{% endif %}">
+                  {{ pergunta.get_status_display }}
+                </span>
+              </td>
+              <td class="pre-visualizacao">{{ pergunta.retention_until|date:"d/m/Y" }}</td>
+              <td>
+                {% if pergunta.answer %}
+                  <a href="{% url 'content:revisar_resposta' pergunta.answer.pk %}">
+                    {% translate "revisar resposta" %}
+                  </a>
+                {% elif pergunta.status != 'discarded' %}
+                  <form method="post" action="{% url 'content:responder' pergunta.pk %}" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" class="botao secundario">{% translate "Responder" %}</button>
+                  </form>
+                  <form method="post" action="{% url 'content:descartar_pergunta' pergunta.pk %}" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" class="botao secundario">{% translate "Descartar" %}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="vazio">
+      {% translate "Nenhuma pergunta importada. Elas chegam do site pela rota de Q&A do contrato." %}
+    </p>
+  {% endif %}
+{% endblock %}

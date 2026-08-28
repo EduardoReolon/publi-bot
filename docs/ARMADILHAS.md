@@ -233,6 +233,66 @@ Com `rel` entre os atributos permitidos e sem `link_rel=None`, o nh3 levanta
 
 ---
 
+## Pipeline e interface
+
+### Os componentes existiam e nada os montava
+
+Por sete entregas, `recuperar`, `interpretar_tese` e `aplicar_rascunho` foram
+funcoes testadas que **nenhum caminho alcancava**: `apps/content/tasks.py` e
+`apps/knowledge/tasks.py` nao existiam, `registrar_fluxo` nunca era chamado e
+`criar_job` nao tinha quem o chamasse.
+
+Cada peca passava nos testes. A montagem nao existia, e nada acusava isso —
+teste de unidade nao repara na ausencia de quem chama. So apareceu ao abrir o
+produto para construir a interface e procurar o que o botao "gerar artigo"
+acionaria.
+
+Os fluxos sao registrados no `ready()` do app. **Sem esse import, `criar_job`
+levanta KeyError e nada e gerado.**
+
+### `connection.tenant` pode ser um `FakeTenant`
+
+Dentro de um `schema_context` o django-tenants coloca ali um objeto que so tem
+`schema_name`. Filtrar por chave estrangeira com ele levanta:
+
+```
+ValidationError: O valor "<FakeTenant object>" nao e um UUID valido
+```
+
+A mensagem aponta para o tipo do valor, nao para a causa. Resolva o `Tenant`
+pelo `connection.schema_name`, consultando o public — que esta no `search_path`
+de toda conexao. Ver `apps/content/inference.py`.
+
+### `guardar_chave` nao grava
+
+Apesar do nome, ela so cifra e preenche os campos do objeto. Quem chama decide
+quando salvar. Esquecer o `save()` deixa a credencial em memoria e o sintoma e
+"a conexao nao tem segredo cadastrado".
+
+### O botao "Sair" e o primeiro `button[type=submit]` de toda pagina
+
+Ele fica no cabecalho, dentro de um formulario. Em teste de navegador, um
+`click("button[type=submit]")` generico **desloga** em vez de submeter o
+formulario da tela. Use seletor por texto.
+
+### `kill -9` no `manage.py dev` deixa o worker orfao
+
+SIGKILL nao pode ser tratado, entao o `finally` que encerra os filhos nunca
+roda e o worker e reparentado ao init. Ele continua consumindo a mesma fila, e
+um worker antigo — com outra configuracao — passa a competir com o novo. O
+sintoma sao trabalhos falhando por um motivo que nao existe mais na
+configuracao atual.
+
+Ctrl+C nao tem esse problema: o console manda SIGINT ao grupo inteiro.
+
+### Indexar um trecho depende de baixar 2 GB
+
+O modelo de embedding e baixado na primeira utilizacao. Sem rede — ou com o
+download bloqueado — a excecao de HTTP sobe no meio da requisicao e vira 500.
+A tela de curadoria trata isso e diz que o problema e o modelo, e nao o trecho.
+
+---
+
 ## Testes
 
 ### `DROP SCHEMA` no teardown falha com "pending trigger events"

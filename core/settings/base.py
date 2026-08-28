@@ -151,6 +151,9 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # Contagens de pendencia no menu do tenant. Sai calado no
+                # dominio raiz, onde as tabelas do tenant nem existem.
+                "apps.ops.context.pendencias",
             ],
         },
     },

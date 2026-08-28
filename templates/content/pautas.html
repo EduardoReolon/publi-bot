@@ -1,0 +1,78 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Pautas" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Pautas" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Uma pauta e o tema que sera buscado no acervo. Gerar o artigo procura as
+      fontes, consolida a tese e escreve — e para, aguardando revisao.
+    {% endblocktranslate %}
+  </p>
+
+  {% if pautas %}
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Titulo" %}</th>
+            <th>{% translate "Palavra-chave" %}</th>
+            <th>{% translate "Situacao" %}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pauta in pautas %}
+            <tr>
+              <td>
+                <strong>{{ pauta.title }}</strong>
+                {% if pauta.briefing %}
+                  <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>
+                {% endif %}
+              </td>
+              <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}</td>
+              <td>
+                <span class="selo {% if pauta.status == 'used' %}ok{% elif pauta.status == 'rejected' %}ruim{% endif %}">
+                  {{ pauta.get_status_display }}
+                </span>
+              </td>
+              <td>
+                {% if pauta.artigos %}
+                  {% for artigo in pauta.articles.all %}
+                    <a href="{% url 'content:revisar' artigo.pk %}">{% translate "ver artigo" %}</a>
+                  {% endfor %}
+                {% elif pauta.status != 'rejected' %}
+                  <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" class="botao secundario">{% translate "Gerar artigo" %}</button>
+                  </form>
+                  <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" class="botao secundario">{% translate "Rejeitar" %}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="vazio">{% translate "Nenhuma pauta ainda." %}</p>
+  {% endif %}
+
+  <h2>{% translate "Nova pauta" %}</h2>
+  <form method="post" action="{% url 'content:nova_pauta' %}">
+    {% csrf_token %}
+    {% for campo in form %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <button type="submit">{% translate "Criar pauta" %}</button>
+  </form>
+{% endblock %}

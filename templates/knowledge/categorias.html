@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Categorias" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Categorias de documento" %}</h1>
+  <p class="sub">{% translate "Agrupam o acervo e orientam a curadoria." %}</p>
+
+  <ul class="lista">
+    {% for categoria in categorias %}
+      <li>
+        <strong>{{ categoria.name }}</strong>
+        <div class="pre-visualizacao">{{ categoria.total }} {% translate "documento(s)" %}</div>
+      </li>
+    {% empty %}
+      <li class="vazio">{% translate "Nenhuma categoria ainda." %}</li>
+    {% endfor %}
+  </ul>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="campo">
+      <label for="name">{% translate "Nova categoria" %}</label>
+      <input type="text" id="name" name="name" required placeholder="{% translate 'Artigo cientifico' %}">
+    </div>
+    <button type="submit">{% translate "Criar" %}</button>
+  </form>
+{% endblock %}

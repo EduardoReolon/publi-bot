@@ -15,4 +15,8 @@ urlpatterns = [
     # balanceador precisam alcanca-las antes de qualquer sessao existir.
     path("", include("apps.ops.urls", namespace="ops")),
     path("", include("apps.accounts.urls_tenant", namespace="accounts")),
+    path("documentos/", include("apps.knowledge.urls", namespace="knowledge")),
+    path("", include("apps.content.urls", namespace="content")),
+    path("site/", include("apps.integrations.urls", namespace="integrations")),
+    path("operacao/", include("apps.ops.urls_painel", namespace="operacao")),
 ]

@@ -1,0 +1,58 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Revisar resposta" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Resposta" %}</h1>
+  <p class="sub">{{ resposta.question.question_text }}</p>
+  <p><span class="selo">{{ resposta.get_status_display }}</span></p>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="duas-colunas">
+      <div>
+        {% for campo in form %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+        <h2>{% translate "Como vai sair" %}</h2>
+        <div class="renderizado">{{ resposta.body_html|safe }}</div>
+      </div>
+      <div>
+        <h2>{% translate "Fontes citadas" %}</h2>
+        <ul class="lista">
+          {% for citacao in citacoes %}
+            <li>
+              <strong>[[FONTE_{{ citacao.rank }}]]</strong>
+              {% if citacao.used_as_primary %}<span class="selo ok">{% translate "primaria" %}</span>{% endif %}
+              <span class="selo">{{ citacao.distance|floatformat:4 }}</span>
+              <div>{{ citacao.source_title }}</div>
+            </li>
+          {% empty %}
+            <li class="vazio">{% translate "Nenhuma citacao." %}</li>
+          {% endfor %}
+        </ul>
+
+        <h2>{% translate "Aprovar" %}</h2>
+        {% for campo in agendamento %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+          </div>
+        {% endfor %}
+        <p class="pre-visualizacao">
+          {% translate "Proximo horario livre:" %} {{ proximo_horario|date:"d/m/Y H:i" }}
+        </p>
+        <div class="acoes">
+          <button type="submit" name="acao" value="salvar" class="botao secundario">{% translate "Salvar" %}</button>
+          <button type="submit" name="acao" value="aprovar">{% translate "Aprovar e agendar" %}</button>
+          <button type="submit" name="acao" value="rejeitar" class="botao perigo">{% translate "Rejeitar" %}</button>
+        </div>
+      </div>
+    </div>
+  </form>
+{% endblock %}

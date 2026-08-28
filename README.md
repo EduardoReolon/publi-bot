@@ -8,11 +8,6 @@ terceiros.
 >
 > Este README descreve **o que existe hoje**, nao o que esta planejado.
 >
-> **O motor esta pronto; a interface de operacao, nao.** Tudo abaixo marcado
-> como pronto e codigo de servidor coberto por testes. Quem opera o produto hoje
-> usa o **admin do Django**, dentro do subdominio do tenant — ha telas proprias
-> so para cadastro, espera de provisionamento e login.
->
 > | Bloco | Estado |
 > |---|---|
 > | Fundacao: configuracao, Celery, PostgreSQL, infraestrutura de dev | **Pronto** |
@@ -22,7 +17,8 @@ terceiros.
 > | Conteudo: prompts versionados, tese, redacao, sanitizacao | **Pronto** |
 > | Contrato `/api/v1` e no de referencia | **Pronto** |
 > | Cadencia, perguntas e respostas, sondas de saude, deploy | **Pronto** |
-> | Interface de operacao do tenant (envio, curadoria, revisao, sites) | A fazer — hoje via admin |
+> | Pipeline: os componentes ligados num fluxo que roda | **Pronto** |
+> | Interface do tenant: painel, acervo, pautas, revisao, site, operacao | **Pronto** |
 > | Ligacao ponta a ponta com GPU real | A fazer — depende de hardware |
 > | Geracao de imagem | A fazer |
 > | Metricas de desempenho do conteudo publicado | A fazer |
@@ -32,7 +28,7 @@ terceiros.
 > — e os erros que apontam para o lugar errado — estao em
 > [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md).
 >
-> **263 testes**, em tres suites (`./scripts/test-all.sh`).
+> **303 testes**, em tres suites (`./scripts/test-all.sh`).
 
 ## O problema
 
@@ -340,6 +336,39 @@ ruff check .
 ruff format .
 pre-commit install    # uma vez, para rodar tudo isso a cada commit
 ```
+
+## Como se opera
+
+Tudo acontece dentro do subdominio do tenant (`acme.publibot.localhost:8000`).
+
+| Tela | Para que serve |
+|---|---|
+| **Painel** | O que espera uma pessoa e o que quebrou, separados. Cada numero leva a tela que resolve. |
+| **Documentos** | Envio, conversao em Markdown, curadoria e selecao do trecho que vai para o indice. |
+| **Pautas** | O tema a ser buscado no acervo, e o botao que dispara a geracao. |
+| **Artigos** | A fila de revisao e a tela de leitura: texto ao lado das fontes, edicao, aprovacao. |
+| **Perguntas** | Duvidas importadas do site, com resposta gerada do mesmo acervo. |
+| **Site e cadencia** | Credenciais do site de destino, teste de conexao e quando publicar. |
+| **Operacao** | Trabalhos, passos, chamadas ao modelo e tentativas de publicacao. |
+
+O caminho completo, na ordem:
+
+1. **Documentos > Categorias**: crie ao menos uma.
+2. **Documentos > Enviar**: um PDF, `.txt` ou `.md`. A conversao roda no worker.
+3. **Documentos > (o documento)**: confira titulo, autores, ano e **URL de
+   origem** — sao esses campos que viram o link publicado — cole o resumo ou a
+   conclusao no campo de trecho, indexe e conclua a curadoria.
+4. **Pautas**: crie uma e clique em *Gerar artigo*.
+5. **Artigos**: revise, preencha o autor e aprove. Sem autor identificado nao
+   ha publicacao.
+6. **Site e cadencia**: cadastre o site e a cadencia para o agendador publicar.
+
+Nada disso funciona sem uma **conexao de inferencia** cadastrada no admin
+(`/admin/inference/inferenceconnection/`), do tipo *Compativel com OpenAI*
+apontando para o seu Ollama, com a carga `text` marcada. Para converter PDF com
+analise de layout, cadastre tambem uma do tipo *Docling* apontando para o
+`worker-gpu/`; sem ela, PDF cai no extrator local, que embaralha coluna dupla e
+nao le documento digitalizado.
 
 ## Comandos de tenant
 
