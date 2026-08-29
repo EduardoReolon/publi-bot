@@ -12,6 +12,7 @@ import hashlib
 import pytest
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django_tenants.utils import schema_context
 
@@ -31,6 +32,7 @@ ROTAS_DO_MENU = [
     "knowledge:busca",
     "content:pautas",
     "content:artigos",
+    "content:autores",
     "content:perguntas",
     "integrations:site",
     "operacao:trabalhos",
@@ -290,13 +292,24 @@ def test_gerar_cria_o_trabalho(ambiente):
 # Revisao — as travas do produto pela tela
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def artigo_para_revisar(ambiente):
+def autora(ambiente):
+    """Quem assina. O cadastro e a fonte da verdade da assinatura."""
+    from apps.content.models import Author
+
+    return Author.objects.create(name="Dra. Souza", credentials="CRM 1")
+
+
+@pytest.fixture
+def artigo_para_revisar(ambiente, autora):
     documento = _documento_curado()
     artigo = Article.objects.create(
         title="Artigo em revisao",
         body_markdown="## Titulo\n\nTexto do artigo.",
         status=Article.Status.PENDING_REVIEW,
         consensus=Article.Consensus.HIGH,
+        author=autora,
+        author_name=autora.name,
+        author_credentials=autora.credentials,
     )
     artigo.citations.create(
         super_chunk=documento.chunks.first(),
@@ -315,8 +328,6 @@ def _dados_de_aprovacao(**extra):
         "title": "Artigo em revisao",
         "meta_description": "",
         "body_markdown": "## Titulo\n\nTexto do artigo.",
-        "author_name": "Dra. Souza",
-        "author_credentials": "CRM 1",
         "quando": "",
     }
     dados.update(extra)
@@ -327,14 +338,32 @@ def _dados_de_aprovacao(**extra):
 def test_aprovar_sem_autor_e_recusado(ambiente, artigo_para_revisar):
     """Conteudo sem autor identificado nao pode ser publicado."""
     _, _, client = ambiente
+    Article.objects.filter(pk=artigo_para_revisar.pk).update(author=None, author_name="")
 
     client.post(
         reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
-        _dados_de_aprovacao(author_name=""),
+        _dados_de_aprovacao(author=""),
     )
 
     artigo_para_revisar.refresh_from_db()
     assert artigo_para_revisar.status == Article.Status.PENDING_REVIEW
+
+
+@pytest.mark.django_db
+def test_escolher_o_autor_copia_a_assinatura_para_o_artigo(ambiente, artigo_para_revisar, autora):
+    """O cadastro pode ser renomeado depois; renomear alguem nao pode reescrever
+    a assinatura de um artigo que ja saiu."""
+    _, _, client = ambiente
+
+    client.post(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
+        _dados_de_aprovacao(acao="salvar", author=str(autora.pk)),
+    )
+
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.author_id == autora.pk
+    assert artigo_para_revisar.author_name == "Dra. Souza"
+    assert artigo_para_revisar.author_credentials == "CRM 1"
 
 
 @pytest.mark.django_db
@@ -735,3 +764,111 @@ def test_editar_secao_a_mao_remonta_o_artigo(ambiente):
     assert primeira.status == "edited"
     assert "## Primeira, revisada" in artigo.body_markdown
     assert "mais fundamento" in artigo.body_markdown
+
+
+# ---------------------------------------------------------------------------
+# Cadastro de autor
+# ---------------------------------------------------------------------------
+
+
+def _foto(formato: str = "PNG", tamanho=(60, 60)) -> SimpleUploadedFile:
+    import io
+
+    from PIL import Image
+
+    memoria = io.BytesIO()
+    Image.new("RGB", tamanho, (30, 90, 160)).save(memoria, format=formato)
+    extensao = formato.lower()
+    return SimpleUploadedFile(f"foto.{extensao}", memoria.getvalue(), f"image/{extensao}")
+
+
+@pytest.mark.django_db
+def test_cadastrar_autor_com_nome_apenas(ambiente):
+    """So o nome e obrigatorio. Foto, contato e redes enriquecem a assinatura e
+    podem faltar sem impedir a publicacao."""
+    from apps.content.models import Author
+
+    _, _, client = ambiente
+
+    client.post(
+        reverse("content:novo_autor", urlconf="core.urls_tenants"),
+        {"name": "Marina Fisioterapeuta", "is_active": "on"},
+    )
+
+    autor = Author.objects.get()
+    assert autor.name == "Marina Fisioterapeuta"
+    assert not autor.photo
+
+
+@pytest.mark.django_db
+def test_foto_enviada_e_gravada_em_webp(ambiente):
+    """A conversao acontece na entrada. Guardar o original e converter a cada
+    publicacao deixaria dois formatos no disco."""
+    from apps.content.models import Author
+
+    _, _, client = ambiente
+
+    client.post(
+        reverse("content:novo_autor", urlconf="core.urls_tenants"),
+        {"name": "Marina", "is_active": "on", "photo": _foto("PNG")},
+    )
+
+    autor = Author.objects.get()
+    assert autor.photo.name.endswith(".webp")
+    assert autor.photo.read()[:4] == b"RIFF"
+
+
+@pytest.mark.django_db
+def test_arquivo_que_nao_e_imagem_mostra_erro(ambiente):
+    from apps.content.models import Author
+
+    _, _, client = ambiente
+
+    resposta = client.post(
+        reverse("content:novo_autor", urlconf="core.urls_tenants"),
+        {
+            "name": "Marina",
+            "photo": SimpleUploadedFile("curriculo.pdf", b"%PDF-1.4 nem de longe", "image/png"),
+        },
+    )
+
+    assert resposta.status_code == 400
+    assert not Author.objects.exists()
+
+
+@pytest.mark.django_db
+def test_links_sociais_ignoram_linhas_vazias(ambiente):
+    """O formulario oferece linhas em branco; guardar as vazias encheria o
+    payload de entradas sem endereco."""
+    from apps.content.models import Author
+
+    _, _, client = ambiente
+
+    client.post(
+        reverse("content:novo_autor", urlconf="core.urls_tenants"),
+        {
+            "name": "Marina",
+            "is_active": "on",
+            "link_label": ["Instagram", "", "LinkedIn"],
+            "link_url": ["https://instagram.com/marina", "", ""],
+        },
+    )
+
+    assert Author.objects.get().social_links == [
+        {"label": "Instagram", "url": "https://instagram.com/marina"}
+    ]
+
+
+@pytest.mark.django_db
+def test_excluir_autor_nao_apaga_a_assinatura_publicada(ambiente, artigo_para_revisar, autora):
+    """`SET_NULL` no artigo: o nome foi copiado no momento da publicacao."""
+    from apps.content.models import Author
+
+    _, _, client = ambiente
+
+    client.post(reverse("content:excluir_autor", args=[autora.pk], urlconf="core.urls_tenants"))
+
+    artigo_para_revisar.refresh_from_db()
+    assert not Author.objects.exists()
+    assert artigo_para_revisar.author_id is None
+    assert artigo_para_revisar.author_name == "Dra. Souza"

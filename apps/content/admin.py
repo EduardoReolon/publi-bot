@@ -10,6 +10,7 @@ from apps.content.models import (
     Article,
     ArticleCitation,
     ArticleRevision,
+    Author,
     PromptRun,
     PromptTemplate,
     PromptVersion,
@@ -83,6 +84,13 @@ class ArticleRevisionInline(admin.TabularInline):
     extra = 0
     fields = ("version", "source", "editor", "created_at")
     readonly_fields = fields
+
+
+@admin.register(Author)
+class AuthorAdmin(admin.ModelAdmin):
+    list_display = ("name", "credentials", "tem_foto", "is_active", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("name", "credentials", "email")
 
 
 @admin.register(Article)

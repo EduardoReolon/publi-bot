@@ -58,6 +58,14 @@ components:
 
     Autor:
       type: object
+      description: |
+        O cadastro de autor vive SOMENTE no PubliBot. O site nao tem cadastro
+        proprio e nao precisa criar um: tudo o que ele sabe sobre quem assinou
+        chega junto com o conteudo, a cada publicacao.
+
+        A foto NAO vem aqui. O corpo traz `has_photo`; se o site quiser o
+        arquivo, responde `author_photo_required: true` e recebe a foto depois,
+        em `POST /author-photos/`. Ver a secao "Foto do autor" no README.
       required: [name]
       properties:
         name: { type: string, example: "Ana Souza" }
@@ -65,6 +73,28 @@ components:
           type: string
           example: "Enfermeira Obstetra, COREN-SP 123456"
           description: Renderize junto ao conteudo. Sem isso nao ha como avaliar a autoria.
+        bio: { type: string, description: Mini biografia para a caixa de autor. }
+        email: { type: string, format: email }
+        phone: { type: string }
+        social_links:
+          type: array
+          items:
+            type: object
+            required: [label, url]
+            properties:
+              label: { type: string, example: Instagram }
+              url: { type: string, format: uri }
+        reference:
+          type: string
+          format: uuid
+          description: |
+            Identidade estavel do autor no PubliBot. Use como chave ao guardar
+            a foto: o nome muda, esta referencia nao.
+        has_photo:
+          type: boolean
+          description: |
+            Ha foto de perfil disponivel para este autor. Se voce ainda nao a
+            tem, peca com `author_photo_required` na resposta.
         profile_url: { type: string, format: uri }
 
     ImagemPorReferencia:
@@ -144,6 +174,16 @@ components:
         slug: { type: string }
         post_status: { type: string }
         published_at: { type: string, format: date-time }
+        author_photo_required:
+          type: boolean
+          default: false
+          description: |
+            Recurso `author_photo`. Peca a foto de perfil quando `has_photo`
+            for verdadeiro e voce ainda nao tiver o arquivo. O PubliBot entao
+            envia a imagem em `POST /author-photos/`, fora deste corpo.
+
+            Responder `true` a cada publicacao faz o mesmo arquivo ser enviado
+            de novo: responda `true` apenas enquanto realmente faltar a foto.
 
 paths:
   /health/:
@@ -172,7 +212,8 @@ paths:
                     items:
                       type: string
                       enum: [idempotency, hmac_signature, cursor_pagination,
-                             image_by_url, qa, reconciliation, update, unpublish]
+                             image_by_url, author_photo, qa, reconciliation,
+                             update, unpublish]
                   server_time: { type: string, format: date-time }
 
   /seo-context/:
@@ -262,6 +303,84 @@ paths:
           description: Limite excedido
           headers:
             Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /author-photos/:
+    post:
+      summary: Recebe a foto de perfil de um autor
+      description: |
+        Recurso `author_photo`. Chamado somente depois de o site responder
+        `author_photo_required: true` em `/publish/`.
+
+        **multipart/form-data, nao JSON.** A foto e o unico arquivo binario do
+        contrato; embutida em JSON viraria base64, 33% maior, num corpo que o
+        Nginx corta em 1 MB por padrao — o envio falharia com 413 antes de
+        chegar a aplicacao.
+
+        **Trate como assincrona.** Aceite o arquivo, responda `202` e processe
+        depois: redimensionar ou regravar uma imagem dentro da requisicao
+        estoura o tempo limite de leitura do PubliBot e faz o mesmo arquivo ser
+        reenviado.
+
+        O arquivo chega sempre em **WebP**, ja redimensionado para no maximo
+        1600 px no maior lado. Nao ha negociacao de formato: a conversao
+        acontece no PubliBot, no momento do upload.
+
+        Guarde pela `author_reference`, nao pelo nome do autor — o nome muda.
+        Confira o `sha256` antes de gravar; se nao bater, responda `422` com
+        `content_rejected` e o PubliBot reenvia.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [author_reference, sha256, photo]
+              properties:
+                author_reference:
+                  type: string
+                  format: uuid
+                  description: O mesmo `author.reference` recebido em /publish/.
+                sha256:
+                  type: string
+                  description: Digest do arquivo, para conferir a integridade.
+                photo:
+                  type: string
+                  format: binary
+                  description: Imagem WebP, no maximo 1600 px no maior lado.
+      responses:
+        "202":
+          description: Aceita para processamento
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [accepted] }
+                  job_id:
+                    type: string
+                    description: |
+                      Opcional. Guardado pelo PubliBot apenas para auditoria —
+                      ele nao consulta o andamento.
+        "200":
+          description: |
+            Este arquivo ja tinha sido recebido (mesmo `sha256`). Nao grave de
+            novo.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [already_exists] }
+        "413":
+          description: Arquivo acima do limite aceito
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "422":
+          description: Digest divergente, ou arquivo que nao abre como imagem
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Erro" }

@@ -20,6 +20,9 @@
       {% translate "Artigos" %}
       {% if pendencias.revisao %}<span class="contagem">{{ pendencias.revisao }}</span>{% endif %}
     </a>
+    <a href="{% url 'content:autores' %}" class="{% if aba == 'autores' %}ativo{% endif %}">
+      {% translate "Autores" %}
+    </a>
     <a href="{% url 'content:perguntas' %}" class="{% if aba == 'perguntas' %}ativo{% endif %}">
       {% translate "Perguntas" %}
       {% if pendencias.perguntas %}<span class="contagem">{{ pendencias.perguntas }}</span>{% endif %}

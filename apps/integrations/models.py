@@ -347,3 +347,65 @@ class PublicationSlot(models.Model):
 
     def __str__(self) -> str:
         return f"{self.site} @ {self.slot_at:%d/%m %H:%M}"
+
+
+class AuthorPhotoDelivery(models.Model):
+    """Registro de que a foto de um autor foi entregue a um site.
+
+    O no final e passivo: ele nao conhece o autor antes de receber a primeira
+    publicacao, e a foto so viaja quando ele pede. Sem este registro, a unica
+    forma de saber se ele ja tem a foto seria perguntar de novo a cada
+    publicacao — e a resposta "preciso" chegaria uma vez, mas nada garante que
+    o no repita "nao preciso" depois; o custo do engano e um upload por artigo.
+
+    A chave da entrega e o digest do ARQUIVO, nao o autor: trocar a foto
+    precisa reenviar, manter a mesma foto nao. Guardar por autor apenas
+    esconderia a troca.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pendente")
+        SENT = "sent", _("Entregue")
+        FAILED = "failed", _("Falhou")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    site = models.ForeignKey(
+        Site,
+        on_delete=models.CASCADE,
+        related_name="author_photo_deliveries",
+        verbose_name=_("site"),
+    )
+    author = models.ForeignKey(
+        "content.Author",
+        on_delete=models.CASCADE,
+        related_name="photo_deliveries",
+        verbose_name=_("autor"),
+    )
+    photo_sha256 = models.CharField(_("digest da foto"), max_length=64)
+
+    status = models.CharField(
+        _("situacao"), max_length=12, choices=Status.choices, default=Status.PENDING
+    )
+    attempts = models.PositiveIntegerField(_("tentativas"), default=0)
+    last_error = models.TextField(_("ultimo erro"), blank=True)
+
+    # Devolvido pela rota de arquivos do no. Ela e assincrona: aceita o arquivo
+    # e processa depois, entao a confirmacao de recebimento e tudo o que da
+    # para guardar no momento do envio.
+    remote_job_id = models.CharField(_("id do processamento remoto"), max_length=120, blank=True)
+
+    created_at = models.DateTimeField(_("criado em"), default=django_timezone.now)
+    delivered_at = models.DateTimeField(_("entregue em"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("entrega de foto de autor")
+        verbose_name_plural = _("entregas de foto de autor")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["site", "author", "photo_sha256"], name="uniq_foto_por_site_e_autor"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.author} -> {self.site} ({self.get_status_display()})"

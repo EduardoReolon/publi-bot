@@ -76,6 +76,34 @@ def publish_content(self, tipo: str, identificador: str) -> str:
     return "tipo_desconhecido"
 
 
+@shared_task(bind=True, acks_late=True, max_retries=8)
+def deliver_author_photo(self, entrega_id: str) -> str:
+    """Segunda etapa do envio do autor: a foto, so quando o no pede.
+
+    Task propria e nao um trecho de `publish_content` porque o artigo ja esta
+    publicado quando isto roda: uma falha de upload nao pode marcar a
+    publicacao como falha nem fazer o texto ser reenviado.
+    """
+    from apps.integrations.errors import SiteTransientError
+    from apps.integrations.fotos import entregar_foto
+    from apps.integrations.models import AuthorPhotoDelivery
+
+    entrega = AuthorPhotoDelivery.objects.filter(pk=entrega_id).first()
+    if entrega is None:
+        return "inexistente"
+
+    if entrega.status == AuthorPhotoDelivery.Status.SENT:
+        return "ja_entregue"
+
+    try:
+        entregar_foto(entrega)
+    except SiteTransientError as exc:
+        espera = getattr(exc, "retry_after", None) or 300
+        raise self.retry(exc=exc, countdown=min(espera, 21_600)) from exc
+
+    return entrega.status
+
+
 @shared_task
 def check_publication_buffer() -> int:
     """Avisa quando a reserva de conteudo pronto esta baixa. Roda a cada 15 min.

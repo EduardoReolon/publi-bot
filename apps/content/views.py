@@ -20,7 +20,7 @@ from apps.content.forms import (
     RevisaoDeArtigo,
     RevisaoDeResposta,
 )
-from apps.content.models import Answer, Article, Question, Topic
+from apps.content.models import Answer, Article, Author, Question, Topic
 from apps.content.services import (
     RevisaoInsuficiente,
     aplicar_edicao_humana,
@@ -192,9 +192,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
                 "title": artigo.title,
                 "meta_description": artigo.meta_description,
                 "body_markdown": artigo.body_markdown,
-                "author_name": artigo.author_name or getattr(site, "default_author", ""),
-                "author_credentials": artigo.author_credentials
-                or getattr(site, "default_author_credentials", ""),
+                "author": artigo.author_id,
             }
         ),
         "agendamento": agendamento or AgendamentoForm(),
@@ -205,6 +203,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "moldura": (artigo.thesis_json or {}).get("moldura") or {},
         "refazendo": _trabalho_em_curso(artigo),
         "site": site,
+        "tem_autores": Author.objects.filter(is_active=True).exists(),
         "proximo_horario": _proximo_horario(),
     }
 
@@ -259,9 +258,19 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
     dados = form.cleaned_data
     artigo.title = dados["title"]
     artigo.meta_description = dados["meta_description"]
-    artigo.author_name = dados["author_name"]
-    artigo.author_credentials = dados["author_credentials"]
-    artigo.save(update_fields=["title", "meta_description", "author_name", "author_credentials"])
+
+    autor = dados.get("author")
+    if autor is not None:
+        artigo.author = autor
+        # Retrato do que foi assinado. O cadastro pode ser renomeado depois, e
+        # renomear alguem nao pode reescrever a assinatura de um artigo que ja
+        # saiu.
+        artigo.author_name = autor.name
+        artigo.author_credentials = autor.credentials
+
+    artigo.save(
+        update_fields=["title", "meta_description", "author", "author_name", "author_credentials"]
+    )
 
     if dados["body_markdown"] != artigo.body_markdown:
         # Guarda a versao e mede quanto o humano de fato mudou — o numero que
@@ -450,6 +459,88 @@ def _guardar_parametros(request: HttpRequest, artigo: Article) -> None:
 
     if campos:
         artigo.save(update_fields=campos)
+
+
+# ---------------------------------------------------------------------------
+# Autores
+# ---------------------------------------------------------------------------
+@login_required
+def autores(request: HttpRequest) -> HttpResponse:
+    """Quem pode assinar o conteudo deste ambiente.
+
+    O cadastro vive so aqui. O site de destino nao conhece o PubliBot antes de
+    receber a primeira publicacao: os dados do autor chegam junto do conteudo,
+    e a responsabilidade fica com quem validou o texto.
+    """
+    return render(
+        request,
+        "content/autores.html",
+        {
+            "aba": "autores",
+            "autores": Author.objects.annotate(total=Count("articles")).order_by("name"),
+        },
+    )
+
+
+@login_required
+def editar_autor(request: HttpRequest, pk=None) -> HttpResponse:
+    from apps.content.forms import CadastroDeAutor
+
+    autor = get_object_or_404(Author, pk=pk) if pk else None
+
+    if request.method != "POST":
+        return render(
+            request,
+            "content/autor.html",
+            {"aba": "autores", "autor": autor, "form": CadastroDeAutor(instance=autor)},
+        )
+
+    form = CadastroDeAutor(request.POST, request.FILES, instance=autor)
+    if not form.is_valid():
+        return render(
+            request,
+            "content/autor.html",
+            {"aba": "autores", "autor": autor, "form": form},
+            status=400,
+        )
+
+    salvo = form.save(commit=False)
+    if form.cleaned_data.get("remover_foto"):
+        salvo.photo = None
+    salvo.social_links = _links_do_formulario(request)
+    salvo.save()
+
+    messages.success(request, _("Autor salvo."))
+    return redirect("content:autores")
+
+
+def _links_do_formulario(request: HttpRequest) -> list[dict]:
+    """Le os pares rotulo/endereco das linhas preenchidas.
+
+    Sem formset: sao poucos campos, sempre juntos, e um formset traria
+    gerenciamento de indice e um `management_form` para resolver um problema
+    que nao existe aqui.
+    """
+    links = []
+    for rotulo, endereco in zip(
+        request.POST.getlist("link_label"), request.POST.getlist("link_url"), strict=False
+    ):
+        endereco = (endereco or "").strip()
+        if endereco:
+            links.append({"label": (rotulo or "").strip()[:40], "url": endereco[:300]})
+    return links
+
+
+@login_required
+@require_POST
+def excluir_autor(request: HttpRequest, pk) -> HttpResponse:
+    autor = get_object_or_404(Author, pk=pk)
+    nome = autor.name
+    # `SET_NULL` no artigo: a assinatura ja publicada continua, porque o nome
+    # foi copiado para `author_name` no momento da publicacao.
+    autor.delete()
+    messages.success(request, _("Autor %(nome)s excluido.") % {"nome": nome})
+    return redirect("content:autores")
 
 
 # ---------------------------------------------------------------------------

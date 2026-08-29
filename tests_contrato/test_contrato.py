@@ -15,6 +15,7 @@ import time
 import uuid
 
 import pytest
+from django.test.client import BOUNDARY, encode_multipart
 
 pytestmark = pytest.mark.django_db
 
@@ -335,3 +336,151 @@ def test_nome_do_visitante_so_sai_com_consentimento(no_receptor):
 
     assert pergunta["author_name"] == "", "nome sem consentimento nao deve ser enviado"
     assert pergunta["question_text"] == "Duvida"
+
+
+# ---------------------------------------------------------------------------
+# Foto do autor, em duas etapas
+# ---------------------------------------------------------------------------
+
+
+# Igual ao MULTIPART_CONTENT do Django, mas outro objeto de proposito: o
+# cliente de teste compara por IDENTIDADE para decidir se codifica os dados, e
+# aqui eles ja vem codificados — e o corpo codificado que a assinatura cobre.
+TIPO_MULTIPART = f"multipart/form-data; boundary={BOUNDARY}"
+
+
+def _foto_webp(lado: int = 40) -> bytes:
+    import io
+
+    from PIL import Image
+
+    memoria = io.BytesIO()
+    Image.new("RGB", (lado, lado), (10, 120, 200)).save(memoria, format="WEBP")
+    return memoria.getvalue()
+
+
+def _enviar_foto(cliente, referencia: str, conteudo: bytes, *, digest: str | None = None):
+    """Reproduz o envio multipart do cliente, com a assinatura sobre o corpo bruto."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    corpo = encode_multipart(
+        BOUNDARY,
+        {
+            "author_reference": referencia,
+            "sha256": digest if digest is not None else hashlib.sha256(conteudo).hexdigest(),
+            "photo": SimpleUploadedFile(f"{referencia}.webp", conteudo, "image/webp"),
+        },
+    )
+    # O corpo ja vem codificado porque e ele que a assinatura cobre. Passar o
+    # `MULTIPART_CONTENT` do Django faria o cliente de teste codificar de novo,
+    # sobre bytes.
+    return cliente.post(
+        "/api/v1/author-photos/",
+        data=corpo,
+        content_type=TIPO_MULTIPART,
+        **_assinar(corpo),
+    )
+
+
+def _payload_com_autor(referencia: str, *, tem_foto: bool = True) -> dict:
+    payload = dict(PAYLOAD)
+    payload["author"] = dict(
+        PAYLOAD["author"], reference=referencia, has_photo=tem_foto, bio="Atende ha dez anos."
+    )
+    return payload
+
+
+def test_no_pede_a_foto_quando_ainda_nao_a_tem(no_receptor):
+    """Primeira etapa: o corpo diz que existe foto, o no responde que quer."""
+    referencia = str(uuid.uuid4())
+    resposta, _ = _publicar(no_receptor, _payload_com_autor(referencia))
+
+    assert resposta.status_code == 201
+    assert resposta.json()["author_photo_required"] is True
+
+
+def test_no_nao_pede_a_foto_depois_de_receber(no_receptor):
+    """Pedir em toda publicacao faria o mesmo arquivo ser reenviado sempre."""
+    referencia = str(uuid.uuid4())
+    conteudo = _foto_webp()
+
+    assert _enviar_foto(no_receptor, referencia, conteudo).status_code == 202
+
+    resposta, _ = _publicar(no_receptor, _payload_com_autor(referencia))
+    assert resposta.json()["author_photo_required"] is False
+
+
+def test_no_nao_pede_foto_de_autor_que_nao_tem_foto(no_receptor):
+    """A foto e opcional no cadastro do PubliBot."""
+    referencia = str(uuid.uuid4())
+    resposta, _ = _publicar(no_receptor, _payload_com_autor(referencia, tem_foto=False))
+    assert resposta.json()["author_photo_required"] is False
+
+
+def test_foto_e_guardada_pela_referencia_do_autor(no_receptor):
+    """Guardar pelo nome criaria um segundo registro quando o autor e renomeado."""
+    from publibot_node.models import AuthorPhoto
+
+    referencia = str(uuid.uuid4())
+    conteudo = _foto_webp()
+    resposta = _enviar_foto(no_receptor, referencia, conteudo)
+
+    assert resposta.status_code == 202
+    assert resposta.json()["status"] == "accepted"
+
+    registro = AuthorPhoto.objects.get(author_reference=referencia)
+    assert registro.sha256 == hashlib.sha256(conteudo).hexdigest()
+    assert registro.image.read() == conteudo
+
+
+def test_mesma_foto_enviada_de_novo_nao_regrava(no_receptor):
+    referencia = str(uuid.uuid4())
+    conteudo = _foto_webp()
+
+    _enviar_foto(no_receptor, referencia, conteudo)
+    repetida = _enviar_foto(no_receptor, referencia, conteudo)
+
+    assert repetida.status_code == 200
+    assert repetida.json()["status"] == "already_exists"
+
+
+def test_foto_trocada_substitui_a_anterior(no_receptor):
+    """O digest muda quando a foto muda; e assim que a troca chega ao site."""
+    from publibot_node.models import AuthorPhoto
+
+    referencia = str(uuid.uuid4())
+    _enviar_foto(no_receptor, referencia, _foto_webp(lado=40))
+    nova = _foto_webp(lado=64)
+    resposta = _enviar_foto(no_receptor, referencia, nova)
+
+    assert resposta.status_code == 202
+    assert AuthorPhoto.objects.filter(author_reference=referencia).count() == 1
+    assert AuthorPhoto.objects.get(author_reference=referencia).sha256 == (
+        hashlib.sha256(nova).hexdigest()
+    )
+
+
+def test_digest_divergente_e_recusado(no_receptor):
+    """Um arquivo truncado gravado aqui so apareceria como imagem quebrada na
+    pagina, muito depois."""
+    referencia = str(uuid.uuid4())
+    resposta = _enviar_foto(no_receptor, referencia, _foto_webp(), digest="0" * 64)
+
+    assert resposta.status_code == 422
+    assert resposta.json()["error"]["code"] == "content_rejected"
+
+
+def test_foto_sem_assinatura_e_recusada(no_receptor):
+    """A rota de arquivos nao pode ser a porta destrancada do contrato."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    corpo = encode_multipart(
+        BOUNDARY,
+        {
+            "author_reference": str(uuid.uuid4()),
+            "sha256": "0" * 64,
+            "photo": SimpleUploadedFile("f.webp", _foto_webp(), "image/webp"),
+        },
+    )
+    resposta = no_receptor.post("/api/v1/author-photos/", data=corpo, content_type=TIPO_MULTIPART)
+    assert resposta.status_code == 401

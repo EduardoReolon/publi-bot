@@ -27,3 +27,5 @@ de quem decidiu com a informacao daquele momento.
 | [0013](ADR-0013-broker-postgres-em-dev.md) | Broker do Celery no PostgreSQL em desenvolvimento | Aceito |
 | [0014](ADR-0014-limiar-de-recuperacao.md) | Limiar de recuperacao calibrado por medicao | Aceito |
 | [0015](ADR-0015-vetorizacao-por-paragrafo.md) | Vetorizar por paragrafo, com prefixo de contexto | Aceito |
+| [0016](ADR-0016-limiar-por-tenant-e-saude-da-busca.md) | Limiar por tenant, e observabilidade em vez de auto-ajuste | Aceito |
+| [0017](ADR-0017-autor-cadastrado-e-foto-em-duas-etapas.md) | Autor cadastrado no PubliBot, foto em duas etapas, imagem sempre WebP | Aceito |

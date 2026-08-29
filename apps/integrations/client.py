@@ -36,6 +36,9 @@ class RespostaDePublicacao:
     post_status: str = ""
     published_at: str | None = None
     ja_existia: bool = False
+    # O no responde se quer a foto do autor. Ele e passivo e nao tem cadastro
+    # proprio: ou ja recebeu esta foto antes, ou precisa dela agora.
+    precisa_da_foto: bool = False
 
 
 class SiteClient:
@@ -66,6 +69,8 @@ class SiteClient:
         json: dict | None = None,
         params: dict | None = None,
         headers: dict | None = None,
+        data: dict | None = None,
+        files: dict | None = None,
     ) -> dict[str, Any]:
         url = f"{self.site.base_url.rstrip('/')}/api/{VERSAO_DO_CONTRATO}{rota}"
         inicio = time.perf_counter()
@@ -90,6 +95,8 @@ class SiteClient:
                     metodo,
                     url,
                     json=json,
+                    data=data,
+                    files=files,
                     params=params,
                     headers=headers or {},
                     auth=self._auth(),
@@ -223,6 +230,31 @@ class SiteClient:
             # O site devolve 200 quando a chave se repete, em vez de criar de
             # novo. O SaaS trata 200 e 409 como sucesso.
             ja_existia=dados.get("status") == "already_exists",
+            precisa_da_foto=bool(dados.get("author_photo_required")),
+        )
+
+    def enviar_foto_de_autor(
+        self,
+        *,
+        referencia: str,
+        conteudo: bytes,
+        nome_do_arquivo: str,
+        sha256: str,
+    ) -> dict:
+        """Entrega a foto de perfil na rota de arquivos do no.
+
+        Multipart, e nao JSON com base64: o corpo assinado ja e o arquivo bruto,
+        e base64 inflaria em 33% um envio que existe justamente por ser grande
+        demais para caber no corpo da publicacao.
+
+        A rota e assincrona do lado do no — ela aceita e processa depois. Nao ha
+        URL para guardar aqui, so a confirmacao de recebimento.
+        """
+        return self._requisitar(
+            "POST",
+            "/author-photos/",
+            data={"author_reference": referencia, "sha256": sha256},
+            files={"photo": (nome_do_arquivo, conteudo, "image/webp")},
         )
 
     def reconciliar(self, idempotency_key: str) -> RespostaDePublicacao | None:

@@ -6,6 +6,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.inference.security import cifrar
 from apps.integrations.models import (
+    AuthorPhotoDelivery,
     PublicationSchedule,
     PublicationSlot,
     PublishAttempt,
@@ -255,3 +256,13 @@ class PublicationSlotAdmin(admin.ModelAdmin):
     list_filter = ("site",)
     date_hierarchy = "slot_at"
     readonly_fields = ("created_at",)
+
+
+@admin.register(AuthorPhotoDelivery)
+class AuthorPhotoDeliveryAdmin(admin.ModelAdmin):
+    """Segunda etapa do envio do autor: quem ja recebeu a foto e quem nao."""
+
+    list_display = ("author", "site", "status", "attempts", "delivered_at")
+    list_filter = ("status", "site")
+    search_fields = ("author__name", "photo_sha256", "remote_job_id")
+    readonly_fields = ("photo_sha256", "remote_job_id", "created_at", "delivered_at")

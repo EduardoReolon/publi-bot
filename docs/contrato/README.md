@@ -18,6 +18,7 @@ guardar, nem rota de callback para expor.
 | `GET` | `/api/v1/health/` | Sim | — |
 | `GET` | `/api/v1/seo-context/` | Sim | — |
 | `POST` | `/api/v1/publish/` | Sim | — |
+| `POST` | `/api/v1/author-photos/` | Nao | `author_photo` |
 | `GET` | `/api/v1/pending-questions/` | Nao | `qa` |
 | `POST` | `/api/v1/pending-questions/ack/` | Nao | `qa` |
 | `GET` | `/api/v1/publications/` | Nao | `reconciliation` |
@@ -80,6 +81,59 @@ O motivo e um cenario comum, nao hipotetico: o site grava o artigo e responde
 `201`, a resposta se perde na rede, e o PubliBot reenvia. Sem idempotencia, o
 mesmo conteudo e publicado duas vezes. Conteudo duplicado e exatamente o
 problema que este produto existe para evitar.
+
+## Foto do autor: duas etapas
+
+**O cadastro de autor vive somente no PubliBot.** O site nao mantem cadastro
+proprio e nao precisa criar um: nome, credenciais, bio, contato e redes chegam
+dentro de cada publicacao, em `author`. Quem valida o conteudo responde por
+ele, e nao ha a pergunta impossivel de "qual dos dois lados tem o cadastro mais
+recente".
+
+A foto e a unica excecao, e por um motivo tecnico: e um binario. Ela nao vai no
+corpo da publicacao.
+
+```
+1. POST /publish/          { ..., "author": { "reference": "...", "has_photo": true } }
+2. 201                     { ..., "author_photo_required": true }
+3. POST /author-photos/    multipart: author_reference + sha256 + photo (WebP)
+4. 202                     { "status": "accepted" }
+```
+
+**Por que perguntar em vez de sempre enviar.** So o site sabe se ja tem aquele
+arquivo. Enviar sempre gastaria um upload por artigo publicado; nunca enviar
+deixaria a caixa de autor sem foto para sempre.
+
+**Por que uma rota separada e nao um campo.** Base64 dentro do JSON infla o
+corpo em 33%, e o limite padrao do Nginx e 1 MB: o envio falharia com `413`
+antes de chegar a aplicacao, o PubliBot leria isso como falha transitoria e
+reenviaria megabytes indefinidamente.
+
+**Responda `true` apenas enquanto faltar a foto.** O PubliBot registra a
+entrega pelo digest do arquivo e nao reenvia o mesmo arquivo por conta propria
+— mas obedece a quem pede. Pedir em toda publicacao reenvia em toda
+publicacao.
+
+**Trate a rota como assincrona.** Aceite, responda `202`, processe depois.
+Redimensionar dentro da requisicao estoura o tempo limite de leitura e faz o
+arquivo ser reenviado.
+
+## Imagens: sempre WebP
+
+**Toda imagem que trafega neste contrato e WebP**, seja por referencia
+(`cover_image`) ou por upload (`/author-photos/`). Nao ha negociacao de
+formato.
+
+A conversao acontece no PubliBot, no momento em que o arquivo e recebido do
+usuario — nao no envio. Converter a cada entrega gastaria CPU em toda
+publicacao, deixaria dois formatos no disco e abriria a chance de um caminho
+esquecer a conversao, que e como um PNG de 4 MB acaba no site de um cliente.
+
+WebP porque atende os tres lados de uma vez: compressao melhor que JPEG na
+mesma qualidade percebida, transparencia como o PNG, e suporte universal em
+navegador desde 2020.
+
+Fotos de perfil chegam com no maximo 1600 px no maior lado.
 
 ## Envelope de erro
 

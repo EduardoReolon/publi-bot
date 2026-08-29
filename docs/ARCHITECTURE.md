@@ -213,6 +213,14 @@ Qualquer site que for conectado ao SaaS (seja Django, WP, etc.) deve implementar
 
 ### Rota 2: Recebimento de Publicação (Push)
 
+> O contrato normativo e atual está em [`docs/contrato/`](contrato/README.md).
+> O `cover_image_base64` do exemplo abaixo foi substituído por envio **por
+> referência** (base64 estoura o limite de 1 MB do Nginx), e os dados do autor
+> passaram a vir do cadastro em `content.Author` — com a foto viajando numa
+> segunda etapa, só quando o nó a pede. Ver
+> [ADR-0017](adr/ADR-0017-autor-cadastrado-e-foto-em-duas-etapas.md).
+
+
 * **Endpoint:** `POST /api/publish/`
 * **Descrição:** Rota unificada para salvar um novo artigo ou publicar uma resposta de Q&A.
 * **Payload de Envio (Diferenciado pelo campo `type`):**

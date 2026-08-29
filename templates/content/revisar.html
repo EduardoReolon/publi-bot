@@ -217,6 +217,16 @@
           </div>
         {% endfor %}
 
+        {% if not tem_autores %}
+          <p class="aviso">
+            {% blocktranslate trimmed %}
+              Nenhum autor cadastrado ainda. Conteudo sem autor identificado nao
+              pode ser publicado.
+            {% endblocktranslate %}
+            <a href="{% url 'content:novo_autor' %}">{% translate "Cadastrar autor" %}</a>
+          </p>
+        {% endif %}
+
         <h2>{% translate "Como vai sair" %}</h2>
         <p class="pre-visualizacao">
           {% blocktranslate trimmed %}

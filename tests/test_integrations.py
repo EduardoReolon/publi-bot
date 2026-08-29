@@ -320,3 +320,248 @@ def test_site_declara_recursos_suportados(site):
 
     assert site.suporta("idempotency")
     assert not site.suporta("image_by_url")
+
+
+# ---------------------------------------------------------------------------
+# Autor cadastrado e foto em duas etapas
+# ---------------------------------------------------------------------------
+
+
+def _webp_de_teste(lado: int = 40) -> bytes:
+    import io
+
+    from PIL import Image
+
+    memoria = io.BytesIO()
+    Image.new("RGB", (lado, lado), (10, 120, 200)).save(memoria, format="WEBP")
+    return memoria.getvalue()
+
+
+@pytest.fixture
+def autor(tenant_integracoes):
+    from django.core.files.base import ContentFile
+
+    from apps.content.models import Author
+
+    pessoa = Author.objects.create(
+        name="Beatriz Nutricionista",
+        credentials="CRN-3 12345",
+        bio="Atende gestantes ha dez anos.",
+        email="beatriz@exemplo.com.br",
+        phone="+55 11 90000-0000",
+        social_links=[{"label": "Instagram", "url": "https://instagram.com/beatriz"}],
+    )
+    pessoa.photo.save("beatriz.webp", ContentFile(_webp_de_teste()), save=True)
+    return pessoa
+
+
+@pytest.mark.django_db
+def test_payload_usa_o_cadastro_de_autor(site, autor):
+    """O cadastro e a fonte da verdade. Digitar o autor a cada artigo produz
+    grafias diferentes da mesma pessoa e nao permite anexar foto nem contato."""
+    from apps.content.models import Article
+    from apps.integrations.publishing import montar_payload_de_artigo
+
+    artigo = Article.objects.create(title="T", body_html="<p>x</p>", author=autor)
+    payload = montar_payload_de_artigo(artigo, site)
+
+    assert payload["author"]["name"] == "Beatriz Nutricionista"
+    assert payload["author"]["credentials"] == "CRN-3 12345"
+    assert payload["author"]["email"] == "beatriz@exemplo.com.br"
+    assert payload["author"]["social_links"] == [
+        {"label": "Instagram", "url": "https://instagram.com/beatriz"}
+    ]
+    assert payload["author"]["reference"] == str(autor.pk)
+    assert "CRN-3 12345" in payload["content_disclosure"]
+
+
+@pytest.mark.django_db
+def test_payload_anuncia_a_foto_sem_carregar_o_arquivo(site, autor):
+    """O corpo diz que existe foto; o arquivo so viaja se o no pedir. Embutido
+    aqui, viraria base64 num corpo que o Nginx corta em 1 MB."""
+    import json
+
+    from apps.content.models import Article
+    from apps.integrations.publishing import montar_payload_de_artigo
+
+    artigo = Article.objects.create(title="T", body_html="<p>x</p>", author=autor)
+    payload = montar_payload_de_artigo(artigo, site)
+
+    assert payload["author"]["has_photo"] is True
+    assert "photo" not in payload["author"]
+    assert len(json.dumps(payload)) < 4000
+
+
+@pytest.mark.django_db
+def test_artigo_sem_cadastro_cai_no_padrao_do_site(site):
+    """Ha artigos anteriores ao cadastro; nenhum deve travar por isso."""
+    from apps.content.models import Article
+    from apps.integrations.publishing import montar_payload_de_artigo
+
+    artigo = Article.objects.create(title="T", body_html="<p>x</p>")
+    payload = montar_payload_de_artigo(artigo, site)
+
+    assert payload["author"]["name"] == "Ana Enfermeira"
+    assert payload["author"]["has_photo"] is False
+
+
+@pytest.mark.django_db
+def test_no_que_pede_a_foto_gera_entrega_pendente(site, autor, settings, user):
+    """Segunda etapa: o no responde que precisa da foto, e so entao ela e
+    enfileirada."""
+    from django.utils import timezone
+
+    from apps.content.models import Article
+    from apps.integrations.client import RespostaDePublicacao
+    from apps.integrations.models import AuthorPhotoDelivery
+    from apps.integrations.publishing import publicar_artigo
+
+    settings.PUBLISH_DRY_RUN = False
+    settings.CELERY_TASK_ALWAYS_EAGER = True
+
+    artigo = Article.objects.create(
+        title="T",
+        body_html="<p>x</p>",
+        author=autor,
+        status=Article.Status.APPROVED_SCHEDULED,
+        scheduled_for=timezone.now(),
+        reviewed_by=user,
+    )
+
+    enviados = {}
+
+    class ClienteFalso:
+        def __init__(self, site):
+            pass
+
+        def publish(self, payload, *, idempotency_key):
+            return RespostaDePublicacao(
+                status="success", remote_id="1", url="https://x/1", precisa_da_foto=True
+            )
+
+        def enviar_foto_de_autor(self, **kwargs):
+            enviados.update(kwargs)
+            return {"job_id": "trabalho-7"}
+
+    import apps.integrations.client as modulo_do_cliente
+
+    original = modulo_do_cliente.SiteClient
+    modulo_do_cliente.SiteClient = ClienteFalso
+    try:
+        publicar_artigo(artigo, site)
+    finally:
+        modulo_do_cliente.SiteClient = original
+
+    entrega = AuthorPhotoDelivery.objects.get(author=autor, site=site)
+    assert entrega.status == AuthorPhotoDelivery.Status.SENT
+    assert entrega.remote_job_id == "trabalho-7"
+    assert enviados["referencia"] == str(autor.pk)
+    assert enviados["conteudo"][:4] == b"RIFF"
+    assert enviados["sha256"] == autor.digest_da_foto()
+
+
+@pytest.mark.django_db
+def test_no_que_nao_pede_a_foto_nao_gera_entrega(site, autor, settings, user):
+    """Enviar sempre gastaria um upload por artigo publicado."""
+    from django.utils import timezone
+
+    from apps.content.models import Article
+    from apps.integrations.client import RespostaDePublicacao
+    from apps.integrations.models import AuthorPhotoDelivery
+    from apps.integrations.publishing import publicar_artigo
+
+    settings.PUBLISH_DRY_RUN = False
+
+    artigo = Article.objects.create(
+        title="T",
+        body_html="<p>x</p>",
+        author=autor,
+        status=Article.Status.APPROVED_SCHEDULED,
+        scheduled_for=timezone.now(),
+        reviewed_by=user,
+    )
+
+    class ClienteFalso:
+        def __init__(self, site):
+            pass
+
+        def publish(self, payload, *, idempotency_key):
+            return RespostaDePublicacao(status="success", remote_id="1", url="https://x/1")
+
+    import apps.integrations.client as modulo_do_cliente
+
+    original = modulo_do_cliente.SiteClient
+    modulo_do_cliente.SiteClient = ClienteFalso
+    try:
+        publicar_artigo(artigo, site)
+    finally:
+        modulo_do_cliente.SiteClient = original
+
+    assert not AuthorPhotoDelivery.objects.exists()
+
+
+@pytest.mark.django_db
+def test_foto_trocada_gera_nova_entrega(site, autor):
+    """A entrega e identificada pelo digest do arquivo. Guardar so por autor
+    esconderia a troca da foto."""
+    from django.core.files.base import ContentFile
+
+    from apps.content.models import Article
+    from apps.integrations.fotos import registrar_pedido_de_foto
+    from apps.integrations.models import AuthorPhotoDelivery
+
+    artigo = Article.objects.create(title="T", body_html="<p>x</p>", author=autor)
+
+    primeira = registrar_pedido_de_foto(artigo, site)
+    autor.photo.save("outra.webp", ContentFile(_webp_de_teste(lado=64)), save=True)
+    autor.refresh_from_db()
+    segunda = registrar_pedido_de_foto(artigo, site)
+
+    assert primeira.pk != segunda.pk
+    assert AuthorPhotoDelivery.objects.filter(author=autor).count() == 2
+
+
+@pytest.mark.django_db
+def test_autor_sem_foto_nao_gera_entrega(site, tenant_integracoes):
+    """A foto e opcional no cadastro, e o no pede sempre que nao tem."""
+    from apps.content.models import Article, Author
+    from apps.integrations.fotos import registrar_pedido_de_foto
+    from apps.integrations.models import AuthorPhotoDelivery
+
+    sem_foto = Author.objects.create(name="Carlos")
+    artigo = Article.objects.create(title="T", body_html="<p>x</p>", author=sem_foto)
+
+    assert registrar_pedido_de_foto(artigo, site) is None
+    assert not AuthorPhotoDelivery.objects.exists()
+
+
+@pytest.mark.django_db
+def test_falha_na_foto_nao_desfaz_a_publicacao(site, autor):
+    """O artigo ja esta no ar quando a foto e enviada."""
+    from apps.integrations.errors import SitePermanentError
+    from apps.integrations.fotos import entregar_foto
+    from apps.integrations.models import AuthorPhotoDelivery
+
+    entrega = AuthorPhotoDelivery.objects.create(
+        site=site, author=autor, photo_sha256=autor.digest_da_foto()
+    )
+
+    class ClienteFalso:
+        def __init__(self, site):
+            pass
+
+        def enviar_foto_de_autor(self, **kwargs):
+            raise SitePermanentError("formato recusado", code="content_rejected")
+
+    import apps.integrations.client as modulo_do_cliente
+
+    original = modulo_do_cliente.SiteClient
+    modulo_do_cliente.SiteClient = ClienteFalso
+    try:
+        entregar_foto(entrega)
+    finally:
+        modulo_do_cliente.SiteClient = original
+
+    entrega.refresh_from_db()
+    assert entrega.status == AuthorPhotoDelivery.Status.FAILED
+    assert "formato recusado" in entrega.last_error

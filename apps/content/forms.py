@@ -6,7 +6,7 @@ from django import forms
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from apps.content.models import Article, Topic
+from apps.content.models import Article, Author, Topic
 
 
 class PautaForm(forms.ModelForm):
@@ -43,14 +43,25 @@ class RevisaoDeArtigo(forms.Form):
         help_text=_("Ate 160 caracteres. E o que aparece no resultado de busca."),
     )
     body_markdown = forms.CharField(widget=forms.Textarea, label=_("Corpo (Markdown)"))
-    author_name = forms.CharField(
+
+    # Escolha do cadastro, e nao texto livre. Digitar o autor a cada artigo
+    # produz grafias diferentes da mesma pessoa, e nao ha como anexar foto,
+    # contato ou redes a um nome digitado.
+    #
+    # Opcional para SALVAR e obrigatorio para APROVAR: exigir aqui impediria o
+    # revisor de guardar uma correcao de texto num ambiente que ainda nao
+    # cadastrou ninguem. A trava esta em `aprovar_e_agendar`.
+    author = forms.ModelChoiceField(
         label=_("Autor"),
-        max_length=150,
+        queryset=Author.objects.none(),
+        required=False,
+        empty_label=_("— escolha quem assina —"),
         help_text=_("Conteudo sem autor identificado nao pode ser publicado."),
     )
-    author_credentials = forms.CharField(
-        label=_("Credenciais do autor"), max_length=200, required=False
-    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["author"].queryset = Author.objects.filter(is_active=True).order_by("name")
 
 
 class AgendamentoForm(forms.Form):
@@ -88,3 +99,50 @@ class RevisaoDeResposta(forms.Form):
 
 
 SITUACOES_DE_ARTIGO = Article.Status.choices
+
+
+class CadastroDeAutor(forms.ModelForm):
+    """Quem assina. So o nome e obrigatorio.
+
+    A foto e convertida para WebP aqui, na entrada. Converter no envio gastaria
+    CPU em toda publicacao e deixaria dois formatos no disco.
+    """
+
+    remover_foto = forms.BooleanField(label=_("Remover a foto atual"), required=False)
+
+    class Meta:
+        model = Author
+        fields = ["name", "credentials", "bio", "email", "phone", "photo", "is_active"]
+        labels = {"photo": _("Foto de perfil")}
+        help_texts = {
+            "name": _("Aparece como assinatura no site. E o unico campo obrigatorio."),
+            "credentials": _("Ex.: 'nutricionista, CRN-3 12345'. Entra na divulgacao de conteudo."),
+            "photo": _("Convertida para WebP automaticamente. JPEG, PNG, WebP ou GIF."),
+            "is_active": _("Autor inativo nao aparece na escolha de novos artigos."),
+        }
+
+    def clean_photo(self):
+        from apps.content.imagens import ImagemInvalida, converter_para_webp
+
+        foto = self.cleaned_data.get("photo")
+        # Sem arquivo novo, ou o mesmo que ja estava gravado: nada a converter.
+        if not foto or not hasattr(foto, "file") or not hasattr(foto, "content_type"):
+            return foto
+
+        try:
+            return converter_para_webp(foto, nome="foto")
+        except ImagemInvalida as exc:
+            raise forms.ValidationError(str(exc)) from exc
+
+    def clean(self):
+        dados = super().clean()
+        if dados.get("remover_foto"):
+            dados["photo"] = None
+        return dados
+
+
+class LinkSocial(forms.Form):
+    """Uma linha da lista de redes do autor."""
+
+    label = forms.CharField(label=_("Rede"), max_length=40, required=False)
+    url = forms.URLField(label=_("Endereco"), assume_scheme="https", required=False)

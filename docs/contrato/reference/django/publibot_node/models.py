@@ -39,6 +39,9 @@ class ReceivedPublication(models.Model):
 
     author_name = models.CharField(max_length=150, blank=True)
     author_credentials = models.CharField(max_length=200, blank=True)
+    # Identidade estavel do autor no PubliBot. Liga a publicacao a foto
+    # recebida depois, pela rota de arquivos.
+    author_reference = models.UUIDField(null=True, blank=True, db_index=True)
     reviewed_by = models.CharField(max_length=150, blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     content_disclosure = models.TextField(blank=True)
@@ -102,3 +105,32 @@ class VisitorQuestion(models.Model):
 
     def __str__(self) -> str:
         return self.question_text[:60]
+
+
+class AuthorPhoto(models.Model):
+    """Foto de perfil recebida pela rota de arquivos.
+
+    Guardada pela `author_reference` que o PubliBot envia, e nao pelo nome do
+    autor: o nome muda e a referencia nao. Sem uma chave estavel, renomear um
+    autor criaria um segundo registro e a caixa de autor ficaria sem foto.
+
+    `sha256` e o que permite responder `author_photo_required: false` na
+    proxima publicacao — e tambem detectar que a foto foi TROCADA, caso em que
+    o digest muda e o arquivo novo chega.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    author_reference = models.UUIDField(unique=True, db_index=True)
+    sha256 = models.CharField(max_length=64)
+    image = models.ImageField(upload_to="autores/")
+
+    received_at = models.DateTimeField(default=timezone.now)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "foto de autor"
+        verbose_name_plural = "fotos de autor"
+        ordering = ["-received_at"]
+
+    def __str__(self) -> str:
+        return str(self.author_reference)

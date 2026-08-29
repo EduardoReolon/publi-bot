@@ -63,6 +63,13 @@ DATABASES = {
     }
 }
 
+# A rota de fotos grava arquivo. Diretorio temporario proprio: sem isto os
+# arquivos do teste iriam parar na pasta de midia do projeto.
+import tempfile  # noqa: E402
+
+MEDIA_ROOT = tempfile.mkdtemp(prefix="publibot-contrato-")
+MEDIA_URL = "/media/"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_TZ = True
 TIME_ZONE = "UTC"

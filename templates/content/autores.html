@@ -1,0 +1,63 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Autores" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Autores" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Quem assina o conteudo. O cadastro vive so aqui: o site de destino nao
+      conhece o PubliBot antes de receber a primeira publicacao, e os dados do
+      autor chegam junto do conteudo.
+    {% endblocktranslate %}
+  </p>
+
+  <div class="acoes">
+    <a class="botao" href="{% url 'content:novo_autor' %}">{% translate "Novo autor" %}</a>
+  </div>
+
+  {% if autores %}
+    <ul class="lista">
+      {% for autor in autores %}
+        <li>
+          <div style="display:flex; gap:1rem; align-items:flex-start">
+            {% if autor.photo %}
+              <img src="{{ autor.photo.url }}" alt="" width="64" height="64"
+                   style="border-radius:50%; object-fit:cover">
+            {% endif %}
+            <div style="flex:1">
+              <strong><a href="{% url 'content:editar_autor' autor.pk %}">{{ autor.name }}</a></strong>
+              {% if not autor.is_active %}
+                <span class="selo">{% translate "inativo" %}</span>
+              {% endif %}
+              {% if not autor.photo %}
+                <span class="selo espera">{% translate "sem foto" %}</span>
+              {% endif %}
+              <span class="selo">
+                {% blocktranslate trimmed count total=autor.total %}
+                  {{ total }} artigo
+                {% plural %}
+                  {{ total }} artigos
+                {% endblocktranslate %}
+              </span>
+              {% if autor.credentials %}
+                <div class="pre-visualizacao">{{ autor.credentials }}</div>
+              {% endif %}
+              {% if autor.social_links %}
+                <div class="pre-visualizacao">
+                  {% for link in autor.social_links %}
+                    {{ link.label|default:link.url }}{% if not forloop.last %} &middot; {% endif %}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="vazio">
+      {% translate "Nenhum autor cadastrado. Conteudo sem autor identificado nao pode ser publicado." %}
+    </p>
+  {% endif %}
+{% endblock %}

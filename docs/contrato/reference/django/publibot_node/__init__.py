@@ -8,6 +8,7 @@ RECURSOS = [
     "hmac_signature",
     "cursor_pagination",
     "image_by_url",
+    "author_photo",
     "qa",
     "reconciliation",
 ]

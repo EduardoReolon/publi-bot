@@ -31,10 +31,11 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
     e o limite padrao do Nginx e de 1 MB: o envio falharia com 413 antes de
     chegar a aplicacao, o SaaS interpretaria como falha transitoria e reenviaria
     megabytes indefinidamente.
-    """
-    autor = article.author_name or site.default_author
-    credenciais = article.author_credentials or site.default_author_credentials
 
+    A foto do autor tambem nao vai aqui. O corpo leva `has_photo`, e o no
+    responde se quer receber; so entao a foto e enviada, pela rota de arquivos.
+    Ver `apps/integrations/fotos.py`.
+    """
     payload = {
         "type": "article",
         "idempotency_key": str(article.idempotency_key),
@@ -45,10 +46,7 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
         "meta_description": article.meta_description[:160],
         "focus_keyword": article.focus_keyword,
         "language": site.content_language,
-        "author": {
-            "name": autor,
-            "credentials": credenciais,
-        },
+        "author": montar_dados_do_autor(article, site),
         "reviewed_by": article.reviewed_by.get_full_name() if article.reviewed_by else "",
         "reviewed_at": article.reviewed_at.isoformat() if article.reviewed_at else None,
         # Divulgacao renderizada pelo site. Nao e formalidade: o leitor precisa
@@ -64,9 +62,33 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
     return payload
 
 
+def montar_dados_do_autor(article: Article, site: Site) -> dict:
+    """Os dados de assinatura que acompanham o conteudo.
+
+    O cadastro de autor e a fonte da verdade, mas nao pode ser exigencia: ha
+    artigos anteriores ao cadastro, e um artigo pronto nao deve travar por
+    falta de um vinculo. A ordem e cadastro, depois o retrato guardado no
+    proprio artigo, depois o padrao do site.
+    """
+    if article.author_id is not None:
+        return article.author.como_payload()
+
+    return {
+        "name": article.author_name or site.default_author,
+        "credentials": article.author_credentials or site.default_author_credentials,
+        "has_photo": False,
+    }
+
+
+def _credencial_do_artigo(article: Article, site: Site) -> str:
+    if article.author_id is not None and article.author.credentials:
+        return article.author.credentials
+    return article.author_credentials or site.default_author_credentials
+
+
 def _montar_divulgacao(article: Article, site: Site) -> str:
     revisor = article.reviewed_by.get_full_name() if article.reviewed_by else ""
-    credencial = article.author_credentials or site.default_author_credentials
+    credencial = _credencial_do_artigo(article, site)
     partes = [
         "Conteudo produzido com apoio de inteligencia artificial a partir de literatura tecnica"
     ]
@@ -168,6 +190,14 @@ def _concluir(article: Article, site: Site, resposta, tentativa: int, payload: d
         health_status=Site.Health.HEALTHY,
         last_success_at=timezone.now(),
     )
+
+    # Segunda etapa: o no respondeu que quer a foto do autor. Ela vai por fora,
+    # depois, e uma falha aqui nao desfaz a publicacao que ja deu certo.
+    if resposta.precisa_da_foto:
+        from apps.integrations.fotos import registrar_pedido_de_foto
+
+        registrar_pedido_de_foto(article, site)
+
     return article
 
 

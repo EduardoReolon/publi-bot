@@ -157,6 +157,103 @@ class PromptRun(models.Model):
         return f"{self.prompt_version} -> {self.get_human_verdict_display()}"
 
 
+class Author(models.Model):
+    """Quem assina o conteudo. Cadastrado aqui, e so aqui.
+
+    O no final e passivo: ele nao conhece o PubliBot antes de receber a
+    primeira publicacao, e nao tem cadastro de autor proprio. Tudo o que ele
+    sabe sobre quem assinou chega junto com o conteudo. Isso poe a
+    responsabilidade do lado certo — quem valida o texto e quem responde por
+    ele — e evita a pergunta impossivel de "qual dos dois lados tem o cadastro
+    mais recente".
+
+    So o nome e obrigatorio. Um artigo sem assinatura e o pior formato para
+    conteudo tematico: nao ha como avaliar quem escreveu. O resto (foto,
+    contato, redes) enriquece a assinatura no site e pode faltar sem impedir a
+    publicacao.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(_("nome"), max_length=150)
+
+    # Guardada ja em WebP: a conversao acontece no upload, nao no envio. Ver
+    # apps/content/imagens.py.
+    photo = models.ImageField(_("foto"), upload_to="autores/%Y/%m/", blank=True)
+
+    credentials = models.CharField(
+        _("credenciais"),
+        max_length=200,
+        blank=True,
+        help_text=_("Aparece na divulgacao de conteudo, junto de quem revisou."),
+    )
+    bio = models.TextField(_("mini biografia"), blank=True)
+
+    email = models.EmailField(_("e-mail"), blank=True)
+    phone = models.CharField(_("telefone"), max_length=40, blank=True)
+
+    # Lista de {rotulo, url}. JSON e nao tabela porque nao ha consulta por rede
+    # social em lugar nenhum: sao dados que viajam junto e sao exibidos juntos.
+    social_links = models.JSONField(_("links sociais"), default=list, blank=True)
+
+    is_active = models.BooleanField(_("ativo"), default=True)
+    created_at = models.DateTimeField(_("criado em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("autor")
+        verbose_name_plural = _("autores")
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def tem_foto(self) -> bool:
+        return bool(self.photo)
+
+    def como_payload(self) -> dict:
+        """Os dados do autor no formato que o no final recebe.
+
+        A foto NAO vai aqui: ela viaja depois, e so se o no pedir. Ver
+        `apps/integrations/publishing.py`.
+        """
+        return {
+            "name": self.name,
+            "credentials": self.credentials,
+            "bio": self.bio,
+            "email": self.email,
+            "phone": self.phone,
+            "social_links": [
+                {"label": str(link.get("label", "")), "url": str(link.get("url", ""))}
+                for link in (self.social_links or [])
+                if link.get("url")
+            ],
+            # Identidade estavel do autor do lado do no: permite a ele
+            # reconhecer o mesmo autor entre publicacoes sem guardar o nome
+            # como chave, que muda.
+            "reference": str(self.pk),
+            "has_photo": self.tem_foto,
+        }
+
+    def digest_da_foto(self) -> str:
+        """SHA-256 do arquivo da foto, ou string vazia se nao houver foto.
+
+        E o que identifica a ENTREGA: o no ja tem esta foto ou nao tem. Usar o
+        autor como chave faria uma troca de foto passar despercebida; usar a
+        data de modificacao faria toda releitura do arquivo parecer uma foto
+        nova.
+        """
+        import hashlib
+
+        if not self.photo:
+            return ""
+
+        digest = hashlib.sha256()
+        with self.photo.open("rb") as arquivo:
+            for pedaco in iter(lambda: arquivo.read(65_536), b""):
+                digest.update(pedaco)
+        return digest.hexdigest()
+
+
 class Topic(models.Model):
     """Uma pauta aprovada por um humano antes de virar artigo."""
 
@@ -282,6 +379,17 @@ class Article(models.Model):
     # --- Autoria e revisao -------------------------------------------------
     # Conteudo sem byline e o pior cenario possivel num nicho sensivel: nao ha
     # como avaliar quem escreveu nem com que credencial.
+    # O cadastro e a fonte da verdade; os dois campos de texto abaixo sao o
+    # retrato do que foi publicado. Guardar os dois nao e redundancia: um autor
+    # renomeado nao pode reescrever a assinatura de um artigo ja no ar.
+    author = models.ForeignKey(
+        "content.Author",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="articles",
+        verbose_name=_("autor"),
+    )
     author_name = models.CharField(_("autor"), max_length=150, blank=True)
     author_credentials = models.CharField(
         _("credenciais"),
@@ -621,6 +729,14 @@ class Answer(models.Model):
         _("situacao"), max_length=24, choices=Status.choices, default=Status.DRAFTING
     )
 
+    author = models.ForeignKey(
+        "content.Author",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="answers",
+        verbose_name=_("autor"),
+    )
     author_name = models.CharField(_("autor"), max_length=150, blank=True)
     author_credentials = models.CharField(_("credenciais"), max_length=200, blank=True)
     reviewed_by = models.ForeignKey(

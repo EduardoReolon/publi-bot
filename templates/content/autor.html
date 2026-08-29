@@ -1,0 +1,88 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Autor" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% if autor %}{{ autor.name }}{% else %}{% translate "Novo autor" %}{% endif %}</h1>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% for campo in form %}
+      {% if campo.name != 'remover_foto' or autor.photo %}
+        <div class="campo">
+          <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+          {{ campo }}
+          {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+          {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+
+    {% if autor.photo %}
+      <p class="pre-visualizacao">
+        {% translate "Foto atual:" %}
+        <img src="{{ autor.photo.url }}" alt="" width="80" height="80"
+             style="border-radius:50%; object-fit:cover; vertical-align:middle">
+      </p>
+    {% endif %}
+
+    {% comment %}
+      A foto NAO viaja em toda publicacao. O no responde se precisa dela, e so
+      entao ela e enviada, por uma rota propria de arquivos. Sem isso, cada
+      artigo carregaria a mesma imagem de novo para um site que ja a tem.
+    {% endcomment %}
+    <div class="aviso">
+      {% blocktranslate trimmed %}
+        A foto e convertida para WebP ao ser enviada. Ela nao viaja em toda
+        publicacao: o site de destino responde se precisa dela, e so entao o
+        arquivo e enviado.
+      {% endblocktranslate %}
+    </div>
+
+    <h2>{% translate "Links sociais" %}</h2>
+    <p class="pre-visualizacao">
+      {% translate "Deixe em branco o que nao usar. Sao enviados junto com o conteudo." %}
+    </p>
+    {% for link in autor.social_links %}
+      <div class="cartoes">
+        <div>
+          <label>{% translate "Rede" %}</label>
+          <input type="text" name="link_label" value="{{ link.label }}">
+        </div>
+        <div>
+          <label>{% translate "Endereco" %}</label>
+          <input type="text" name="link_url" value="{{ link.url }}">
+        </div>
+      </div>
+    {% endfor %}
+    {% for _ in "..." %}
+      <div class="cartoes">
+        <div>
+          <label>{% translate "Rede" %}</label>
+          <input type="text" name="link_label" placeholder="Instagram">
+        </div>
+        <div>
+          <label>{% translate "Endereco" %}</label>
+          <input type="text" name="link_url" placeholder="https://...">
+        </div>
+      </div>
+    {% endfor %}
+
+    <div class="acoes">
+      <button type="submit">{% translate "Salvar" %}</button>
+      <a class="botao secundario" href="{% url 'content:autores' %}">{% translate "Cancelar" %}</a>
+    </div>
+  </form>
+
+  {% if autor %}
+    <form method="post" action="{% url 'content:excluir_autor' autor.pk %}" style="margin-top:2rem">
+      {% csrf_token %}
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Excluir o autor nao altera artigos ja publicados: o nome foi copiado
+          para eles no momento da publicacao.
+        {% endblocktranslate %}
+      </p>
+      <button type="submit" class="botao perigo">{% translate "Excluir autor" %}</button>
+    </form>
+  {% endif %}
+{% endblock %}
