@@ -36,9 +36,9 @@ def trabalhos(request: HttpRequest) -> HttpResponse:
             "inferencias": InferenceLog.objects.select_related("connection").order_by(
                 "-created_at"
             )[:20],
-            "tentativas": PublishAttempt.objects.select_related("article").order_by("-created_at")[
-                :20
-            ],
+            "tentativas": PublishAttempt.objects.select_related(
+                "article", "answer__question"
+            ).order_by("-created_at")[:20],
         },
     )
 

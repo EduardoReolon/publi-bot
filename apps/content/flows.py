@@ -508,9 +508,15 @@ def passo_recuperar_para_pergunta(job: GenerationJob) -> dict:
     _, trechos = recuperar(consulta=question.question_text, origem=RetrievalQuery.Origin.QA)
 
     if not trechos:
+        # Marca a pergunta antes de falhar. Sem isso ela voltaria para a fila
+        # com cara de nao processada, e a pessoa tentaria gerar de novo contra o
+        # mesmo acervo, com o mesmo resultado. Marcada, a tela oferece o que de
+        # fato resolve: escrever a mao, ou acrescentar material ao acervo.
+        Question.objects.filter(pk=question.pk).update(status=Question.Status.NEEDS_MORE_SOURCES)
         raise SemFontesSuficientes(
             "o acervo nao sustenta esta pergunta. Responder assim mesmo seria "
-            "produzir texto sem fonte — exatamente o que o produto evita."
+            "produzir texto sem fonte — exatamente o que o produto evita. "
+            "Acrescente material sobre o tema, ou responda a mao pelo painel."
         )
 
     return {

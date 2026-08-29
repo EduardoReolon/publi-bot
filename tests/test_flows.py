@@ -797,3 +797,62 @@ def test_a_secao_central_recebe_as_fontes_da_ideia_central(tenant_com_acervo, co
     central = artigo.sections.get(carries_central_idea=True)
     assert central.chunk_ids
     assert artigo.central_idea
+
+
+# ---------------------------------------------------------------------------
+# Q&A: acervo que nao sustenta, e o limite de uma fonte
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_pergunta_sem_fonte_e_marcada_em_vez_de_so_falhar(tenant_com_acervo, conexao, monkeypatch):
+    """Sem a marca, a pergunta voltaria com cara de nao processada e alguem
+    tentaria gerar de novo contra o mesmo acervo, com o mesmo resultado."""
+    from apps.integrations.models import Site
+
+    monkeypatch.setattr("apps.content.flows.recuperar", lambda **k: (None, []))
+
+    site = Site.objects.create(name="S", slug="s", base_url="https://s.exemplo.org")
+    pergunta = Question.objects.create(
+        site=site,
+        remote_id="99",
+        question_text="Algo que o acervo nao cobre?",
+        submitted_at="2026-01-01T00:00:00Z",
+        retention_until="2026-12-01T00:00:00Z",
+    )
+    job = criar_job(kind=GenerationJob.Kind.QA_ANSWER, target_object_id=str(pergunta.pk))
+
+    assert avancar(str(job.pk)) == GenerationJob.Status.FAILED
+
+    pergunta.refresh_from_db()
+    assert pergunta.status == Question.Status.NEEDS_MORE_SOURCES
+
+    job.refresh_from_db()
+    # A mensagem precisa apontar as duas saidas reais.
+    assert "acrescente material" in job.last_error.lower()
+    assert "a mao" in job.last_error.lower()
+
+
+@pytest.mark.django_db
+def test_resposta_com_duas_fontes_e_recusada(tenant_com_acervo, conexao, monkeypatch):
+    """Uma resposta e curta: quem pergunta quer a resposta, nao uma revisao de
+    literatura."""
+    from apps.integrations.models import Site
+
+    site = Site.objects.create(name="S", slug="s", base_url="https://s.exemplo.org")
+    modelo = ModeloFalso(["Um [[FONTE_1]] e tambem outro [[FONTE_2]]."])
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    pergunta = Question.objects.create(
+        site=site,
+        remote_id="43",
+        question_text="O efeito acontece?",
+        submitted_at="2026-01-01T00:00:00Z",
+        retention_until="2026-12-01T00:00:00Z",
+    )
+    job = criar_job(kind=GenerationJob.Kind.QA_ANSWER, target_object_id=str(pergunta.pk))
+
+    assert _rodar_ate_o_fim(str(job.pk)) == GenerationJob.Status.FAILED
+
+    job.refresh_from_db()
+    assert "limite" in job.last_error.lower()

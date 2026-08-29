@@ -926,3 +926,105 @@ def test_revisao_mostra_a_ideia_central_e_o_que_ela_exige(ambiente, artigo_para_
 
     assert "A medida domiciliar reduz o efeito do jaleco branco." in corpo
     assert "conhecimento geral" in corpo
+
+
+# ---------------------------------------------------------------------------
+# Resposta escrita a mao
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def pergunta(ambiente):
+    site = Site.objects.create(name="S", slug="s", base_url="https://s.exemplo.org")
+    return Question.objects.create(
+        site=site,
+        remote_id="42",
+        question_text="Da para medir a pressao em casa?",
+        submitted_at="2026-01-01T00:00:00Z",
+        retention_until="2026-12-01T00:00:00Z",
+    )
+
+
+@pytest.mark.django_db
+def test_responder_a_mao_abre_uma_resposta_em_branco(ambiente, pergunta):
+    """Sem esta porta, uma pergunta que o acervo nao sustenta ficaria parada
+    para sempre."""
+    _, _, client = ambiente
+
+    resposta_http = client.post(
+        reverse("content:responder_a_mao", args=[pergunta.pk], urlconf="core.urls_tenants")
+    )
+
+    resposta = Answer.objects.get(question=pergunta)
+    assert resposta.origin == Answer.Origin.MANUAL
+    assert resposta.status == Answer.Status.PENDING_REVIEW
+    assert resposta.body_markdown == ""
+    # Leva direto para a tela de escrever.
+    assert str(resposta.pk) in resposta_http["Location"]
+    # E nao gasta inferencia nenhuma.
+    assert not GenerationJob.objects.filter(kind=GenerationJob.Kind.QA_ANSWER).exists()
+
+
+@pytest.mark.django_db
+def test_resposta_a_mao_passa_pela_mesma_aprovacao(ambiente, pergunta, autora):
+    """Um caminho mais curto para o texto humano seria uma segunda porta para o
+    site do cliente."""
+    _, _, client = ambiente
+    resposta = Answer.objects.create(
+        question=pergunta, origin=Answer.Origin.MANUAL, status=Answer.Status.PENDING_REVIEW
+    )
+
+    client.post(
+        reverse("content:revisar_resposta", args=[resposta.pk], urlconf="core.urls_tenants"),
+        {
+            "acao": "aprovar",
+            "body_markdown": "A medida em casa e possivel e util no acompanhamento.",
+            "author": str(autora.pk),
+            "quando": "",
+        },
+    )
+
+    resposta.refresh_from_db()
+    assert resposta.status == Answer.Status.APPROVED_SCHEDULED
+    assert resposta.author_name == "Dra. Souza"
+    assert resposta.reviewed_by is not None
+    assert "<p>" in resposta.body_html
+
+
+@pytest.mark.django_db
+def test_resposta_sem_autor_nao_e_aprovada(ambiente, pergunta):
+    _, _, client = ambiente
+    resposta = Answer.objects.create(
+        question=pergunta, origin=Answer.Origin.MANUAL, status=Answer.Status.PENDING_REVIEW
+    )
+
+    client.post(
+        reverse("content:revisar_resposta", args=[resposta.pk], urlconf="core.urls_tenants"),
+        {"acao": "aprovar", "body_markdown": "Texto qualquer.", "author": "", "quando": ""},
+    )
+
+    resposta.refresh_from_db()
+    assert resposta.status == Answer.Status.PENDING_REVIEW
+
+
+@pytest.mark.django_db
+def test_responder_a_mao_duas_vezes_e_recusado(ambiente, pergunta):
+    _, _, client = ambiente
+    Answer.objects.create(question=pergunta)
+
+    client.post(reverse("content:responder_a_mao", args=[pergunta.pk], urlconf="core.urls_tenants"))
+
+    assert Answer.objects.filter(question=pergunta).count() == 1
+
+
+@pytest.mark.django_db
+def test_pergunta_sem_fonte_oferece_a_escrita_a_mao(ambiente, pergunta):
+    """A tela precisa oferecer o que de fato resolve. Gerar de novo contra o
+    mesmo acervo daria o mesmo resultado."""
+    _, _, client = ambiente
+    Question.objects.filter(pk=pergunta.pk).update(status=Question.Status.NEEDS_MORE_SOURCES)
+
+    corpo = client.get(reverse("content:perguntas", urlconf="core.urls_tenants")).content.decode()
+
+    assert "responder-a-mao" in corpo
+    assert "Gerar do acervo" not in corpo

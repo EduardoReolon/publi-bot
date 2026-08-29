@@ -375,7 +375,7 @@ def aplicar_rascunho_de_resposta(question, markdown_bruto: str, *, trechos, site
     """
     from apps.content.models import Answer, AnswerCitation
 
-    validar_saida_do_modelo(markdown_bruto)
+    validar_saida_do_modelo(markdown_bruto, max_marcadores=MAXIMO_DE_FONTES_NA_RESPOSTA)
 
     answer, _ = Answer.objects.get_or_create(question=question)
 
@@ -475,6 +475,11 @@ MAXIMO_DE_TEMAS = 2
 # artigo de divulgacao bem apurado, nao o de uma tese: uma pagina cheia de
 # links de saida descaracteriza a curadoria e dilui o valor de cada um deles.
 MAXIMO_DE_FONTES_NO_ARTIGO = 2
+
+# Numa resposta, uma. Ela e curta: quem pergunta quer a resposta, nao uma
+# revisao de literatura. Dois links num paragrafo e meio nao mostram apuro,
+# mostram enchimento.
+MAXIMO_DE_FONTES_NA_RESPOSTA = 1
 
 
 class PlanoInvalido(ValueError):

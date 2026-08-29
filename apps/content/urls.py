@@ -24,6 +24,7 @@ urlpatterns = [
     path("autores/<uuid:pk>/excluir/", views.excluir_autor, name="excluir_autor"),
     path("perguntas/", views.perguntas, name="perguntas"),
     path("perguntas/<uuid:pk>/responder/", views.responder, name="responder"),
+    path("perguntas/<uuid:pk>/responder-a-mao/", views.responder_a_mao, name="responder_a_mao"),
     path("perguntas/<uuid:pk>/descartar/", views.descartar_pergunta, name="descartar_pergunta"),
     path("respostas/<uuid:pk>/", views.revisar_resposta, name="revisar_resposta"),
 ]

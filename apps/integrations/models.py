@@ -203,14 +203,29 @@ class SiteApiCall(models.Model):
 
 
 class PublishAttempt(models.Model):
-    """Cada tentativa de entregar um artigo."""
+    """Cada tentativa de entregar um artigo ou uma resposta.
+
+    Uma tabela para os dois, e nao duas parecidas: as perguntas que se faz aqui
+    ("o que falhou ontem", "quantas tentativas ate entrar") sao sobre entrega,
+    nao sobre formato do conteudo. Separadas, toda consulta viraria um UNION.
+    """
 
     id = models.BigAutoField(primary_key=True)
     article = models.ForeignKey(
         "content.Article",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="publish_attempts_log",
         verbose_name=_("artigo"),
+    )
+    answer = models.ForeignKey(
+        "content.Answer",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="publish_attempts_log",
+        verbose_name=_("resposta"),
     )
     site = models.ForeignKey(
         Site, on_delete=models.CASCADE, related_name="publish_attempts", verbose_name=_("site")
@@ -236,9 +251,22 @@ class PublishAttempt(models.Model):
         verbose_name = _("tentativa de publicacao")
         verbose_name_plural = _("tentativas de publicacao")
         ordering = ["-created_at"]
+        constraints = [
+            # Uma tentativa entrega UMA coisa. Sem esta restricao, uma linha com
+            # os dois campos nulos seria uma tentativa de publicar nada, e
+            # apareceria nos relatorios como se fosse real.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(article__isnull=False, answer__isnull=True)
+                    | models.Q(article__isnull=True, answer__isnull=False)
+                ),
+                name="tentativa_de_artigo_ou_resposta",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.article} #{self.attempt_number} -> {self.http_status or 'simulado'}"
+        alvo = self.article or self.answer
+        return f"{alvo} #{self.attempt_number} -> {self.http_status or 'simulado'}"
 
 
 class PublicationSchedule(models.Model):

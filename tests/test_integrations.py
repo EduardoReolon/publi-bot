@@ -565,3 +565,98 @@ def test_falha_na_foto_nao_desfaz_a_publicacao(site, autor):
     entrega.refresh_from_db()
     assert entrega.status == AuthorPhotoDelivery.Status.FAILED
     assert "formato recusado" in entrega.last_error
+
+
+# ---------------------------------------------------------------------------
+# Publicacao de resposta de Q&A
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def pergunta(site):
+    from apps.content.models import Question
+
+    return Question.objects.create(
+        site=site,
+        remote_id="pergunta-7",
+        question_text="Da para medir em casa?",
+        submitted_at="2026-01-01T00:00:00Z",
+        retention_until="2026-12-01T00:00:00Z",
+    )
+
+
+@pytest.mark.django_db
+def test_payload_de_resposta_leva_a_pergunta_de_origem(site, pergunta, autor, user):
+    """Sem o `question_id`, o site nao tem como ligar a resposta a duvida."""
+    from django.utils import timezone
+
+    from apps.content.models import Answer
+    from apps.integrations.publishing import montar_payload_de_resposta
+
+    resposta = Answer.objects.create(
+        question=pergunta,
+        body_html="<p>Da sim.</p>",
+        author=autor,
+        reviewed_by=user,
+        reviewed_at=timezone.now(),
+    )
+    payload = montar_payload_de_resposta(resposta, site)
+
+    assert payload["type"] == "qa"
+    assert payload["question_id"] == "pergunta-7"
+    assert payload["author"]["name"] == "Beatriz Nutricionista"
+    assert payload["idempotency_key"] == str(resposta.idempotency_key)
+    # Resposta nao tem imagem: ilustrar cada uma custaria uma inferencia por
+    # pergunta para algo que ninguem pediu.
+    assert "cover_image" not in payload
+
+
+@pytest.mark.django_db
+def test_site_sem_o_recurso_qa_nao_recebe_resposta(site, pergunta, settings):
+    """O contrato declara `qa` como opcional; supor que existe quebraria os
+    sites instalados que nao o implementam."""
+    from apps.content.models import Answer
+    from apps.integrations.publishing import PublicacaoBloqueada, publicar_resposta
+
+    site.capabilities = ["idempotency"]
+    site.save(update_fields=["capabilities"])
+
+    resposta = Answer.objects.create(question=pergunta, status=Answer.Status.APPROVED_SCHEDULED)
+
+    with pytest.raises(PublicacaoBloqueada, match="qa"):
+        publicar_resposta(resposta, site)
+
+
+@pytest.mark.django_db
+def test_resposta_nao_aprovada_nao_e_publicada(site, pergunta, settings):
+    from apps.content.models import Answer
+    from apps.integrations.publishing import PublicacaoBloqueada, publicar_resposta
+
+    site.capabilities = ["qa"]
+    site.save(update_fields=["capabilities"])
+
+    resposta = Answer.objects.create(question=pergunta, status=Answer.Status.PENDING_REVIEW)
+
+    with pytest.raises(PublicacaoBloqueada):
+        publicar_resposta(resposta, site)
+
+
+@pytest.mark.django_db
+def test_simulacao_de_resposta_registra_a_tentativa_na_coluna_certa(site, pergunta, settings):
+    """Uma tentativa entrega UMA coisa: artigo ou resposta, nunca as duas."""
+    from apps.content.models import Answer
+    from apps.integrations.publishing import publicar_resposta
+
+    settings.PUBLISH_DRY_RUN = True
+    site.capabilities = ["qa"]
+    site.save(update_fields=["capabilities"])
+
+    resposta = Answer.objects.create(
+        question=pergunta, body_html="<p>x</p>", status=Answer.Status.APPROVED_SCHEDULED
+    )
+    publicar_resposta(resposta, site)
+
+    tentativa = PublishAttempt.objects.get(answer=resposta)
+    assert tentativa.article_id is None
+    assert tentativa.dry_run is True
+    assert tentativa.payload_summary["campos"]

@@ -62,33 +62,36 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
     return payload
 
 
-def montar_dados_do_autor(article: Article, site: Site) -> dict:
+def montar_dados_do_autor(conteudo, site: Site) -> dict:
     """Os dados de assinatura que acompanham o conteudo.
 
+    Serve artigo e resposta: os dois carregam a mesma assinatura, e duplicar
+    esta funcao deixaria os dois formatos divergirem com o tempo.
+
     O cadastro de autor e a fonte da verdade, mas nao pode ser exigencia: ha
-    artigos anteriores ao cadastro, e um artigo pronto nao deve travar por
-    falta de um vinculo. A ordem e cadastro, depois o retrato guardado no
-    proprio artigo, depois o padrao do site.
+    conteudo anterior ao cadastro, e um texto pronto nao deve travar por falta
+    de um vinculo. A ordem e cadastro, depois o retrato guardado no proprio
+    conteudo, depois o padrao do site.
     """
-    if article.author_id is not None:
-        return article.author.como_payload()
+    if conteudo.author_id is not None:
+        return conteudo.author.como_payload()
 
     return {
-        "name": article.author_name or site.default_author,
-        "credentials": article.author_credentials or site.default_author_credentials,
+        "name": conteudo.author_name or site.default_author,
+        "credentials": conteudo.author_credentials or site.default_author_credentials,
         "has_photo": False,
     }
 
 
-def _credencial_do_artigo(article: Article, site: Site) -> str:
-    if article.author_id is not None and article.author.credentials:
-        return article.author.credentials
-    return article.author_credentials or site.default_author_credentials
+def _credencial_do_conteudo(conteudo, site: Site) -> str:
+    if conteudo.author_id is not None and conteudo.author.credentials:
+        return conteudo.author.credentials
+    return conteudo.author_credentials or site.default_author_credentials
 
 
-def _montar_divulgacao(article: Article, site: Site) -> str:
-    revisor = article.reviewed_by.get_full_name() if article.reviewed_by else ""
-    credencial = _credencial_do_artigo(article, site)
+def _montar_divulgacao(conteudo, site: Site) -> str:
+    revisor = conteudo.reviewed_by.get_full_name() if conteudo.reviewed_by else ""
+    credencial = _credencial_do_conteudo(conteudo, site)
     partes = [
         "Conteudo produzido com apoio de inteligencia artificial a partir de literatura tecnica"
     ]
@@ -97,6 +100,32 @@ def _montar_divulgacao(article: Article, site: Site) -> str:
     if credencial:
         partes.append(f"({credencial})")
     return ". ".join([" ".join(partes), "Nao substitui orientacao profissional."])
+
+
+def montar_payload_de_resposta(answer, site: Site) -> dict:
+    """Monta o corpo de uma resposta de Q&A.
+
+    Mesma assinatura, mesma divulgacao e mesma chave de idempotencia do artigo:
+    uma resposta publicada no site de um cliente tem o mesmo peso editorial que
+    um artigo, e um caminho mais curto aqui seria uma segunda porta com travas
+    diferentes.
+
+    Nao ha imagem. Uma resposta e um texto curto numa listagem de perguntas;
+    ilustrar cada uma custaria uma inferencia por pergunta para algo que
+    ninguem pediu.
+    """
+    return {
+        "type": "qa",
+        "idempotency_key": str(answer.idempotency_key),
+        "question_id": answer.question.remote_id,
+        "html_content": answer.body_html,
+        "language": site.content_language,
+        "author": montar_dados_do_autor(answer, site),
+        "reviewed_by": answer.reviewed_by.get_full_name() if answer.reviewed_by else "",
+        "reviewed_at": answer.reviewed_at.isoformat() if answer.reviewed_at else None,
+        "content_disclosure": _montar_divulgacao(answer, site),
+        "status": "published",
+    }
 
 
 def resumir_payload(payload: dict) -> dict:
@@ -118,71 +147,103 @@ def resumir_payload(payload: dict) -> dict:
 
 def publicar_artigo(article: Article, site: Site) -> Article:
     """Entrega o artigo, respeitando idempotencia e o modo de simulacao."""
+    return _publicar(article, site, payload=montar_payload_de_artigo(article, site))
+
+
+def publicar_resposta(answer, site: Site):
+    """Entrega uma resposta de Q&A.
+
+    Mesmo caminho do artigo, de proposito: mesma idempotencia, mesma
+    reconciliacao apos timeout, mesmo backoff, mesmo registro. Uma resposta
+    publicada no site de um cliente tem o mesmo peso editorial que um artigo, e
+    um caminho proprio aqui divergiria do do artigo na primeira correcao feita
+    so de um lado.
+    """
+    if not site.suporta("qa"):
+        raise PublicacaoBloqueada(f"o site {site.name!r} nao declara o recurso 'qa' em /health/.")
+    return _publicar(answer, site, payload=montar_payload_de_resposta(answer, site))
+
+
+def _publicar(conteudo, site: Site, *, payload: dict):
+    """O caminho unico de entrega, para artigo e para resposta.
+
+    Os dois models tem os mesmos campos de entrega (`idempotency_key`,
+    `publish_attempts`, `next_retry_at`...) e os mesmos estados. Duplicar este
+    caminho faria os dois divergirem na primeira correcao feita so de um lado —
+    e a que ficasse para tras seria descoberta em producao.
+    """
     from apps.integrations.client import SiteClient
 
-    if article.status not in (Article.Status.APPROVED_SCHEDULED, Article.Status.PUSH_FAILED):
+    if conteudo.status not in (conteudo.Status.APPROVED_SCHEDULED, conteudo.Status.PUSH_FAILED):
         raise PublicacaoBloqueada(
-            f"o artigo esta em {article.get_status_display()!r} e nao pode ser publicado."
+            f"o conteudo esta em {conteudo.get_status_display()!r} e nao pode ser publicado."
         )
 
-    payload = montar_payload_de_artigo(article, site)
-    tentativa = article.publish_attempts + 1
+    tentativa = conteudo.publish_attempts + 1
 
     # Monta o payload completo e registra, sem sair para a rede. E o unico jeito
     # seguro de conferir o contrato contra um site real durante o
     # desenvolvimento.
     if settings.PUBLISH_DRY_RUN:
-        PublishAttempt.objects.create(
-            article=article,
-            site=site,
+        _registrar_tentativa(
+            conteudo,
+            site,
             attempt_number=tentativa,
             payload_summary=resumir_payload(payload),
             dry_run=True,
             succeeded=True,
         )
-        logger.info("Simulacao: artigo %s nao foi enviado (PUBLISH_DRY_RUN).", article.pk)
-        return article
+        logger.info("Simulacao: %s nao foi enviado (PUBLISH_DRY_RUN).", conteudo.pk)
+        return conteudo
 
     cliente = SiteClient(site)
 
     # Apos um timeout, pergunta antes de reenviar: o conteudo pode ter sido
     # gravado e apenas a resposta ter se perdido.
     if tentativa > 1:
-        ja_existe = cliente.reconciliar(article.idempotency_key)
+        ja_existe = cliente.reconciliar(conteudo.idempotency_key)
         if ja_existe is not None:
-            return _concluir(article, site, ja_existe, tentativa, payload)
+            return _concluir(conteudo, site, ja_existe, tentativa, payload)
 
     try:
-        resposta = cliente.publish(payload, idempotency_key=article.idempotency_key)
+        resposta = cliente.publish(payload, idempotency_key=conteudo.idempotency_key)
     except SiteAuthError as exc:
-        return _falhar(article, site, exc, tentativa, payload, terminal=True)
+        return _falhar(conteudo, site, exc, tentativa, payload, terminal=True)
     except SitePermanentError as exc:
-        return _falhar(article, site, exc, tentativa, payload, terminal=True)
+        return _falhar(conteudo, site, exc, tentativa, payload, terminal=True)
     except SiteTransientError as exc:
-        return _falhar(article, site, exc, tentativa, payload, terminal=False)
+        return _falhar(conteudo, site, exc, tentativa, payload, terminal=False)
 
-    return _concluir(article, site, resposta, tentativa, payload)
+    return _concluir(conteudo, site, resposta, tentativa, payload)
 
 
-def _concluir(article: Article, site: Site, resposta, tentativa: int, payload: dict) -> Article:
-    PublishAttempt.objects.create(
-        article=article,
-        site=site,
+def _registrar_tentativa(conteudo, site: Site, **campos) -> None:
+    """Grava a tentativa na coluna certa: artigo ou resposta, nunca as duas."""
+    from apps.content.models import Article as ModeloDeArtigo
+
+    chave = "article" if isinstance(conteudo, ModeloDeArtigo) else "answer"
+    PublishAttempt.objects.create(site=site, **{chave: conteudo}, **campos)
+
+
+def _concluir(conteudo, site: Site, resposta, tentativa: int, payload: dict):
+    _registrar_tentativa(
+        conteudo,
+        site,
         attempt_number=tentativa,
         payload_summary=resumir_payload(payload),
         http_status=200 if resposta.ja_existia else 201,
         succeeded=True,
     )
 
-    article.status = Article.Status.PUBLISHED
-    article.published_at = timezone.now()
-    article.published_url = resposta.url
-    article.remote_id = resposta.remote_id
-    article.publish_attempts = tentativa
-    article.last_publish_error = ""
-    article.last_error_code = ""
-    article.next_retry_at = None
-    article.save()
+    conteudo.status = conteudo.Status.PUBLISHED
+    conteudo.published_at = timezone.now()
+    conteudo.published_url = resposta.url
+    conteudo.remote_id = resposta.remote_id
+    conteudo.publish_attempts = tentativa
+    conteudo.last_publish_error = ""
+    conteudo.last_error_code = ""
+    conteudo.next_retry_at = None
+    conteudo.save()
 
     Site.objects.filter(pk=site.pk).update(
         consecutive_failures=0,
@@ -196,17 +257,15 @@ def _concluir(article: Article, site: Site, resposta, tentativa: int, payload: d
     if resposta.precisa_da_foto:
         from apps.integrations.fotos import registrar_pedido_de_foto
 
-        registrar_pedido_de_foto(article, site)
+        registrar_pedido_de_foto(conteudo, site)
 
-    return article
+    return conteudo
 
 
-def _falhar(
-    article: Article, site: Site, erro, tentativa: int, payload: dict, *, terminal: bool
-) -> Article:
-    PublishAttempt.objects.create(
-        article=article,
-        site=site,
+def _falhar(conteudo, site: Site, erro, tentativa: int, payload: dict, *, terminal: bool):
+    _registrar_tentativa(
+        conteudo,
+        site,
         attempt_number=tentativa,
         payload_summary=resumir_payload(payload),
         http_status=erro.status,
@@ -215,23 +274,23 @@ def _falhar(
         succeeded=False,
     )
 
-    article.status = Article.Status.PUSH_FAILED
-    article.publish_attempts = tentativa
-    article.last_publish_error = str(erro)[:2000]
-    article.last_error_code = erro.code
+    conteudo.status = conteudo.Status.PUSH_FAILED
+    conteudo.publish_attempts = tentativa
+    conteudo.last_publish_error = str(erro)[:2000]
+    conteudo.last_error_code = erro.code
 
     if terminal:
         # Nao reagenda: credencial recusada ou payload invalido nao melhoram
         # com repeticao. Precisa de alguem olhando.
-        article.next_retry_at = None
+        conteudo.next_retry_at = None
     else:
-        article.next_retry_at = timezone.now() + _proximo_intervalo(tentativa, erro)
+        conteudo.next_retry_at = timezone.now() + _proximo_intervalo(tentativa, erro)
 
-    article.save()
+    conteudo.save()
 
     if terminal:
-        logger.error("Publicacao terminal do artigo %s: %s", article.pk, erro)
-    return article
+        logger.error("Publicacao terminal de %s: %s", conteudo.pk, erro)
+    return conteudo
 
 
 def _proximo_intervalo(tentativa: int, erro):

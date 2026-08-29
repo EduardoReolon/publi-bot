@@ -35,9 +35,21 @@
                 <span class="selo
                   {% if pergunta.status == 'answered' %}ok
                   {% elif pergunta.status == 'discarded' %}ruim
+                  {% elif pergunta.status == 'needs_more_sources' %}ruim
                   {% elif pergunta.status == 'pending_review' %}espera{% endif %}">
                   {{ pergunta.get_status_display }}
                 </span>
+                {% if pergunta.status == 'needs_more_sources' %}
+                  <div class="pre-visualizacao">
+                    {% blocktranslate trimmed %}
+                      O acervo nao sustenta esta pergunta. Acrescente material
+                      sobre o tema, ou responda a mao.
+                    {% endblocktranslate %}
+                  </div>
+                {% endif %}
+                {% if pergunta.answer.origin == 'manual' %}
+                  <span class="selo">{% translate "escrita a mao" %}</span>
+                {% endif %}
               </td>
               <td class="pre-visualizacao">{{ pergunta.retention_until|date:"d/m/Y" }}</td>
               <td>
@@ -46,9 +58,24 @@
                     {% translate "revisar resposta" %}
                   </a>
                 {% elif pergunta.status != 'discarded' %}
-                  <form method="post" action="{% url 'content:responder' pergunta.pk %}" style="display:inline">
+                  {% if pergunta.status != 'needs_more_sources' %}
+                    <form method="post" action="{% url 'content:responder' pergunta.pk %}" style="display:inline">
+                      {% csrf_token %}
+                      <button type="submit" class="botao secundario">
+                        {% translate "Gerar do acervo" %}
+                      </button>
+                    </form>
+                  {% endif %}
+                  {% comment %}
+                    Sempre disponivel, e nao so quando falta fonte: a pessoa
+                    pode preferir escrever. Uma pergunta sem fonte no acervo
+                    ficaria parada para sempre sem esta porta.
+                  {% endcomment %}
+                  <form method="post" action="{% url 'content:responder_a_mao' pergunta.pk %}" style="display:inline">
                     {% csrf_token %}
-                    <button type="submit" class="botao secundario">{% translate "Responder" %}</button>
+                    <button type="submit" class="botao secundario">
+                      {% translate "Responder a mao" %}
+                    </button>
                   </form>
                   <form method="post" action="{% url 'content:descartar_pergunta' pergunta.pk %}" style="display:inline">
                     {% csrf_token %}

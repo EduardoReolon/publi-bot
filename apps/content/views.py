@@ -587,6 +587,35 @@ def responder(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
+def responder_a_mao(request: HttpRequest, pk) -> HttpResponse:
+    """Abre uma resposta em branco para a pessoa escrever.
+
+    Existe para os dois casos que a geracao nao cobre: o acervo nao sustentar a
+    pergunta — e ai nao ha texto automatico possivel, so o silencio ou a
+    invencao — e a pessoa simplesmente preferir escrever. Sem esta porta, uma
+    pergunta sem fonte no acervo ficaria parada para sempre.
+
+    A resposta escrita a mao entra pela MESMA revisao e pela mesma aprovacao da
+    gerada. Um atalho aqui seria uma segunda porta para o site do cliente.
+    """
+    pergunta = get_object_or_404(Question, pk=pk)
+    if hasattr(pergunta, "answer"):
+        messages.error(request, _("Esta pergunta ja tem resposta."))
+        return redirect("content:perguntas")
+
+    resposta = Answer.objects.create(
+        question=pergunta,
+        origin=Answer.Origin.MANUAL,
+        status=Answer.Status.PENDING_REVIEW,
+    )
+    Question.objects.filter(pk=pergunta.pk).update(status=Question.Status.PENDING_REVIEW)
+
+    messages.success(request, _("Escreva a resposta. Ela passa pela mesma aprovacao."))
+    return redirect("content:revisar_resposta", pk=resposta.pk)
+
+
+@login_required
+@require_POST
 def descartar_pergunta(request: HttpRequest, pk) -> HttpResponse:
     pergunta = get_object_or_404(Question, pk=pk)
     pergunta.status = Question.Status.DISCARDED
@@ -611,13 +640,13 @@ def revisar_resposta(request: HttpRequest, pk) -> HttpResponse:
             "form": RevisaoDeResposta(
                 initial={
                     "body_markdown": resposta.body_markdown,
-                    "author_name": resposta.author_name,
-                    "author_credentials": resposta.author_credentials,
+                    "author": resposta.author_id,
                 }
             ),
             "agendamento": AgendamentoForm(),
             "citacoes": resposta.citations.select_related("super_chunk").order_by("rank"),
             "proximo_horario": _proximo_horario(),
+            "tem_autores": Author.objects.filter(is_active=True).exists(),
         },
     )
 
@@ -641,8 +670,15 @@ def _processar_resposta(request: HttpRequest, resposta: Answer) -> HttpResponse:
     dados = form.cleaned_data
     resposta.body_markdown = dados["body_markdown"]
     resposta.body_html = markdown_para_html(dados["body_markdown"])
-    resposta.author_name = dados["author_name"]
-    resposta.author_credentials = dados["author_credentials"]
+
+    autor = dados.get("author")
+    if autor is not None:
+        resposta.author = autor
+        # Retrato da assinatura, como no artigo: renomear alguem no cadastro
+        # nao reescreve o que ja foi publicado.
+        resposta.author_name = autor.name
+        resposta.author_credentials = autor.credentials
+
     resposta.save()
 
     if acao != "aprovar":

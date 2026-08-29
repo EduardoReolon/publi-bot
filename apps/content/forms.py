@@ -93,9 +93,29 @@ class AgendamentoForm(forms.Form):
 
 
 class RevisaoDeResposta(forms.Form):
+    """A revisao de uma resposta, que vale tanto para a gerada quanto para a
+    escrita a mao.
+
+    Um so formulario para os dois casos: a resposta escrita a mao passa pela
+    MESMA revisao e pela mesma aprovacao da gerada. Um caminho mais curto para
+    o texto humano seria uma segunda porta para o site do cliente.
+    """
+
     body_markdown = forms.CharField(widget=forms.Textarea, label=_("Resposta (Markdown)"))
-    author_name = forms.CharField(label=_("Autor"), max_length=150)
-    author_credentials = forms.CharField(label=_("Credenciais"), max_length=200, required=False)
+
+    # Mesmo criterio do artigo: escolha do cadastro, opcional para salvar e
+    # obrigatoria para aprovar.
+    author = forms.ModelChoiceField(
+        label=_("Autor"),
+        queryset=Author.objects.none(),
+        required=False,
+        empty_label=_("— escolha quem assina —"),
+        help_text=_("Conteudo sem autor identificado nao pode ser publicado."),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["author"].queryset = Author.objects.filter(is_active=True).order_by("name")
 
 
 SITUACOES_DE_ARTIGO = Article.Status.choices

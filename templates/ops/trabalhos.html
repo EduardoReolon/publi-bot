@@ -115,7 +115,14 @@
           {% for tentativa in tentativas %}
             <tr>
               <td class="pre-visualizacao">{{ tentativa.created_at|date:"d/m H:i" }}</td>
-              <td class="pre-visualizacao">{{ tentativa.article.title|truncatechars:50|default:"—" }}</td>
+              <td class="pre-visualizacao">
+                {% if tentativa.article %}
+                  {{ tentativa.article.title|truncatechars:50 }}
+                {% elif tentativa.answer %}
+                  {% translate "Resposta:" %}
+                  {{ tentativa.answer.question.question_text|truncatechars:40 }}
+                {% else %}—{% endif %}
+              </td>
               <td class="numero">{{ tentativa.attempt_number }}</td>
               <td>
                 <span class="selo {% if tentativa.succeeded %}ok{% else %}ruim{% endif %}">

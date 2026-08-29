@@ -46,7 +46,7 @@ def publish_content(self, tipo: str, identificador: str) -> str:
     from apps.content.models import Answer, Article
     from apps.integrations.errors import SiteTransientError
     from apps.integrations.models import Site
-    from apps.integrations.publishing import publicar_artigo
+    from apps.integrations.publishing import publicar_artigo, publicar_resposta
 
     site = Site.objects.first()
     if site is None:
@@ -71,7 +71,17 @@ def publish_content(self, tipo: str, identificador: str) -> str:
 
     if tipo == "answer":
         resposta = Answer.objects.filter(pk=identificador).first()
-        return resposta.status if resposta else "inexistente"
+        if resposta is None:
+            return "inexistente"
+
+        try:
+            publicar_resposta(resposta, site)
+        except SiteTransientError as exc:
+            espera = getattr(exc, "retry_after", None) or 300
+            raise self.retry(exc=exc, countdown=min(espera, 21_600)) from exc
+
+        resposta.refresh_from_db()
+        return resposta.status
 
     return "tipo_desconhecido"
 

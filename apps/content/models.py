@@ -734,7 +734,16 @@ class Answer(models.Model):
     Enquadrado como conteudo informativo SOBRE O TEMA, e nao como resposta
     dirigida a pessoa. Isso reduz simultaneamente o risco regulatorio e a
     necessidade de tratar dado de terceiro.
+
+    **Nao tem imagem.** Uma resposta e um texto curto que vive numa listagem de
+    perguntas; imagem gerada aqui custaria uma inferencia por pergunta para
+    ilustrar algo que ninguem pediu. A imagem e coisa de publicacao, nao de
+    resposta.
     """
+
+    class Origin(models.TextChoices):
+        GENERATED = "generated", _("Gerada a partir do acervo")
+        MANUAL = "manual", _("Escrita a mao")
 
     class Status(models.TextChoices):
         DRAFTING = "drafting", _("Em producao")
@@ -754,6 +763,17 @@ class Answer(models.Model):
 
     outbound_link_url = models.URLField(_("link de saida"), max_length=500, blank=True)
     anchor_text = models.CharField(_("texto-ancora"), max_length=200, blank=True)
+
+    # Escrita a mao ou gerada. A distincao muda o que a tela cobra: uma resposta
+    # gerada sem citacao e defeito; uma escrita a mao responde por quem a
+    # escreveu, e exigir fonte dela seria exigir do humano o que ele ja sabe.
+    #
+    # O modo manual existe para os dois casos que o automatico nao cobre: o
+    # acervo nao sustentar a pergunta, e a pessoa simplesmente preferir
+    # escrever. Sem ele, uma pergunta sem fonte ficaria parada para sempre.
+    origin = models.CharField(
+        _("origem"), max_length=10, choices=Origin.choices, default=Origin.GENERATED
+    )
 
     status = models.CharField(
         _("situacao"), max_length=24, choices=Status.choices, default=Status.DRAFTING

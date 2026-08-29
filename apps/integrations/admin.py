@@ -201,6 +201,7 @@ class PublishAttemptAdmin(admin.ModelAdmin):
     list_display = (
         "created_at",
         "article",
+        "answer",
         "site",
         "attempt_number",
         "http_status",
