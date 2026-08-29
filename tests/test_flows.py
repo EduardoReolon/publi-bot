@@ -85,6 +85,11 @@ ARTIGO = (
 # metadados. As respostas abaixo sao o roteiro dessa sequencia.
 PLANO = json.dumps(
     {
+        "ideia_central": (
+            "O efeito no metabolismo aparece de forma consistente, em amostra pequena."
+        ),
+        "fontes_da_ideia_central": [1],
+        "temas": ["efeito no metabolismo"],
         "palavra_chave": "efeito no metabolismo",
         "palavras_secundarias": ["taxa metabolica", "gasto energetico"],
         "intencao": "entender",
@@ -95,6 +100,7 @@ PLANO = json.dumps(
                 "objetivo": "Resumir o achado principal",
                 "palavras_chave": ["taxa metabolica"],
                 "fontes": [1],
+                "sustenta_ideia_central": True,
             },
             {
                 "titulo": "Limites do que se sabe",
@@ -456,9 +462,16 @@ def test_plano_com_fonte_inventada_e_recusado(tenant_com_acervo, conexao, monkey
     o texto sairia mesmo assim, parecendo fundamentado."""
     plano_ruim = json.dumps(
         {
+            "ideia_central": "Algo sobre metabolismo.",
+            "fontes_da_ideia_central": [1],
             "palavra_chave": "metabolismo",
             "secoes": [
-                {"titulo": "Uma secao", "objetivo": "algo", "fontes": [7, 9]},
+                {
+                    "titulo": "Uma secao",
+                    "objetivo": "algo",
+                    "fontes": [7, 9],
+                    "sustenta_ideia_central": True,
+                },
                 {"titulo": "Outra secao", "objetivo": "algo", "fontes": [1]},
             ],
         }
@@ -556,7 +569,7 @@ def test_refazer_uma_secao_preserva_as_outras(tenant_com_acervo, conexao, monkey
     primeira, segunda = list(artigo.sections.all())
     texto_preservado = segunda.body_markdown
 
-    modelo = ModeloFalso(["Texto novo da primeira secao, agora mais fundo."])
+    modelo = ModeloFalso(["Texto novo da primeira secao, agora mais fundo [[FONTE_1]]."])
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
 
     marcar_secoes_para_refazer(artigo, {primeira.order})
@@ -587,7 +600,7 @@ def test_refazer_usa_as_mesmas_fontes_ja_conferidas(tenant_com_acervo, conexao, 
     artigo, _ = _gerar_artigo(monkeypatch)
     citadas = {str(c.super_chunk_id) for c in artigo.citations.all()}
 
-    modelo = ModeloFalso(["Texto novo."])
+    modelo = ModeloFalso(["Texto novo [[FONTE_1]]."])
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
 
     marcar_secoes_para_refazer(artigo, {1})
@@ -608,16 +621,25 @@ def test_replanejar_descarta_o_esqueleto_e_recomeca(tenant_com_acervo, conexao, 
 
     plano_novo = json.dumps(
         {
+            "ideia_central": "Exercicio muda o gasto calorico de forma mensuravel.",
+            "fontes_da_ideia_central": [1],
             "palavra_chave": "metabolismo e exercicio",
             "palavras_secundarias": ["gasto calorico"],
             "secoes": [
-                {"titulo": "Uma abordagem diferente", "objetivo": "outro angulo", "fontes": [1]},
+                {
+                    "titulo": "Uma abordagem diferente",
+                    "objetivo": "outro angulo",
+                    "fontes": [1],
+                    "sustenta_ideia_central": True,
+                },
                 {"titulo": "O que falta saber", "objetivo": "lacunas", "fontes": [1]},
                 {"titulo": "Como interpretar", "objetivo": "leitura", "fontes": [1]},
             ],
         }
     )
-    modelo = ModeloFalso([plano_novo, "Secao 1.", "Secao 2.", "Secao 3.", MOLDURA, METADADOS])
+    modelo = ModeloFalso(
+        [plano_novo, "Secao 1 [[FONTE_1]].", "Secao 2.", "Secao 3.", MOLDURA, METADADOS]
+    )
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
 
     limpar_plano(artigo)
@@ -649,3 +671,129 @@ def test_limpar_plano_descarta_a_moldura_junto(tenant_com_acervo, conexao, monke
     artigo.refresh_from_db()
     assert "moldura" not in artigo.thesis_json
     assert artigo.sections.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Embasamento: a ideia central sai de fonte, o resto pode ser conhecimento geral
+# ---------------------------------------------------------------------------
+
+
+def _plano(**alteracoes) -> str:
+    base = {
+        "ideia_central": "O efeito existe e e mensuravel.",
+        "fontes_da_ideia_central": [1],
+        "temas": ["metabolismo"],
+        "palavra_chave": "metabolismo",
+        "secoes": [
+            {
+                "titulo": "O achado",
+                "objetivo": "dizer o achado",
+                "fontes": [1],
+                "sustenta_ideia_central": True,
+            },
+            {"titulo": "O contexto", "objetivo": "situar", "fontes": [1]},
+        ],
+    }
+    base.update(alteracoes)
+    return json.dumps(base)
+
+
+def test_plano_sem_fonte_para_a_ideia_central_interrompe():
+    """A busca trouxe material, ele so nao sustenta a afirmacao que o texto
+    existe para fazer. Publicar assim produz o pior resultado: um texto que
+    PARECE fundamentado e cuja tese ninguem verificou."""
+    from apps.content.services import SemEmbasamentoCentral, interpretar_plano
+
+    with pytest.raises(SemEmbasamentoCentral) as erro:
+        interpretar_plano(_plano(fontes_da_ideia_central=[]), total_de_fontes=2)
+
+    # A mensagem precisa dizer o que a pessoa faz a seguir.
+    assert "acervo" in str(erro.value)
+
+
+def test_plano_sem_secao_que_carregue_a_ideia_central_interrompe():
+    """Sem uma secao responsavel, a ideia central nao seria afirmada em lugar
+    nenhum — ou seria afirmada sem fonte."""
+    from apps.content.services import SemEmbasamentoCentral, interpretar_plano
+
+    secoes = [
+        {"titulo": "Uma", "objetivo": "algo", "fontes": [1]},
+        {"titulo": "Outra", "objetivo": "algo", "fontes": [1]},
+    ]
+    with pytest.raises(SemEmbasamentoCentral):
+        interpretar_plano(_plano(secoes=secoes), total_de_fontes=2)
+
+
+def test_fonte_da_ideia_central_fora_da_faixa_nao_conta_como_embasamento():
+    """Numero inventado sustentaria a tese com uma fonte que nao existe."""
+    from apps.content.services import SemEmbasamentoCentral, interpretar_plano
+
+    with pytest.raises(SemEmbasamentoCentral):
+        interpretar_plano(_plano(fontes_da_ideia_central=[9]), total_de_fontes=2)
+
+
+def test_plano_valido_guarda_a_ideia_central():
+    from apps.content.services import interpretar_plano
+
+    plano = interpretar_plano(_plano(), total_de_fontes=2)
+
+    assert plano.ideia_central == "O efeito existe e e mensuravel."
+    assert plano.fontes_da_ideia_central == [1]
+    assert [s.sustenta_ideia_central for s in plano.secoes] == [True, False]
+
+
+def test_tema_em_excesso_e_cortado_no_limite():
+    """Um texto que abraca cinco temas nao responde bem a nenhum deles."""
+    from apps.content.services import MAXIMO_DE_TEMAS, interpretar_plano
+
+    plano = interpretar_plano(_plano(temas=["a", "b", "c", "d"]), total_de_fontes=2)
+
+    assert len(plano.temas) == MAXIMO_DE_TEMAS
+
+
+@pytest.mark.django_db
+def test_secao_da_ideia_central_sem_marcador_derruba_o_passo(
+    tenant_com_acervo, conexao, monkeypatch
+):
+    """O erro silencioso que esta trava existe para pegar: o modelo escreve uma
+    secao fluente e afirma a tese sem citar nada. Passa por todas as outras
+    travas e chega a revisao parecendo fundamentado."""
+    sem_marcador = "O efeito aparece de forma consistente nos estudos analisados."
+    modelo = ModeloFalso([TESE, PLANO, sem_marcador])
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+
+    avancar(str(job.pk))
+    avancar(str(job.pk))
+    avancar(str(job.pk))
+    for _ in range(6):
+        if avancar(str(job.pk)) == GenerationJob.Status.FAILED:
+            break
+
+    job.refresh_from_db()
+    assert job.status == GenerationJob.Status.FAILED
+    assert "embasamento" in job.last_error.lower()
+
+
+@pytest.mark.django_db
+def test_secao_secundaria_pode_sair_sem_marcador(tenant_com_acervo, conexao, monkeypatch):
+    """Exigir fonte em cada paragrafo produz texto travado, com cara de
+    trabalho academico — que e exatamente o que o formato nao e."""
+    artigo, _ = _gerar_artigo(monkeypatch)
+
+    segunda = artigo.sections.get(order=2)
+    assert segunda.carries_central_idea is False
+    assert "[[FONTE_" not in segunda.body_markdown
+    assert segunda.body_markdown.strip()
+
+
+@pytest.mark.django_db
+def test_a_secao_central_recebe_as_fontes_da_ideia_central(tenant_com_acervo, conexao, monkeypatch):
+    """Sem isso ela seria escrita sem ter na frente aquilo que precisa citar."""
+    artigo, _ = _gerar_artigo(monkeypatch)
+
+    central = artigo.sections.get(carries_central_idea=True)
+    assert central.chunk_ids
+    assert artigo.central_idea

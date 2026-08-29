@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from django.db import transaction
@@ -67,6 +67,24 @@ class SemFontesSuficientes(RuntimeError):
     Levantado ANTES de qualquer chamada ao modelo: gerar um artigo sem
     fundamentacao gastaria inferencia para produzir exatamente o que o produto
     existe para evitar.
+    """
+
+
+class SemEmbasamentoCentral(SemFontesSuficientes):
+    """Ha fontes, mas nenhuma sustenta a ideia central da publicacao.
+
+    E um caso diferente de "nao achei nada": a busca trouxe material, ele so
+    nao sustenta a afirmacao que o texto existe para fazer. Publicar assim
+    produziria o pior resultado possivel — um texto que PARECE fundamentado,
+    com links e tudo, cuja tese ninguem verificou.
+
+    A geracao para aqui de proposito. Quem resolve e uma pessoa: acrescenta o
+    artigo de referencia que falta ao acervo, ou ajusta a pauta para algo que o
+    acervo sustente, e manda gerar de novo.
+
+    Subclasse de `SemFontesSuficientes` porque a saida e a mesma — o trabalho
+    para e alguem e avisado — e porque nenhum lugar que trata a falta de fontes
+    deve deixar este caso passar por engano.
     """
 
 
@@ -216,9 +234,13 @@ def aplicar_rascunho(
     article: Article, markdown_bruto: str, *, prompt_run: PromptRun | None = None
 ) -> Article:
     """Valida a saida do modelo, insere os links e converte para HTML."""
-    validar_saida_do_modelo(markdown_bruto)
+    validar_saida_do_modelo(markdown_bruto, max_marcadores=MAXIMO_DE_FONTES_NO_ARTIGO)
 
-    markdown_final = substituir_marcadores(markdown_bruto, fontes_para_substituicao(article))
+    markdown_final = substituir_marcadores(
+        markdown_bruto,
+        fontes_para_substituicao(article),
+        ao_final=article.link_placement == Article.LinkPlacement.END,
+    )
 
     dominios = _dominios_das_citacoes(article)
     html = markdown_para_html(markdown_final)
@@ -444,6 +466,16 @@ def aprovar_resposta_e_agendar(answer, *, revisor, quando, exige_revisor_tecnico
 MINIMO_DE_SECOES = 2
 MAXIMO_DE_SECOES = 8
 
+# Um tema por publicacao; dois no limite, quando sao faces do mesmo assunto.
+# Acima disso o texto nao responde bem a nenhum deles e, para busca organica,
+# compete consigo mesmo.
+MAXIMO_DE_TEMAS = 2
+
+# Poucas referencias, so as mais importantes. O formato imitado aqui e o de um
+# artigo de divulgacao bem apurado, nao o de uma tese: uma pagina cheia de
+# links de saida descaracteriza a curadoria e dilui o valor de cada um deles.
+MAXIMO_DE_FONTES_NO_ARTIGO = 2
+
 
 class PlanoInvalido(ValueError):
     """O planejamento nao devolveu algo utilizavel."""
@@ -455,6 +487,7 @@ class SecaoPlanejada:
     objetivo: str
     palavras_chave: list[str]
     fontes: list[int]
+    sustenta_ideia_central: bool = False
 
 
 @dataclass(frozen=True)
@@ -464,6 +497,9 @@ class PlanoDoArtigo:
     intencao: str
     publico: str
     secoes: list[SecaoPlanejada]
+    ideia_central: str = ""
+    temas: list[str] = field(default_factory=list)
+    fontes_da_ideia_central: list[int] = field(default_factory=list)
 
 
 def interpretar_plano(texto: str, *, total_de_fontes: int) -> PlanoDoArtigo:
@@ -509,8 +545,25 @@ def interpretar_plano(texto: str, *, total_de_fontes: int) -> PlanoDoArtigo:
                 objetivo=str(bruta.get("objetivo") or "").strip(),
                 palavras_chave=_textos(bruta.get("palavras_chave")),
                 fontes=fontes,
+                sustenta_ideia_central=bool(bruta.get("sustenta_ideia_central")),
             )
         )
+
+    ideia_central = str(dados.get("ideia_central") or "").strip()
+    fontes_centrais = [
+        n for n in _inteiros(dados.get("fontes_da_ideia_central")) if 1 <= n <= total_de_fontes
+    ]
+    temas = _textos(dados.get("temas"))
+
+    _exigir_embasamento_central(ideia_central, fontes_centrais, secoes)
+
+    # Tema demais nao invalida o plano — corta-se o excedente. A ideia central,
+    # essa sim, e uma so, e ja foi conferida acima.
+    if len(temas) > MAXIMO_DE_TEMAS:
+        logger.warning(
+            "O plano trouxe %s temas; mantidos os %s primeiros.", len(temas), MAXIMO_DE_TEMAS
+        )
+        temas = temas[:MAXIMO_DE_TEMAS]
 
     return PlanoDoArtigo(
         palavra_chave=str(dados.get("palavra_chave") or "").strip()[:120],
@@ -518,7 +571,42 @@ def interpretar_plano(texto: str, *, total_de_fontes: int) -> PlanoDoArtigo:
         intencao=str(dados.get("intencao") or "").strip()[:200],
         publico=str(dados.get("publico") or "").strip()[:200],
         secoes=secoes,
+        ideia_central=ideia_central,
+        temas=temas,
+        fontes_da_ideia_central=fontes_centrais,
     )
+
+
+def _exigir_embasamento_central(
+    ideia_central: str, fontes_centrais: list[int], secoes: list[SecaoPlanejada]
+) -> None:
+    """Recusa um plano cuja ideia central nao se apoia em fonte nenhuma.
+
+    Esta e a trava que o produto existe para ter. Os paragrafos secundarios
+    podem se apoiar em conhecimento geral — e legitimo e deixa o texto legivel.
+    A ideia central, nao: e a afirmacao que a publicacao faz, e um texto que a
+    faz sem fonte e exatamente o texto que parece fundamentado e nao e.
+
+    O caminho de saida nao e um texto pior. E parar, avisar, e alguem
+    acrescentar o artigo de referencia que falta.
+    """
+    if not ideia_central:
+        raise PlanoInvalido("o plano veio sem ideia central.")
+
+    if not fontes_centrais:
+        raise SemEmbasamentoCentral(
+            f"nenhuma das fontes recuperadas sustenta a ideia central "
+            f"({ideia_central!r}). Acrescente ao acervo um artigo de referencia "
+            f"sobre isso, ou ajuste a pauta para o que o acervo ja sustenta, e "
+            f"mande gerar de novo."
+        )
+
+    if not any(s.sustenta_ideia_central for s in secoes):
+        raise SemEmbasamentoCentral(
+            f"o plano nao marcou nenhuma secao como responsavel pela ideia "
+            f"central ({ideia_central!r}). Sem isso ela nao seria afirmada em "
+            f"lugar nenhum do texto, ou seria afirmada sem fonte."
+        )
 
 
 def _inteiros(valor) -> list[int]:
@@ -556,7 +644,16 @@ def aplicar_plano(article: Article, plano: PlanoDoArtigo, *, trechos) -> list:
     article.secondary_keywords = plano.palavras_secundarias
     article.audience = plano.publico
     article.search_intent = plano.intencao
-    article.save(update_fields=["focus_keyword", "secondary_keywords", "audience", "search_intent"])
+    article.central_idea = plano.ideia_central
+    article.save(
+        update_fields=[
+            "focus_keyword",
+            "secondary_keywords",
+            "audience",
+            "search_intent",
+            "central_idea",
+        ]
+    )
 
     # O numero da fonte no plano e a posicao dela na lista recuperada, que e a
     # mesma numeracao do marcador [[FONTE_n]]. Guardar o id resolve a traducao
@@ -571,6 +668,13 @@ def aplicar_plano(article: Article, plano: PlanoDoArtigo, *, trechos) -> list:
 
     criadas = []
     for ordem, secao in enumerate(plano.secoes, start=1):
+        fontes = list(secao.fontes)
+        if secao.sustenta_ideia_central:
+            # A secao que afirma a ideia central recebe, alem das suas, as
+            # fontes que sustentam essa ideia. Sem isso ela poderia ser escrita
+            # sem ter na frente aquilo que precisa citar.
+            fontes += [n for n in plano.fontes_da_ideia_central if n not in fontes]
+
         criadas.append(
             ArticleSection.objects.create(
                 article=article,
@@ -579,7 +683,8 @@ def aplicar_plano(article: Article, plano: PlanoDoArtigo, *, trechos) -> list:
                 heading=secao.titulo,
                 intent=secao.objetivo,
                 keywords=secao.palavras_chave,
-                chunk_ids=[por_numero[n] for n in secao.fontes if n in por_numero],
+                carries_central_idea=secao.sustenta_ideia_central,
+                chunk_ids=[por_numero[n] for n in fontes if n in por_numero],
             )
         )
     return criadas

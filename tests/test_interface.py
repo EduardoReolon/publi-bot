@@ -872,3 +872,57 @@ def test_excluir_autor_nao_apaga_a_assinatura_publicada(ambiente, artigo_para_re
     assert not Author.objects.exists()
     assert artigo_para_revisar.author_id is None
     assert artigo_para_revisar.author_name == "Dra. Souza"
+
+
+# ---------------------------------------------------------------------------
+# Posicao dos links e ideia central
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_posicao_dos_links_e_escolhida_no_painel_de_refazer(ambiente, artigo_para_revisar):
+    """E parametro de geracao, nao formatacao de tela: vale na proxima montagem
+    do texto."""
+    _, _, client = ambiente
+
+    client.post(
+        reverse(
+            "content:refazer_secoes", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"
+        ),
+        {"posicao_dos_links": Article.LinkPlacement.END, "refazer": []},
+    )
+
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.link_placement == Article.LinkPlacement.END
+
+
+@pytest.mark.django_db
+def test_valor_invalido_de_posicao_nao_muda_nada(ambiente, artigo_para_revisar):
+    _, _, client = ambiente
+
+    client.post(
+        reverse(
+            "content:refazer_secoes", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"
+        ),
+        {"posicao_dos_links": "no-rodape-piscando", "refazer": []},
+    )
+
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.link_placement == Article.LinkPlacement.INLINE
+
+
+@pytest.mark.django_db
+def test_revisao_mostra_a_ideia_central_e_o_que_ela_exige(ambiente, artigo_para_revisar):
+    """Quem revisa precisa saber qual frase e a que tem de estar embasada."""
+    _, _, client = ambiente
+    Article.objects.filter(pk=artigo_para_revisar.pk).update(
+        central_idea="A medida domiciliar reduz o efeito do jaleco branco."
+    )
+
+    resposta = client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    )
+    corpo = resposta.content.decode()
+
+    assert "A medida domiciliar reduz o efeito do jaleco branco." in corpo
+    assert "conhecimento geral" in corpo

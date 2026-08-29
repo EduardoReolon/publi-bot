@@ -204,6 +204,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "refazendo": _trabalho_em_curso(artigo),
         "site": site,
         "tem_autores": Author.objects.filter(is_active=True).exists(),
+        "posicoes_de_link": Article.LinkPlacement.choices,
         "proximo_horario": _proximo_horario(),
     }
 
@@ -374,12 +375,18 @@ def refazer_secoes(request: HttpRequest, pk) -> HttpResponse:
         messages.error(request, _("Ja ha um trabalho refazendo este artigo. Aguarde."))
         return redirect("content:revisar", pk=artigo.pk)
 
+    # Os parametros sao guardados ANTES da conferencia das secoes. Quem ajusta
+    # a palavra-chave e esquece de marcar uma secao nao pode perder o ajuste
+    # junto com o clique.
+    _guardar_parametros(request, artigo)
+
     ordens = {int(v) for v in request.POST.getlist("refazer") if v.isdigit()}
     if not ordens:
-        messages.error(request, _("Marque ao menos uma secao para refazer."))
+        messages.error(
+            request, _("Parametros salvos. Marque ao menos uma secao para refazer o texto.")
+        )
         return redirect("content:revisar", pk=artigo.pk)
 
-    _guardar_parametros(request, artigo)
     total = marcar_secoes_para_refazer(artigo, ordens)
 
     job = criar_job(kind=GenerationJob.Kind.ARTICLE_REDRAFT, target_object_id=str(artigo.pk))
@@ -456,6 +463,12 @@ def _guardar_parametros(request: HttpRequest, artigo: Article) -> None:
         if valor != getattr(artigo, nome):
             setattr(artigo, nome, valor[:200])
             campos.append(nome)
+
+    posicao = (request.POST.get("posicao_dos_links") or "").strip()
+    validas = {valor for valor, _ in Article.LinkPlacement.choices}
+    if posicao in validas and posicao != artigo.link_placement:
+        artigo.link_placement = posicao
+        campos.append("link_placement")
 
     if campos:
         artigo.save(update_fields=campos)

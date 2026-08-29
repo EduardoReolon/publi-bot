@@ -349,6 +349,31 @@ class Article(models.Model):
     audience = models.CharField(_("publico"), max_length=200, blank=True)
     search_intent = models.CharField(_("intencao de busca"), max_length=200, blank=True)
 
+    # A afirmacao que o artigo inteiro sustenta, em uma frase. Um tema por
+    # publicacao (dois no limite): texto que abraca cinco temas nao responde
+    # bem a nenhum deles, e para busca organica compete consigo mesmo.
+    #
+    # Ela e o que precisa estar ESTRITAMENTE embasado num artigo de referencia.
+    # Os paragrafos ao redor podem se apoiar em conhecimento geral; a ideia
+    # central, nao. Sem embasamento para ela, a geracao para — ver
+    # `SemEmbasamentoCentral`.
+    central_idea = models.TextField(_("ideia central"), blank=True)
+
+    class LinkPlacement(models.TextChoices):
+        INLINE = "inline", _("No meio do texto")
+        END = "end", _("So no final")
+
+    # Onde os links das referencias aparecem. Nao e estetica: link no meio do
+    # texto tira o leitor da pagina no meio do raciocinio, e uma lista ao final
+    # mantem a leitura inteira. Os dois formatos sao legitimos, e quem decide e
+    # quem conhece o publico do site.
+    link_placement = models.CharField(
+        _("posicao dos links"),
+        max_length=8,
+        choices=LinkPlacement.choices,
+        default=LinkPlacement.INLINE,
+    )
+
     # Saida estruturada do filtro de consenso.
     thesis_json = models.JSONField(_("tese"), default=dict, blank=True)
     consensus = models.CharField(
@@ -543,6 +568,11 @@ class ArticleSection(models.Model):
     # duas secoes de dizerem a mesma coisa sem nenhuma delas ver a outra.
     intent = models.TextField(_("objetivo"), blank=True)
     keywords = models.JSONField(_("palavras-chave"), default=list, blank=True)
+
+    # Esta secao carrega a ideia central do artigo? Nas que carregam, a
+    # afirmacao precisa sair com marcador de fonte: e a unica parte do texto em
+    # que conhecimento proprio nao serve.
+    carries_central_idea = models.BooleanField(_("sustenta a ideia central"), default=False)
 
     # Quais fontes cabem a esta secao. Guardado por id para o passo re-entrar
     # pelo banco, como todo o resto do orquestrador.

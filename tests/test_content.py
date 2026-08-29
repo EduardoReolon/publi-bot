@@ -170,6 +170,42 @@ def test_substituicao_usa_a_url_do_banco():
     assert md == "De acordo com [Silva et al., 2024](https://pubmed.gov/1), o achado..."
 
 
+def test_links_ao_final_preservam_a_frase_e_listam_no_fim():
+    """Link no meio do paragrafo tira o leitor da pagina no meio do raciocinio.
+    Apagar o marcador deixaria buracos do tipo "conforme , o efeito"."""
+    from apps.content.rendering import TITULO_DAS_REFERENCIAS
+
+    fontes = {1: Fonte(url="https://pubmed.gov/1", anchor="Silva et al., 2024")}
+    md = substituir_marcadores("De acordo com [[FONTE_1]], o achado...", fontes, ao_final=True)
+
+    corpo, _, referencias = md.partition(f"## {TITULO_DAS_REFERENCIAS}")
+    assert corpo.strip() == "De acordo com Silva et al., 2024, o achado..."
+    assert "https://pubmed.gov/1" not in corpo
+    assert "- [Silva et al., 2024](https://pubmed.gov/1)" in referencias
+
+
+def test_sem_marcador_nenhum_nao_sai_lista_de_referencias():
+    """Uma secao 'Referencias' vazia no fim do texto e pior que nenhuma."""
+    from apps.content.rendering import TITULO_DAS_REFERENCIAS
+
+    md = substituir_marcadores("Texto sem citacao.", {}, ao_final=True)
+
+    assert TITULO_DAS_REFERENCIAS not in md
+
+
+def test_cada_fonte_aparece_uma_vez_na_lista_final():
+    fontes = {
+        1: Fonte(url="https://a.org", anchor="A, 2024"),
+        2: Fonte(url="https://b.org", anchor="B, 2023"),
+    }
+    md = substituir_marcadores(
+        "Um [[FONTE_1]]. Dois [[FONTE_2]]. Tres [[FONTE_1]].", fontes, ao_final=True
+    )
+
+    assert md.count("- [A, 2024]") == 1
+    assert md.count("- [B, 2023]") == 1
+
+
 def test_marcador_sem_fonte_correspondente_falha():
     with pytest.raises(MarcadorSemFonte, match="FONTE_9"):
         substituir_marcadores("[[FONTE_9]]", {1: Fonte(url="https://a.org", anchor="A")})

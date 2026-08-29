@@ -125,13 +125,24 @@ def validar_saida_do_modelo(texto: str, *, max_marcadores: int = 2) -> list[int]
     return distintos
 
 
-def substituir_marcadores(texto: str, fontes: dict[int, Fonte]) -> str:
+# Titulo da lista de referencias, quando os links vao para o fim do texto.
+TITULO_DAS_REFERENCIAS = "Referencias"
+
+
+def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: bool = False) -> str:
     """Troca `[[FONTE_N]]` por Markdown de link, com URL vinda do banco.
 
     Esta e a unica funcao do sistema que insere uma URL num texto gerado. A URL
     vem de `fontes`, montado a partir de documentos confirmados por humano —
     nunca de algo que o modelo tenha produzido.
+
+    Com `ao_final`, o marcador vira o nome da fonte em texto simples e os links
+    saem numa lista no fim. E a mesma atribuicao, em outro lugar: link no meio
+    do paragrafo tira o leitor da pagina no meio do raciocinio. O texto da
+    frase e preservado nos dois modos — apagar o marcador deixaria buracos do
+    tipo "conforme , o efeito".
     """
+    usadas: list[int] = []
 
     def trocar(achado: re.Match) -> str:
         indice = int(achado.group(1))
@@ -141,11 +152,21 @@ def substituir_marcadores(texto: str, fontes: dict[int, Fonte]) -> str:
                 f"o texto cita [[FONTE_{indice}]], mas essa fonte nao esta entre "
                 f"as recuperadas ({sorted(fontes)})."
             )
+        if indice not in usadas:
+            usadas.append(indice)
+        if ao_final:
+            return fonte.anchor
         # Sem `rel="nofollow"`: a ausencia do atributo E o comportamento
         # desejado. Nao existe `rel="dofollow"` em HTML — e um engano comum.
         return f"[{fonte.anchor}]({fonte.url})"
 
-    return PADRAO_MARCADOR.sub(trocar, texto)
+    corpo = PADRAO_MARCADOR.sub(trocar, texto)
+
+    if not ao_final or not usadas:
+        return corpo
+
+    itens = "\n".join(f"- [{fontes[i].anchor}]({fontes[i].url})" for i in usadas)
+    return f"{corpo}\n\n## {TITULO_DAS_REFERENCIAS}\n\n{itens}"
 
 
 def markdown_para_html(texto: str) -> str:

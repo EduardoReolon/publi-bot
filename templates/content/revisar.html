@@ -156,6 +156,18 @@
           <label for="intencao">{% translate "Intencao de busca" %}</label>
           <input type="text" name="intencao" id="intencao" value="{{ artigo.search_intent }}">
         </div>
+        <div>
+          <label for="posicao_dos_links">{% translate "Posicao dos links" %}</label>
+          <select name="posicao_dos_links" id="posicao_dos_links">
+            {% for valor, rotulo in posicoes_de_link %}
+              <option value="{{ valor }}"
+                {% if artigo.link_placement == valor %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+          </select>
+          <div class="ajuda">
+            {% translate "Vale a partir da proxima montagem do texto." %}
+          </div>
+        </div>
       </div>
 
       <div class="aviso">
@@ -275,6 +287,18 @@
             <li class="vazio">{% translate "Nenhuma citacao registrada." %}</li>
           {% endfor %}
         </ul>
+
+        {% if artigo.central_idea %}
+          <h2>{% translate "Ideia central" %}</h2>
+          <p class="pre-visualizacao">{{ artigo.central_idea }}</p>
+          <p class="ajuda">
+            {% blocktranslate trimmed %}
+              E a unica parte do texto que precisa sair de um artigo de
+              referencia. Os paragrafos ao redor podem se apoiar em
+              conhecimento geral da area.
+            {% endblocktranslate %}
+          </p>
+        {% endif %}
 
         {% if artigo.thesis_json.tese %}
           <h2>{% translate "Tese consolidada" %}</h2>

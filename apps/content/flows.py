@@ -259,6 +259,7 @@ def passo_redigir_secoes(job: GenerationJob):
             "esqueleto": esqueleto_do_artigo(article, exceto=secao),
             "fontes": montar_contexto_das_fontes(trechos),
             "idioma": _idioma(site),
+            "aviso_da_ideia_central": _aviso_da_ideia_central(article, secao),
         },
         site=site,
         job=job,
@@ -267,7 +268,8 @@ def passo_redigir_secoes(job: GenerationJob):
     # A validacao de link roda por secao, e nao so na montagem: uma URL escrita
     # pelo modelo precisa derrubar a secao que a produziu, e nao um artigo
     # inteiro que ja custou cinco outras chamadas.
-    validar_saida_do_modelo(resultado.texto)
+    usadas = validar_saida_do_modelo(resultado.texto)
+    _exigir_fonte_na_secao_central(secao, usadas)
 
     secao.body_markdown = resultado.texto.strip()
     secao.status = ArticleSection.Status.WRITTEN
@@ -289,6 +291,48 @@ def passo_redigir_secoes(job: GenerationJob):
         "secoes_totais": article.sections.count(),
     }
     return progresso if restantes == 0 else Continuar(progresso)
+
+
+def _aviso_da_ideia_central(article: Article, secao) -> str:
+    """O que o prompt da secao precisa saber sobre a ideia central do artigo.
+
+    So a secao que a carrega recebe a exigencia de citar. Mandar a mesma
+    instrucao para todas produziria um texto com marcador em cada paragrafo —
+    que e a cara de trabalho academico que o formato justamente evita.
+    """
+    if not secao.carries_central_idea:
+        return (
+            "Esta secao apoia a ideia central do artigo, mas nao e onde ela e "
+            "afirmada. Escreva de forma informativa; use marcador de fonte "
+            "apenas se citar um dado especifico."
+        )
+
+    ideia = article.central_idea or article.title
+    return (
+        f"ESTA SECAO CARREGA A IDEIA CENTRAL DA PUBLICACAO: {ideia}\n"
+        f"Afirme-a explicitamente aqui, e marque a fonte que a sustenta com "
+        f"[[FONTE_N]]. Sem esse marcador o texto sera recusado."
+    )
+
+
+def _exigir_fonte_na_secao_central(secao, fontes_usadas: list[int]) -> None:
+    """A secao da ideia central sai com fonte, ou nao sai.
+
+    Erro comum e silencioso: o modelo escreve uma secao boa, fluente, e afirma
+    a tese sem citar nada. O texto passa por todas as outras travas — nao tem
+    URL solta, nao tem marcador invalido — e chega a revisao parecendo
+    fundamentado. Aqui ele nao chega.
+
+    E `ValueError` e nao `SemEmbasamentoCentral` de proposito: a fonte EXISTE
+    (o plano ja conferiu isso), o modelo e que nao a usou. Isso e falha de
+    geracao, e o orquestrador deve tentar de novo.
+    """
+    if secao.carries_central_idea and not fontes_usadas:
+        raise ValueError(
+            f"a secao {secao.heading!r} carrega a ideia central e saiu sem "
+            f"nenhum marcador de fonte. A afirmacao central da publicacao nao "
+            f"pode ficar sem embasamento."
+        )
 
 
 def passo_abertura_e_fecho(job: GenerationJob) -> dict:

@@ -31,6 +31,30 @@ REGRA_DOS_LINKS = (
     "recusado e o texto descartado."
 )
 
+# A regra que separa este produto de um gerador de texto qualquer.
+#
+# Exigir fonte para CADA frase produz texto travado, cheio de citacao, com cara
+# de trabalho academico — que e exatamente o que o formato nao e. Nao exigir
+# fonte para nada produz texto que PARECE fundamentado e nao e, que e pior.
+#
+# A divisao e por funcao da frase: a afirmacao que o texto existe para fazer
+# precisa de fonte; o que a cerca — contexto, definicao, consequencia pratica —
+# pode vir de conhecimento geral, desde que nao invente numero nem resultado.
+REGRA_DO_EMBASAMENTO = (
+    "Embasamento — leia com atencao, e a regra mais importante:\n"
+    "- A AFIRMACAO CENTRAL (o que o texto existe para dizer) precisa sair das "
+    "fontes fornecidas e levar o marcador da fonte que a sustenta. Nunca a "
+    "afirme por conhecimento proprio.\n"
+    "- Os PARAGRAFOS SECUNDARIOS (contexto, definicao de um termo, por que isso "
+    "importa, consequencia pratica) podem se apoiar em conhecimento geral da "
+    "area. Nao precisam de fonte nem de marcador.\n"
+    "- Mesmo no conhecimento geral: NUNCA invente numero, percentual, resultado "
+    "de estudo, dose ou data. Dado especifico so aparece se estiver na fonte, e "
+    "entao com marcador.\n"
+    "- Na duvida entre afirmar sem fonte e escrever uma frase mais geral, "
+    "escreva a mais geral."
+)
+
 
 PROMPTS_INICIAIS: dict[str, dict] = {
     "consensus_filter": {
@@ -69,9 +93,8 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "especialistas, sem sensacionalismo.\n\n"
             f"{AVISO_DE_DELIMITADOR}\n\n"
             f"{REGRA_DOS_LINKS}\n\n"
+            f"{REGRA_DO_EMBASAMENTO}\n\n"
             "Regras de conteudo:\n"
-            "- Escreva SOMENTE o que as fontes sustentam. Nao complete lacunas "
-            "com conhecimento proprio.\n"
             "- Nao indique posologia, dose, marca comercial nem promessa de "
             "resultado.\n"
             "- Nao se dirija ao leitor no imperativo sobre a propria saude "
@@ -107,6 +130,13 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Voce planeja artigos de conteudo tecnico para busca organica.\n\n"
             f"{AVISO_DE_DELIMITADOR}\n\n"
             "Responda SOMENTE com um objeto JSON, sem texto antes ou depois:\n"
+            '  "ideia_central": em UMA frase, a afirmacao que a publicacao '
+            "inteira existe para fazer;\n"
+            '  "fontes_da_ideia_central": os NUMEROS das fontes que sustentam '
+            "essa afirmacao. Se nenhuma fonte a sustentar, devolva lista "
+            "vazia — nao force;\n"
+            '  "temas": 1 tema, no maximo 2, e so se forem faces do mesmo '
+            "assunto;\n"
             '  "palavra_chave": o termo principal, do jeito que alguem digitaria;\n'
             '  "palavras_secundarias": 3 a 6 termos relacionados que o texto '
             "deve cobrir;\n"
@@ -114,7 +144,16 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "comparar, decidir, resolver);\n"
             '  "publico": para quem o texto e escrito;\n'
             '  "secoes": lista de 3 a 6 objetos {titulo, objetivo, '
-            "palavras_chave, fontes}.\n\n"
+            "palavras_chave, fontes, sustenta_ideia_central}.\n\n"
+            "Sobre a ideia central:\n"
+            "- E uma so. Um texto que abraca cinco temas nao responde bem a "
+            "nenhum deles.\n"
+            "- Ela precisa estar sustentada por fonte. Se as fontes nao "
+            'sustentarem a afirmacao, devolva "fontes_da_ideia_central" vazia: '
+            "o trabalho para e uma pessoa acrescenta a referencia que falta. "
+            "Isso e melhor que inventar sustentacao.\n"
+            '- Pelo menos uma secao precisa ter "sustenta_ideia_central": true '
+            "— e a secao onde a afirmacao e feita.\n\n"
             "Sobre as secoes:\n"
             '- "titulo" e o H2 como aparecera no artigo. Escreva-o como a '
             "pessoa pensa a duvida, nao como um indice academico "
@@ -127,6 +166,9 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Regras duras:\n"
             "- Nao planeje secao que as fontes nao sustentam. Menos secoes com "
             "fundamento e melhor que mais secoes vazias.\n"
+            "- Poucas referencias, so as mais importantes. O texto e uma "
+            "publicacao de divulgacao bem apurada, nao uma tese: nao planeje "
+            "uma secao por artigo lido.\n"
             "- Nao crie secao de introducao nem de conclusao: elas sao escritas "
             "separadamente, depois.\n"
             "- Nao repita a palavra-chave em todos os titulos. Isso e sinal de "
@@ -152,6 +194,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "esqueleto",
             "fontes",
             "idioma",
+            "aviso_da_ideia_central",
         ],
         "temperatura": 0.4,
         "sistema": (
@@ -159,9 +202,8 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "especialistas. Escreve bem porque escreve pouco de cada vez.\n\n"
             f"{AVISO_DE_DELIMITADOR}\n\n"
             f"{REGRA_DOS_LINKS}\n\n"
+            f"{REGRA_DO_EMBASAMENTO}\n\n"
             "Regras de conteudo:\n"
-            "- Escreva SOMENTE o que as fontes desta secao sustentam. Nao "
-            "complete lacunas com conhecimento proprio.\n"
             "- Responda ao objetivo da secao e pare. O esqueleto mostra o que as "
             "outras secoes cobrem: nao invada o assunto delas.\n"
             "- Nao indique posologia, dose, marca comercial nem promessa de "
@@ -185,7 +227,8 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "{esqueleto}\n\n"
             "SECAO A ESCREVER: {titulo_da_secao}\n"
             "Objetivo: {objetivo}\n"
-            "Palavras-chave desta secao: {palavras_chave}\n\n"
+            "Palavras-chave desta secao: {palavras_chave}\n"
+            "{aviso_da_ideia_central}\n"
             "Fontes desta secao:\n\n{fontes}\n\n"
             "Escreva o corpo da secao."
         ),
