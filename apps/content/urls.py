@@ -18,6 +18,10 @@ urlpatterns = [
     path("artigos/<uuid:pk>/secoes/", views.salvar_secoes, name="salvar_secoes"),
     path("artigos/<uuid:pk>/refazer/", views.refazer_secoes, name="refazer_secoes"),
     path("artigos/<uuid:pk>/replanejar/", views.replanejar, name="replanejar"),
+    path("artigos/<uuid:pk>/capas/", views.gerar_capas, name="gerar_capas"),
+    path("artigos/<uuid:pk>/capas/escolher/", views.escolher_capa, name="escolher_capa"),
+    # Sem sessao: quem busca e o site de destino, do outro lado da internet.
+    path("capas/<uuid:pk>.webp", views.capa_publica, name="capa_publica"),
     path("autores/", views.autores, name="autores"),
     path("autores/novo/", views.editar_autor, name="novo_autor"),
     path("autores/<uuid:pk>/", views.editar_autor, name="editar_autor"),

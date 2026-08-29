@@ -647,6 +647,72 @@ class ArticleCitation(models.Model):
         return f"#{self.rank} {self.source_title[:40]}"
 
 
+class ArticleImage(models.Model):
+    """Uma opcao de imagem de capa, entre varias.
+
+    Sao geradas em LOTES de tres, e nao uma de cada vez, porque escolher exige
+    comparar. Com uma opcao unica a revisao vira "aceita ou pede de novo": mais
+    lenta, e o resultado tende a ser a primeira que nao incomodou, nao a
+    melhor.
+
+    Nenhuma e descartada automaticamente. Pedir mais exemplos acrescenta um
+    lote; as opcoes antigas continuam a mesa, porque a terceira do primeiro
+    lote pode ser melhor que tudo o que veio depois.
+
+    O arquivo ja e WebP: a conversao acontece na entrada, aqui como em qualquer
+    outra imagem do sistema (ver `apps/content/imagens.py`).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    article = models.ForeignKey(
+        "content.Article", on_delete=models.CASCADE, related_name="images", verbose_name=_("artigo")
+    )
+
+    # Qual rodada de geracao produziu esta opcao. A tela agrupa por lote para
+    # que se veja o que mudou quando a pessoa pediu mais exemplos.
+    batch = models.PositiveSmallIntegerField(_("lote"), default=1)
+    order = models.PositiveSmallIntegerField(_("ordem"))
+
+    # O texto que gerou a imagem. Guardado por opcao, e nao por artigo: pedir
+    # mais exemplos pode mudar a descricao, e sem isto seria impossivel saber
+    # qual texto produziu qual resultado.
+    prompt = models.TextField(_("descricao usada"), blank=True)
+    image = models.ImageField(_("imagem"), upload_to="capas/%Y/%m/")
+    alt_text = models.CharField(_("texto alternativo"), max_length=300, blank=True)
+
+    is_chosen = models.BooleanField(_("escolhida"), default=False)
+    prompt_run = models.ForeignKey(
+        PromptRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="images",
+        verbose_name=_("execucao"),
+    )
+    created_at = models.DateTimeField(_("criada em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("imagem do artigo")
+        verbose_name_plural = _("imagens do artigo")
+        ordering = ["article", "batch", "order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["article", "batch", "order"], name="uniq_imagem_lote_ordem"
+            ),
+            # Uma capa por artigo. Sem isto, duas marcadas ao mesmo tempo
+            # fariam a publicacao escolher pela ordem do banco — e a escolha da
+            # pessoa seria ignorada em silencio.
+            models.UniqueConstraint(
+                fields=["article"],
+                condition=models.Q(is_chosen=True),
+                name="uma_capa_escolhida_por_artigo",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Capa {self.batch}.{self.order} de {self.article}"
+
+
 class Question(models.Model):
     """Duvida deixada por um visitante do site.
 

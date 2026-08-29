@@ -199,6 +199,54 @@
     </div>
   {% endif %}
 
+    <h2>{% translate "Capa" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        As opcoes vem em lotes de tres, porque escolher exige comparar. Nada e
+        descartado: a melhor pode ser a do primeiro lote. O artigo so leva capa
+        se voce escolher uma.
+      {% endblocktranslate %}
+    </p>
+
+    {% for lote in lotes_de_capa %}
+      <h3>{% blocktranslate with n=lote.numero %}Lote {{ n }}{% endblocktranslate %}</h3>
+      <form method="post" action="{% url 'content:escolher_capa' artigo.pk %}">
+        {% csrf_token %}
+        <div class="cartoes">
+          {% for opcao in lote.opcoes %}
+            <div class="{% if opcao.is_chosen %}escolhida{% endif %}">
+              <img src="{{ opcao.image.url }}" alt="{{ opcao.alt_text }}"
+                   style="width:100%; border-radius:6px">
+              {% if opcao.is_chosen %}
+                <p><span class="selo ok">{% translate "esta e a capa" %}</span></p>
+              {% else %}
+                <button type="submit" name="imagem" value="{{ opcao.pk }}"
+                        class="botao secundario">
+                  {% translate "Usar esta" %}
+                </button>
+              {% endif %}
+              <div class="pre-visualizacao">{{ opcao.prompt|truncatechars:120 }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </form>
+    {% empty %}
+      <p class="vazio">{% translate "Nenhuma opcao de capa gerada ainda." %}</p>
+    {% endfor %}
+
+    <form method="post" action="{% url 'content:gerar_capas' artigo.pk %}">
+      {% csrf_token %}
+      <div class="acoes">
+        <button type="submit" class="botao secundario">
+          {% if lotes_de_capa %}
+            {% translate "Gerar mais tres exemplos" %}
+          {% else %}
+            {% translate "Gerar tres opcoes de capa" %}
+          {% endif %}
+        </button>
+      </div>
+    </form>
+
   {% if titulos_sugeridos %}
     <h2>{% translate "Titulos sugeridos" %}</h2>
     <p class="pre-visualizacao">

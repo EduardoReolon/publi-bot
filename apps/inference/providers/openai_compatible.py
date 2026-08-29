@@ -12,6 +12,8 @@ import time
 import httpx
 
 from apps.inference.providers.base import (
+    ImageClient,
+    ImagemGerada,
     LLMClient,
     LLMResponse,
     ProviderPermanentError,
@@ -105,6 +107,110 @@ class OpenAICompatibleClient(LLMClient):
         if resposta.status_code in STATUS_TERMINAIS:
             raise ProviderPermanentError(f"HTTP {resposta.status_code}: {detalhe}")
         raise ProviderTransientError(f"HTTP {resposta.status_code}: {detalhe}")
+
+    def health(self) -> bool:
+        try:
+            with httpx.Client(timeout=10.0, verify=True) as cliente:
+                return cliente.get(f"{self.base_url}/v1/models", headers=self._headers()).is_success
+        except httpx.HTTPError:
+            return False
+
+
+class OpenAICompatibleImageClient(ImageClient):
+    """Geracao de imagem por `POST /v1/images/generations`.
+
+    Mesma escolha do adaptador de texto: uma unica implementacao cobre OpenAI,
+    LocalAI, e os varios servidores locais que expoem a rota compativel.
+
+    Duas particularidades do formato, ambas com consequencia pratica:
+
+    **`n` nem sempre e respeitado.** Alguns modelos (o dall-e-3 e o caso
+    conhecido) recusam `n > 1` ou simplesmente devolvem uma imagem so. Como o
+    ponto aqui e ter opcoes para comparar, o cliente completa o que faltou com
+    chamadas adicionais em vez de devolver menos do que foi pedido.
+
+    **`b64_json`, nao `url`.** A alternativa devolve um link temporario do
+    provedor que expira em cerca de uma hora; guardar esse link levaria a uma
+    imagem quebrada no artigo dias depois, na hora da publicacao.
+    """
+
+    def _headers(self) -> dict[str, str]:
+        cabecalhos = {"Content-Type": "application/json"}
+        if self.api_key:
+            cabecalhos["Authorization"] = f"Bearer {self.api_key}"
+        return cabecalhos
+
+    def generate(
+        self, *, model: str, prompt: str, quantidade: int = 3, tamanho: str = "1024x1024"
+    ) -> list[ImagemGerada]:
+        imagens: list[ImagemGerada] = []
+
+        # Pede tudo de uma vez e completa o que faltar. Nao da para saber de
+        # antemao se o modelo aceita `n > 1` — descobrir custa uma chamada — e
+        # o pior caso (uma imagem por chamada) fecha em `quantidade` chamadas,
+        # que e o limite do laco.
+        for _ in range(quantidade):
+            faltam = quantidade - len(imagens)
+            if faltam <= 0:
+                break
+            lote = self._chamar(model=model, prompt=prompt, n=faltam, tamanho=tamanho)
+            if not lote:
+                break
+            imagens.extend(lote[:faltam])
+
+        if not imagens:
+            raise ProviderPermanentError(
+                f"{self.base_url} nao devolveu nenhuma imagem para o modelo {model!r}."
+            )
+        return imagens
+
+    def _chamar(self, *, model: str, prompt: str, n: int, tamanho: str) -> list[ImagemGerada]:
+        import base64
+
+        corpo = {
+            "model": model,
+            "prompt": prompt,
+            "n": n,
+            "size": tamanho,
+            "response_format": "b64_json",
+        }
+
+        try:
+            with httpx.Client(timeout=self.timeout, verify=True) as cliente:
+                resposta = cliente.post(
+                    f"{self.base_url}/v1/images/generations",
+                    json=corpo,
+                    headers=self._headers(),
+                )
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+            raise ProviderTransientError(
+                f"nao foi possivel falar com {self.base_url}: {exc}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderTransientError(str(exc)) from exc
+
+        self._levantar_se_erro(resposta)
+        dados = resposta.json()
+
+        geradas = []
+        for item in dados.get("data") or []:
+            bruto = item.get("b64_json")
+            if not bruto:
+                continue
+            try:
+                conteudo = base64.b64decode(bruto)
+            except (ValueError, TypeError) as exc:
+                raise ProviderPermanentError(
+                    f"{self.base_url} devolveu b64_json invalido."
+                ) from exc
+            geradas.append(
+                ImagemGerada(conteudo=conteudo, prompt_revisado=item.get("revised_prompt", ""))
+            )
+        return geradas
+
+    @staticmethod
+    def _levantar_se_erro(resposta: httpx.Response) -> None:
+        OpenAICompatibleClient._levantar_se_erro(resposta)
 
     def health(self) -> bool:
         try:

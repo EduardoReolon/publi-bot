@@ -37,6 +37,48 @@ class LLMResponse:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ImagemGerada:
+    """Uma opcao de imagem, como o provedor a devolveu.
+
+    Bytes crus e nao caminho de arquivo: quem grava decide o formato (WebP,
+    sempre) e o lugar. O provedor so entrega pixels.
+    """
+
+    conteudo: bytes
+    formato: str = ""
+    prompt_revisado: str = ""
+
+
+class ImageClient(ABC):
+    """Interface de geracao de imagem.
+
+    Separada de `LLMClient` porque a assinatura nao cabe: uma chamada de imagem
+    devolve VARIAS opcoes, nao um texto, e nao tem contagem de tokens. Forcar as
+    duas na mesma interface produziria parametros ignorados dos dois lados.
+    """
+
+    def __init__(self, *, base_url: str, api_key: str | None = None, timeout: float = 300.0):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.timeout = timeout
+
+    @abstractmethod
+    def generate(
+        self, *, model: str, prompt: str, quantidade: int = 3, tamanho: str = "1024x1024"
+    ) -> list[ImagemGerada]:
+        """Gera `quantidade` opcoes DIFERENTES para o mesmo texto.
+
+        Varias de uma vez, e nao uma: escolher exige comparar. Uma opcao unica
+        transforma a revisao em "aceita ou pede de novo", que e mais lento e
+        entrega pior.
+        """
+
+    @abstractmethod
+    def health(self) -> bool:
+        """Se o endpoint responde."""
+
+
 class LLMClient(ABC):
     """Interface que todo provedor implementa."""
 
@@ -92,6 +134,29 @@ def get_provider(connection, *, timeout: float | None = None) -> LLMClient:
         )
 
     return classe(
+        base_url=connection.base_url,
+        api_key=decifrar_chave(connection),
+        timeout=timeout if timeout is not None else 300.0,
+    )
+
+
+def get_image_provider(connection, *, timeout: float | None = None) -> ImageClient:
+    """Instancia o adaptador de imagem de uma conexao.
+
+    Espelha `get_provider`, e pelo mesmo motivo: este e o unico lugar que sabe
+    qual classe atende qual tipo de conexao.
+    """
+    from apps.inference.models import InferenceConnection
+    from apps.inference.providers.openai_compatible import OpenAICompatibleImageClient
+    from apps.inference.security import decifrar_chave
+
+    if connection.kind != InferenceConnection.Kind.IMAGE:
+        raise ProviderPermanentError(
+            f"A conexao {connection.name!r} e do tipo {connection.kind!r}, que nao "
+            f"gera imagem. Cadastre uma conexao do tipo 'image'."
+        )
+
+    return OpenAICompatibleImageClient(
         base_url=connection.base_url,
         api_key=decifrar_chave(connection),
         timeout=timeout if timeout is not None else 300.0,

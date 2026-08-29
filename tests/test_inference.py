@@ -251,3 +251,88 @@ def test_liberar_expiradas_conta_quantas(conexao_gpu):
     )
     assert liberar_expiradas() == 1
     assert liberar_expiradas() == 0
+
+
+# ---------------------------------------------------------------------------
+# Adaptador de geracao de imagem
+# ---------------------------------------------------------------------------
+
+
+def _resposta_de_imagens(quantas: int) -> dict:
+    import base64
+
+    return {
+        "data": [
+            {"b64_json": base64.b64encode(f"png-{i}".encode()).decode()} for i in range(quantas)
+        ]
+    }
+
+
+def _cliente_de_imagem(monkeypatch, respostas: list[dict]):
+    """Instala um httpx.Client falso que devolve as respostas em ordem."""
+    import httpx
+
+    from apps.inference.providers.openai_compatible import OpenAICompatibleImageClient
+
+    corpos_enviados: list[dict] = []
+    restantes = list(respostas)
+
+    class ClienteFalso:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            corpos_enviados.append(json)
+            dados = restantes.pop(0) if restantes else {"data": []}
+            return httpx.Response(200, json=dados, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("httpx.Client", ClienteFalso)
+    return OpenAICompatibleImageClient(base_url="https://gpu.exemplo.org"), corpos_enviados
+
+
+def test_pede_b64_e_nao_url(monkeypatch):
+    """A alternativa devolve um link do provedor que expira em cerca de uma
+    hora; guarda-lo levaria a uma imagem quebrada na hora da publicacao."""
+    cliente, enviados = _cliente_de_imagem(monkeypatch, [_resposta_de_imagens(3)])
+
+    cliente.generate(model="m", prompt="uma cena", quantidade=3)
+
+    assert enviados[0]["response_format"] == "b64_json"
+    assert enviados[0]["n"] == 3
+
+
+def test_provedor_que_ignora_n_ainda_entrega_o_lote(monkeypatch):
+    """Alguns modelos recusam `n > 1` ou devolvem uma imagem so. O ponto e ter
+    opcoes para comparar."""
+    cliente, enviados = _cliente_de_imagem(
+        monkeypatch, [_resposta_de_imagens(1), _resposta_de_imagens(1), _resposta_de_imagens(1)]
+    )
+
+    imagens = cliente.generate(model="m", prompt="uma cena", quantidade=3)
+
+    assert len(imagens) == 3
+    # Tres chamadas, pedindo o que ainda faltava em cada uma.
+    assert [c["n"] for c in enviados] == [3, 2, 1]
+
+
+def test_o_laco_nao_gira_para_sempre_quando_o_provedor_nao_devolve_nada(monkeypatch):
+    from apps.inference.providers.base import ProviderPermanentError
+
+    cliente, _ = _cliente_de_imagem(monkeypatch, [{"data": []}])
+
+    with pytest.raises(ProviderPermanentError, match="nenhuma imagem"):
+        cliente.generate(model="m", prompt="uma cena", quantidade=3)
+
+
+def test_conexao_de_texto_nao_serve_para_imagem(db, conexao_gpu):
+    """Este e o unico lugar que sabe qual classe atende qual tipo."""
+    from apps.inference.providers.base import ProviderPermanentError, get_image_provider
+
+    with pytest.raises(ProviderPermanentError, match="nao"):
+        get_image_provider(conexao_gpu)

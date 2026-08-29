@@ -118,6 +118,22 @@ publicacao.
 Redimensionar dentro da requisicao estoura o tempo limite de leitura e faz o
 arquivo ser reenviado.
 
+## Imagem de capa
+
+`cover_image` chega **por referencia**, com `url`, `sha256` e `mime_type`.
+Baixe o arquivo, confira o digest, e sirva a imagem do seu proprio dominio —
+nao faca `hotlink` da URL recebida.
+
+A URL aponta para o PubliBot e e publica de proposito: quem a busca e o seu
+servidor, sem credencial. Ela e um UUID nao enumeravel, e o PubliBot so serve
+por ela a imagem **escolhida por uma pessoa** de um artigo **ja aprovado**. As
+outras opcoes de capa e o restante da midia (os PDFs do acervo) nao sao
+alcancaveis por URL.
+
+**O campo pode nao vir.** Nenhuma capa e escolhida automaticamente — se
+ninguem escolheu, o artigo chega sem `cover_image`, e nao com um objeto vazio.
+Trate a ausencia como normal.
+
 ## Imagens: sempre WebP
 
 **Toda imagem que trafega neste contrato e WebP**, seja por referencia

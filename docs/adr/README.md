@@ -30,3 +30,4 @@ de quem decidiu com a informacao daquele momento.
 | [0016](ADR-0016-limiar-por-tenant-e-saude-da-busca.md) | Limiar por tenant, e observabilidade em vez de auto-ajuste | Aceito |
 | [0017](ADR-0017-autor-cadastrado-e-foto-em-duas-etapas.md) | Autor cadastrado no PubliBot, foto em duas etapas, imagem sempre WebP | Aceito |
 | [0018](ADR-0018-embasamento-da-ideia-central.md) | Embasamento estrito da ideia central, liberdade nos secundarios | Aceito |
+| [0019](ADR-0019-tres-opcoes-de-capa.md) | Tres opcoes de capa, escolhidas por uma pessoa | Aceito |

@@ -28,6 +28,8 @@ from apps.content.services import (
     aprovar_resposta_e_agendar,
 )
 from apps.content.tasks import gerar_artigo, responder_pergunta
+from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+from apps.ops.orchestrator import PassoAdiado
 
 logger = logging.getLogger("publibot.content")
 
@@ -205,8 +207,23 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "site": site,
         "tem_autores": Author.objects.filter(is_active=True).exists(),
         "posicoes_de_link": Article.LinkPlacement.choices,
+        "lotes_de_capa": _lotes_de_capa(artigo),
+        "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "proximo_horario": _proximo_horario(),
     }
+
+
+def _lotes_de_capa(artigo) -> list[dict]:
+    """As opcoes agrupadas por rodada de geracao.
+
+    Agrupadas, e nao numa lista unica, para que se veja o que mudou quando a
+    pessoa pediu mais exemplos — comparar dentro do lote e entre lotes sao duas
+    leituras diferentes.
+    """
+    lotes: dict[int, list] = {}
+    for imagem in artigo.images.all():
+        lotes.setdefault(imagem.batch, []).append(imagem)
+    return [{"numero": n, "opcoes": v} for n, v in sorted(lotes.items())]
 
 
 def _trabalho_em_curso(artigo):
@@ -472,6 +489,111 @@ def _guardar_parametros(request: HttpRequest, artigo: Article) -> None:
 
     if campos:
         artigo.save(update_fields=campos)
+
+
+# ---------------------------------------------------------------------------
+# Capa: opcoes de imagem, e a escolha
+# ---------------------------------------------------------------------------
+@login_required
+@require_POST
+def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
+    """Pede um lote novo de opcoes de imagem.
+
+    Sincrono de proposito, ao contrario da redacao: sao segundos, a pessoa esta
+    olhando a tela, e mandar para a fila sem nada mudar na tela faria ela pedir
+    de novo.
+    """
+    from apps.content.capas import LimiteDeLotes, SemConexaoDeImagem, gerar_opcoes
+
+    artigo = get_object_or_404(Article, pk=pk)
+
+    try:
+        criadas = gerar_opcoes(artigo, site=_site())
+    except (SemConexaoDeImagem, LimiteDeLotes) as exc:
+        messages.error(request, str(exc))
+        return redirect("content:revisar", pk=artigo.pk)
+    except PassoAdiado:
+        messages.error(
+            request,
+            _("As conexoes de inferencia estao ocupadas agora. Tente em alguns minutos."),
+        )
+        return redirect("content:revisar", pk=artigo.pk)
+    except (ProviderTransientError, ProviderPermanentError) as exc:
+        logger.warning("Artigo %s: falha ao gerar capas: %s", artigo.pk, exc)
+        messages.error(request, _("O gerador de imagem recusou o pedido: %s") % exc)
+        return redirect("content:revisar", pk=artigo.pk)
+
+    messages.success(
+        request,
+        _("%(total)s opcao(oes) de capa geradas. Escolha uma, ou peca mais exemplos.")
+        % {"total": len(criadas)},
+    )
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+@login_required
+@require_POST
+def escolher_capa(request: HttpRequest, pk) -> HttpResponse:
+    """Marca a opcao escolhida como a capa do artigo."""
+    from apps.content.capas import escolher_capa as marcar
+    from apps.content.models import ArticleImage
+
+    artigo = get_object_or_404(Article, pk=pk)
+    imagem = get_object_or_404(ArticleImage, pk=request.POST.get("imagem"), article=artigo)
+
+    marcar(artigo, imagem)
+    messages.success(request, _("Capa escolhida."))
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+def capa_publica(request: HttpRequest, pk) -> HttpResponse:
+    """Serve a capa escolhida, sem sessao. E a unica midia publica do sistema.
+
+    **Sem `login_required` de proposito**: quem busca esta imagem e o site de
+    destino, do outro lado da internet, sem credencial nenhuma. E a mesma
+    imagem que ele vai publicar na propria pagina.
+
+    Tres condicoes, e as tres importam:
+
+    * so a opcao ESCOLHIDA sai — as outras sao rascunho, e um lote inteiro
+      acessivel por URL entregaria material descartado;
+    * so de artigo ja aprovado — antes disso nada deveria estar visivel fora;
+    * o id e UUID, entao nao ha como enumerar as capas de um tenant.
+
+    O resto da midia (os PDFs do acervo) continua fora do alcance publico: o
+    Nginx serve `/protected-media/` como `internal`.
+    """
+    from apps.content.models import ArticleImage
+
+    imagem = get_object_or_404(
+        ArticleImage.objects.select_related("article"),
+        pk=pk,
+        is_chosen=True,
+        article__status__in=[
+            Article.Status.APPROVED_SCHEDULED,
+            Article.Status.PUBLISHED,
+            Article.Status.PUSH_FAILED,
+        ],
+    )
+    return _entregar_arquivo(imagem.image, tipo="image/webp")
+
+
+def _entregar_arquivo(arquivo, *, tipo: str) -> HttpResponse:
+    """Delega ao Nginx quando ha um na frente; streama quando nao ha.
+
+    Streamar pelo worker prende um processo do Gunicorn por download. Com o
+    X-Accel-Redirect o Python responde em milissegundos e quem envia os bytes e
+    o servidor de arquivos, que existe para isso.
+    """
+    from django.conf import settings
+    from django.http import FileResponse
+
+    if settings.USAR_X_ACCEL:
+        resposta = HttpResponse(content_type=tipo)
+        resposta["X-Accel-Redirect"] = f"{settings.PREFIXO_X_ACCEL}{arquivo.name}"
+        return resposta
+
+    return FileResponse(arquivo.open("rb"), content_type=tipo)
 
 
 # ---------------------------------------------------------------------------

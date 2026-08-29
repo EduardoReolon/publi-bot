@@ -59,7 +59,57 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
     if article.outbound_link_url:
         payload["canonical_source"] = article.outbound_link_url
 
+    capa = _capa_do_artigo(article)
+    if capa:
+        payload["cover_image"] = capa
+
     return payload
+
+
+def _capa_do_artigo(article: Article) -> dict | None:
+    """A capa escolhida, por referencia.
+
+    Sai do payload por inteiro quando nao ha capa escolhida, e nao como um
+    objeto vazio: um `cover_image` sem `url` faria o site tentar baixar nada e
+    recusar o envio com 422.
+
+    Nenhuma imagem e escolhida automaticamente. Um artigo publicado com uma
+    capa que ninguem olhou e como um artigo publicado sem que ninguem tenha
+    lido o texto.
+    """
+    from apps.content.capas import capa_escolhida, digest_da_capa, url_publica_da_capa
+
+    imagem = capa_escolhida(article)
+    if imagem is None:
+        return None
+
+    url = url_publica_da_capa(imagem)
+    if not url:
+        # Sem dominio resolvido nao ha link valido a enviar. Sair sem capa e
+        # melhor que sair com um link quebrado no site do cliente.
+        logger.warning("Artigo %s tem capa escolhida, mas o tenant nao tem dominio.", article.pk)
+        return None
+
+    largura, altura = 0, 0
+    try:
+        from apps.content.imagens import dimensoes
+
+        with imagem.image.open("rb") as arquivo:
+            largura, altura = dimensoes(arquivo)
+    except (OSError, ValueError):
+        # Dimensao e informacao util, nao requisito. O contrato pede url,
+        # mime_type e sha256 — e esses saem daqui de qualquer jeito.
+        logger.warning("Nao foi possivel ler as dimensoes da capa do artigo %s.", article.pk)
+
+    return {
+        "url": url,
+        "mime_type": "image/webp",
+        "width": largura,
+        "height": altura,
+        "bytes": imagem.image.size,
+        "sha256": digest_da_capa(imagem),
+        "alt_text": imagem.alt_text or article.title,
+    }
 
 
 def montar_dados_do_autor(conteudo, site: Site) -> dict:

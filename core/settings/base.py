@@ -247,6 +247,20 @@ STORAGES = {
     },
 }
 
+# A capa escolhida precisa ser buscavel pelo site de destino: o contrato manda a
+# imagem por REFERENCIA, e o no faz um GET nela. Quando o Nginx da frente tem o
+# bloco `/protected-media/` (ver deploy/nginx/), a aplicacao delega o envio do
+# arquivo a ele com X-Accel-Redirect em vez de streamar pelo worker.
+#
+# Desligado por padrao porque so funciona atras daquele Nginx; ligado sem ele, o
+# navegador recebe uma resposta vazia com um cabecalho que ninguem interpreta.
+USAR_X_ACCEL = env.boolean("USAR_X_ACCEL", False)
+PREFIXO_X_ACCEL = env.get("PREFIXO_X_ACCEL", "/protected-media/")
+
+# Esquema das URLs publicas montadas para terceiros (a capa que o site busca).
+# Em desenvolvimento o dominio do tenant e http.
+ESQUEMA_PUBLICO = env.get("ESQUEMA_PUBLICO", "https")
+
 # Teto de upload. PDFs cientificos passam facil de 10 MB.
 DATA_UPLOAD_MAX_MEMORY_SIZE = env.integer("DATA_UPLOAD_MAX_MEMORY_SIZE", 52_428_800)
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5_242_880

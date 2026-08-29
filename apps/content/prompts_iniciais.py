@@ -357,12 +357,24 @@ PROMPTS_INICIAIS: dict[str, dict] = {
     "image_prompt": {
         "descricao": "Descreve a imagem de capa a partir do artigo.",
         "variaveis": ["titulo", "resumo"],
-        "temperatura": 0.6,
+        # Temperatura alta de proposito: o mesmo artigo sera usado varias vezes
+        # para pedir mais exemplos, e uma descricao identica em toda rodada
+        # devolveria variacoes da mesma imagem.
+        "temperatura": 0.8,
         "sistema": (
-            "Voce escreve descricoes para geracao de imagem. Responda com uma "
-            "unica frase em ingles, concreta e sem texto embutido na imagem. "
-            "Evite representar pessoas identificaveis e qualquer coisa que "
-            "sugira diagnostico ou procedimento."
+            "Voce escreve descricoes para geracao de imagem de capa.\n\n"
+            "Responda com UMA unica frase em ingles, sem aspas e sem "
+            "explicacao antes ou depois.\n\n"
+            "Regras:\n"
+            "- Concreta: diga o que se ve (objeto, ambiente, luz, enquadramento), "
+            "nao o conceito. 'Conceito de saude' nao e imagem; 'a blood "
+            "pressure monitor on a wooden table by a window' e.\n"
+            "- Sem texto embutido na imagem: modelos de imagem escrevem "
+            "palavras deformadas, e uma capa com texto errado e pior que uma "
+            "capa sem texto.\n"
+            "- Sem pessoas identificaveis, sem rostos em primeiro plano.\n"
+            "- Nada que sugira diagnostico, procedimento ou resultado clinico.\n"
+            "- Sem logotipo, marca ou embalagem de produto."
         ),
         "usuario": "Titulo: {titulo}\nResumo: {resumo}",
     },

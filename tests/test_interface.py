@@ -1028,3 +1028,96 @@ def test_pergunta_sem_fonte_oferece_a_escrita_a_mao(ambiente, pergunta):
 
     assert "responder-a-mao" in corpo
     assert "Gerar do acervo" not in corpo
+
+
+# ---------------------------------------------------------------------------
+# Capa: a escolha pela tela
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def opcoes_de_capa(artigo_para_revisar):
+    """Tres opcoes ja geradas, como o lote as deixaria."""
+    import io
+
+    from PIL import Image
+
+    from apps.content.models import ArticleImage
+
+    criadas = []
+    for posicao in range(1, 4):
+        memoria = io.BytesIO()
+        Image.new("RGB", (32, 32), (20 * posicao, 90, 160)).save(memoria, format="WEBP")
+        imagem = ArticleImage(
+            article=artigo_para_revisar,
+            batch=1,
+            order=posicao,
+            prompt=f"cena {posicao}",
+            alt_text="Uma capa",
+        )
+        imagem.image.save(f"capa-{posicao}.webp", ContentFile(memoria.getvalue()), save=True)
+        criadas.append(imagem)
+    return criadas
+
+
+@pytest.mark.django_db
+def test_a_tela_mostra_todas_as_opcoes_e_nenhuma_escolhida(
+    ambiente, artigo_para_revisar, opcoes_de_capa
+):
+    """Nenhuma capa entra sozinha: o artigo so leva imagem se alguem escolher."""
+    _, _, client = ambiente
+
+    corpo = client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+
+    for opcao in opcoes_de_capa:
+        assert str(opcao.pk) in corpo
+    assert "esta e a capa" not in corpo
+
+
+@pytest.mark.django_db
+def test_escolher_pela_tela_marca_a_capa(ambiente, artigo_para_revisar, opcoes_de_capa):
+    _, _, client = ambiente
+    escolhida = opcoes_de_capa[1]
+
+    client.post(
+        reverse(
+            "content:escolher_capa", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"
+        ),
+        {"imagem": str(escolhida.pk)},
+    )
+
+    escolhida.refresh_from_db()
+    assert escolhida.is_chosen is True
+    assert artigo_para_revisar.images.filter(is_chosen=True).count() == 1
+
+
+@pytest.mark.django_db
+def test_nao_da_para_escolher_a_capa_de_outro_artigo(ambiente, artigo_para_revisar, opcoes_de_capa):
+    """A imagem chega pelo POST; sem o vinculo conferido, o id de outro artigo
+    passaria."""
+    _, _, client = ambiente
+    outro = Article.objects.create(title="Outro")
+
+    resposta = client.post(
+        reverse("content:escolher_capa", args=[outro.pk], urlconf="core.urls_tenants"),
+        {"imagem": str(opcoes_de_capa[0].pk)},
+    )
+
+    assert resposta.status_code == 404
+    assert not outro.images.exists()
+
+
+@pytest.mark.django_db
+def test_sem_conexao_de_imagem_a_tela_explica(ambiente, artigo_para_revisar):
+    """Erro de configuracao vira mensagem na tela, nao 500."""
+    _, _, client = ambiente
+
+    resposta = client.post(
+        reverse("content:gerar_capas", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
+        follow=True,
+    )
+
+    assert resposta.status_code == 200
+    assert "Inferencia" in resposta.content.decode()
