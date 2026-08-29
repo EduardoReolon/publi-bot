@@ -15,6 +15,7 @@ import time
 import uuid
 
 import pytest
+import yaml
 from django.test.client import BOUNDARY, encode_multipart
 
 pytestmark = pytest.mark.django_db
@@ -484,3 +485,65 @@ def test_foto_sem_assinatura_e_recusada(no_receptor):
     )
     resposta = no_receptor.post("/api/v1/author-photos/", data=corpo, content_type=TIPO_MULTIPART)
     assert resposta.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# A documentacao nao pode divergir do codigo
+# ---------------------------------------------------------------------------
+
+
+def _ler_contrato(nome: str) -> str:
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent / "docs" / "contrato"
+    return (raiz / nome).read_text(encoding="utf-8")
+
+
+def test_o_vetor_de_teste_do_readme_bate_com_a_implementacao():
+    """O vetor existe para alguem conferir a propria implementacao antes de
+    subir. Se ele estiver errado, manda a pessoa depurar codigo que esta certo.
+    """
+    corpo = b'{"type":"article","title":"Exemplo"}'
+    digest = hashlib.sha256(corpo).hexdigest()
+    base = f"1756483200.6f1c9e2a-3d4b-4a5c-8e7f-0a1b2c3d4e5f.{digest}"
+    esperada = hmac.new(b"segredo-de-exemplo", base.encode(), hashlib.sha256).hexdigest()
+
+    readme = _ler_contrato("README.md")
+
+    assert digest in readme
+    assert base in readme
+    assert f"v1={esperada}" in readme
+    # O tamanho declarado tambem: e ele que denuncia a reserializacao.
+    assert f"{len(corpo)} bytes" in readme
+
+
+def test_toda_rota_do_openapi_existe_no_no_de_referencia():
+    """A implementacao de referencia so serve como referencia se implementar
+    tudo o que o contrato especifica."""
+    from django.urls import get_resolver
+
+    especificadas = set(yaml.safe_load(_ler_contrato("openapi.yaml"))["paths"])
+
+    resolver = get_resolver("core.urls_contract_test")
+    implementadas = {
+        "/" + padrao.pattern._route.removeprefix("api/v1/")
+        for lista in resolver.url_patterns
+        for padrao in getattr(lista, "url_patterns", [])
+        if hasattr(padrao.pattern, "_route")
+    }
+
+    assert especificadas <= implementadas, especificadas - implementadas
+
+
+def test_as_capacidades_declaradas_sao_as_que_o_openapi_conhece():
+    """Um recurso anunciado em /health/ que o contrato nao descreve nao tem como
+    ser consumido; um que o contrato descreve e o no nao anuncia nunca e
+    chamado."""
+    from publibot_node import RECURSOS
+
+    especificacao = yaml.safe_load(_ler_contrato("openapi.yaml"))
+    caminho = especificacao["paths"]["/health/"]["get"]["responses"]["200"]
+    corpo = caminho["content"]["application/json"]["schema"]
+    conhecidas = set(corpo["properties"]["capabilities"]["items"]["enum"])
+
+    assert set(RECURSOS) <= conhecidas, set(RECURSOS) - conhecidas

@@ -433,7 +433,11 @@ docs/
   ARMADILHAS.md      as falhas reais, e onde cada uma esta tratada
   EXTRACAO.md        as heuristicas de leitura de PDF e como ajusta-las
   adr/               decisoes de arquitetura
-  contrato/          contrato /api/v1, OpenAPI e implementacao de referencia
+  contrato/          contrato /api/v1 — o que um site precisa implementar
+    README.md          regras normativas, vetor de teste e lista de conferencia
+    openapi.yaml       esquemas completos das sete rotas
+    exemplos.md        o ciclo inteiro, com corpos reais
+    reference/django/  implementacao que passa nos testes de contrato
 fixtures/
   extracao/          resultado esperado da extracao, por PDF de conferencia
 worker-gpu/      Servicos HTTP da maquina com GPU

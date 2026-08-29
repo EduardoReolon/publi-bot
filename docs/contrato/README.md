@@ -70,6 +70,35 @@ incorreta.** Mensagens diferentes vazam a mesma informacao por outro canal.
 **6. Exija TLS.** Recuse HTTP simples com `403`. Sem TLS a chave trafega em
 texto claro a cada requisicao.
 
+### Vetor de teste
+
+Confira sua implementacao contra estes valores antes de subir qualquer coisa.
+Se o resultado nao bater, o problema esta na assinatura — e nao vale a pena
+depurar mais nada antes disso.
+
+| Entrada | Valor |
+|---|---|
+| segredo | `segredo-de-exemplo` |
+| `X-Timestamp` | `1756483200` |
+| `X-Nonce` | `6f1c9e2a-3d4b-4a5c-8e7f-0a1b2c3d4e5f` |
+| corpo bruto | `{"type":"article","title":"Exemplo"}` |
+
+Passo a passo:
+
+```
+sha256(corpo)  = 23af6d1a900ecc8147c078c2cf41592ea50fff00f53b1c110b787bc8aa674fa7
+base           = 1756483200.6f1c9e2a-3d4b-4a5c-8e7f-0a1b2c3d4e5f.23af6d1a900ecc8147c078c2cf41592ea50fff00f53b1c110b787bc8aa674fa7
+X-Signature    = v1=31a9127f0bb293e82c27717ee8c35b56a845d9bee31257b72cd9afdc4227e6ee
+```
+
+O corpo acima tem **36 bytes, sem espaco e sem quebra de linha**. Se voce
+reserializar o JSON antes de conferir, o digest muda e a assinatura falha — e
+esse e, de longe, o erro mais comum.
+
+Em `multipart/form-data` (a rota de fotos) nada muda: o digest e do corpo
+bruto, inteiro, com os delimitadores e tudo. Leia os bytes ANTES de deixar o
+framework interpretar o multipart.
+
 ## Idempotencia
 
 `POST /api/v1/publish/` recebe o cabecalho `Idempotency-Key`.
@@ -224,3 +253,72 @@ declara os recursos opcionais suportados — o PubliBot consulta no cadastro e
 **degrada com elegancia** em vez de assumir.
 
 Uma versao permanece suportada por 12 meses apos a seguinte ser publicada.
+
+## Lista de conferencia
+
+Para quem esta implementando. Nesta ordem — cada item depende do anterior
+funcionar.
+
+**Antes de qualquer rota**
+
+- [ ] A assinatura bate com o [vetor de teste](#vetor-de-teste).
+- [ ] O digest e calculado sobre o corpo BRUTO, antes de interpretar o JSON.
+- [ ] A comparacao usa funcao de tempo constante.
+- [ ] Instante fora da janela de 300s e recusado.
+- [ ] Nonce e guardado por 600s e repetido e recusado.
+- [ ] Chave ausente, malformada e incorreta devolvem o MESMO corpo e status.
+- [ ] HTTP simples e recusado com `403`.
+
+**Obrigatorias**
+
+- [ ] `GET /health/` devolve `contract_versions` e `capabilities` — e as
+      `capabilities` dizem a verdade sobre o que voce implementou.
+- [ ] `GET /seo-context/` pagina por cursor e trunca `home_content_text` em
+      8000 caracteres.
+- [ ] `POST /publish/` guarda `Idempotency-Key` com indice **UNICO no banco**,
+      nao com uma checagem em Python.
+- [ ] Chave repetida devolve `200` com a publicacao existente, sem criar outra.
+- [ ] Duas requisicoes simultaneas com a mesma chave: a restricao do banco
+      decide, e a perdedora devolve o registro vencedor.
+- [ ] `html_content` passa por sanitizacao com lista de PERMISSAO antes de ser
+      gravado.
+- [ ] `title` e `author.name` tambem sao sanitizados.
+- [ ] `content_disclosure` e renderizado visivelmente junto ao conteudo.
+- [ ] Todo erro segue o envelope, com `code` do catalogo.
+
+**Se voce declarar `author_photo`**
+
+- [ ] `author_photo_required: true` so quando `has_photo` e verdadeiro **e**
+      voce ainda nao tem aquele arquivo.
+- [ ] `POST /author-photos/` aceita multipart e responde `202` sem processar a
+      imagem dentro da requisicao.
+- [ ] A foto e guardada por `author_reference`, nao pelo nome do autor.
+- [ ] O `sha256` e conferido; divergente devolve `422`.
+- [ ] O limite de corpo do seu framework aceita o arquivo (o padrao do Django
+      sao 2,5 MB).
+
+**Se voce declarar `qa`**
+
+- [ ] `GET /pending-questions/` pagina por cursor.
+- [ ] `POST /pending-questions/ack/` marca as perguntas como recebidas — sem
+      isso, cada ciclo reimporta as mesmas.
+- [ ] `author_name` so e enviado com consentimento registrado.
+- [ ] A publicacao com `type: "qa"` usa o `question_id` que voce mesmo
+      devolveu.
+
+**Se voce declarar `reconciliation`**
+
+- [ ] `GET /publications/?idempotency_key=` devolve a publicacao existente, ou
+      lista vazia.
+
+**Imagem de capa**
+
+- [ ] `cover_image` pode nao vir. Ausencia e normal, nao erro.
+- [ ] A imagem e baixada da `url`, o `sha256` e conferido, e o arquivo passa a
+      ser servido do SEU dominio (sem hotlink).
+
+**Operacao**
+
+- [ ] Limite de requisicoes com `429` e `Retry-After`.
+- [ ] Bloqueio apos respostas `401` seguidas.
+- [ ] `5xx`, `408` e `429` sao os unicos que fazem o PubliBot repetir.
