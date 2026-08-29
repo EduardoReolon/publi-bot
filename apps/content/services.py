@@ -626,3 +626,45 @@ def montar_markdown_das_secoes(article: Article) -> str:
         partes.append(fecho)
 
     return "\n\n".join(partes)
+
+
+# ---------------------------------------------------------------------------
+# Refazer, na revisao
+# ---------------------------------------------------------------------------
+@transaction.atomic
+def marcar_secoes_para_refazer(article: Article, ordens: set[int]) -> int:
+    """Esvazia o texto das secoes escolhidas, para o passo reescreve-las.
+
+    Esvaziar em vez de sinalizar mantem UMA regra sobre o que falta escrever —
+    "secao sem texto" — valida tanto na geracao inicial quanto aqui. Um segundo
+    criterio (um campo "precisa refazer") daria duas respostas possiveis para a
+    mesma pergunta, e uma delas ficaria errada.
+
+    O que a pessoa editou a mao e preservado nas revisoes do artigo; o texto da
+    secao em si e substituido, porque foi isso que ela pediu.
+    """
+    from apps.content.models import ArticleSection
+
+    alvo = article.sections.filter(order__in=ordens)
+    total = alvo.count()
+    alvo.update(body_markdown="", status=ArticleSection.Status.PLANNED, prompt_run=None)
+    return total
+
+
+@transaction.atomic
+def limpar_plano(article: Article) -> None:
+    """Descarta o esqueleto inteiro, para replanejar do zero.
+
+    Separado de `marcar_secoes_para_refazer` porque sao decisoes de tamanhos
+    diferentes: uma troca o texto de uma secao, a outra pode mudar quantas
+    secoes o artigo tem e sobre o que cada uma fala. A interface precisa
+    manter essa distancia.
+    """
+    article.sections.all().delete()
+
+    tese = dict(article.thesis_json or {})
+    # A moldura descreve um esqueleto que nao existe mais; mante-la faria a
+    # abertura prometer secoes que o novo plano pode nao ter.
+    tese.pop("moldura", None)
+    article.thesis_json = tese
+    article.save(update_fields=["thesis_json"])

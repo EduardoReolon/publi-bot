@@ -591,3 +591,147 @@ def test_exclusao_nao_quebra_artigo_publicado(ambiente):
     assert citacao.super_chunk_id is None
     assert citacao.source_title == "Estudo sobre o efeito"
     assert citacao.source_url == "https://revista.exemplo.org/estudo"
+
+
+# ---------------------------------------------------------------------------
+# Revisao por secao
+# ---------------------------------------------------------------------------
+def _artigo_com_secoes() -> Article:
+    from apps.content.models import ArticleSection
+
+    artigo = Article.objects.create(
+        title="Artigo em secoes",
+        slug="artigo-em-secoes",
+        status=Article.Status.PENDING_REVIEW,
+        body_markdown="## Primeira\n\nUm.\n\n## Segunda\n\nDois.",
+        focus_keyword="metabolismo",
+        secondary_keywords=["taxa metabolica"],
+    )
+    ArticleSection.objects.create(
+        article=artigo, order=1, heading="Primeira", intent="abrir", body_markdown="Um."
+    )
+    ArticleSection.objects.create(
+        article=artigo, order=2, heading="Segunda", intent="fechar", body_markdown="Dois."
+    )
+    return artigo
+
+
+@pytest.mark.django_db
+def test_a_tela_separa_refazer_parte_de_refazer_tudo(ambiente):
+    """As duas acoes precisam ficar visivelmente distantes.
+
+    Alguem que queria consertar uma secao nao pode perder cinco boas por
+    clicar no botao errado.
+    """
+    _, _, client = ambiente
+    artigo = _artigo_com_secoes()
+
+    corpo = client.get(
+        reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+
+    # Refazer parte: acao direta, com o escopo dito no proprio aviso.
+    assert "Refazer as secoes marcadas" in corpo
+    assert "SO as secoes marcadas" in corpo
+    # Replanejar: nao e botao, e link para uma tela que explica o que se perde.
+    assert "Replanejar tudo mesmo assim" not in corpo
+    assert "Ver o que se perde ao replanejar" in corpo
+
+
+@pytest.mark.django_db
+def test_replanejar_pede_confirmacao_listando_o_que_se_perde(ambiente):
+    _, _, client = ambiente
+    artigo = _artigo_com_secoes()
+
+    resposta = client.get(
+        reverse("content:replanejar", args=[artigo.pk], urlconf="core.urls_tenants")
+    )
+    corpo = resposta.content.decode()
+
+    assert resposta.status_code == 200
+    assert "Primeira" in corpo and "Segunda" in corpo
+    assert "Voltar e refazer so uma parte" in corpo
+    # GET nao destroi nada.
+    assert artigo.sections.count() == 2
+
+
+@pytest.mark.django_db
+def test_refazer_sem_marcar_nada_nao_faz_nada(ambiente):
+    """Formulario vazio nao pode virar "refaz tudo" por omissao."""
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    artigo = _artigo_com_secoes()
+
+    client.post(reverse("content:refazer_secoes", args=[artigo.pk], urlconf="core.urls_tenants"))
+
+    assert not GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_REDRAFT).exists()
+    assert all(s.body_markdown for s in artigo.sections.all())
+
+
+@pytest.mark.django_db
+def test_refazer_esvazia_so_a_secao_marcada(ambiente):
+    _, _, client = ambiente
+    artigo = _artigo_com_secoes()
+
+    client.post(
+        reverse("content:refazer_secoes", args=[artigo.pk], urlconf="core.urls_tenants"),
+        {"refazer": ["1"], "palavra_chave": "metabolismo basal"},
+    )
+
+    primeira, segunda = list(artigo.sections.all())
+    assert primeira.body_markdown == ""
+    assert segunda.body_markdown == "Dois."
+
+    # Os parametros ajustados valem para a nova redacao: refazer com os mesmos
+    # devolveria a mesma coisa.
+    artigo.refresh_from_db()
+    assert artigo.focus_keyword == "metabolismo basal"
+
+
+@pytest.mark.django_db
+def test_nao_dispara_dois_trabalhos_para_o_mesmo_artigo(ambiente):
+    """Dois trabalhos escrevendo as mesmas secoes disputariam a mesma linha."""
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    artigo = _artigo_com_secoes()
+    GenerationJob.objects.create(
+        kind=GenerationJob.Kind.ARTICLE_REDRAFT,
+        target_object_id=artigo.pk,
+        status=GenerationJob.Status.PENDING,
+        total_steps=2,
+    )
+
+    client.post(
+        reverse("content:refazer_secoes", args=[artigo.pk], urlconf="core.urls_tenants"),
+        {"refazer": ["1"]},
+    )
+
+    assert GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_REDRAFT).count() == 1
+    # A secao nao foi esvaziada: o pedido foi recusado antes.
+    assert artigo.sections.get(order=1).body_markdown == "Um."
+
+
+@pytest.mark.django_db
+def test_editar_secao_a_mao_remonta_o_artigo(ambiente):
+    """O corpo do artigo e derivado das secoes, e nao o contrario."""
+    _, _, client = ambiente
+    artigo = _artigo_com_secoes()
+
+    client.post(
+        reverse("content:salvar_secoes", args=[artigo.pk], urlconf="core.urls_tenants"),
+        {
+            "titulo_1": "Primeira, revisada",
+            "secao_1": "Um, agora com mais fundamento.",
+            "titulo_2": "Segunda",
+            "secao_2": "Dois.",
+        },
+    )
+
+    artigo.refresh_from_db()
+    primeira = artigo.sections.get(order=1)
+    assert primeira.heading == "Primeira, revisada"
+    assert primeira.status == "edited"
+    assert "## Primeira, revisada" in artigo.body_markdown
+    assert "mais fundamento" in artigo.body_markdown

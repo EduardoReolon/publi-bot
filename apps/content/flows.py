@@ -152,6 +152,43 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
     }
 
 
+def _artigo_do_job(job: GenerationJob) -> Article:
+    """O artigo deste trabalho, venha ele da pauta ou da revisao.
+
+    Na geracao inicial o artigo e criado no passo do consenso e o id fica no
+    payload. Ao refazer, o trabalho nasce ja apontando para o artigo. Os passos
+    seguintes sao os MESMOS nos dois casos, e e este desvio de duas linhas que
+    permite isso — a alternativa seria duplicar quatro passos.
+    """
+    payload = (job.step_payloads or {}).get("1", {})
+    if payload.get("article_id"):
+        return Article.objects.get(pk=payload["article_id"])
+    return Article.objects.get(pk=job.target_object_id)
+
+
+def _trechos_do_job(job: GenerationJob) -> list[SuperChunk]:
+    """As fontes do artigo, na ordem que define o numero do marcador.
+
+    Ao refazer, o payload da recuperacao nao existe — mas as citacoes gravadas
+    guardam a mesma lista, na mesma ordem. Reaproveita-las, em vez de buscar de
+    novo, garante que o texto refeito cite exatamente as mesmas fontes que o
+    revisor conferiu.
+    """
+    do_payload = _chunks_do_payload(job, "0")
+    if do_payload:
+        return do_payload
+
+    article = _artigo_do_job(job)
+    return _chunks_por_id(
+        [str(c.super_chunk_id) for c in article.citations.order_by("rank") if c.super_chunk_id]
+    )
+
+
+def _tese_do_job(job: GenerationJob, article: Article) -> str:
+    payload = (job.step_payloads or {}).get("1", {})
+    return payload.get("tese") or (article.thesis_json or {}).get("tese", "")
+
+
 def passo_planejar(job: GenerationJob) -> dict:
     """Decide a estrutura do artigo e as palavras-chave, numa chamada curta.
 
@@ -159,16 +196,15 @@ def passo_planejar(job: GenerationJob) -> dict:
     depois: sem um esqueleto decidido antes, cada secao seria escrita as cegas e
     duas delas responderiam a mesma pergunta.
     """
-    payload = (job.step_payloads or {}).get("1", {})
-    article = Article.objects.get(pk=payload["article_id"])
-    trechos = _chunks_do_payload(job, "0")
+    article = _artigo_do_job(job)
+    trechos = _trechos_do_job(job)
     site = _site_do_tenant()
 
     resultado = executar_prompt(
         key="article_outline",
         variaveis={
             "titulo": article.title,
-            "tese": payload.get("tese", ""),
+            "tese": _tese_do_job(job, article),
             "fontes": montar_contexto_das_fontes(trechos),
             "palavra_chave": article.focus_keyword or article.title,
             "publico": article.audience or _publico_padrao(site),
@@ -203,8 +239,7 @@ def passo_redigir_secoes(job: GenerationJob):
     seguinte em vez de refazer o artigo. Quem sabe o que falta e o banco — as
     secoes sem texto.
     """
-    payload = (job.step_payloads or {}).get("1", {})
-    article = Article.objects.get(pk=payload["article_id"])
+    article = _artigo_do_job(job)
     site = _site_do_tenant()
 
     pendentes = [s for s in article.sections.all() if not s.escrita]
@@ -262,15 +297,14 @@ def passo_abertura_e_fecho(job: GenerationJob) -> dict:
     Por ultimo de proposito: abertura escrita antes do corpo promete o que o
     artigo nao cumpre, e e o defeito mais comum de texto gerado.
     """
-    payload = (job.step_payloads or {}).get("1", {})
-    article = Article.objects.get(pk=payload["article_id"])
+    article = _artigo_do_job(job)
     site = _site_do_tenant()
 
     resultado = executar_prompt(
         key="article_framing",
         variaveis={
             "titulo": article.title,
-            "tese": payload.get("tese", ""),
+            "tese": _tese_do_job(job, article),
             "esqueleto": esqueleto_do_artigo(article),
             "palavra_chave": article.focus_keyword or article.title,
             "idioma": _idioma(site),
@@ -295,8 +329,7 @@ def passo_abertura_e_fecho(job: GenerationJob) -> dict:
 
 def passo_metadados_de_busca(job: GenerationJob) -> dict:
     """Titulo, meta description e resumo — a partir da abertura ja escrita."""
-    payload = (job.step_payloads or {}).get("1", {})
-    article = Article.objects.get(pk=payload["article_id"])
+    article = _artigo_do_job(job)
     site = _site_do_tenant()
     moldura = (article.thesis_json or {}).get("moldura") or {}
 
@@ -336,8 +369,7 @@ def passo_montar(job: GenerationJob) -> dict:
     citacoes gravadas e sanitiza. Ter um segundo caminho aqui seria abrir a
     porta dos fundos por onde um link alucinado chegaria ao site do cliente.
     """
-    payload = (job.step_payloads or {}).get("1", {})
-    article = Article.objects.get(pk=payload["article_id"])
+    article = _artigo_do_job(job)
 
     markdown = montar_markdown_das_secoes(article)
     if not markdown.strip():
@@ -497,6 +529,34 @@ registrar_fluxo(
             Passo(numero=4, nome="abertura e fecho", executar=passo_abertura_e_fecho),
             Passo(numero=5, nome="metadados de busca", executar=passo_metadados_de_busca),
             Passo(numero=6, nome="montar", executar=passo_montar),
+        ],
+    )
+)
+
+# Refazer secoes: so as marcadas voltam a ser escritas, e o artigo e remontado.
+# Nao passa pelo planejamento nem pela abertura — o esqueleto continua valendo, e
+# regerar tudo custaria chamadas para trocar texto que ninguem pediu para trocar.
+registrar_fluxo(
+    Fluxo(
+        kind=GenerationJob.Kind.ARTICLE_REDRAFT,
+        passos=[
+            Passo(numero=0, nome="redigir secoes", executar=passo_redigir_secoes),
+            Passo(numero=1, nome="montar", executar=passo_montar),
+        ],
+    )
+)
+
+# Replanejar: joga fora o esqueleto e recomeca do plano, com as MESMAS fontes.
+# E o caminho para quando o problema e a estrutura, e nao o texto.
+registrar_fluxo(
+    Fluxo(
+        kind=GenerationJob.Kind.ARTICLE_REPLAN,
+        passos=[
+            Passo(numero=0, nome="planejar", executar=passo_planejar),
+            Passo(numero=1, nome="redigir secoes", executar=passo_redigir_secoes),
+            Passo(numero=2, nome="abertura e fecho", executar=passo_abertura_e_fecho),
+            Passo(numero=3, nome="metadados de busca", executar=passo_metadados_de_busca),
+            Passo(numero=4, nome="montar", executar=passo_montar),
         ],
     )
 )

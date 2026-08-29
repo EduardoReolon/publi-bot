@@ -1,0 +1,67 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Replanejar artigo" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Replanejar o artigo" %}</h1>
+  <p class="sub">{{ artigo.title }}</p>
+
+  {% comment %}
+    Tela separada de proposito. Replanejar e a acao mais cara da revisao e a
+    mais facil de acionar por engano: quem queria consertar uma secao pode
+    perder cinco boas. Listar o que se perde, nomeadamente, e o que transforma
+    "tem certeza?" numa pergunta que da para responder.
+  {% endcomment %}
+  <div class="aviso ruim">
+    <strong>{% translate "As secoes atuais serao descartadas." %}</strong>
+    {% blocktranslate trimmed %}
+      O modelo monta um esqueleto novo, que pode ter outros subtitulos e outra
+      quantidade de secoes. Suas edicoes manuais nestas secoes se perdem.
+    {% endblocktranslate %}
+  </div>
+
+  <h2>{% translate "O que se perde" %}</h2>
+  <ul class="lista">
+    {% for secao in secoes %}
+      <li>
+        <strong>{{ secao.order }}. {{ secao.heading }}</strong>
+        <span class="selo">{{ secao.palavras }} {% translate "palavras" %}</span>
+        {% if secao.status == 'edited' %}
+          <span class="selo ok">{% translate "editada por voce" %}</span>
+        {% endif %}
+        <div class="pre-visualizacao">{{ secao.body_markdown|truncatechars:200 }}</div>
+      </li>
+    {% empty %}
+      <li class="vazio">{% translate "Nenhuma secao ainda." %}</li>
+    {% endfor %}
+  </ul>
+
+  <div class="aviso">
+    {% blocktranslate trimmed %}
+      As fontes NAO mudam: o artigo e replanejado com as mesmas citacoes que
+      voce ja conferiu. As versoes anteriores do texto continuam no historico.
+    {% endblocktranslate %}
+  </div>
+
+  <h2>{% translate "Se so uma parte esta ruim" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Volte e marque so aquelas secoes. Refazer marcadas custa uma chamada por
+      secao e preserva todo o resto.
+    {% endblocktranslate %}
+  </p>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="palavra_chave" value="{{ artigo.focus_keyword }}">
+    <input type="hidden" name="publico" value="{{ artigo.audience }}">
+    <input type="hidden" name="intencao" value="{{ artigo.search_intent }}">
+    <div class="acoes">
+      <a class="botao" href="{% url 'content:revisar' artigo.pk %}">
+        {% translate "Voltar e refazer so uma parte" %}
+      </a>
+      <button type="submit" class="botao perigo">
+        {% translate "Replanejar tudo mesmo assim" %}
+      </button>
+    </div>
+  </form>
+{% endblock %}

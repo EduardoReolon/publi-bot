@@ -6,6 +6,7 @@ import logging
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.db.models import Count
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -199,9 +200,40 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "agendamento": agendamento or AgendamentoForm(),
         "citacoes": artigo.citations.select_related("super_chunk").order_by("rank"),
         "revisoes": artigo.revisions.order_by("-version")[:10],
+        "secoes": artigo.sections.all(),
+        "titulos_sugeridos": (artigo.thesis_json or {}).get("titulos_sugeridos") or [],
+        "moldura": (artigo.thesis_json or {}).get("moldura") or {},
+        "refazendo": _trabalho_em_curso(artigo),
         "site": site,
         "proximo_horario": _proximo_horario(),
     }
+
+
+def _trabalho_em_curso(artigo):
+    """Um trabalho de refazer ainda rodando para este artigo.
+
+    A tela precisa saber: enquanto ele roda, o texto na tela e o antigo, e
+    oferecer "refazer" de novo criaria dois trabalhos escrevendo as mesmas
+    secoes.
+    """
+    from apps.ops.models import GenerationJob
+
+    return (
+        GenerationJob.objects.filter(
+            kind__in=[
+                GenerationJob.Kind.ARTICLE_REDRAFT,
+                GenerationJob.Kind.ARTICLE_REPLAN,
+            ],
+            target_object_id=artigo.pk,
+            status__in=[
+                GenerationJob.Status.PENDING,
+                GenerationJob.Status.RUNNING,
+                GenerationJob.Status.WAITING_CAPACITY,
+            ],
+        )
+        .order_by("-created_at")
+        .first()
+    )
 
 
 def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
@@ -273,6 +305,151 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
 
     messages.success(request, _("Artigo aprovado e agendado."))
     return redirect("content:artigos")
+
+
+@login_required
+@require_POST
+def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
+    """Grava o que a pessoa editou a mao nas secoes, e remonta o artigo.
+
+    Editar a secao e nao o texto final e o que permite refazer so aquela parte
+    depois: o texto do artigo e derivado das secoes, e nao o contrario.
+    """
+    from apps.content.models import ArticleSection
+    from apps.content.services import montar_markdown_das_secoes
+
+    artigo = get_object_or_404(Article, pk=pk)
+    alteradas = 0
+
+    for secao in artigo.sections.all():
+        texto = (request.POST.get(f"secao_{secao.order}") or "").strip()
+        titulo = (request.POST.get(f"titulo_{secao.order}") or "").strip()
+        mudou = False
+
+        if titulo and titulo != secao.heading:
+            secao.heading = titulo[:200]
+            mudou = True
+        if texto != secao.body_markdown.strip():
+            secao.body_markdown = texto
+            secao.status = ArticleSection.Status.EDITED
+            mudou = True
+
+        if mudou:
+            secao.save(update_fields=["heading", "body_markdown", "status", "updated_at"])
+            alteradas += 1
+
+    if alteradas:
+        aplicar_edicao_humana(artigo, montar_markdown_das_secoes(artigo), editor=request.user)
+        messages.success(
+            request,
+            _("%(total)s secao(oes) salvas e artigo remontado.") % {"total": alteradas},
+        )
+    else:
+        messages.info(request, _("Nada mudou."))
+
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+@login_required
+@require_POST
+def refazer_secoes(request: HttpRequest, pk) -> HttpResponse:
+    """Reescreve APENAS as secoes marcadas. Uma chamada por secao."""
+    from apps.content.services import marcar_secoes_para_refazer
+    from apps.ops.models import GenerationJob
+    from apps.ops.orchestrator import criar_job
+    from apps.ops.tasks import advance_generation_job
+
+    artigo = get_object_or_404(Article, pk=pk)
+
+    if _trabalho_em_curso(artigo):
+        messages.error(request, _("Ja ha um trabalho refazendo este artigo. Aguarde."))
+        return redirect("content:revisar", pk=artigo.pk)
+
+    ordens = {int(v) for v in request.POST.getlist("refazer") if v.isdigit()}
+    if not ordens:
+        messages.error(request, _("Marque ao menos uma secao para refazer."))
+        return redirect("content:revisar", pk=artigo.pk)
+
+    _guardar_parametros(request, artigo)
+    total = marcar_secoes_para_refazer(artigo, ordens)
+
+    job = criar_job(kind=GenerationJob.Kind.ARTICLE_REDRAFT, target_object_id=str(artigo.pk))
+    transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
+
+    messages.success(
+        request,
+        _("Refazendo %(total)s secao(oes). O resto do artigo fica como esta.") % {"total": total},
+    )
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+@login_required
+def replanejar(request: HttpRequest, pk) -> HttpResponse:
+    """Descarta o esqueleto e recomeca do plano.
+
+    Em duas etapas, como a exclusao de documento: o GET diz o que se perde. E a
+    acao mais cara da tela e a mais facil de acionar por engano — alguem que
+    queria consertar uma secao pode perder cinco boas.
+    """
+    from apps.content.services import limpar_plano
+    from apps.ops.models import GenerationJob
+    from apps.ops.orchestrator import criar_job
+    from apps.ops.tasks import advance_generation_job
+
+    artigo = get_object_or_404(Article, pk=pk)
+
+    if request.method != "POST":
+        return render(
+            request,
+            "content/replanejar.html",
+            {"aba": "artigos", "artigo": artigo, "secoes": artigo.sections.all()},
+        )
+
+    if _trabalho_em_curso(artigo):
+        messages.error(request, _("Ja ha um trabalho refazendo este artigo. Aguarde."))
+        return redirect("content:revisar", pk=artigo.pk)
+
+    _guardar_parametros(request, artigo)
+    limpar_plano(artigo)
+
+    job = criar_job(kind=GenerationJob.Kind.ARTICLE_REPLAN, target_object_id=str(artigo.pk))
+    transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
+
+    messages.success(request, _("Replanejando o artigo do zero, com as mesmas fontes."))
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+def _guardar_parametros(request: HttpRequest, artigo: Article) -> None:
+    """Aplica os parametros de geracao antes de refazer.
+
+    Refazer com os mesmos parametros costuma devolver a mesma coisa. Sao estes
+    campos que mudam o resultado: sem poder ajusta-los, "refazer" vira "tentar a
+    sorte".
+    """
+    campos = []
+
+    palavra = (request.POST.get("palavra_chave") or "").strip()
+    if palavra and palavra != artigo.focus_keyword:
+        artigo.focus_keyword = palavra[:120]
+        campos.append("focus_keyword")
+
+    secundarias = [
+        termo.strip()
+        for termo in (request.POST.get("palavras_secundarias") or "").split(",")
+        if termo.strip()
+    ]
+    if secundarias != artigo.secondary_keywords:
+        artigo.secondary_keywords = secundarias[:8]
+        campos.append("secondary_keywords")
+
+    for campo, nome in (("publico", "audience"), ("intencao", "search_intent")):
+        valor = (request.POST.get(campo) or "").strip()
+        if valor != getattr(artigo, nome):
+            setattr(artigo, nome, valor[:200])
+            campos.append(nome)
+
+    if campos:
+        artigo.save(update_fields=campos)
 
 
 # ---------------------------------------------------------------------------

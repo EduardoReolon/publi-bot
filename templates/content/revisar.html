@@ -53,6 +53,156 @@
     </div>
   {% endif %}
 
+  {% if refazendo %}
+    <div class="aviso">
+      <strong>{% translate "Refazendo agora." %}</strong>
+      {% blocktranslate trimmed with tipo=refazendo.get_kind_display %}
+        {{ tipo }} em andamento. O texto abaixo ainda e o antigo; atualize a
+        pagina em instantes.
+      {% endblocktranslate %}
+    </div>
+  {% endif %}
+
+  {% comment %}
+    As secoes vem ANTES do texto final de proposito. O corpo do artigo e
+    derivado delas: editar aqui e o que permite refazer so uma parte depois.
+    Quem edita direto no campo grande perde essa possibilidade, porque o texto
+    e as secoes passam a divergir.
+  {% endcomment %}
+  {% if secoes %}
+    <h2>{% translate "Secoes" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Cada secao foi escrita numa rodada propria, com as fontes dela. Edite a
+        mao, ou marque as que quiser que o modelo reescreva — as nao marcadas
+        ficam intactas.
+      {% endblocktranslate %}
+    </p>
+
+    <form method="post" action="{% url 'content:salvar_secoes' artigo.pk %}" id="form-secoes">
+      {% csrf_token %}
+      <ul class="lista">
+        {% for secao in secoes %}
+          <li>
+            <div class="campo">
+              <label for="titulo_{{ secao.order }}">
+                {% blocktranslate trimmed with n=secao.order %}Secao {{ n }}{% endblocktranslate %}
+                <span class="selo">{{ secao.palavras }} {% translate "palavras" %}</span>
+                {% if secao.status == 'edited' %}
+                  <span class="selo ok">{% translate "editada por voce" %}</span>
+                {% elif not secao.escrita %}
+                  <span class="selo espera">{% translate "aguardando redacao" %}</span>
+                {% endif %}
+              </label>
+              <input type="text" name="titulo_{{ secao.order }}" id="titulo_{{ secao.order }}"
+                     value="{{ secao.heading }}">
+              {% if secao.intent %}
+                <div class="ajuda">{% translate "Objetivo:" %} {{ secao.intent }}</div>
+              {% endif %}
+              {% if secao.keywords %}
+                <div class="ajuda">
+                  {% translate "Palavras-chave:" %} {{ secao.keywords|join:", " }}
+                </div>
+              {% endif %}
+            </div>
+            <textarea name="secao_{{ secao.order }}" class="curto" rows="6">{{ secao.body_markdown }}</textarea>
+            <label style="display:flex; gap:.5rem; align-items:center; font-weight:400; margin-top:.6rem">
+              <input type="checkbox" name="refazer" value="{{ secao.order }}"
+                     form="form-refazer" style="width:auto">
+              <span>{% translate "refazer esta secao" %}</span>
+            </label>
+          </li>
+        {% endfor %}
+      </ul>
+      <div class="acoes">
+        <button type="submit" class="botao secundario">
+          {% translate "Salvar edicoes das secoes" %}
+        </button>
+      </div>
+    </form>
+
+    {% comment %}
+      Bloco separado, e nao mais um botao no formulario acima: as caixas de
+      marcar pertencem a ele por `form=`, mas a acao de refazer precisa carregar
+      os parametros e um aviso proprio. Misturar "salvar o que eu escrevi" com
+      "jogue fora o que eu escrevi e gere de novo" no mesmo lugar e como o
+      engano acontece.
+    {% endcomment %}
+    <h2>{% translate "Refazer" %}</h2>
+    <form method="post" action="{% url 'content:refazer_secoes' artigo.pk %}" id="form-refazer">
+      {% csrf_token %}
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Refazer com os mesmos parametros costuma devolver a mesma coisa.
+          Ajuste abaixo antes de pedir de novo.
+        {% endblocktranslate %}
+      </p>
+      <div class="cartoes">
+        <div>
+          <label for="palavra_chave">{% translate "Palavra-chave principal" %}</label>
+          <input type="text" name="palavra_chave" id="palavra_chave"
+                 value="{{ artigo.focus_keyword }}">
+        </div>
+        <div>
+          <label for="palavras_secundarias">{% translate "Secundarias (separadas por virgula)" %}</label>
+          <input type="text" name="palavras_secundarias" id="palavras_secundarias"
+                 value="{{ artigo.secondary_keywords|join:', ' }}">
+        </div>
+        <div>
+          <label for="publico">{% translate "Publico" %}</label>
+          <input type="text" name="publico" id="publico" value="{{ artigo.audience }}">
+        </div>
+        <div>
+          <label for="intencao">{% translate "Intencao de busca" %}</label>
+          <input type="text" name="intencao" id="intencao" value="{{ artigo.search_intent }}">
+        </div>
+      </div>
+
+      <div class="aviso">
+        <strong>{% translate "Refaz SO as secoes marcadas acima." %}</strong>
+        {% blocktranslate trimmed %}
+          As outras ficam exatamente como estao, inclusive o que voce editou a
+          mao. Custa uma chamada ao modelo por secao marcada.
+        {% endblocktranslate %}
+      </div>
+      <div class="acoes">
+        <button type="submit" {% if refazendo %}disabled{% endif %}>
+          {% translate "Refazer as secoes marcadas" %}
+        </button>
+      </div>
+    </form>
+
+    <div class="aviso ruim" style="margin-top:1.5rem">
+      <strong>{% translate "Ou recomecar o artigo do zero." %}</strong>
+      {% blocktranslate trimmed with total=secoes|length %}
+        Replanejar descarta as {{ total }} secoes atuais — inclusive as suas
+        edicoes — e monta um esqueleto novo, que pode ter outros subtitulos e
+        outra quantidade de secoes. As fontes continuam as mesmas.
+      {% endblocktranslate %}
+      <div style="margin-top:.6rem">
+        <a href="{% url 'content:replanejar' artigo.pk %}">
+          {% translate "Ver o que se perde ao replanejar" %}
+        </a>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if titulos_sugeridos %}
+    <h2>{% translate "Titulos sugeridos" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Opcoes para busca, geradas a partir da abertura. O titulo atual nao foi
+        trocado sozinho — a pauta o nomeou. Copie o que preferir para o campo
+        Titulo abaixo.
+      {% endblocktranslate %}
+    </p>
+    <ul class="lista">
+      {% for sugestao in titulos_sugeridos %}
+        <li><code>{{ sugestao }}</code> <span class="selo">{{ sugestao|length }}</span></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
   <form method="post">
     {% csrf_token %}
     <div class="duas-colunas">

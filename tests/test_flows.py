@@ -533,3 +533,119 @@ def test_palavras_chave_e_metadados_ficam_no_artigo(tenant_com_acervo, conexao, 
     # artigo nao muda sozinho, porque a pauta ja o nomeou.
     assert len(artigo.thesis_json["titulos_sugeridos"]) == 3
     assert artigo.title == "Efeito no metabolismo"
+
+
+# ---------------------------------------------------------------------------
+# Refazer, na revisao
+# ---------------------------------------------------------------------------
+def _gerar_artigo(monkeypatch, titulo="Efeito no metabolismo"):
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+    topic = Topic.objects.create(title=titulo)
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+    _rodar_ate_o_fim(str(job.pk))
+    return Article.objects.get(topic=topic), modelo
+
+
+@pytest.mark.django_db
+def test_refazer_uma_secao_preserva_as_outras(tenant_com_acervo, conexao, monkeypatch):
+    """O ponto de existir secao: consertar uma parte sem perder o resto."""
+    from apps.content.services import marcar_secoes_para_refazer
+
+    artigo, _ = _gerar_artigo(monkeypatch)
+    primeira, segunda = list(artigo.sections.all())
+    texto_preservado = segunda.body_markdown
+
+    modelo = ModeloFalso(["Texto novo da primeira secao, agora mais fundo."])
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    marcar_secoes_para_refazer(artigo, {primeira.order})
+    job = criar_job(kind=GenerationJob.Kind.ARTICLE_REDRAFT, target_object_id=str(artigo.pk))
+    assert _rodar_ate_o_fim(str(job.pk)) == GenerationJob.Status.DONE
+
+    primeira.refresh_from_db()
+    segunda.refresh_from_db()
+    assert primeira.body_markdown.startswith("Texto novo")
+    assert segunda.body_markdown == texto_preservado
+    # Uma chamada, para uma secao. Refazer nao regera o artigo inteiro.
+    assert len(modelo.chamadas) == 1
+
+    artigo.refresh_from_db()
+    assert "Texto novo da primeira secao" in artigo.body_markdown
+    assert texto_preservado.split(".")[0] in artigo.body_markdown
+
+
+@pytest.mark.django_db
+def test_refazer_usa_as_mesmas_fontes_ja_conferidas(tenant_com_acervo, conexao, monkeypatch):
+    """Sem o payload da recuperacao, as fontes vem das citacoes gravadas.
+
+    Buscar de novo poderia trazer outro trecho, e o texto refeito citaria uma
+    fonte que o revisor nunca conferiu.
+    """
+    from apps.content.services import marcar_secoes_para_refazer
+
+    artigo, _ = _gerar_artigo(monkeypatch)
+    citadas = {str(c.super_chunk_id) for c in artigo.citations.all()}
+
+    modelo = ModeloFalso(["Texto novo."])
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    marcar_secoes_para_refazer(artigo, {1})
+    job = criar_job(kind=GenerationJob.Kind.ARTICLE_REDRAFT, target_object_id=str(artigo.pk))
+    _rodar_ate_o_fim(str(job.pk))
+
+    artigo.refresh_from_db()
+    assert {str(c.super_chunk_id) for c in artigo.citations.all()} == citadas
+    assert "O efeito observado no experimento" in modelo.chamadas[0]["user"]
+
+
+@pytest.mark.django_db
+def test_replanejar_descarta_o_esqueleto_e_recomeca(tenant_com_acervo, conexao, monkeypatch):
+    from apps.content.services import limpar_plano
+
+    artigo, _ = _gerar_artigo(monkeypatch)
+    assert artigo.sections.count() == 2
+
+    plano_novo = json.dumps(
+        {
+            "palavra_chave": "metabolismo e exercicio",
+            "palavras_secundarias": ["gasto calorico"],
+            "secoes": [
+                {"titulo": "Uma abordagem diferente", "objetivo": "outro angulo", "fontes": [1]},
+                {"titulo": "O que falta saber", "objetivo": "lacunas", "fontes": [1]},
+                {"titulo": "Como interpretar", "objetivo": "leitura", "fontes": [1]},
+            ],
+        }
+    )
+    modelo = ModeloFalso([plano_novo, "Secao 1.", "Secao 2.", "Secao 3.", MOLDURA, METADADOS])
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    limpar_plano(artigo)
+    job = criar_job(kind=GenerationJob.Kind.ARTICLE_REPLAN, target_object_id=str(artigo.pk))
+    assert _rodar_ate_o_fim(str(job.pk)) == GenerationJob.Status.DONE
+
+    artigo.refresh_from_db()
+    assert artigo.sections.count() == 3
+    titulos = [s.heading for s in artigo.sections.all()]
+    assert titulos == ["Uma abordagem diferente", "O que falta saber", "Como interpretar"]
+    assert artigo.focus_keyword == "metabolismo e exercicio"
+    assert "O que a literatura mostra" not in artigo.body_markdown
+
+
+@pytest.mark.django_db
+def test_limpar_plano_descarta_a_moldura_junto(tenant_com_acervo, conexao, monkeypatch):
+    """A abertura descreve um esqueleto que deixou de existir.
+
+    Mantida, ela prometeria secoes que o novo plano pode nao ter — que e
+    exatamente o defeito que escrever a abertura por ultimo evita.
+    """
+    from apps.content.services import limpar_plano
+
+    artigo, _ = _gerar_artigo(monkeypatch)
+    assert artigo.thesis_json["moldura"]["abertura"]
+
+    limpar_plano(artigo)
+
+    artigo.refresh_from_db()
+    assert "moldura" not in artigo.thesis_json
+    assert artigo.sections.count() == 0

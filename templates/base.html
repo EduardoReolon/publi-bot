@@ -113,6 +113,10 @@
       border: 1px solid var(--borda); background: var(--fundo); color: var(--texto);
       font: .92rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical;
     }
+    /* A caixa de uma secao guarda 2 a 4 paragrafos, nao um artigo inteiro. Com
+       a altura minima do corpo completo, seis secoes empurram os botoes para
+       fora da tela e a pagina deixa de ser navegavel. */
+    textarea.curto { min-height: 9rem; }
     select, input[type=url], input[type=number], input[type=datetime-local] {
       width: 100%; padding: .6rem .7rem; font-size: 1rem; color: var(--texto);
       background: var(--fundo); border: 1px solid var(--borda); border-radius: .4rem;

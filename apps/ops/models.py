@@ -33,6 +33,12 @@ class GenerationJob(models.Model):
 
     class Kind(models.TextChoices):
         PILLAR_ARTICLE = "pillar_article", _("Artigo pilar")
+        # Refazer parte do artigo, na revisao. Sao dois trabalhos diferentes de
+        # proposito: um custa uma chamada por secao marcada e preserva o resto;
+        # o outro joga fora o esqueleto e recomeca. Confundi-los na interface
+        # faria alguem perder cinco secoes boas querendo consertar uma.
+        ARTICLE_REDRAFT = "article_redraft", _("Refazer secoes do artigo")
+        ARTICLE_REPLAN = "article_replan", _("Replanejar o artigo")
         QA_ANSWER = "qa_answer", _("Resposta a pergunta")
         PDF_INGESTION = "pdf_ingestion", _("Conversao de PDF")
 
