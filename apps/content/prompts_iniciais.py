@@ -90,6 +90,166 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Escreva o artigo."
         ),
     },
+    # -----------------------------------------------------------------------
+    # Redacao em varias rodadas
+    #
+    # Um artigo inteiro numa chamada so exige janela grande e produz texto
+    # medio: o modelo dilui a atencao entre quinze fontes e seis assuntos. Aqui
+    # o trabalho e quebrado — planeja, escreve secao por secao, e so no fim
+    # escreve a abertura, o fecho e os metadados. Cada prompt e curto, cada
+    # saida e curta, e nenhum deles precisa do artigo inteiro na frente.
+    # -----------------------------------------------------------------------
+    "article_outline": {
+        "descricao": "Planeja a estrutura do artigo e propoe as palavras-chave.",
+        "variaveis": ["titulo", "tese", "fontes", "palavra_chave", "publico", "idioma"],
+        "temperatura": 0.3,
+        "sistema": (
+            "Voce planeja artigos de conteudo tecnico para busca organica.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON, sem texto antes ou depois:\n"
+            '  "palavra_chave": o termo principal, do jeito que alguem digitaria;\n'
+            '  "palavras_secundarias": 3 a 6 termos relacionados que o texto '
+            "deve cobrir;\n"
+            '  "intencao": o que a pessoa quer ao buscar isso (entender, '
+            "comparar, decidir, resolver);\n"
+            '  "publico": para quem o texto e escrito;\n'
+            '  "secoes": lista de 3 a 6 objetos {titulo, objetivo, '
+            "palavras_chave, fontes}.\n\n"
+            "Sobre as secoes:\n"
+            '- "titulo" e o H2 como aparecera no artigo. Escreva-o como a '
+            "pessoa pensa a duvida, nao como um indice academico "
+            '("Quanto tempo leva", nao "Aspectos temporais").\n'
+            '- "objetivo" e a pergunta que a secao responde, em uma frase. '
+            "Duas secoes nunca podem responder a mesma pergunta.\n"
+            '- "fontes" sao os NUMEROS das fontes que sustentam aquela secao. '
+            "Use apenas numeros que existem na lista. Uma fonte pode servir a "
+            "mais de uma secao.\n\n"
+            "Regras duras:\n"
+            "- Nao planeje secao que as fontes nao sustentam. Menos secoes com "
+            "fundamento e melhor que mais secoes vazias.\n"
+            "- Nao crie secao de introducao nem de conclusao: elas sao escritas "
+            "separadamente, depois.\n"
+            "- Nao repita a palavra-chave em todos os titulos. Isso e sinal de "
+            "texto feito para robo, e prejudica o texto e a busca."
+        ),
+        "usuario": (
+            "Tema: {titulo}\n"
+            "Palavra-chave sugerida: {palavra_chave}\n"
+            "Publico: {publico}\n"
+            "Idioma: {idioma}\n\n"
+            "Tese consolidada:\n{tese}\n\n"
+            "Fontes disponiveis:\n\n{fontes}\n\n"
+            "Produza o JSON do plano."
+        ),
+    },
+    "section_draft": {
+        "descricao": "Escreve UMA secao do artigo, com as fontes que lhe cabem.",
+        "variaveis": [
+            "titulo_do_artigo",
+            "titulo_da_secao",
+            "objetivo",
+            "palavras_chave",
+            "esqueleto",
+            "fontes",
+            "idioma",
+        ],
+        "temperatura": 0.4,
+        "sistema": (
+            "Voce escreve uma secao de um artigo tecnico para leitores nao "
+            "especialistas. Escreve bem porque escreve pouco de cada vez.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            f"{REGRA_DOS_LINKS}\n\n"
+            "Regras de conteudo:\n"
+            "- Escreva SOMENTE o que as fontes desta secao sustentam. Nao "
+            "complete lacunas com conhecimento proprio.\n"
+            "- Responda ao objetivo da secao e pare. O esqueleto mostra o que as "
+            "outras secoes cobrem: nao invada o assunto delas.\n"
+            "- Nao indique posologia, dose, marca comercial nem promessa de "
+            "resultado.\n"
+            "- Nao se dirija ao leitor no imperativo sobre a propria saude.\n"
+            "- Se as fontes divergirem, mostre a divergencia em vez de escolher "
+            "um lado.\n\n"
+            "Regras de forma:\n"
+            "- Escreva o CORPO da secao apenas. Nao repita o titulo dela.\n"
+            "- 2 a 4 paragrafos. Frases curtas. Primeira frase entrega a "
+            "resposta; o resto sustenta.\n"
+            "- Use as palavras-chave da secao com naturalidade, onde couberem. "
+            "Repeti-las forcadamente piora o texto e nao ajuda a busca.\n"
+            "- Subtitulo de nivel 3 so se a secao tiver mesmo duas partes.\n"
+            "- Markdown, sem titulo de nivel 1 ou 2."
+        ),
+        "usuario": (
+            "Artigo: {titulo_do_artigo}\n"
+            "Idioma: {idioma}\n\n"
+            "Esqueleto do artigo (para nao invadir as outras secoes):\n"
+            "{esqueleto}\n\n"
+            "SECAO A ESCREVER: {titulo_da_secao}\n"
+            "Objetivo: {objetivo}\n"
+            "Palavras-chave desta secao: {palavras_chave}\n\n"
+            "Fontes desta secao:\n\n{fontes}\n\n"
+            "Escreva o corpo da secao."
+        ),
+    },
+    "article_framing": {
+        "descricao": "Escreve a abertura e o fecho, depois de o corpo existir.",
+        "variaveis": ["titulo", "tese", "esqueleto", "palavra_chave", "idioma"],
+        "temperatura": 0.4,
+        "sistema": (
+            "Voce escreve a abertura e o fecho de um artigo tecnico ja "
+            "redigido.\n\n"
+            "Sao escritos por ultimo de proposito: so quem sabe o que o artigo "
+            "diz consegue prometer no comeco exatamente o que o texto entrega. "
+            "Abertura escrita antes promete o que o artigo nao cumpre.\n\n"
+            f"{REGRA_DOS_LINKS}\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "abertura": 1 a 2 paragrafos. Comece pelo problema de quem le, '
+            "nao por definicao de dicionario. Diga o que o artigo responde. "
+            'Nao escreva "neste artigo vamos".\n'
+            '  "fecho": 1 paragrafo. Feche o raciocinio. Nao resuma o que ja '
+            "foi dito nem repita os subtitulos.\n\n"
+            "Regras:\n"
+            "- Nao afirme nada que o esqueleto nao mostre. Voce nao viu as "
+            "fontes; nao invente resultado nem numero.\n"
+            "- Sem sensacionalismo, sem promessa de resultado, sem chamada para "
+            "acao comercial."
+        ),
+        "usuario": (
+            "Titulo: {titulo}\n"
+            "Palavra-chave: {palavra_chave}\n"
+            "Idioma: {idioma}\n\n"
+            "Tese:\n{tese}\n\n"
+            "Esqueleto do que o artigo cobre:\n{esqueleto}\n\n"
+            "Produza o JSON."
+        ),
+    },
+    "seo_metadata": {
+        "descricao": "Titulo de busca, meta description e resumo.",
+        "variaveis": ["titulo", "abertura", "palavra_chave", "idioma"],
+        "temperatura": 0.5,
+        "sistema": (
+            "Voce escreve os metadados de busca de um artigo.\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "titulos": 3 opcoes de titulo, ate 60 caracteres cada, com a '
+            "palavra-chave perto do comeco. Sao opcoes para uma pessoa "
+            "escolher, entao devem ser diferentes entre si — nao tres versoes "
+            "da mesma frase;\n"
+            '  "meta_description": ate 155 caracteres, dizendo o que o leitor '
+            "ganha ao abrir. Nao e resumo do artigo;\n"
+            '  "resumo": 1 a 2 frases para a listagem do site.\n\n'
+            "Regras:\n"
+            '- Nada de isca ("voce nao vai acreditar") nem promessa de '
+            "resultado.\n"
+            "- Nao prometa o que a abertura nao sustenta.\n"
+            "- Nao use reticencias para caber no limite: reescreva menor."
+        ),
+        "usuario": (
+            "Titulo atual: {titulo}\n"
+            "Palavra-chave: {palavra_chave}\n"
+            "Idioma: {idioma}\n\n"
+            "Abertura do artigo:\n{abertura}\n\n"
+            "Produza o JSON."
+        ),
+    },
     "topic_ideation": {
         "descricao": "Sugere pautas evitando repetir o que o site ja publicou.",
         "variaveis": ["nicho", "publicados", "temas_do_corpus"],

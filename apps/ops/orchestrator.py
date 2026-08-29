@@ -50,10 +50,27 @@ class PassoAdiado(Exception):
 
 
 @dataclass(frozen=True)
+class Continuar:
+    """O passo progrediu, mas ainda tem trabalho. Grava e chama de novo.
+
+    Existe para redigir um artigo secao a secao. Escrever seis secoes numa
+    unica chamada seguraria o trabalho por varios minutos e desmontaria a regra
+    de uma inferencia por vez; escrever cada uma num passo fixo exigiria saber
+    quantas secoes existem antes de planejar o artigo.
+
+    Quem decide se acabou e o banco, nunca um contador na memoria: o passo olha
+    quantas secoes ainda estao sem texto e devolve `Continuar` enquanto houver.
+    Um processo morto no meio retoma exatamente de onde parou.
+    """
+
+    resultado: dict
+
+
+@dataclass(frozen=True)
 class Passo:
     numero: int
     nome: str
-    executar: Callable[[GenerationJob], dict]
+    executar: Callable[[GenerationJob], dict | Continuar]
 
 
 class Fluxo:
@@ -166,7 +183,33 @@ def avancar(job_id) -> str:
         logger.exception("Job %s falhou no passo %s", job.pk, passo.numero)
         return _falhar(job, f"passo {passo.numero} ({passo.nome}): {exc}")
 
+    if isinstance(resultado, Continuar):
+        return _repetir_passo(job, passo, resultado.resultado or {})
+
     return _concluir_passo(job, passo, resultado or {})
+
+
+def _repetir_passo(job: GenerationJob, passo: Passo, resultado: dict) -> str:
+    """Grava o progresso e devolve o trabalho a fila, no MESMO passo.
+
+    A diferenca para `_concluir_passo` e uma linha — nao incrementar o contador
+    — e a diferenca para `_adiar` e o significado: aqui houve progresso, entao
+    nao ha espera nem contagem de tentativa.
+    """
+    with transaction.atomic():
+        atual = GenerationJob.objects.select_for_update().get(pk=job.pk)
+        payloads = dict(atual.step_payloads or {})
+        payloads[str(passo.numero)] = resultado
+        atual.step_payloads = payloads
+        atual.last_error = ""
+        atual.lease_token = None
+        atual.lease_expires_at = None
+        atual.status = GenerationJob.Status.PENDING
+        atual.save()
+
+    # Devolver PENDING basta: `advance_generation_job` reencadeia sozinha
+    # enquanto o trabalho estiver nesse estado.
+    return GenerationJob.Status.PENDING
 
 
 def _concluir_passo(job: GenerationJob, passo: Passo, resultado: dict) -> str:

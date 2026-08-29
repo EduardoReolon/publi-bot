@@ -81,6 +81,56 @@ ARTIGO = (
     "## Limites\n\nA amostra ainda e pequena."
 )
 
+# A redacao acontece em rodadas: plano, uma chamada por secao, abertura e fecho,
+# metadados. As respostas abaixo sao o roteiro dessa sequencia.
+PLANO = json.dumps(
+    {
+        "palavra_chave": "efeito no metabolismo",
+        "palavras_secundarias": ["taxa metabolica", "gasto energetico"],
+        "intencao": "entender",
+        "publico": "leitores nao especialistas",
+        "secoes": [
+            {
+                "titulo": "O que a literatura mostra",
+                "objetivo": "Resumir o achado principal",
+                "palavras_chave": ["taxa metabolica"],
+                "fontes": [1],
+            },
+            {
+                "titulo": "Limites do que se sabe",
+                "objetivo": "Dizer o que ainda nao esta estabelecido",
+                "palavras_chave": ["gasto energetico"],
+                "fontes": [1],
+            },
+        ],
+    }
+)
+
+SECAO_A = "O efeito aparece de forma consistente nos estudos analisados [[FONTE_1]]."
+SECAO_B = "A amostra ainda e pequena e os estudos sao de curta duracao."
+
+MOLDURA = json.dumps(
+    {
+        "abertura": "Quem acompanha o tema encontra respostas conflitantes.",
+        "fecho": "O quadro atual sustenta cautela, nao conclusao.",
+    }
+)
+
+METADADOS = json.dumps(
+    {
+        "titulos": [
+            "Efeito no metabolismo: o que os estudos mostram",
+            "Metabolismo e exercicio: o que se sabe",
+            "O que muda no metabolismo, segundo a literatura",
+        ],
+        "meta_description": "O que os estudos mostram sobre o efeito no metabolismo.",
+        "resumo": "Uma leitura do que a literatura sustenta, e do que ainda nao.",
+    }
+)
+
+# O roteiro completo do fluxo do artigo, na ordem em que o modelo e chamado.
+ROTEIRO_DO_ARTIGO = [TESE, PLANO, SECAO_A, SECAO_B, MOLDURA, METADADOS]
+
 
 @pytest.fixture
 def tenant_com_acervo(tenant_factory, settings):
@@ -123,7 +173,7 @@ def conexao():
     )
 
 
-def _rodar_ate_o_fim(job_id: str, maximo: int = 10) -> str:
+def _rodar_ate_o_fim(job_id: str, maximo: int = 30) -> str:
     """Chama `avancar` repetidamente, como a task faz."""
     situacao = ""
     for _ in range(maximo):
@@ -140,7 +190,7 @@ def _rodar_ate_o_fim(job_id: str, maximo: int = 10) -> str:
 def test_fluxo_do_artigo_vai_da_pauta_ao_aguardando_revisao(
     tenant_com_acervo, conexao, monkeypatch
 ):
-    modelo = ModeloFalso([TESE, ARTIGO])
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
 
     topic = Topic.objects.create(title="Efeito no metabolismo", target_keyword="metabolismo")
@@ -171,7 +221,7 @@ def test_o_segundo_passo_le_o_que_o_primeiro_gravou(tenant_com_acervo, conexao, 
     E o que permite o processo morrer entre dois passos e o trabalho retomar
     de onde parou.
     """
-    modelo = ModeloFalso([TESE, ARTIGO])
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
 
     topic = Topic.objects.create(title="Efeito no metabolismo")
@@ -184,9 +234,9 @@ def test_o_segundo_passo_le_o_que_o_primeiro_gravou(tenant_com_acervo, conexao, 
 
     _rodar_ate_o_fim(str(job.pk))
 
-    # O prompt da redacao recebeu a tese produzida pelo passo anterior.
-    prompt_da_redacao = modelo.chamadas[1]["user"]
-    assert "As fontes convergem" in prompt_da_redacao
+    # O planejamento recebeu a tese produzida pelo passo anterior.
+    prompt_do_plano = modelo.chamadas[1]["user"]
+    assert "As fontes convergem" in prompt_do_plano
 
 
 @pytest.mark.django_db
@@ -221,14 +271,18 @@ def test_link_escrito_pelo_modelo_derruba_o_passo(tenant_com_acervo, conexao, mo
     Nao basta a funcao recusar: o caminho que a chama precisa recusar junto,
     senao a protecao existe e nao e alcancada.
     """
-    modelo = ModeloFalso([TESE, "Veja em https://site-inventado.exemplo/artigo o estudo."])
+    # A URL entra onde uma secao seria escrita. A trava roda por secao, e nao so
+    # na montagem: derrubar a secao que produziu a URL custa uma chamada, e
+    # derrubar so na montagem custaria todas as outras.
+    modelo = ModeloFalso([TESE, PLANO, "Veja em https://site-inventado.exemplo/artigo o estudo."])
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
 
     topic = Topic.objects.create(title="Efeito no metabolismo")
     job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
 
-    avancar(str(job.pk))
-    avancar(str(job.pk))
+    avancar(str(job.pk))  # recuperar fontes
+    avancar(str(job.pk))  # filtrar consenso
+    avancar(str(job.pk))  # planejar
     assert avancar(str(job.pk)) == GenerationJob.Status.FAILED
 
     job.refresh_from_db()
@@ -332,3 +386,150 @@ def test_fluxo_da_resposta_produz_resposta_aguardando_revisao(
     assert "https://revista.exemplo.org/estudo" in resposta.body_markdown
     assert resposta.author_name == "Dra. Souza"
     assert resposta.citations.count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Redacao em rodadas
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_cada_secao_e_uma_chamada_com_contexto_proprio(tenant_com_acervo, conexao, monkeypatch):
+    """O ponto do desenho: contexto pequeno por rodada.
+
+    Um modelo pequeno escreve bem 300 palavras com as fontes daquela secao na
+    frente, e mal um artigo inteiro. Se as secoes voltassem a ser escritas numa
+    chamada so, este teste e o que denuncia.
+    """
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+    _rodar_ate_o_fim(str(job.pk))
+
+    artigo = Article.objects.get(topic=topic)
+    assert artigo.sections.count() == 2
+
+    # Seis chamadas: tese, plano, duas secoes, moldura, metadados.
+    assert len(modelo.chamadas) == 6
+
+    primeira, segunda = modelo.chamadas[2], modelo.chamadas[3]
+    assert "O que a literatura mostra" in primeira["user"]
+    assert "Limites do que se sabe" in segunda["user"]
+    # Cada secao recebe o esqueleto para nao invadir o assunto da outra.
+    assert "Limites do que se sabe" in primeira["user"]
+
+
+@pytest.mark.django_db
+def test_o_trabalho_retoma_na_secao_seguinte(tenant_com_acervo, conexao, monkeypatch):
+    """Interrompido no meio, refaz a secao que falta — nao o artigo.
+
+    E o que separa `Continuar` de um laco dentro do passo: o laco perderia
+    tudo, porque o progresso so existiria na memoria do processo morto.
+    """
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+
+    for _ in range(4):  # fontes, consenso, plano, primeira secao
+        avancar(str(job.pk))
+
+    artigo = Article.objects.get(topic=topic)
+    escritas = [s for s in artigo.sections.all() if s.escrita]
+    assert len(escritas) == 1
+
+    # O passo nao avancou: ainda ha secao para escrever.
+    job.refresh_from_db()
+    assert job.current_step == 3
+
+    _rodar_ate_o_fim(str(job.pk))
+    artigo.refresh_from_db()
+    assert all(s.escrita for s in artigo.sections.all())
+    # A primeira secao nao foi reescrita: o modelo foi chamado uma vez por secao.
+    assert len(modelo.chamadas) == 6
+
+
+@pytest.mark.django_db
+def test_plano_com_fonte_inventada_e_recusado(tenant_com_acervo, conexao, monkeypatch):
+    """Numero de fonte que nao existe faria a secao ser escrita sem fonte — e
+    o texto sairia mesmo assim, parecendo fundamentado."""
+    plano_ruim = json.dumps(
+        {
+            "palavra_chave": "metabolismo",
+            "secoes": [
+                {"titulo": "Uma secao", "objetivo": "algo", "fontes": [7, 9]},
+                {"titulo": "Outra secao", "objetivo": "algo", "fontes": [1]},
+            ],
+        }
+    )
+    modelo = ModeloFalso([TESE, plano_ruim])
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+
+    avancar(str(job.pk))
+    avancar(str(job.pk))
+    assert avancar(str(job.pk)) == GenerationJob.Status.FAILED
+
+    job.refresh_from_db()
+    assert "fonte" in job.last_error.lower()
+
+
+@pytest.mark.django_db
+def test_abertura_e_fecho_veem_o_esqueleto_pronto(tenant_com_acervo, conexao, monkeypatch):
+    """Escritos por ultimo de proposito: abertura feita antes do corpo promete
+    o que o artigo nao cumpre."""
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+    _rodar_ate_o_fim(str(job.pk))
+
+    prompt_da_moldura = modelo.chamadas[4]["user"]
+    assert "O que a literatura mostra" in prompt_da_moldura
+    assert "Limites do que se sabe" in prompt_da_moldura
+
+    artigo = Article.objects.get(topic=topic)
+    assert artigo.body_markdown.startswith("Quem acompanha o tema")
+    assert artigo.body_markdown.rstrip().endswith("nao conclusao.")
+
+
+@pytest.mark.django_db
+def test_a_montagem_passa_pela_trava_de_link(tenant_com_acervo, conexao, monkeypatch):
+    """As secoes sao material de trabalho, nao um segundo caminho para o ar."""
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+    _rodar_ate_o_fim(str(job.pk))
+
+    artigo = Article.objects.get(topic=topic)
+    assert "[[FONTE_1]]" not in artigo.body_markdown
+    assert "https://revista.exemplo.org/estudo" in artigo.body_markdown
+    # Os titulos das secoes viraram H2 no texto publicado.
+    assert "## O que a literatura mostra" in artigo.body_markdown
+    assert "## Limites do que se sabe" in artigo.body_markdown
+
+
+@pytest.mark.django_db
+def test_palavras_chave_e_metadados_ficam_no_artigo(tenant_com_acervo, conexao, monkeypatch):
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    job = criar_job(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+    _rodar_ate_o_fim(str(job.pk))
+
+    artigo = Article.objects.get(topic=topic)
+    assert artigo.focus_keyword == "efeito no metabolismo"
+    assert "taxa metabolica" in artigo.secondary_keywords
+    assert artigo.meta_description.startswith("O que os estudos mostram")
+    assert artigo.excerpt
+    # As opcoes de titulo ficam guardadas para a revisao escolher; o titulo do
+    # artigo nao muda sozinho, porque a pauta ja o nomeou.
+    assert len(artigo.thesis_json["titulos_sugeridos"]) == 3
+    assert artigo.title == "Efeito no metabolismo"

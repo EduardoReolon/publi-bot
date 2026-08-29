@@ -30,7 +30,16 @@ class PromptTemplate(models.Model):
         METADATA_EXTRACT = "metadata_extract", _("Extracao de metadados")
         TOPIC_IDEATION = "topic_ideation", _("Geracao de pautas")
         CONSENSUS_FILTER = "consensus_filter", _("Filtro de consenso")
-        SEO_DRAFT = "seo_draft", _("Redacao")
+        # A redacao acontece em quatro rodadas curtas, e nao numa chamada so:
+        # um modelo pequeno escreve bem 300 palavras com tres fontes na frente,
+        # e mal um artigo inteiro com quinze.
+        ARTICLE_OUTLINE = "article_outline", _("Plano do artigo")
+        SECTION_DRAFT = "section_draft", _("Redacao de secao")
+        ARTICLE_FRAMING = "article_framing", _("Abertura e fecho")
+        SEO_METADATA = "seo_metadata", _("Metadados de busca")
+        # Caminho antigo, de uma tacada. Substituido pelos quatro acima;
+        # mantido porque instalacoes existentes tem a linha no banco.
+        SEO_DRAFT = "seo_draft", _("Redacao (caminho antigo)")
         QA_ANSWER = "qa_answer", _("Resposta a pergunta")
         IMAGE_PROMPT = "image_prompt", _("Prompt de imagem")
 
@@ -232,6 +241,17 @@ class Article(models.Model):
     meta_description = models.CharField(_("meta description"), max_length=160, blank=True)
     focus_keyword = models.CharField(_("palavra-chave"), max_length=120, blank=True)
 
+    # Termos secundarios que o texto deve cobrir. Sugeridos pelo planejamento e
+    # editaveis na revisao: quem conhece o negocio sabe o que o publico procura
+    # melhor que o modelo, mas ter uma sugestao evita a folha em branco.
+    secondary_keywords = models.JSONField(_("palavras-chave secundarias"), default=list, blank=True)
+
+    # Para quem o texto e escrito e o que a pessoa quer ao buscar. Muda o tom e
+    # a estrutura mais do que qualquer outro parametro, e por isso e explicito
+    # em vez de ficar implicito no prompt.
+    audience = models.CharField(_("publico"), max_length=200, blank=True)
+    search_intent = models.CharField(_("intencao de busca"), max_length=200, blank=True)
+
     # Saida estruturada do filtro de consenso.
     thesis_json = models.JSONField(_("tese"), default=dict, blank=True)
     consensus = models.CharField(
@@ -377,6 +397,81 @@ class ArticleRevision(models.Model):
 
     def __str__(self) -> str:
         return f"{self.article} v{self.version} ({self.source})"
+
+
+class ArticleSection(models.Model):
+    """Uma secao do artigo, escrita numa rodada propria.
+
+    O artigo e montado secao a secao por dois motivos que se reforcam.
+
+    **O modelo.** Um LLM pequeno com janela curta escreve bem um trecho de 300
+    palavras com tres fontes na frente, e mal um artigo inteiro com quinze. Cada
+    secao e uma chamada com o contexto minimo dela: o proprio objetivo, as
+    fontes que lhe cabem e o esqueleto para nao repetir o vizinho.
+
+    **A revisao.** Quem revisa quase nunca quer refazer o artigo todo — quer
+    refazer *aquela* secao que ficou rasa. Sem esta tabela, "refazer" so poderia
+    significar jogar fora o texto inteiro, inclusive as partes boas.
+
+    O texto publicado continua sendo o `body_markdown` do artigo: estas linhas
+    sao o material de trabalho, e a montagem passa pelas mesmas travas de link
+    e sanitizacao de sempre.
+    """
+
+    class Status(models.TextChoices):
+        PLANNED = "planned", _("Planejada")
+        WRITTEN = "written", _("Escrita")
+        EDITED = "edited", _("Editada por humano")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    article = models.ForeignKey(
+        Article, on_delete=models.CASCADE, related_name="sections", verbose_name=_("artigo")
+    )
+    order = models.PositiveSmallIntegerField(_("ordem"))
+    level = models.PositiveSmallIntegerField(_("nivel"), default=2)
+    heading = models.CharField(_("titulo"), max_length=200)
+
+    # O que esta secao precisa responder. Vem do planejamento e e o que impede
+    # duas secoes de dizerem a mesma coisa sem nenhuma delas ver a outra.
+    intent = models.TextField(_("objetivo"), blank=True)
+    keywords = models.JSONField(_("palavras-chave"), default=list, blank=True)
+
+    # Quais fontes cabem a esta secao. Guardado por id para o passo re-entrar
+    # pelo banco, como todo o resto do orquestrador.
+    chunk_ids = models.JSONField(_("fontes"), default=list, blank=True)
+
+    body_markdown = models.TextField(_("texto"), blank=True)
+    status = models.CharField(
+        _("situacao"), max_length=8, choices=Status.choices, default=Status.PLANNED
+    )
+    prompt_run = models.ForeignKey(
+        PromptRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sections",
+        verbose_name=_("execucao"),
+    )
+    updated_at = models.DateTimeField(_("atualizada em"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("secao do artigo")
+        verbose_name_plural = _("secoes do artigo")
+        ordering = ["article", "order"]
+        constraints = [
+            models.UniqueConstraint(fields=["article", "order"], name="uniq_secao_artigo_ordem")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.order}. {self.heading}"
+
+    @property
+    def escrita(self) -> bool:
+        return bool(self.body_markdown.strip())
+
+    @property
+    def palavras(self) -> int:
+        return len(self.body_markdown.split())
 
 
 class ArticleCitation(models.Model):

@@ -425,3 +425,204 @@ def aprovar_resposta_e_agendar(answer, *, revisor, quando, exige_revisor_tecnico
     answer.scheduled_for = quando
     answer.save()
     return answer
+
+
+# ---------------------------------------------------------------------------
+# Redacao em varias rodadas
+# ---------------------------------------------------------------------------
+# Um artigo inteiro numa chamada so exige janela grande e entrega texto medio: o
+# modelo dilui a atencao entre quinze fontes e seis assuntos. Quebrado em
+# rodadas, cada chamada e curta, cabe num modelo pequeno e pode ser refeita
+# sozinha na revisao.
+#
+# O texto publicado continua saindo por `aplicar_rascunho`, com as mesmas travas
+# de link e sanitizacao. As secoes sao material de trabalho, nao um segundo
+# caminho para o ar.
+
+# Um plano com uma secao so nao e plano: ou a pauta e estreita demais, ou o
+# modelo devolveu lixo. Vale falhar e deixar a pessoa ajustar a pauta.
+MINIMO_DE_SECOES = 2
+MAXIMO_DE_SECOES = 8
+
+
+class PlanoInvalido(ValueError):
+    """O planejamento nao devolveu algo utilizavel."""
+
+
+@dataclass(frozen=True)
+class SecaoPlanejada:
+    titulo: str
+    objetivo: str
+    palavras_chave: list[str]
+    fontes: list[int]
+
+
+@dataclass(frozen=True)
+class PlanoDoArtigo:
+    palavra_chave: str
+    palavras_secundarias: list[str]
+    intencao: str
+    publico: str
+    secoes: list[SecaoPlanejada]
+
+
+def interpretar_plano(texto: str, *, total_de_fontes: int) -> PlanoDoArtigo:
+    """Le o JSON do planejamento e recusa o que nao da para usar.
+
+    A validacao dos numeros de fonte nao e zelo: o modelo escolhe quais fontes
+    cabem a cada secao, e um numero inventado faria a secao ser escrita com a
+    fonte errada — ou com nenhuma, o que e pior, porque o texto sai mesmo assim
+    e parece fundamentado.
+    """
+    try:
+        dados = json.loads(texto)
+    except json.JSONDecodeError as exc:
+        raise PlanoInvalido(f"o planejamento nao devolveu JSON valido: {texto[:200]}") from exc
+
+    secoes_brutas = dados.get("secoes") or []
+    if not isinstance(secoes_brutas, list):
+        raise PlanoInvalido("o campo 'secoes' precisa ser uma lista.")
+    if not MINIMO_DE_SECOES <= len(secoes_brutas) <= MAXIMO_DE_SECOES:
+        raise PlanoInvalido(
+            f"o plano veio com {len(secoes_brutas)} secao(oes); "
+            f"o aceitavel e de {MINIMO_DE_SECOES} a {MAXIMO_DE_SECOES}."
+        )
+
+    secoes = []
+    for bruta in secoes_brutas:
+        titulo = str(bruta.get("titulo") or "").strip()
+        if not titulo:
+            raise PlanoInvalido("uma das secoes veio sem titulo.")
+
+        # Numero fora da faixa e descartado em silencio; ficar sem nenhum e que
+        # e erro. Uma secao sem fonte nao tem como ser escrita com fundamento.
+        fontes = [n for n in _inteiros(bruta.get("fontes")) if 1 <= n <= total_de_fontes]
+        if not fontes:
+            raise PlanoInvalido(
+                f"a secao {titulo!r} nao ficou com nenhuma fonte valida "
+                f"(o artigo tem {total_de_fontes})."
+            )
+
+        secoes.append(
+            SecaoPlanejada(
+                titulo=titulo[:200],
+                objetivo=str(bruta.get("objetivo") or "").strip(),
+                palavras_chave=_textos(bruta.get("palavras_chave")),
+                fontes=fontes,
+            )
+        )
+
+    return PlanoDoArtigo(
+        palavra_chave=str(dados.get("palavra_chave") or "").strip()[:120],
+        palavras_secundarias=_textos(dados.get("palavras_secundarias"))[:8],
+        intencao=str(dados.get("intencao") or "").strip()[:200],
+        publico=str(dados.get("publico") or "").strip()[:200],
+        secoes=secoes,
+    )
+
+
+def _inteiros(valor) -> list[int]:
+    if not isinstance(valor, list):
+        return []
+    numeros = []
+    for item in valor:
+        try:
+            numeros.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return numeros
+
+
+def _textos(valor) -> list[str]:
+    if not isinstance(valor, list):
+        return []
+    return [str(item).strip() for item in valor if str(item).strip()]
+
+
+@transaction.atomic
+def aplicar_plano(article: Article, plano: PlanoDoArtigo, *, trechos) -> list:
+    """Grava o plano como secoes vazias, prontas para serem escritas.
+
+    Substitui o plano anterior por inteiro. Replanejar e o caminho para quando o
+    esqueleto ficou errado, e manter secoes do plano velho misturadas com as do
+    novo produziria um artigo que nenhum dos dois planos previa.
+    """
+    from apps.content.models import ArticleSection
+
+    article.sections.all().delete()
+
+    if plano.palavra_chave:
+        article.focus_keyword = plano.palavra_chave
+    article.secondary_keywords = plano.palavras_secundarias
+    article.audience = plano.publico
+    article.search_intent = plano.intencao
+    article.save(update_fields=["focus_keyword", "secondary_keywords", "audience", "search_intent"])
+
+    # O numero da fonte no plano e a posicao dela na lista recuperada, que e a
+    # mesma numeracao do marcador [[FONTE_n]]. Guardar o id resolve a traducao
+    # uma vez so, aqui.
+    #
+    # A lista chega ora como `TrechoRecuperado` (vindo da busca), ora como
+    # `SuperChunk` puro (recarregado do payload do passo anterior). O mesmo
+    # desembrulho que `montar_contexto_das_fontes` faz.
+    por_numero = {
+        i: str((t.chunk if hasattr(t, "chunk") else t).pk) for i, t in enumerate(trechos, start=1)
+    }
+
+    criadas = []
+    for ordem, secao in enumerate(plano.secoes, start=1):
+        criadas.append(
+            ArticleSection.objects.create(
+                article=article,
+                order=ordem,
+                level=2,
+                heading=secao.titulo,
+                intent=secao.objetivo,
+                keywords=secao.palavras_chave,
+                chunk_ids=[por_numero[n] for n in secao.fontes if n in por_numero],
+            )
+        )
+    return criadas
+
+
+def esqueleto_do_artigo(article: Article, *, exceto=None) -> str:
+    """O indice do artigo, para uma secao saber o que as outras cobrem.
+
+    E o unico contexto que uma secao recebe sobre o resto: barato em tokens e
+    suficiente para nao invadir o assunto do vizinho, que e o defeito classico
+    de escrever aos pedacos.
+    """
+    linhas = []
+    for secao in article.sections.all():
+        marca = " (esta)" if exceto is not None and secao.pk == exceto.pk else ""
+        objetivo = f" — {secao.intent}" if secao.intent else ""
+        linhas.append(f"{secao.order}. {secao.heading}{marca}{objetivo}")
+    return "\n".join(linhas)
+
+
+def montar_markdown_das_secoes(article: Article) -> str:
+    """Junta abertura, secoes e fecho num Markdown unico.
+
+    A abertura e o fecho ficam no `thesis_json` porque nao sao secoes: nao tem
+    titulo proprio no texto publicado e nao devem aparecer na lista que a
+    revisao oferece para refazer isoladamente.
+    """
+    moldura = (article.thesis_json or {}).get("moldura") or {}
+    partes = []
+
+    abertura = (moldura.get("abertura") or "").strip()
+    if abertura:
+        partes.append(abertura)
+
+    for secao in article.sections.all():
+        corpo = secao.body_markdown.strip()
+        if not corpo:
+            continue
+        marcas = "#" * max(2, min(secao.level, 4))
+        partes.append(f"{marcas} {secao.heading}\n\n{corpo}")
+
+    fecho = (moldura.get("fecho") or "").strip()
+    if fecho:
+        partes.append(fecho)
+
+    return "\n\n".join(partes)
