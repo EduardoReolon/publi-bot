@@ -88,3 +88,11 @@ dump.rdb
 # PDFs de conferencia da extracao: obras de terceiros, cada um mantem os seus.
 # Os resultados esperados ficam em fixtures/extracao/ e entram no git.
 casos/
+
+# Blocos de contexto gerados por scripts/gerar_blocos.py.
+#
+# Derivados do codigo, entao envelhecem a cada commit — e um bloco velho e pior
+# que bloco nenhum: alguem manda para uma IA e recebe resposta confiante sobre
+# codigo que nao existe mais. Regere com `python scripts/gerar_blocos.py`,
+# leva menos de um segundo.
+docs/blocos/

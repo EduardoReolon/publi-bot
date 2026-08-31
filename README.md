@@ -26,7 +26,10 @@ terceiros.
 > As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/), com o
 > raciocinio e as consequencias de cada uma. As falhas que so aparecem ao rodar
 > — e os erros que apontam para o lugar errado — estao em
-> [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md). Quem for mexer na leitura de PDF
+> [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md). Para explicar uma parte do sistema
+> a uma IA de contexto pequeno, `python scripts/gerar_blocos.py` empacota cada
+> capacidade num `.md` que se explica sozinho — ver
+> [`docs/BLOCOS.md`](docs/BLOCOS.md). Quem for mexer na leitura de PDF
 > comeca por [`docs/EXTRACAO.md`](docs/EXTRACAO.md), que explica cada heuristica,
 > contra que impostor ela existe e como calibrar sem quebrar os artigos que ja
 > funcionavam.
@@ -432,6 +435,7 @@ docs/
   ARCHITECTURE.md    especificacao original, com as revisoes marcadas
   ARMADILHAS.md      as falhas reais, e onde cada uma esta tratada
   EXTRACAO.md        as heuristicas de leitura de PDF e como ajusta-las
+  BLOCOS.md          como empacotar o projeto para uma IA de contexto pequeno
   adr/               decisoes de arquitetura
   contrato/          contrato /api/v1 — o que um site precisa implementar
     README.md          regras normativas, vetor de teste e lista de conferencia

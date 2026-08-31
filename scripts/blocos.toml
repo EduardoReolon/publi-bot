@@ -1,0 +1,349 @@
+# Blocos de contexto: quais arquivos viajam juntos quando o projeto e
+# explicado a uma IA de contexto pequeno.
+#
+# ---------------------------------------------------------------------------
+# COMO A ATRIBUICAO FUNCIONA — leia antes de mexer
+# ---------------------------------------------------------------------------
+#
+# 1. Blocos sao avaliados NA ORDEM em que aparecem aqui. O primeiro padrao que
+#    casar leva o arquivo. Por isso os blocos especificos vem antes dos gerais.
+#
+# 2. O ultimo padrao de cada area e um CURINGA (`apps/content/**`, por exemplo).
+#    E ele que cumpre a promessa de "adicionei um arquivo e ele ja entra no
+#    bloco certo": um modulo novo em `apps/content/` cai no bloco daquela area
+#    sem ninguem editar este arquivo.
+#
+# 3. NAO existe curinga global, de proposito. Um diretorio inteiramente novo
+#    (`apps/faturamento/`, digamos) fica orfao, e `gerar_blocos.py` falha
+#    dizendo o nome do arquivo. Um curinga global transformaria isso em
+#    silencio, e o arquivo novo iria parar num bloco onde ninguem o procuraria.
+#
+# Ao acrescentar um bloco: ponha-o ANTES do curinga da area a que pertence.
+
+# ---------------------------------------------------------------------------
+# Fora de qualquer bloco
+# ---------------------------------------------------------------------------
+# Arquivos que existem no repositorio e nao ajudam a explicar nada. Migrations
+# sao geradas pelo Django e sao longas; o modelo que as originou esta no bloco
+# e diz a mesma coisa em menos linhas.
+ignorar = [
+  "**/migrations/**",
+  "**/__pycache__/**",
+  "**/__init__.py",
+  "**/*.pyc",
+  "**/*.po",
+  "**/*.mo",
+  "locale/**",
+  "fixtures/**",
+  "media/**",
+  # A propria saida. Se um dia for versionada, sem esta linha os blocos
+  # entrariam no bloco `decisoes` (que casa `docs/**`) e dobrariam de tamanho a
+  # cada geracao.
+  "docs/blocos/**",
+  "**/.gitkeep",
+  ".gitignore",
+  ".gitattributes",
+  ".pre-commit-config.yaml",
+  "convert_requirements.py",
+  "NOTICE.md",
+  "dump.rdb",
+]
+
+# Tudo que casar aqui so entra com `--com-testes`. Sao a melhor explicacao do
+# comportamento que existe no projeto, e tambem dobram o tamanho do bloco.
+padroes_de_teste = ["tests/**", "tests_contrato/**", "**/test_*.py"]
+
+
+# ---------------------------------------------------------------------------
+# apps/knowledge — o acervo
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "acervo-extracao"
+titulo = "Leitura de PDF: extracao, blocos e metadados"
+resumo = """
+Transforma um PDF enviado em texto, detecta secoes e propoe titulo, autores,
+ano e DOI. E a parte mais heuristica do projeto: cada regra existe por causa de
+um documento real que quebrou a anterior.
+"""
+entrada = ["apps/knowledge/extraction.py", "apps/knowledge/blocos.py"]
+relacionados = ["acervo-busca", "acervo-telas"]
+padroes = [
+  "apps/knowledge/extraction.py",
+  "apps/knowledge/blocos.py",
+  "apps/knowledge/conferencia.py",
+  "apps/knowledge/flows.py",
+  "apps/knowledge/tasks.py",
+  "apps/knowledge/management/**",
+  "docs/EXTRACAO.md",
+  "worker-gpu/**",
+  "tests/test_blocos.py",
+  "tests/test_ingestao.py",
+  "tests/test_conferencia.py",
+]
+
+[[bloco]]
+nome = "acervo-busca"
+titulo = "Recuperacao: embeddings, limiar e saude da busca"
+resumo = """
+Vetoriza paragrafos, busca por similaridade e mede se a busca esta saudavel. O
+limiar de distancia vive por tenant e e calibrado por medicao, nunca herdado de
+recomendacao generica.
+"""
+entrada = ["apps/knowledge/services.py", "apps/knowledge/embeddings.py"]
+relacionados = ["acervo-extracao", "geracao-texto"]
+padroes = [
+  "apps/knowledge/embeddings.py",
+  "apps/knowledge/services.py",
+  "apps/knowledge/saude.py",
+  "tests/test_knowledge.py",
+  "tests/test_saude_da_busca.py",
+  "tests/test_pgvector.py",
+  "tests/test_embeddings_reais.py",
+]
+
+[[bloco]]
+nome = "acervo-telas"
+titulo = "Telas do acervo: envio, curadoria e qualidade da busca"
+resumo = """
+Onde uma pessoa envia documento, confere o que a extracao propos, marca os
+blocos que valem virar vetor e calibra o limiar olhando as distancias reais.
+"""
+entrada = ["apps/knowledge/views.py"]
+relacionados = ["acervo-extracao", "acervo-busca"]
+# Curinga da area: modulo novo em apps/knowledge/ cai aqui.
+padroes = ["apps/knowledge/**", "templates/knowledge/**"]
+
+
+# ---------------------------------------------------------------------------
+# apps/content — producao de conteudo
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "geracao-texto"
+titulo = "Geracao do artigo em rodadas curtas"
+resumo = """
+Planeja o artigo, escreve uma secao por chamada e so no fim monta abertura,
+fecho e metadados. Feito em rodadas porque um modelo pequeno escreve bem um
+trecho com tres fontes na frente, e mal um artigo inteiro com quinze.
+
+Contem tambem a regra de embasamento: a ideia central sai de um artigo de
+referencia, os paragrafos ao redor podem usar conhecimento geral.
+"""
+entrada = ["apps/content/flows.py", "apps/content/services.py"]
+relacionados = ["revisao-telas", "orquestracao", "acervo-busca"]
+padroes = [
+  "apps/content/flows.py",
+  "apps/content/services.py",
+  "apps/content/prompts_iniciais.py",
+  "apps/content/rendering.py",
+  "apps/content/tasks.py",
+  "docs/adr/ADR-0018-embasamento-da-ideia-central.md",
+  "tests/test_flows.py",
+  "tests/test_content.py",
+]
+
+[[bloco]]
+nome = "capas"
+titulo = "Imagem de capa: tres opcoes, escolhidas por uma pessoa"
+resumo = """
+Gera lotes de tres opcoes de capa, permite pedir mais exemplos sem descartar as
+anteriores, e exige que alguem escolha. Inclui a conversao de toda imagem para
+WebP na entrada.
+"""
+entrada = ["apps/content/capas.py"]
+relacionados = ["inferencia", "revisao-telas", "publicacao"]
+padroes = [
+  "apps/content/capas.py",
+  "apps/content/imagens.py",
+  "docs/adr/ADR-0019-tres-opcoes-de-capa.md",
+  "tests/test_capas.py",
+  "tests/test_imagens.py",
+]
+
+[[bloco]]
+nome = "revisao-telas"
+titulo = "Revisao humana: a tela que aprova o conteudo"
+resumo = """
+A tela central do produto. Edita o texto, refaz secoes isoladas ou replaneja
+tudo, escolhe autor e capa, e aprova — com as travas que impedem publicar sem
+autor identificado ou sem tratar divergencia entre fontes.
+"""
+entrada = ["apps/content/views.py", "templates/content/revisar.html"]
+relacionados = ["geracao-texto", "capas", "conteudo-modelos"]
+padroes = [
+  "apps/content/views.py",
+  "apps/content/forms.py",
+  "apps/content/urls.py",
+  "templates/content/**",
+  "tests/test_interface.py",
+]
+
+[[bloco]]
+nome = "inferencia"
+titulo = "Conexoes de modelo: escolha, reserva de capacidade e adaptadores"
+resumo = """
+Onde o projeto fala com modelos. Escolhe a conexao, reserva capacidade antes de
+chamar, registra o que aconteceu, e adapta OpenAI-compativel, Anthropic e
+geracao de imagem por tras de uma interface so.
+"""
+entrada = ["apps/content/inference.py", "apps/inference/leases.py"]
+relacionados = ["geracao-texto", "capas", "orquestracao"]
+padroes = [
+  "apps/inference/**",
+  "apps/content/inference.py",
+  "tests/test_inference.py",
+]
+
+[[bloco]]
+nome = "conteudo-modelos"
+titulo = "Modelos de conteudo: artigo, secao, autor, pergunta e resposta"
+resumo = """
+As tabelas de producao de conteudo, com o raciocinio de cada campo. Bloco de
+consulta: quase todo o resto de apps/content depende destes models.
+"""
+entrada = ["apps/content/models.py"]
+relacionados = ["geracao-texto", "revisao-telas", "publicacao"]
+# Curinga da area: modulo novo em apps/content/ cai aqui.
+padroes = ["apps/content/**"]
+
+
+# ---------------------------------------------------------------------------
+# apps/integrations — entrega ao site
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "publicacao"
+titulo = "Entrega ao site: payload, assinatura, idempotencia e cadencia"
+resumo = """
+Monta o corpo enviado ao site de destino, assina cada requisicao, respeita
+idempotencia e reconcilia depois de timeout. Inclui o envio da foto do autor em
+duas etapas e o agendamento por cadencia.
+"""
+entrada = ["apps/integrations/publishing.py", "apps/integrations/client.py"]
+relacionados = ["contrato", "conteudo-modelos", "orquestracao"]
+padroes = [
+  "apps/integrations/**",
+  "templates/integrations/**",
+  "docs/adr/ADR-0017-autor-cadastrado-e-foto-em-duas-etapas.md",
+  "tests/test_integrations.py",
+  "tests/test_scheduling.py",
+]
+
+[[bloco]]
+nome = "contrato"
+titulo = "Contrato /api/v1 e a implementacao de referencia do no"
+resumo = """
+O que um site precisa implementar para receber conteudo: as rotas, as regras
+normativas de assinatura e idempotencia, os exemplos, e um no de referencia em
+Django que passa nos testes de contrato.
+
+Este bloco se explica sozinho — e a documentacao voltada para quem esta do
+outro lado.
+"""
+entrada = ["docs/contrato/README.md", "docs/contrato/openapi.yaml"]
+relacionados = ["publicacao"]
+padroes = [
+  "docs/contrato/**",
+  "tests_contrato/**",
+  "core/settings/test_contract.py",
+  "core/urls_contract_test.py",
+]
+
+
+# ---------------------------------------------------------------------------
+# Inferencia e orquestracao
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "orquestracao"
+titulo = "Orquestrador de trabalhos, filas e painel de operacao"
+resumo = """
+O motor que executa um passo por chamada, re-entra o estado pelo banco e sabe
+adiar sem gastar tentativa. Inclui o broker do Celery, o painel de operacao e
+os comandos de diagnostico.
+"""
+entrada = ["apps/ops/orchestrator.py"]
+relacionados = ["geracao-texto", "inferencia", "publicacao"]
+padroes = [
+  "apps/ops/**",
+  "templates/ops/**",
+  "tests/test_orchestrator.py",
+  "tests/test_painel.py",
+  "tests/test_broker_backend.py",
+  "tests/test_comandos_dev.py",
+  "tests/test_check_db.py",
+]
+
+
+# ---------------------------------------------------------------------------
+# Base do projeto
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "tenancy"
+titulo = "Multi-tenancy: cadastro, provisionamento e isolamento"
+resumo = """
+Um schema por cliente. Cadastro por subdominio, provisionamento assincrono do
+schema, e o middleware que garante que nada vaze de um tenant para outro.
+"""
+entrada = ["apps/accounts/models.py", "apps/accounts/views.py"]
+relacionados = ["fundacao", "orquestracao"]
+padroes = [
+  "apps/accounts/**",
+  "templates/accounts/**",
+  "tests/test_signup.py",
+  "tests/test_provision_tenant.py",
+  "tests/test_provisionamento_sem_worker.py",
+  "tests/test_tenant_isolation.py",
+  "tests/test_tenant_incompleto.py",
+  "tests/test_bootstrap_public.py",
+]
+
+[[bloco]]
+nome = "fundacao"
+titulo = "Configuracao, rotas, layout e infraestrutura"
+resumo = """
+Settings, urlconfs, o layout HTML compartilhado e o que sustenta o resto:
+deploy, scripts, dependencias. Leia junto de qualquer outro bloco quando a
+duvida for "de onde vem esta configuracao".
+"""
+entrada = ["core/settings/base.py"]
+relacionados = ["tenancy", "orquestracao"]
+padroes = [
+  "core/**",
+  "manage.py",
+  "templates/*.html",
+  "static/**",
+  "deploy/**",
+  "scripts/**",
+  "compose.yaml",
+  "pyproject.toml",
+  "requirements*.txt",
+  ".env.example",
+  "tests/conftest.py",
+  # O gerador de blocos e a documentacao dele viajam juntos: quem lê um
+  # precisa do outro.
+  "docs/BLOCOS.md",
+]
+
+[[bloco]]
+nome = "visao-geral"
+titulo = "Visao geral: o que o produto faz e por onde o conteudo passa"
+resumo = """
+O ponto de partida. Descreve o produto inteiro, o ciclo de vida do conteudo — do
+PDF cientifico ate a publicacao no site de um terceiro — e as armadilhas reais
+ja encontradas.
+
+Leia este bloco antes de qualquer outro. Ele nao tem codigo de producao: da o
+mapa para saber qual bloco pedir depois.
+"""
+entrada = ["README.md", "docs/ARCHITECTURE.md"]
+relacionados = ["decisoes", "geracao-texto", "publicacao"]
+padroes = ["README.md", "docs/ARCHITECTURE.md", "docs/ARMADILHAS.md"]
+
+[[bloco]]
+nome = "decisoes"
+titulo = "Decisoes de arquitetura e armadilhas conhecidas"
+resumo = """
+Os ADRs e o registro das falhas reais do projeto. Nao tem codigo: e o "por que"
+por tras das escolhas que o codigo apenas executa.
+"""
+entrada = ["docs/adr/README.md"]
+relacionados = ["fundacao", "visao-geral"]
+padroes = ["docs/**"]
