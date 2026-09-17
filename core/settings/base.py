@@ -363,11 +363,35 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # gasta em dobro. Isto e paliativo; a garantia real vem do GenerationJob no
 # banco, que e a fonte da verdade e independe do transporte.
 CELERY_BROKER_TRANSPORT_OPTIONS: dict[str, object] = {}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS: dict[str, object] = {}
+
+# Prefixo de TODAS as chaves no Redis. Existe porque um Redis costuma ser
+# compartilhado entre projetos, e o Celery, sem prefixo, usa nomes genericos:
+# a fila padrao e a chave `celery`, e as mensagens em voo ficam em `unacked`.
+#
+# Duas aplicacoes na mesma base do Redis, ambas sem prefixo, leem a MESMA fila.
+# O sintoma nao e um erro claro: o worker do outro projeto retira uma task
+# desta aplicacao, nao conhece o nome dela e a descarta. O trabalho some sem
+# rastro, e o log que explicaria isso esta no servidor do outro projeto.
+#
+# Separar por numero de base (`/0`, `/1`) resolveria em parte e depende de
+# ninguem repetir o numero — e `FLUSHDB` de um projeto ainda levaria o outro
+# junto. O prefixo e explicito e independe de combinacao.
+#
+# O backend de resultados precisa da sua propria opcao: ele nao le a do broker.
+# O prefixo terminado em `:` e mantido como esta; sem um separador ao final, o
+# Celery acrescenta `_`.
+REDIS_NAMESPACE = env.get("REDIS_NAMESPACE", "publibot")
 
 if CELERY_BROKER_URL.startswith(("redis://", "rediss://", "sentinel://")):
     CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] = env.integer(
         "CELERY_VISIBILITY_TIMEOUT", 86_400
     )
+    if REDIS_NAMESPACE:
+        CELERY_BROKER_TRANSPORT_OPTIONS["global_keyprefix"] = f"{REDIS_NAMESPACE}:"
+
+if REDIS_NAMESPACE and CELERY_RESULT_BACKEND.startswith(("redis://", "rediss://")):
+    CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS["global_keyprefix"] = f"{REDIS_NAMESPACE}:"
 
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
@@ -433,6 +457,38 @@ PUBLISH_DRY_RUN = env.boolean("PUBLISH_DRY_RUN", False)
 # existir, e DESLIGADO em producao (ver prod.py): la, indexar texto lido assim
 # significaria publicar citando uma fonte cujo conteudo foi lido errado.
 PERMITIR_EXTRACAO_LOCAL = env.boolean("PERMITIR_EXTRACAO_LOCAL", True)
+
+# ---------------------------------------------------------------------------
+# Semente da conexao de inferencia
+# ---------------------------------------------------------------------------
+# Estes valores NAO sao a fonte da verdade: a conexao vive numa linha do banco,
+# para que trocar de modelo ou de endereco nao exija implantacao (ADR-0012).
+#
+# Eles existem para o `manage.py configurar_inferencia` conseguir criar essa
+# linha numa instalacao nova. Sem isso, o unico caminho e um formulario no
+# admin — e esquece-lo faz a aplicacao subir inteira e so falhar dentro do
+# primeiro job, com o erro longe da causa.
+INFERENCIA_NOME = env.get("INFERENCIA_NOME", "LLM principal")
+
+# Em desenvolvimento, o Ollama da propria maquina. Em producao o MESMO Ollama,
+# alcancado pelo endereco que o Tailscale da a ele — muda a URL, nao o resto.
+INFERENCIA_BASE_URL = env.get("INFERENCIA_BASE_URL", "")
+
+# Nome exato do `ollama list`. Um nome que nao existe no servidor devolve 404
+# em toda chamada, e a mensagem do Ollama nao diz que o problema e o nome.
+INFERENCIA_MODELO = env.get("INFERENCIA_MODELO", "")
+
+# O Ollama nao exige chave; as demais APIs compativeis exigem.
+INFERENCIA_API_KEY = env.get("INFERENCIA_API_KEY", "")
+
+# Uma inferencia por vez, por padrao. Nao e ajuste de desempenho: numa placa de
+# 8 GB duas chamadas simultaneas estouram a VRAM e o Ollama cai em SILENCIO
+# para CPU — dezenas de vezes mais lento, sem erro nenhum no log.
+INFERENCIA_CONCORRENCIA = env.integer("INFERENCIA_CONCORRENCIA", 1)
+
+# Precisa ser maior que a inferencia mais longa esperada. Menor que isso, duas
+# tarefas passam a disputar a mesma placa.
+INFERENCIA_RESERVA_SEGUNDOS = env.integer("INFERENCIA_RESERVA_SEGUNDOS", 3600)
 
 EMBEDDING_MODEL = env.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)

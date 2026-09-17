@@ -80,6 +80,10 @@ Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e nos ADRs.
 
 ## Ambiente de desenvolvimento
 
+> Passo a passo completo — dev e servidor, incluindo o comportamento quando o
+> Ollama fica inacessivel — em [`docs/OPERACAO.md`](docs/OPERACAO.md). O resumo
+> abaixo cobre o caminho curto.
+
 Pre-requisitos: Python 3.12, PostgreSQL com pgvector, e Redis. Tudo nativo — o
 projeto nao depende de container em nenhuma etapa (ver passo 3).
 
@@ -379,9 +383,17 @@ O caminho completo, na ordem:
    ha publicacao.
 6. **Site e cadencia**: cadastre o site e a cadencia para o agendador publicar.
 
-Nada disso funciona sem uma **conexao de inferencia** cadastrada no admin
-(`/admin/inference/inferenceconnection/`), do tipo *Compativel com OpenAI*
-apontando para o seu Ollama, com a carga `text` marcada. Para converter PDF com
+Nada disso funciona sem uma **conexao de inferencia** cadastrada. O caminho
+curto e um comando, que le o `.env` e confere que o endereco responde:
+
+```bash
+python manage.py configurar_inferencia --testar
+```
+
+Ele cria a conexao se faltar e PRESERVA a que existir — a conexao vive numa
+linha do banco, e nao num arquivo, para trocar de modelo sem implantar. Da para
+faze-lo pelo admin tambem (`/admin/inference/inferenceconnection/`), do tipo
+*Compativel com OpenAI*, com a carga `text` marcada. Para converter PDF com
 analise de layout, cadastre tambem uma do tipo *Docling* apontando para o
 `worker-gpu/`; sem ela, PDF cai no extrator local, que embaralha coluna dupla e
 nao le documento digitalizado.
@@ -436,6 +448,8 @@ docs/
   ARMADILHAS.md      as falhas reais, e onde cada uma esta tratada
   EXTRACAO.md        as heuristicas de leitura de PDF e como ajusta-las
   BLOCOS.md          como empacotar o projeto para uma IA de contexto pequeno
+  OPERACAO.md        subir em desenvolvimento e no servidor, e o que fazer
+                     quando o Ollama cai
   adr/               decisoes de arquitetura
   contrato/          contrato /api/v1 — o que um site precisa implementar
     README.md          regras normativas, vetor de teste e lista de conferencia

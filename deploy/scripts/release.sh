@@ -36,11 +36,28 @@ DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py migrate_s
 echo "==> Tenant public e dominio raiz"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py bootstrap_public
 
+# A conexao de inferencia e uma LINHA no banco, nao um arquivo — trocar de
+# modelo nao deve exigir implantacao (ADR-0012). Numa instalacao nova, porem,
+# essa linha nao existe, e sem ela a aplicacao sobe inteira e so falha dentro
+# do primeiro job.
+#
+# Sem `--atualizar` de proposito: cria se faltar, preserva se ja houver. Assim
+# um ajuste feito na tela sobrevive a proxima implantacao.
+echo "==> Conexao de inferencia"
+DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configurar_inferencia
+
 echo "==> Arquivos estaticos"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py collectstatic --noinput
 
 echo "==> Traducoes"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py compilemessages 2>/dev/null || true
+
+# Os units sao versionados junto do codigo, mas o systemd le de
+# /etc/systemd/system. Sem sincronizar, editar um `.service` no repositorio nao
+# tem efeito nenhum — e nada avisa: a mudanca esta no git, foi revisada, foi
+# implantada, e o servico segue rodando a versao antiga.
+echo "==> Units do systemd"
+"$RAIZ/deploy/scripts/sincronizar-systemd.sh"
 
 echo "==> Reiniciando servicos"
 # A aplicacao recarrega sem derrubar o socket: as conexoes em curso terminam.

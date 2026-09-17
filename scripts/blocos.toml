@@ -316,6 +316,7 @@ padroes = [
   "pyproject.toml",
   "requirements*.txt",
   ".env.example",
+  "docs/OPERACAO.md",
   "tests/conftest.py",
   # O gerador de blocos e a documentacao dele viajam juntos: quem lê um
   # precisa do outro.

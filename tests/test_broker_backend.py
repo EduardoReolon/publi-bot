@@ -133,3 +133,74 @@ def test_visibility_timeout_so_e_aplicado_ao_redis(monkeypatch, broker, espera_v
         assert tem is espera_visibility
     finally:
         _recarrega_settings(monkeypatch, BROKER_BACKEND="redis")
+
+
+# ---------------------------------------------------------------------------
+# Namespace no Redis compartilhado
+# ---------------------------------------------------------------------------
+# Um Redis costuma atender varios projetos. O Celery, sem prefixo, usa nomes
+# genericos — a fila padrao e a chave `celery` — e duas aplicacoes na mesma base
+# leem a MESMA fila. O sintoma nao e um erro: o worker do outro projeto retira a
+# task, nao conhece o nome dela e a descarta.
+
+
+def test_chaves_do_broker_recebem_o_prefixo_do_projeto(monkeypatch):
+    base = _recarrega_settings(
+        monkeypatch,
+        BROKER_BACKEND="redis",
+        REDIS_NAMESPACE="publibot",
+        CELERY_BROKER_URL="redis://127.0.0.1:6379/0",
+    )
+    try:
+        assert base.CELERY_BROKER_TRANSPORT_OPTIONS["global_keyprefix"] == "publibot:"
+    finally:
+        _recarrega_settings(monkeypatch, BROKER_BACKEND=None, REDIS_NAMESPACE=None)
+
+
+def test_o_backend_de_resultados_tem_prefixo_proprio(monkeypatch):
+    """Ele nao le as opcoes do broker. Sem esta configuracao separada, os
+    resultados ficariam em `celery-task-meta-*` sem prefixo — colidindo com
+    qualquer outro projeto na mesma base."""
+    base = _recarrega_settings(
+        monkeypatch,
+        BROKER_BACKEND="redis",
+        REDIS_NAMESPACE="publibot",
+        CELERY_RESULT_BACKEND="redis://127.0.0.1:6379/1",
+    )
+    try:
+        assert base.CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS["global_keyprefix"] == "publibot:"
+    finally:
+        _recarrega_settings(monkeypatch, BROKER_BACKEND=None, REDIS_NAMESPACE=None)
+
+
+def test_namespace_vazio_nao_inventa_prefixo(monkeypatch):
+    """Quem tem um Redis exclusivo pode desligar o prefixo. Um `:` solto na
+    frente de cada chave seria pior que nada."""
+    base = _recarrega_settings(
+        monkeypatch,
+        BROKER_BACKEND="redis",
+        REDIS_NAMESPACE="",
+        CELERY_BROKER_URL="redis://127.0.0.1:6379/0",
+    )
+    try:
+        assert "global_keyprefix" not in base.CELERY_BROKER_TRANSPORT_OPTIONS
+        assert "global_keyprefix" not in base.CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS
+    finally:
+        _recarrega_settings(monkeypatch, BROKER_BACKEND=None, REDIS_NAMESPACE=None)
+
+
+def test_broker_no_postgres_ignora_o_namespace(monkeypatch):
+    """O prefixo e um conceito do Redis. Repassa-lo ao transporte do Postgres,
+    que rejeita argumento desconhecido com TypeError, derrubaria o worker na
+    subida."""
+    base = _recarrega_settings(
+        monkeypatch,
+        BROKER_BACKEND="postgres",
+        REDIS_NAMESPACE="publibot",
+        POSTGRES_PASSWORD="senha_teste",
+    )
+    try:
+        assert base.CELERY_BROKER_TRANSPORT_OPTIONS == {}
+        assert base.CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS == {}
+    finally:
+        _recarrega_settings(monkeypatch, BROKER_BACKEND=None, REDIS_NAMESPACE=None)
