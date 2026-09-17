@@ -88,17 +88,38 @@ codigo. Use `--atualizar` quando quiser sobrescrever com o `.env`.
 
 ### 5. Rodar
 
-Tres processos, em tres terminais:
+Um comando:
 
 ```bash
-python manage.py runserver                       # 1. web
-celery -A core worker -l INFO                    # 2. worker
-celery -A core beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
+python manage.py dev
 ```
 
-O **beat** e necessario para publicar no horario, varrer trabalhos parados e
-soltar reservas vencidas. Sem ele a aplicacao funciona, mas nada acontece
-sozinho.
+Ele sobe os tres processos do sistema — web, worker e beat — no mesmo
+terminal, e o Ctrl+C encerra todos. Antes de subir, confere o banco: sem a
+extensao `vector` o servidor subiria normalmente, o cadastro seria aceito, e a
+falha so apareceria dentro de uma task, como um traceback de `CREATE TABLE`
+que nao menciona extensao nenhuma.
+
+Por que um comando e nao tres terminais: a falta de qualquer um dos dois
+processos de fundo e **silenciosa**. Sem worker, o cadastro de um tenant nao
+termina e tambem nao falha — a mensagem e publicada, fica na fila, e a tela
+espera para sempre. Sem beat, tudo responde e simplesmente nada acontece
+sozinho: conteudo aprovado nunca e publicado, trabalho parado nunca e
+retomado, reserva vencida nunca e solta. Nenhum erro em lugar nenhum, nos dois
+casos.
+
+Quando quiser isolar um deles:
+
+```bash
+python manage.py dev --sem-worker    # as tarefas ficam na fila, sem executar
+python manage.py dev --sem-beat      # nada roda por horario
+python manage.py dev 127.0.0.1:8001  # outra porta (ajuste DEV_SERVER_PORT)
+```
+
+Um processo novo amanha entra em `_servicos()`, dentro do proprio comando, e
+`manage.py dev` continua sendo o unico que voce precisa saber. No servidor a
+lista equivalente sao as units de `deploy/systemd/` — a correspondencia e um
+para um, de proposito.
 
 Abra `http://publibot.localhost:8000`. Use `publibot.localhost`, nao
 `localhost`: com um unico rotulo o navegador DESCARTA o atributo `Domain` do
@@ -126,8 +147,17 @@ git clone <repo> /srv/publibot && cd /srv/publibot
 ```
 
 O bootstrap cria usuario de sistema, diretorios, venv, banco com as extensoes,
-units do systemd habilitados no boot, rotacao de log, e **gera os segredos** em
-`/etc/publibot/env`.
+units do systemd habilitados no boot, rotacao de log, a regra de sudo da
+implantacao, e **gera os segredos** em `/etc/publibot/env`.
+
+A regra de sudo (`deploy/sudoers/publibot-deploy`) e o que permite implantar
+por ssh sem ninguem na frente do terminal: um ssh nao interativo nao tem onde
+digitar senha, e sem ela o `sudo systemctl` do release espera um prompt que
+ninguem ve — a implantacao morre por timeout DEPOIS das migrations, com o
+servico ainda no codigo antigo. Ela nomeia um a um os comandos permitidos, so
+sobre as units deste projeto: um `NOPASSWD: ALL` daria ao `DEPLOY_KEY`
+guardado no GitHub o poder de root sobre a maquina, e este servidor e
+compartilhado.
 
 Ele nunca sobrescreve esse arquivo. Nao e zelo excessivo: regenerar
 `NODE_KEY_ENCRYPTION_KEY` por cima torna irrecuperaveis todas as credenciais de
@@ -160,6 +190,38 @@ versionados no repositorio, mas o systemd le de `/etc/systemd/system`; sem
 copiar, editar um `.service` nao tem efeito nenhum e nada avisa — a mudanca
 esta no git, foi revisada, foi implantada, e o servico segue com a versao
 antiga. O `daemon-reload` so acontece quando algo mudou de fato.
+
+### Implantacao pelo GitHub
+
+`.github/workflows/ci.yml` roda a suite a cada push e, quando o commit entra na
+`main`, entra no servidor por ssh e roda **o mesmo** `release.sh` de cima.
+
+Nao ha copia de arquivo nem sequencia repetida no workflow. Descrever a
+implantacao duas vezes — uma no script, outra no YAML — cria dois caminhos que
+divergem no dia em que alguem corrige so um deles, e a divergencia so aparece
+em producao.
+
+Quatro segredos no repositorio (Settings > Secrets and variables > Actions):
+
+| Segredo | O que e |
+|---|---|
+| `SERVER_HOST` | endereco do servidor |
+| `SERVER_USER` | usuario que roda o `release.sh` |
+| `DEPLOY_KEY` | chave ssh **privada** desse usuario |
+| `SERVER_PORT` | porta do ssh |
+
+Nao existe um segredo com o `.env` de producao, e a ausencia e deliberada: os
+segredos sao gerados **no servidor**, uma unica vez, pelo `bootstrap.sh`, e
+nunca sobrescritos. Guardar o arquivo inteiro num secret significaria
+reescrever `/etc/publibot/env` a cada implantacao — e um `NODE_KEY_ENCRYPTION_KEY`
+diferente do que cifrou as credenciais as torna irrecuperaveis, com o erro
+aparecendo dias depois, como falha de autenticacao contra o site do cliente.
+
+O job de teste sobe PostgreSQL e Redis de verdade, com a extensao `vector` no
+schema `extensions` do `template1` — a mesma preparacao que o `setup-db.sh` faz
+na sua maquina. Um banco falso passaria em tudo e nao diria nada sobre schema
+por tenant, `search_path` ou prefixo de chave, que e exatamente o que este
+projeto tem de mais fragil.
 
 ### Redis compartilhado
 

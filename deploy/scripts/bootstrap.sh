@@ -191,6 +191,29 @@ sudo systemctl enable publibot.socket publibot.service \
                       celery-publibot.service celery-beat-publibot.service
 echo "  servicos habilitados no boot"
 
+# O usuario que roda a implantacao precisa mexer nos servicos sem senha: um ssh
+# do GitHub Actions nao tem onde digitar uma. Sem isto, o `sudo systemctl` do
+# release.sh espera um prompt que ninguem ve, a implantacao morre por timeout —
+# e morre DEPOIS das migrations, com o servico ainda no codigo antigo.
+#
+# `visudo -c` antes de instalar: um arquivo invalido em /etc/sudoers.d quebra o
+# sudo da maquina inteira, para todos os usuarios, e o unico caminho de volta e
+# um console fisico.
+echo "==> Permissao de sudo para a implantacao"
+QUEM_IMPLANTA="${PUBLIBOT_DEPLOY_USER:-$(id -un)}"
+MOLDE_SUDO="$(mktemp)"
+sed "s/^USUARIO /${QUEM_IMPLANTA} /" "$RAIZ/deploy/sudoers/publibot-deploy" > "$MOLDE_SUDO"
+
+if sudo visudo -c -f "$MOLDE_SUDO" >/dev/null; then
+    sudo install -m 0440 -o root -g root "$MOLDE_SUDO" /etc/sudoers.d/publibot-deploy
+    echo "  ${QUEM_IMPLANTA} pode recarregar os servicos deste projeto sem senha"
+else
+    rm -f "$MOLDE_SUDO"
+    echo "ERRO: a regra de sudo gerada e invalida; nada foi instalado." >&2
+    exit 1
+fi
+rm -f "$MOLDE_SUDO"
+
 echo "==> Rotacao de log"
 sudo install -m 0644 "$RAIZ/deploy/logrotate/publibot" /etc/logrotate.d/publibot
 

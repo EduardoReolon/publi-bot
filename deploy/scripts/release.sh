@@ -10,7 +10,24 @@ set -euo pipefail
 
 RAIZ="${PUBLIBOT_ROOT:-/srv/publibot}"
 VENV="$RAIZ/venv"
+ARQUIVO_ENV="${PUBLIBOT_ENV_FILE:-/etc/publibot/env}"
 cd "$RAIZ"
+
+# As units do systemd leem este arquivo por `EnvironmentFile`, mas os
+# `manage.py` daqui rodam FORA delas — e sem as variaveis o primeiro comando
+# morre em `ImproperlyConfigured: DJANGO_SECRET_KEY`, antes de qualquer
+# migration. O `grep` descarta comentarios e linhas soltas: o arquivo e lido
+# como dados, nao executado como script.
+if [[ -r "$ARQUIVO_ENV" ]]; then
+    # shellcheck disable=SC1090
+    set -a; source <(grep -E '^[A-Z_][A-Z0-9_]*=' "$ARQUIVO_ENV"); set +a
+elif [[ -f "$ARQUIVO_ENV" ]]; then
+    # shellcheck disable=SC1090
+    set -a; source <(sudo cat "$ARQUIVO_ENV" | grep -E '^[A-Z_][A-Z0-9_]*='); set +a
+else
+    echo "ERRO: $ARQUIVO_ENV nao existe. Rode antes: deploy/scripts/bootstrap.sh" >&2
+    exit 1
+fi
 
 echo "==> Buscando codigo"
 git fetch --all --prune

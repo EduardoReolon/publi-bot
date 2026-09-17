@@ -1,0 +1,34 @@
+# Permite ao usuario que implanta mexer NOS SERVICOS DESTE PROJETO sem senha.
+#
+# Existe por causa da implantacao pelo GitHub Actions: um ssh nao interativo
+# nao tem onde digitar senha. Sem esta regra, o `sudo systemctl` do release.sh
+# fica esperando um prompt que ninguem ve, e a implantacao falha por timeout —
+# depois de ja ter rodado as migrations. A metade que importa fica feita, a
+# outra metade nao, e a mensagem de erro nao menciona sudo em lugar nenhum.
+#
+# O alcance e proposital e estreito: apenas os comandos de que o release.sh
+# precisa, apenas sobre as units deste projeto. Um `NOPASSWD: ALL` resolveria o
+# mesmo problema e daria ao segredo `DEPLOY_KEY` guardado no GitHub o poder de
+# root na maquina inteira — inclusive sobre os outros projetos que dividem
+# este servidor.
+#
+# `USUARIO` e um marcador: o bootstrap.sh o troca pelo nome real antes de
+# instalar em /etc/sudoers.d/publibot-deploy. Este arquivo e um molde, nao um
+# arquivo pronto.
+#
+# Para conferir depois de editar:
+#   sudo visudo -c -f /etc/sudoers.d/publibot-deploy
+
+Cmnd_Alias PUBLIBOT_SERVICOS = /usr/bin/systemctl reload publibot.service, \
+                               /usr/bin/systemctl restart publibot.service, \
+                               /usr/bin/systemctl restart celery-publibot.service, \
+                               /usr/bin/systemctl restart celery-beat-publibot.service, \
+                               /usr/bin/systemctl daemon-reload
+
+# A sincronizacao dos units: comparar e copiar. Os caminhos sao fixos dos dois
+# lados justamente para a regra nao virar "instale qualquer arquivo em qualquer
+# lugar".
+Cmnd_Alias PUBLIBOT_UNITS = /usr/bin/cmp -s /srv/publibot/deploy/systemd/*, \
+                            /usr/bin/install -m 0644 /srv/publibot/deploy/systemd/* /etc/systemd/system/*
+
+USUARIO ALL=(root) NOPASSWD: PUBLIBOT_SERVICOS, PUBLIBOT_UNITS

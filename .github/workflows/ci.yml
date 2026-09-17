@@ -1,0 +1,183 @@
+# Testes a cada push, implantacao quando entra na main.
+#
+# O job `testes` sobe PostgreSQL e Redis de verdade, e nao dubles. Nao e
+# preciosismo: o que este projeto tem de mais fragil e justamente o que um
+# duble esconderia — schema por tenant, `search_path`, a extensao `vector` num
+# schema proprio e o prefixo de chave no Redis. Um teste que passa contra um
+# banco em memoria nao diz nada sobre nada disso.
+#
+# O job `deploy` nao repete os passos da implantacao: ele entra no servidor e
+# roda `deploy/scripts/release.sh`, o MESMO script que se roda a mao. Duplicar
+# a sequencia aqui criaria dois caminhos de implantacao que divergem no dia em
+# que alguem corrige so um dos dois.
+
+name: CI
+
+on:
+  push:
+    branches: [main, claude-cli]
+  pull_request:
+
+# Duas implantacoes ao mesmo tempo no mesmo servidor disputariam o `git pull` e
+# o `systemctl`. A da frente termina; a de tras espera.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  testes:
+    name: Testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Imagem do proprio pgvector: a `postgres` oficial nao traz a extensao,
+        # e compila-la no runner levaria mais tempo que a suite inteira.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SETTINGS_MODULE: core.settings.dev
+      # Valores de teste, publicos de proposito: nenhum segredo real entra num
+      # arquivo versionado. O `.env` de verdade nunca chega ao CI.
+      DJANGO_SECRET_KEY: chave-de-teste-do-ci-sem-valor-nenhum-em-producao
+      DJANGO_ALLOWED_HOSTS: publibot.localhost,.publibot.localhost,localhost,127.0.0.1
+      ROOT_DOMAIN: publibot.localhost
+      NODE_KEY_ENCRYPTION_KEY: aj_IA00uK03OokjPwdM-o0QORKKuTry6cTdAsWziFQo=
+
+      POSTGRES_DB: publibot
+      POSTGRES_USER: publibot
+      POSTGRES_PASSWORD: publibot-ci
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+
+      BROKER_BACKEND: redis
+      CELERY_BROKER_URL: redis://127.0.0.1:6379/0
+      CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/1
+      REDIS_NAMESPACE: publibot
+
+      # Sem isto, um teste que escapasse do marcador `integration` baixaria os
+      # ~2 GB do modelo de embedding dentro do runner. Com `local_files_only` e
+      # um cache vazio, esse teste falha na hora e aponta a si mesmo.
+      EMBEDDING_LOCAL_FILES_ONLY: "True"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Preparar o banco
+        # O papel precisa de CREATEDB porque quem cria o banco de teste e ele,
+        # em tempo de execucao.
+        #
+        # As extensoes vao para um schema `extensions` no `template1`, e nao
+        # para o `public` do banco da aplicacao. Sao duas decisoes, e cada uma
+        # evita uma falha distinta:
+        #
+        #   - no `public`, a extensao nao fica alcancavel ao criar o SEGUNDO
+        #     tenant, e a migration falha com `type "vector" does not exist`;
+        #   - fora do `template1`, o banco de teste nasce sem ela — e `vector`
+        #     nao e uma extensao "trusted", entao o usuario da aplicacao, que
+        #     nao e superusuario, nao conseguiria instala-la sozinho.
+        #
+        # E o mesmo que `scripts/setup-db.sh` faz na maquina de quem desenvolve.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE publibot LOGIN PASSWORD 'publibot-ci' CREATEDB;
+          SQL
+
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -d template1 <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS extensions;
+          GRANT USAGE ON SCHEMA extensions TO publibot;
+          CREATE EXTENSION IF NOT EXISTS vector   WITH SCHEMA extensions;
+          CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
+          SQL
+
+          # Criado DEPOIS do template1, para herda-lo ja pronto.
+          createdb -h 127.0.0.1 -U postgres -O publibot publibot
+
+      - name: Lint e formatacao
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Verificacoes do Django
+        run: python manage.py check
+
+      - name: Migrations em dia
+        # Falha se algum model mudou sem a migration correspondente. Descobrir
+        # isso aqui e barato; descobrir em producao, com o servico ja
+        # reiniciado, nao.
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Suite principal
+        run: pytest -q
+
+      - name: Testes de contrato
+        # Rodam com outro settings: o no de referencia e um site comum, sem
+        # multi-tenancy, e por isso ficam fora do `testpaths` padrao.
+        run: pytest tests_contrato/ -q --ds=core.settings.test_contract
+
+  deploy:
+    name: Implantar
+    needs: testes
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Rodar release.sh no servidor
+        # Nada de `scp` do codigo: o proprio `release.sh` busca do git, e e ele
+        # que decide a ordem (migrations antes de reiniciar, units
+        # sincronizados antes do reload). Este passo existe so para aperta-lo.
+        #
+        # Os segredos do servidor nao passam por aqui. Eles vivem em
+        # `/etc/publibot/env`, gerados uma unica vez pelo `bootstrap.sh` e
+        # jamais sobrescritos — regenerar `NODE_KEY_ENCRYPTION_KEY` por cima
+        # tornaria irrecuperaveis todas as credenciais de site ja guardadas.
+        # Por isso nao existe um secret com o `.env` de producao.
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          # Maior que a implantacao mais longa ja vista: `migrate_schemas`
+          # percorre TODOS os schemas, e o tempo cresce com o numero de
+          # clientes. Um timeout curto mataria o ssh no meio de uma migration.
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            /srv/publibot/deploy/scripts/release.sh main

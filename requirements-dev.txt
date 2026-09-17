@@ -22,3 +22,10 @@ ruff==0.14.2
 
 # --- Hooks de pre-commit ---------------------------------------------------
 pre-commit==4.3.0
+
+# --- Leitura de YAML nos testes --------------------------------------------
+# `tests/test_deploy_scripts.py` le o workflow do GitHub Actions como dado, e
+# nao como texto: e a unica forma de afirmar que o job de implantacao esta
+# preso a `main`. Chega junto com o pre-commit de qualquer jeito; declarado
+# aqui para a suite nao depender de dependencia transitiva alheia.
+PyYAML==6.0.3

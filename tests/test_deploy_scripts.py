@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 RAIZ = Path(__file__).resolve().parent.parent
 SINCRONIZAR = RAIZ / "deploy" / "scripts" / "sincronizar-systemd.sh"
@@ -132,3 +133,195 @@ def test_scripts_sao_executaveis(script):
         f"{script} sem bit de execucao: o git preserva o modo, e sem ele a "
         f"instrucao do README nao funciona."
     )
+
+
+RELEASE = RAIZ / "deploy" / "scripts" / "release.sh"
+
+
+def _prologo_do_release() -> str:
+    """O trecho do release.sh que carrega o ambiente, ate o `fi` que o fecha.
+
+    Recortado em vez de rodado inteiro porque o resto do script quer um
+    servidor: git, venv, systemd. O que se testa aqui e so a leitura do
+    arquivo de ambiente — e ela roda de verdade, nao por leitura de texto.
+    """
+    linhas = RELEASE.read_text(encoding="utf-8").splitlines()
+    fim = next(i for i, linha in enumerate(linhas) if linha == "fi")
+    return "\n".join(linhas[: fim + 1])
+
+
+def test_o_release_carrega_o_arquivo_de_ambiente(tmp_path):
+    """As units do systemd leem `/etc/publibot/env` por `EnvironmentFile`, mas
+    os `manage.py` do release rodam FORA delas.
+
+    Sem carregar o arquivo, o primeiro comando morre em
+    `ImproperlyConfigured: DJANGO_SECRET_KEY` — antes de qualquer migration, e
+    com uma mensagem que nao menciona implantacao nenhuma.
+    """
+    arquivo = tmp_path / "env"
+    arquivo.write_text(
+        "# um comentario\n"
+        "DJANGO_SECRET_KEY=segredo-do-servidor\n"
+        "ROOT_DOMAIN=publibot.com.br\n"
+        "isto nao e uma variavel\n",
+        encoding="utf-8",
+    )
+    script = _prologo_do_release() + '\necho "$DJANGO_SECRET_KEY|$ROOT_DOMAIN"\n'
+
+    resultado = subprocess.run(  # noqa: S603 - o alvo e um script do proprio repositorio
+        [shutil.which("bash") or "/bin/bash", "-c", script],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PUBLIBOT_ROOT": str(tmp_path), "PUBLIBOT_ENV_FILE": str(arquivo)},
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+    assert resultado.stdout.strip() == "segredo-do-servidor|publibot.com.br"
+
+
+def test_o_release_para_se_o_arquivo_de_ambiente_nao_existe(tmp_path):
+    """Seguir sem ele so adiaria a falha para o primeiro `manage.py`, com uma
+    mensagem que nao menciona implantacao nem o arquivo que falta."""
+    resultado = subprocess.run(  # noqa: S603 - o alvo e um script do proprio repositorio
+        [shutil.which("bash") or "/bin/bash", "-c", _prologo_do_release()],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PUBLIBOT_ROOT": str(tmp_path),
+            "PUBLIBOT_ENV_FILE": str(tmp_path / "nao-existe"),
+        },
+        check=False,
+    )
+
+    assert resultado.returncode == 1
+    assert "bootstrap.sh" in resultado.stderr
+
+
+# ---------------------------------------------------------------------------
+# Workflow do GitHub Actions
+# ---------------------------------------------------------------------------
+WORKFLOW = RAIZ / ".github" / "workflows" / "ci.yml"
+
+
+@pytest.fixture(scope="module")
+def workflow() -> dict:
+    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+
+def test_o_deploy_so_roda_em_push_na_main(workflow):
+    """A condicao e a unica coisa entre um push numa branch de trabalho e o
+    servidor de producao. Lida como dado, e nao como texto, porque um `if`
+    sutilmente errado continua sendo YAML valido."""
+    condicao = workflow["jobs"]["deploy"]["if"]
+
+    assert "refs/heads/main" in condicao
+    assert "github.event_name == 'push'" in condicao
+
+
+def test_o_deploy_espera_os_testes(workflow):
+    assert workflow["jobs"]["deploy"]["needs"] == "testes"
+
+
+def test_o_deploy_chama_o_mesmo_script_que_se_roda_a_mao(workflow):
+    """Descrever a implantacao duas vezes — uma no script, outra no YAML — cria
+    dois caminhos que divergem no dia em que alguem corrige so um deles."""
+    passos = workflow["jobs"]["deploy"]["steps"]
+    script = "\n".join(passo.get("with", {}).get("script", "") for passo in passos)
+
+    assert "deploy/scripts/release.sh" in script
+    # Nenhum passo da implantacao repetido aqui: quem migra e o release.sh.
+    assert "migrate_schemas" not in script
+    assert "collectstatic" not in script
+
+
+def test_o_ci_sobe_postgres_com_pgvector(workflow):
+    """Um banco sem a extensao passaria em quase tudo e nao diria nada sobre o
+    que este projeto tem de mais fragil."""
+    servicos = workflow["jobs"]["testes"]["services"]
+
+    assert "pgvector" in servicos["postgres"]["image"]
+    assert "redis" in servicos["redis"]["image"]
+
+
+def test_o_ci_instala_as_extensoes_no_template1():
+    """O banco de teste e criado em tempo de execucao pelo usuario da
+    aplicacao, que nao e superusuario — e `vector` nao e uma extensao
+    "trusted". Sem o `template1` preparado, ele nasceria sem ela."""
+    texto = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "-d template1" in texto
+    assert "WITH SCHEMA extensions" in texto
+
+
+def test_o_ci_nao_guarda_o_env_de_producao_num_segredo(workflow):
+    """Reescrever `/etc/publibot/env` a cada implantacao trocaria a
+    `NODE_KEY_ENCRYPTION_KEY` que cifrou as credenciais dos sites, e o erro so
+    apareceria dias depois, contra o site do cliente.
+
+    Os segredos nascem no servidor, no `bootstrap.sh`, e nunca sao
+    sobrescritos — entao o job de implantacao nao carrega nenhum deles. A
+    chave do job de TESTE nao conta: e descartavel e publica de proposito.
+    """
+    deploy = yaml.safe_dump(workflow["jobs"]["deploy"])
+
+    assert "PRODUCTION_ENV_FILE" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "NODE_KEY_ENCRYPTION_KEY" not in deploy
+    assert "DJANGO_SECRET_KEY" not in deploy
+
+
+# ---------------------------------------------------------------------------
+# Regra de sudo da implantacao
+# ---------------------------------------------------------------------------
+SUDOERS = RAIZ / "deploy" / "sudoers" / "publibot-deploy"
+
+
+def test_a_regra_de_sudo_e_valida(tmp_path):
+    """Um arquivo invalido em /etc/sudoers.d quebra o sudo da maquina inteira,
+    para todos os usuarios, e o unico caminho de volta e um console fisico.
+
+    O `visudo -c` do bootstrap protege o servidor; este teste protege quem
+    edita o molde, que e onde o erro de fato nasce.
+    """
+    visudo = shutil.which("visudo")
+    if visudo is None:
+        pytest.skip("visudo nao existe neste ambiente")
+
+    arquivo = tmp_path / "publibot-deploy"
+    arquivo.write_text(
+        SUDOERS.read_text(encoding="utf-8").replace("USUARIO ", "deployer "), encoding="utf-8"
+    )
+
+    resultado = subprocess.run(  # noqa: S603 - alvo e um arquivo do proprio repositorio
+        [visudo, "-c", "-f", str(arquivo)], capture_output=True, text=True, check=False
+    )
+
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+
+
+def test_a_regra_de_sudo_nao_da_a_maquina_inteira():
+    """`NOPASSWD: ALL` resolveria o mesmo problema e daria ao segredo
+    `DEPLOY_KEY`, guardado no GitHub, o poder de root sobre o servidor —
+    inclusive sobre os outros projetos que dividem a maquina."""
+    # So as linhas de regra: o comentario que EXPLICA por que `NOPASSWD: ALL`
+    # esta errado tambem contem `NOPASSWD: ALL`, e faria o teste acusar
+    # justamente o texto que o defende. Ja aconteceu com um hook do
+    # pre-commit deste repositorio.
+    regras = "\n".join(
+        linha
+        for linha in SUDOERS.read_text(encoding="utf-8").splitlines()
+        if not linha.lstrip().startswith("#")
+    )
+
+    assert "NOPASSWD: ALL" not in regras
+    # Cada comando permitido e nomeado, e nenhum deles e um shell.
+    assert "/usr/bin/systemctl reload publibot.service" in regras
+    for perigoso in ("/bin/bash", "/bin/sh", "/usr/bin/su "):
+        assert perigoso not in regras
+
+
+def test_o_bootstrap_confere_a_regra_antes_de_instalar():
+    texto = (RAIZ / "deploy" / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
+
+    assert texto.index("visudo -c") < texto.index("/etc/sudoers.d/publibot-deploy")

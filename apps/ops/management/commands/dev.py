@@ -1,19 +1,29 @@
-"""Sobe o servidor web e o worker do Celery juntos, em desenvolvimento.
+"""Sobe TODOS os processos do projeto num terminal so, em desenvolvimento.
 
-Este comando existe por um motivo empirico: a separacao em dois processos e
-correta, e mesmo assim tropeca. Um cadastro de tenant depende do worker
-(ADR-0001), e sem ele nada falha — a mensagem e publicada, fica na fila, e a
-tela espera para sempre. Quem esta comecando roda `runserver`, ve o servidor
-de pe e conclui, com razao, que o sistema esta rodando.
+Hoje sao tres — web, worker e beat — e este comando e o unico lugar que precisa
+saber disso. Acrescentar um quarto amanha e acrescentar uma linha em
+`_servicos()`: quem usa continua rodando `manage.py dev`.
 
-Nao ha supervisor de processo aqui de proposito. Os dois filhos herdam o
-terminal e NAO ganham grupo de processo proprio, entao o Ctrl+C do console
-chega aos dois de uma vez — no Linux e no macOS via SIGINT ao grupo em
-primeiro plano, no Windows via CTRL_C_EVENT aos processos ligados ao console.
-E o comportamento que ja se espera de um terminal, sem codigo para mante-lo.
+Este comando existe por um motivo empirico: a separacao em processos e correta,
+e mesmo assim tropeca. Um cadastro de tenant depende do worker (ADR-0001), e sem
+ele nada falha — a mensagem e publicada, fica na fila, e a tela espera para
+sempre. Quem esta comecando roda `runserver`, ve o servidor de pe e conclui, com
+razao, que o sistema esta rodando.
+
+O beat tem a mesma armadilha, um nivel acima: sem ele a aplicacao funciona,
+tudo responde, e simplesmente nada acontece sozinho — conteudo aprovado nunca
+e publicado, trabalho parado nunca e retomado, reserva vencida nunca e solta.
+Nenhum erro em lugar nenhum.
+
+Nao ha supervisor de processo aqui de proposito. Os filhos herdam o terminal e
+NAO ganham grupo de processo proprio, entao o Ctrl+C do console chega a todos de
+uma vez — no Linux e no macOS via SIGINT ao grupo em primeiro plano, no Windows
+via CTRL_C_EVENT aos processos ligados ao console. E o comportamento que ja se
+espera de um terminal, sem codigo para mante-lo.
 
 Em producao nada disto se aplica: la sao units separadas do systemd, cada uma
-com seu ciclo de vida (`deploy/systemd/`).
+com seu ciclo de vida (`deploy/systemd/`). A correspondencia e um para um, e e
+proposital — o que roda na sua maquina e o que roda no servidor.
 """
 
 from __future__ import annotations
@@ -40,7 +50,15 @@ class Command(BaseCommand):
         parser.add_argument(
             "--sem-worker",
             action="store_true",
-            help="Sobe so o servidor web, como o runserver puro.",
+            help="Nao sobe o worker. As tarefas ficam na fila, sem executar.",
+        )
+        parser.add_argument(
+            "--sem-beat",
+            action="store_true",
+            help=(
+                "Nao sobe o agendador. Nada roda por horario: publicacao, "
+                "varredura de trabalhos parados e liberacao de reservas param."
+            ),
         )
         parser.add_argument(
             "--concurrency", type=int, default=1, help="Processos do worker. Default: 1."
@@ -75,8 +93,60 @@ class Command(BaseCommand):
                 ) from exc
             self.stdout.write("")
 
-        web = [sys.executable, "manage.py", "runserver", options["addrport"]]
+        servicos = _servicos(options)
 
+        broker = settings.CELERY_BROKER_URL
+        porta = options["addrport"].rsplit(":", 1)[-1]
+        self.stdout.write(
+            self.style.NOTICE(
+                f"Broker:   {_sem_segredo(broker)}  (BROKER_BACKEND={settings.BROKER_BACKEND})\n"
+                f"Web:      http://{settings.ROOT_DOMAIN}:{porta}/\n"
+                f"Subindo:  {', '.join(nome for nome, _ in servicos)}\n"
+                "Ctrl+C encerra todos."
+            )
+        )
+
+        processos: list[subprocess.Popen] = []
+        try:
+            for _, comando in servicos:
+                # Os comandos sao montados em `_servicos`, a partir de
+                # `sys.executable` e de constantes; nada vem de entrada externa.
+                processos.append(subprocess.Popen(comando))  # noqa: S603
+
+            # Espera QUALQUER um terminar, e entao derruba o resto. Deixar os
+            # outros de pe seria pior que parar: o servidor sozinho aceita
+            # cadastros que nunca serao provisionados, e a fila cresce em
+            # silencio. Parando tudo, o problema aparece.
+            while all(processo.poll() is None for processo in processos):
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            # O Ctrl+C ja chegou aos filhos pelo console; aqui so evitamos o
+            # traceback e damos tempo de eles sairem sozinhos.
+            pass
+        finally:
+            for processo in processos:
+                if processo.poll() is None:
+                    processo.terminate()
+            for processo in processos:
+                try:
+                    processo.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    processo.kill()
+
+
+def _servicos(options) -> list[tuple[str, list[str]]]:
+    """Os processos que compoem o sistema, em pares (nome, comando).
+
+    ESTE e o ponto de extensao. Um processo novo — outro worker, um servico
+    auxiliar — entra aqui, e `manage.py dev` continua sendo o unico comando que
+    quem desenvolve precisa saber. Ao acrescentar um, crie tambem o unit
+    correspondente em `deploy/systemd/`: a correspondencia um para um entre os
+    dois e o que mantem "roda na minha maquina" e "roda no servidor" com o mesmo
+    significado.
+    """
+    servicos: list[tuple[str, list[str]]] = []
+
+    if not options["sem_worker"]:
         worker = [
             sys.executable,
             "-m",
@@ -93,43 +163,35 @@ class Command(BaseCommand):
             # O pool `prefork` nao tem suporte oficial no Windows desde o
             # Celery 4 e falha de forma erratica.
             worker += ["-P", "solo"]
+        servicos.append(("worker", worker))
 
-        broker = settings.CELERY_BROKER_URL
-        self.stdout.write(
-            self.style.NOTICE(
-                f"Broker: {_sem_segredo(broker)}  (BROKER_BACKEND={settings.BROKER_BACKEND})\n"
-                f"Web:    http://{settings.ROOT_DOMAIN}"
-                f"{':' + options['addrport'].rsplit(':', 1)[-1]}/\n"
-                "Ctrl+C encerra os dois."
+    if not options["sem_beat"]:
+        servicos.append(
+            (
+                "beat",
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "core",
+                    "beat",
+                    "-l",
+                    "INFO",
+                    # Sem arquivo de pid. O padrao (`celerybeat.pid`) sobrevive
+                    # a um encerramento abrupto, e a proxima subida falha com
+                    # "Pidfile already exists" — um erro sobre um arquivo que a
+                    # pessoa nem sabia que existia. O scheduler deste projeto e
+                    # o do banco, entao nao ha estado local a preservar.
+                    "--pidfile=",
+                ],
             )
         )
 
-        processos: list[subprocess.Popen] = []
-        try:
-            # As duas listas sao montadas aqui, a partir de `sys.executable` e
-            # de constantes; nada vem de entrada externa.
-            if not options["sem_worker"]:
-                processos.append(subprocess.Popen(worker))  # noqa: S603
-            processos.append(subprocess.Popen(web))  # noqa: S603
-
-            # Espera qualquer um dos dois terminar. Se o worker cai, o servidor
-            # sozinho aceita cadastros que nunca serao provisionados — parar os
-            # dois torna isso visivel em vez de virar uma fila crescendo.
-            while all(processo.poll() is None for processo in processos):
-                time.sleep(0.5)
-        except KeyboardInterrupt:
-            # O Ctrl+C ja chegou aos filhos pelo console; aqui so evitamos o
-            # traceback e damos tempo de eles sairem sozinhos.
-            pass
-        finally:
-            for processo in processos:
-                if processo.poll() is None:
-                    processo.terminate()
-            for processo in processos:
-                try:
-                    processo.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    processo.kill()
+    # O web vem por ultimo de proposito: assim a primeira linha que rola na tela
+    # depois do banner e a dele, que e onde se olha.
+    servicos.append(("web", [sys.executable, "manage.py", "runserver", options["addrport"]]))
+    return servicos
 
 
 def _sem_segredo(url: str) -> str:

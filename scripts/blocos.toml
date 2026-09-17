@@ -311,6 +311,9 @@ padroes = [
   "templates/*.html",
   "static/**",
   "deploy/**",
+  # O workflow do GitHub Actions descreve a MESMA implantacao que o
+  # `deploy/scripts/release.sh`, e so faz sentido lido junto dele.
+  ".github/**",
   "scripts/**",
   "compose.yaml",
   "pyproject.toml",

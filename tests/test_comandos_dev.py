@@ -1,12 +1,12 @@
 """Testes dos comandos que existem para nao deixar o worker esquecido.
 
-A separacao em dois processos esta certa e mesmo assim tropeca: `runserver`
+A separacao em processos esta certa e mesmo assim tropeca: `runserver`
 sobe, o servidor responde, e nada indica que falta metade do sistema. Sem
 worker o cadastro de tenant nao termina — e nao falha tambem, porque a
 mensagem e publicada com sucesso e fica na fila.
 
-`dev` sobe os dois juntos; `broker_status` responde, do terminal, se a
-mensagem chegou e se alguem a consome.
+`dev` sobe todos juntos — web, worker e beat; `broker_status` responde, do
+terminal, se a mensagem chegou e se alguem a consome.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class ProcessoFalso:
 # ---------------------------------------------------------------------------
 @override_settings(DEBUG=False)
 def test_dev_recusa_rodar_fora_do_debug():
-    """`dev` prende os dois no mesmo terminal: se um cai, o outro vai junto.
+    """`dev` prende todos no mesmo terminal: se um cai, os outros vao junto.
 
     Em producao isso significaria derrubar o site porque o worker morreu — por
     isso la sao units separadas do systemd.
@@ -59,31 +59,13 @@ def test_dev_recusa_rodar_fora_do_debug():
         call_command("dev")
 
 
-@override_settings(DEBUG=True)
-def test_dev_sobe_web_e_worker(monkeypatch):
-    lancados: list[list[str]] = []
+def _capturar(monkeypatch) -> list[list[str]]:
+    """Substitui o Popen e devolve a lista dos comandos lancados.
 
-    def falso_popen(argv, *a, **k):
-        processo = ProcessoFalso(argv)
-        lancados.append(argv)
-        # O segundo processo "morre" na hora, para o laco de espera terminar.
-        if len(lancados) == 2:
-            processo.terminate()
-        return processo
-
-    monkeypatch.setattr("subprocess.Popen", falso_popen)
-    # `sem_conferir`: estes testes olham o lancamento dos processos. A conferencia
-    # do banco tem os testes dela em test_check_db.py e exigiria banco aqui.
-    call_command("dev", "127.0.0.1:8123", sem_conferir=True)
-
-    assert len(lancados) == 2
-    worker, web = lancados
-    assert "worker" in worker and "core" in worker
-    assert "runserver" in web and "127.0.0.1:8123" in web
-
-
-@override_settings(DEBUG=True)
-def test_dev_sem_worker_sobe_so_o_servidor(monkeypatch):
+    O ultimo processo "morre" na hora para o laco de espera do comando
+    terminar; qual deles e o ultimo nao importa, porque o comando derruba
+    todos assim que qualquer um sai.
+    """
     lancados: list[list[str]] = []
 
     def falso_popen(argv, *a, **k):
@@ -93,10 +75,61 @@ def test_dev_sem_worker_sobe_so_o_servidor(monkeypatch):
         return processo
 
     monkeypatch.setattr("subprocess.Popen", falso_popen)
+    return lancados
+
+
+@override_settings(DEBUG=True)
+def test_dev_sobe_os_tres_processos(monkeypatch):
+    """Um comando, o sistema inteiro.
+
+    Os tres precisam subir juntos porque a falta de qualquer um e silenciosa:
+    sem worker o cadastro de tenant nunca termina, e sem beat nada acontece
+    por horario — nenhum erro em lugar nenhum, nos dois casos.
+    """
+    # `sem_conferir`: estes testes olham o lancamento dos processos. A conferencia
+    # do banco tem os testes dela em test_check_db.py e exigiria banco aqui.
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", "127.0.0.1:8123", sem_conferir=True)
+
+    assert len(lancados) == 3
+    worker, beat, web = lancados
+    assert "worker" in worker and "core" in worker
+    assert "beat" in beat and "core" in beat
+    assert "runserver" in web and "127.0.0.1:8123" in web
+
+
+@override_settings(DEBUG=True)
+def test_dev_nao_deixa_arquivo_de_pid_do_beat(monkeypatch):
+    """O padrao (`celerybeat.pid`) sobrevive a um encerramento abrupto, e a
+    subida seguinte falha com "Pidfile already exists" — um erro sobre um
+    arquivo que quem desenvolve nem sabia que existia."""
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    _, beat, _ = lancados
+    assert "--pidfile=" in beat
+
+
+@override_settings(DEBUG=True)
+def test_dev_sem_worker_nao_sobe_o_worker(monkeypatch):
+    lancados = _capturar(monkeypatch)
+
     call_command("dev", sem_worker=True, sem_conferir=True)
 
-    assert len(lancados) == 1
-    assert "runserver" in lancados[0]
+    assert not any("worker" in comando for comando in lancados)
+    assert any("runserver" in comando for comando in lancados)
+
+
+@override_settings(DEBUG=True)
+def test_dev_sem_beat_nao_sobe_o_agendador(monkeypatch):
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_beat=True, sem_conferir=True)
+
+    assert not any("beat" in comando for comando in lancados)
+    assert any("runserver" in comando for comando in lancados)
 
 
 @override_settings(DEBUG=True)
@@ -106,16 +139,9 @@ def test_dev_usa_pool_solo_no_windows(monkeypatch):
     Sem `-P solo` o worker falha de forma erratica — e o erro nao aponta o
     pool como causa.
     """
-    lancados: list[list[str]] = []
-
-    def falso_popen(argv, *a, **k):
-        processo = ProcessoFalso(argv)
-        lancados.append(argv)
-        processo.terminate()
-        return processo
-
-    monkeypatch.setattr("subprocess.Popen", falso_popen)
+    lancados = _capturar(monkeypatch)
     monkeypatch.setattr(sys, "platform", "win32")
+
     call_command("dev", sem_conferir=True)
 
     assert "-P" in lancados[0]

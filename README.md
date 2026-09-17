@@ -243,19 +243,33 @@ Pior ainda, esse erro chega tarde: as migrations compartilhadas passam sem
 reclamar, e a falha so acontece ao provisionar o primeiro tenant, dentro de uma
 task do worker.
 
-**`dev`, e nao `runserver`.** Este sistema sao dois processos: o servidor web e
-o worker do Celery. O `dev` sobe os dois no mesmo terminal e o Ctrl+C encerra
-os dois — os filhos herdam o grupo de processo do console, entao isso funciona
-sem supervisor nenhum, no Linux, no macOS e no Windows. No Windows ele ja
-acrescenta `-P solo` ao worker, porque o pool `prefork` nao tem suporte oficial
-desde o Celery 4 e falha de forma erratica.
+**`dev`, e nao `runserver`.** Este sistema sao tres processos: o servidor web,
+o worker do Celery e o beat. O `dev` sobe os tres no mesmo terminal e o Ctrl+C
+encerra todos — os filhos herdam o grupo de processo do console, entao isso
+funciona sem supervisor nenhum, no Linux, no macOS e no Windows. No Windows ele
+ja acrescenta `-P solo` ao worker, porque o pool `prefork` nao tem suporte
+oficial desde o Celery 4 e falha de forma erratica.
 
-Rodar os dois a mao continua valendo (`runserver` num terminal, o `celery`
-abaixo em outro) — o `dev` so evita o esquecimento:
+```bash
+python manage.py dev
+```
+
+Um processo novo amanha entra em `_servicos()`, dentro do proprio comando, e
+`manage.py dev` continua sendo o unico comando a saber. No servidor a lista
+equivalente sao as units de `deploy/systemd/`, uma para cada — a
+correspondencia e um para um, de proposito.
+
+Rodar os tres a mao continua valendo — o `dev` so evita o esquecimento:
 
 ```bash
 celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1
+celery -A core beat -l INFO --pidfile=
 ```
+
+O **beat** e o que menos se sente falta e o mais silencioso quando falta: sem
+ele a aplicacao inteira responde e simplesmente nada acontece sozinho —
+conteudo aprovado nunca e publicado, trabalho parado nunca e retomado, reserva
+vencida nunca e solta. Nenhum erro em lugar nenhum.
 
 O worker nao e um extra para "quando for gerar artigo": **o cadastro de um
 tenant ja depende dele**. Criar o schema e rodar as migrations leva dezenas de
