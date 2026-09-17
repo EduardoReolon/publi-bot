@@ -32,10 +32,21 @@ def advance_generation_job(self, job_id: str) -> str:
 
 @shared_task
 def sweep_stalled_jobs(limite: int = 50) -> int:
-    """Redespacha trabalhos parados.
+    """Redespacha trabalhos parados, em todos os tenants.
 
     E o que transforma "o worker caiu" e "a GPU ficou dias desligada" em casos
     comuns em vez de trabalho perdido. Roda a cada poucos minutos pelo beat.
+    """
+    from apps.accounts.varredura import para_cada_tenant
+
+    return para_cada_tenant(lambda: _retomar_parados(limite), "sweep_stalled_jobs")
+
+
+def _retomar_parados(limite: int) -> int:
+    """A varredura de UM tenant. Roda ja dentro do schema dele.
+
+    O `.delay()` fica aqui dentro porque e dele que sai o `_schema_name` da
+    mensagem: despachado de fora, o trabalho seria retomado no `public`.
     """
     from apps.ops.orchestrator import jobs_para_retomar
 

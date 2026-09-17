@@ -211,6 +211,37 @@ Confirmado em `celery/app/utils.py`. Um `CELERY_BROKER_URL` no `.env` vence o
 que o settings calcula. Por isso o modo postgres reescreve as variaveis de
 ambiente depois de montar a URL.
 
+### O beat nao tem tenant, e a task agendada roda no `public`
+
+```
+Task apps.integrations.tasks.tick_publication_scheduler raised unexpected:
+ProgrammingError('relation "content_article" does not exist')
+```
+
+Encontrado em uso, no primeiro tenant recem-criado, com o sistema ainda vazio —
+uma vez por minuto, para sempre.
+
+A propagacao de tenant do `tenant-schemas-celery` funciona no DESPACHO: o
+`_schema_name` e lido de `connection.schema_name` no momento do `.delay()` e
+viaja no cabecalho da mensagem. O beat despacha do proprio processo, que nunca
+teve requisicao HTTP nem `schema_context` — entao o schema dele e o `public`.
+
+O que torna isso dificil de ver e a assimetria. Uma task agendada que so toca
+tabela COMPARTILHADA (`release_expired_leases`, em `apps.inference`) funciona
+perfeitamente no `public`. Uma que toca tabela de TENANT quebra na hora, porque
+essas tabelas existem em cada schema de cliente e em nenhum lugar no `public`.
+Quatro das cinco entradas do beat eram do segundo tipo.
+
+Nao ha "o tenant certo": toda tarefa periodica de dominio precisa passar por
+TODOS. E o que `apps/accounts/varredura.py::para_cada_tenant` faz — inclusive
+o `.delay()` das tasks-filhas, que precisa acontecer DENTRO do `schema_context`
+para a mensagem sair com o schema certo.
+
+A suite nao pegava isso porque chamava cada task ja de dentro de um
+`schema_context` — que e como elas rodam quando uma pessoa dispara a acao, e
+nao como o beat as roda. `tests/test_beat_por_tenant.py` chama todas a partir
+do `public`, explicitamente.
+
 ---
 
 ## Django, templates e HTML

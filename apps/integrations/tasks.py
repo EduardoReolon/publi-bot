@@ -18,11 +18,24 @@ logger = logging.getLogger("publibot.integrations")
 
 @shared_task
 def tick_publication_scheduler(limite: int = 50) -> int:
-    """Publica o que ja passou da hora. Roda a cada minuto.
+    """Publica o que ja passou da hora, em todos os tenants. Roda a cada minuto.
 
     A consulta usa `scheduled_for <= agora`, nunca igualdade de minuto: com
     igualdade, qualquer atraso — uma implantacao, um pico de carga — faria o
     horario ser pulado e o conteudo nunca sair, sem erro em lugar nenhum.
+    """
+    from apps.accounts.varredura import para_cada_tenant
+
+    return para_cada_tenant(lambda: _publicar_vencidos(limite), "tick_publication_scheduler")
+
+
+def _publicar_vencidos(limite: int) -> int:
+    """O tique de UM tenant. Roda ja dentro do schema dele.
+
+    O despacho do `publish_content` acontece aqui dentro de proposito: o
+    `_schema_name` que acompanha a mensagem e lido de `connection.schema_name`
+    no momento do `.delay()`. Despachar de fora do `schema_context` mandaria a
+    task fazer o trabalho no `public`, onde as tabelas nem existem.
     """
     from apps.integrations.scheduling import conteudo_pronto_para_publicar
 
@@ -121,6 +134,13 @@ def check_publication_buffer() -> int:
     Nao dispara producao sozinho: geracao consome GPU e trabalho humano de
     revisao. Quem decide produzir e uma pessoa.
     """
+    from apps.accounts.varredura import para_cada_tenant
+
+    return para_cada_tenant(_conferir_reserva, "check_publication_buffer")
+
+
+def _conferir_reserva() -> int:
+    """A conferencia de UM tenant. Roda ja dentro do schema dele."""
     from apps.integrations.models import Site
     from apps.integrations.scheduling import contar_reserva, reserva_esta_baixa
 
@@ -208,11 +228,18 @@ def _pseudonimizar(item: dict) -> str:
 
 @shared_task
 def purge_expired_questions() -> int:
-    """Apaga o texto e a identificacao das perguntas vencidas.
+    """Apaga o texto e a identificacao das perguntas vencidas, em todo tenant.
 
     Apaga o conteudo mas preserva a linha: sem ela, a proxima coleta
     reimportaria a mesma pergunta como se fosse nova.
     """
+    from apps.accounts.varredura import para_cada_tenant
+
+    return para_cada_tenant(_expurgar_vencidas, "purge_expired_questions")
+
+
+def _expurgar_vencidas() -> int:
+    """O expurgo de UM tenant. Roda ja dentro do schema dele."""
     from apps.content.models import Question
 
     vencidas = Question.objects.filter(retention_until__lte=timezone.now(), purged_at__isnull=True)

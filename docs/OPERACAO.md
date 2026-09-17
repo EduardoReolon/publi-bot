@@ -292,5 +292,6 @@ python manage.py configurar_inferencia --testar
 | Trabalho parado em `WAITING_CAPACITY` | Ollama inacessivel, ou beat nao esta rodando |
 | `SemModeloConfigurado` | faltou `configurar_inferencia` |
 | Tarefas somem sem erro | Redis compartilhado sem `REDIS_NAMESPACE` |
+| `relation "content_..." does not exist` a cada minuto | task do beat sem varredura por tenant (ver ARMADILHAS) |
 
 Falhas ja encontradas e o que cada uma significa: [`ARMADILHAS.md`](ARMADILHAS.md).
