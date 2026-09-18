@@ -747,3 +747,44 @@ rodasse depois e olhasse o fluxo do artigo encontrava `passo-2` no lugar de
 `montar`. Funcionava por ordem alfabetica de coleta — `test_flows` vinha antes
 de `test_orchestrator` — e quebrou quando um arquivo novo entrou no meio.
 Hoje uma fixture `autouse` restaura o registro.
+
+### `.to("cuda")` desfaz o offload de pesos em silencio
+
+No servico de imagem, o pipeline de difusao e montado com
+`enable_model_cpu_offload()`: os pesos ficam na RAM e cada submodulo sobe para
+a placa so na hora de rodar. O pico de VRAM cai de ~7 GB para perto de 3,5 GB,
+e e isso que permite o Ollama continuar carregado ao lado numa placa de 8 GB.
+
+Acrescentar `.to("cuda")` depois — que e o que todo exemplo de diffusers faz —
+nao da erro nenhum. Continua carregando, continua gerando imagem, e passa a
+ocupar o dobro. O sintoma aparece dias depois, e em outro lugar: o Ollama
+comeca a cair para CPU.
+
+Nao da para flagrar isso sem placa. O que da e impedir a linha de voltar ao
+arquivo, e `test_servico_de_imagem.py` faz isso pela arvore sintatica — por
+texto encontraria o comentario que explica a armadilha.
+
+### O Ollama nao participa de reserva nenhuma
+
+A reserva do PubliBot conta vagas por maquina e serializa o que ELE despacha.
+O Ollama, porem, decide sozinho quando carregar e descarregar modelo:
+`OLLAMA_KEEP_ALIVE=30m` mantem um modelo de 7B residente por meia hora depois
+da ultima chamada, e isso nao aparece em reserva alguma.
+
+Entao a serializacao do PubliBot nao basta: ele pode ter soltado a reserva de
+texto e o modelo continuar na VRAM quando a geracao de imagem comeca. Por isso
+o servico de imagem refaz o pedido em CPU quando falta VRAM, em vez de falhar
+— e por isso ele registra WARNING quando faz isso. A alternativa (falhar) daria
+um artigo sem capa por um motivo que se resolve sozinho em minutos.
+
+### Uma dependencia nova no venv do worker quebra o `manage.py dev` inteiro
+
+O `dev` derruba todos os processos quando qualquer um morre — de proposito,
+porque o servidor sozinho aceita cadastros que nunca serao provisionados. A
+consequencia e que um `ModuleNotFoundError` no worker de GPU nao afeta so a
+geracao de imagem: derruba o web e o worker do Celery junto.
+
+Foi o caso ao acrescentar o `diffusers`: quem ja tinha o `worker-gpu/venv`
+instalado antes tinha o venv sem ele. Por isso `_servico_de_imagem` pergunta
+ao interpretador do worker se o pacote existe antes de tentar subir, e o
+banner diz o que rodar para instalar.

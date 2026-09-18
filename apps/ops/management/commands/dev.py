@@ -1,8 +1,10 @@
 """Sobe TODOS os processos do projeto num terminal so, em desenvolvimento.
 
-Hoje sao tres — web, worker e beat — e este comando e o unico lugar que precisa
-saber disso. Acrescentar um quarto amanha e acrescentar uma linha em
-`_servicos()`: quem usa continua rodando `manage.py dev`.
+Sao tres sempre — web, worker e beat — mais os dois servicos de GPU quando eles
+moram nesta maquina: a conversao de PDF e a geracao de imagem de capa. Este
+comando e o unico lugar que precisa saber disso. Acrescentar outro amanha e
+acrescentar uma linha em `_servicos()`: quem usa continua rodando
+`manage.py dev`.
 
 Este comando existe por um motivo empirico: a separacao em processos e correta,
 e mesmo assim tropeca. Um cadastro de tenant depende do worker (ADR-0001), e sem
@@ -70,6 +72,14 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--sem-imagem",
+            action="store_true",
+            help=(
+                "Nao sobe o worker de geracao de imagem, mesmo que ele esteja "
+                "instalado aqui. Os artigos saem sem capa."
+            ),
+        )
+        parser.add_argument(
             "--concurrency", type=int, default=1, help="Processos do worker. Default: 1."
         )
         parser.add_argument(
@@ -115,9 +125,12 @@ class Command(BaseCommand):
             )
         )
 
-        aviso = _nota_sobre_a_conversao(options, servicos)
-        if aviso:
-            self.stdout.write(aviso)
+        for aviso in (
+            _nota_sobre_a_conversao(options, servicos),
+            _nota_sobre_a_imagem(options, servicos),
+        ):
+            if aviso:
+                self.stdout.write(aviso)
 
         processos: list[subprocess.Popen] = []
         try:
@@ -211,6 +224,11 @@ def _servicos(options) -> list[tuple[str, list[str], dict[str, str] | None]]:
         if conversao is not None:
             servicos.append(conversao)
 
+    if not options["sem_imagem"]:
+        imagem = _servico_de_imagem()
+        if imagem is not None:
+            servicos.append(imagem)
+
     # O web vem por ultimo de proposito: assim a primeira linha que rola na tela
     # depois do banner e a dele, que e onde se olha.
     servicos.append(("web", [sys.executable, "manage.py", "runserver", options["addrport"]], None))
@@ -218,28 +236,64 @@ def _servicos(options) -> list[tuple[str, list[str], dict[str, str] | None]]:
 
 
 def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
-    """O worker do Docling, se ele morar NESTA maquina.
+    """O worker do Docling, se ele morar NESTA maquina."""
+    return _worker_de_gpu(
+        nome="conversao",
+        url=getattr(settings, "CONVERSAO_BASE_URL", ""),
+        modulo="docling_api:app",
+        porta_padrao=8100,
+    )
 
-    Em producao ele nao mora: roda onde esta a placa e e alcancado por
-    Tailscale (ADR-0007). Em desenvolvimento costuma ser a mesma maquina, e ai
-    subir tres processos a mao e esquecer o quarto e o mesmo erro de sempre.
 
-    Tres condicoes, e cada uma existe por um motivo:
+def _servico_de_imagem() -> tuple[str, list[str], dict[str, str]] | None:
+    """O worker de imagem de capa, se ele morar NESTA maquina.
 
-    - `CONVERSAO_BASE_URL` aponta para c'a. Apontando para outra maquina, subir
-      uma copia local daria dois servicos e um deles receberia trabalho nenhum.
-    - o venv proprio existe. O Docling traz torch (~3 GB) e NAO entra no venv
-      da nuvem; sem isso, o comando tentaria subir algo que nao esta instalado.
+    Mesmas condicoes da conversao, e mais uma: o `diffusers` precisa estar no
+    venv do worker. Ele nao vem com o Docling, e quem instalou o worker antes
+    deste servico existir tem o venv sem ele — tentar subir daria um
+    `ModuleNotFoundError` que derruba o `dev` inteiro, porque qualquer
+    processo que morre encerra todos.
+    """
+    servico = _worker_de_gpu(
+        nome="imagem",
+        url=getattr(settings, "IMAGEM_BASE_URL", ""),
+        modulo="imagem_api:app",
+        porta_padrao=8101,
+    )
+    if servico is None or not _tem_diffusers():
+        return None
+    return servico
+
+
+def _worker_de_gpu(
+    *, nome: str, url: str, modulo: str, porta_padrao: int
+) -> tuple[str, list[str], dict[str, str]] | None:
+    """Um servico de `worker-gpu/`, se ele morar NESTA maquina.
+
+    Em producao nao mora: roda onde esta a placa e e alcancado por Tailscale
+    (ADR-0007). Em desenvolvimento costuma ser a mesma maquina, e ai subir os
+    outros processos a mao e esquecer este e o erro de sempre.
+
+    Quatro condicoes, e cada uma existe por um motivo:
+
+    - a URL esta preenchida e aponta para c'a. Apontando para outra maquina,
+      subir uma copia local daria dois servicos e um receberia trabalho nenhum.
+    - o venv proprio existe. Estes servicos trazem torch (~3 GB) e NAO entram
+      no venv da nuvem; sem isso, o comando tentaria subir algo que nao esta
+      instalado.
     - a porta da URL e a que passamos ao uvicorn, para os dois concordarem sem
       ninguem editar duas coisas.
+    - a porta esta livre. Ocupada significa que o servico ja esta de pe —
+      tipicamente como unit do systemd, que e como se roda numa maquina que
+      serve o servidor. Subir o segundo daria "address already in use" e
+      derrubaria o `dev` inteiro. Nao e conflito: e o estado normal de quem
+      instalou a unit, e usa-se o que ja esta la.
 
-    Faltando qualquer uma, devolve None em silencio: nao ter o worker aqui e
-    um estado legitimo, e a tela de curadoria ja avisa quando a conversao saiu
-    pelo extrator local.
+    Faltando qualquer uma, devolve None em silencio — e `_nota_sobre_...`
+    explica no banner por que o servico nao esta na lista.
     """
     from urllib.parse import urlparse
 
-    url = getattr(settings, "CONVERSAO_BASE_URL", "")
     if not url:
         return None
 
@@ -247,37 +301,29 @@ def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
     if endereco.hostname not in {"127.0.0.1", "localhost", "::1"}:
         return None
 
-    raiz = Path(settings.BASE_DIR) / "worker-gpu"
-    python = raiz / "venv" / "bin" / "python"
-    if sys.platform == "win32":
-        python = raiz / "venv" / "Scripts" / "python.exe"
+    raiz = _raiz_do_worker()
+    python = _python_do_worker(raiz)
     if not python.exists():
         return None
 
-    # Ja ha alguem naquela porta? Entao o worker esta de pe — tipicamente como
-    # unit do systemd, que e como se roda numa maquina que serve o servidor.
-    # Subir o segundo daria "address already in use" e derrubaria o `dev`
-    # inteiro, porque qualquer processo que morre encerra todos.
-    #
-    # Nao e conflito: e o estado normal de quem instalou a unit. Usa-se o que
-    # ja esta la.
-    porta = endereco.port or 8100
+    porta = endereco.port or porta_padrao
     if _porta_ocupada(endereco.hostname, porta):
         return None
 
     return (
-        "conversao",
+        nome,
         [
             str(python),
             "-m",
             "uvicorn",
-            "docling_api:app",
+            modulo,
             "--host",
             endereco.hostname,
             "--port",
             str(porta),
-            # Um so: duas conversoes simultaneas estouram a VRAM, e o servico
-            # ja recusa a segunda com 503 justamente por isso.
+            # Um so: dois processos significam dois modelos residentes, e a
+            # VRAM nao comporta. Cada servico ja recusa o segundo pedido com
+            # 503 pelo mesmo motivo.
             "--workers",
             "1",
             "--app-dir",
@@ -285,6 +331,38 @@ def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
         ],
         _ambiente_do_worker(raiz),
     )
+
+
+def _raiz_do_worker() -> Path:
+    return Path(settings.BASE_DIR) / "worker-gpu"
+
+
+def _python_do_worker(raiz: Path) -> Path:
+    if sys.platform == "win32":
+        return raiz / "venv" / "Scripts" / "python.exe"
+    return raiz / "venv" / "bin" / "python"
+
+
+def _tem_diffusers() -> bool:
+    """Se o venv do worker consegue importar o `diffusers`.
+
+    Pergunta ao interpretador dele, e nao a este: sao venvs diferentes, e o
+    `diffusers` nunca estara neste.
+    """
+    python = _python_do_worker(_raiz_do_worker())
+    try:
+        # Caminho derivado de `settings.BASE_DIR` e de constantes; nada vem de
+        # entrada externa.
+        return (
+            subprocess.run(  # noqa: S603
+                [str(python), "-c", "import diffusers"],
+                capture_output=True,
+                timeout=60,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def _nota_sobre_a_conversao(options, servicos) -> str:
@@ -317,6 +395,41 @@ def _nota_sobre_a_conversao(options, servicos) -> str:
     return (
         f"Conversao:  {url} aponta para c'a, mas worker-gpu/venv nao existe. "
         f"PDF sai pelo extrator local."
+    )
+
+
+def _nota_sobre_a_imagem(options, servicos) -> str:
+    """Explica por que o worker de imagem nao esta na lista.
+
+    Mesmo motivo da nota da conversao: o silencio faria quem instalou a unit
+    concluir que nao vai haver capa, e quem nao instalou nada nao saberia que
+    os artigos vao sair sem imagem.
+    """
+    from urllib.parse import urlparse
+
+    if options["sem_imagem"] or any(nome == "imagem" for nome, _, _ in servicos):
+        return ""
+
+    url = getattr(settings, "IMAGEM_BASE_URL", "")
+    if not url:
+        return (
+            "Imagem:     nenhuma (IMAGEM_BASE_URL vazia). "
+            "Os artigos saem sem capa; o texto nao e afetado."
+        )
+
+    endereco = urlparse(url)
+    if endereco.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return f"Imagem:     em outra maquina ({endereco.hostname}); nada a subir aqui."
+
+    if _porta_ocupada(endereco.hostname, endereco.port or 8101):
+        return f"Imagem:     ja de pe em {url} (servico proprio); nao subi outro."
+
+    if not _python_do_worker(_raiz_do_worker()).exists():
+        return f"Imagem:     {url} aponta para c'a, mas worker-gpu/venv nao existe."
+
+    return (
+        f"Imagem:     {url} aponta para c'a, mas o venv do worker nao tem o "
+        f"diffusers. Rode: worker-gpu/venv/bin/pip install -r worker-gpu/requirements.txt"
     )
 
 

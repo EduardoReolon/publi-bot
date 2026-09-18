@@ -506,6 +506,31 @@ CONVERSAO_BASE_URL = env.get("CONVERSAO_BASE_URL", "")
 # devolve 401 e a conversao falha sem dizer que o problema e credencial.
 CONVERSAO_SEGREDO = env.get("CONVERSAO_SEGREDO", "")
 
+# ---------------------------------------------------------------------------
+# Semente da conexao de imagem de capa
+# ---------------------------------------------------------------------------
+# Terceira conexao, mesma logica das duas acima: a linha no banco e a fonte da
+# verdade, e isto so existe para o `manage.py configurar_imagem` cria-la.
+#
+# Vazio e um estado legitimo e comum: sem gerador de imagem o artigo sai
+# igual, apenas sem capa, e o ultimo passo da geracao registra o motivo em vez
+# de falhar. O Ollama NAO serve aqui — ele nao gera imagem.
+#
+# Quando preenchido, costuma apontar para a MESMA maquina do Docling (outra
+# porta). E de proposito: a reserva conta vagas por maquina, entao as duas
+# conexoes passam a se revezar na placa em vez de disputa-la.
+IMAGEM_NOME = env.get("IMAGEM_NOME", "Geracao de imagem")
+IMAGEM_BASE_URL = env.get("IMAGEM_BASE_URL", "")
+
+# Nome do modelo. Para o worker proprio e informativo (quem manda e o
+# `IMAGEM_MODELO` do `.env` dele); para um provedor pago, e o que seleciona o
+# modelo de fato.
+IMAGEM_MODELO = env.get("IMAGEM_MODELO", "stabilityai/stable-diffusion-xl-base-1.0")
+
+# O mesmo `WORKER_SHARED_SECRET` do worker, ou a chave do provedor pago. Viaja
+# como `Authorization: Bearer`, que e o que o dialeto de imagem da OpenAI usa.
+IMAGEM_SEGREDO = env.get("IMAGEM_SEGREDO", "")
+
 EMBEDDING_MODEL = env.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)
 

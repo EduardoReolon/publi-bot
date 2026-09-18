@@ -338,7 +338,8 @@ def _worker_falso(tmp_path: Path, env: str) -> Path:
     """Uma arvore que parece a do worker, sem os 3 GB de torch."""
     (tmp_path / "deploy").mkdir()
     shutil.copy(INSTALAR, tmp_path / "deploy" / "instalar.sh")
-    shutil.copy(WORKER / "deploy" / "docling-api.service", tmp_path / "deploy")
+    for unit in ("docling-api.service", "imagem-api.service"):
+        shutil.copy(WORKER / "deploy" / unit, tmp_path / "deploy")
     (tmp_path / "venv" / "bin").mkdir(parents=True)
     uvicorn = tmp_path / "venv" / "bin" / "uvicorn"
     uvicorn.touch()
@@ -347,9 +348,9 @@ def _worker_falso(tmp_path: Path, env: str) -> Path:
     return tmp_path
 
 
-def _instalar(raiz: Path) -> subprocess.CompletedProcess:
+def _instalar(raiz: Path, *argumentos: str) -> subprocess.CompletedProcess:
     return subprocess.run(  # noqa: S603 - o alvo e um script do proprio repositorio
-        [shutil.which("bash") or "/bin/bash", str(raiz / "deploy" / "instalar.sh")],
+        [shutil.which("bash") or "/bin/bash", str(raiz / "deploy" / "instalar.sh"), *argumentos],
         capture_output=True,
         text=True,
         check=False,
@@ -432,3 +433,79 @@ def test_o_requirements_do_worker_fixa_o_opencv():
     assert "opencv-python-headless" in texto
     # A variante completa linka libGL, que uma maquina sem tela nao tem.
     assert "\nopencv-python>" not in texto
+
+
+def test_o_instalador_recusa_argumento_desconhecido(tmp_path):
+    """Um `--imagen` com erro de digitacao instalaria o Docling calado, e a
+    pessoa concluiria que o servico de imagem esta de pe."""
+    raiz = _worker_falso(tmp_path, "BIND_HOST=127.0.0.1\nWORKER_SHARED_SECRET=abc\n")
+
+    resultado = _instalar(raiz, "--imagen")
+
+    assert resultado.returncode == 1
+    assert "--imagem" in resultado.stderr
+
+
+def test_o_instalador_de_imagem_recusa_venv_sem_diffusers(tmp_path):
+    """Quem instalou o worker antes deste servico existir tem o venv sem o
+    `diffusers`. A unit subiria, morreria com ModuleNotFoundError e o systemd
+    a reiniciaria a cada 10s — visivel so no journal."""
+    raiz = _worker_falso(tmp_path, "BIND_HOST=127.0.0.1\nWORKER_SHARED_SECRET=abc\n")
+
+    resultado = _instalar(raiz, "--imagem")
+
+    assert resultado.returncode == 1
+    assert "diffusers" in resultado.stderr
+    assert "requirements.txt" in resultado.stderr
+
+
+def test_as_duas_units_nao_disputam_a_mesma_porta(tmp_path):
+    """Dois servicos na mesma maquina. Portas iguais dariam "address already
+    in use" no segundo, e o systemd o reiniciaria para sempre."""
+    docling = (WORKER / "deploy" / "docling-api.service").read_text(encoding="utf-8")
+    imagem = (WORKER / "deploy" / "imagem-api.service").read_text(encoding="utf-8")
+
+    assert "${BIND_PORT}" in docling
+    assert "${IMAGEM_BIND_PORT}" in imagem
+    assert "docling_api:app" in docling
+    assert "imagem_api:app" in imagem
+
+
+def test_a_unit_de_imagem_tambem_sobe_um_processo_so():
+    """Dois processos significam dois modelos de difusao residentes."""
+    molde = (WORKER / "deploy" / "imagem-api.service").read_text(encoding="utf-8")
+
+    assert "--workers 1" in molde
+    assert "Restart=always" in molde
+
+
+def test_a_unit_de_imagem_nao_deixa_marcador_para_tras(tmp_path):
+    molde = (WORKER / "deploy" / "imagem-api.service").read_text(encoding="utf-8")
+
+    gerada = (
+        molde.replace("RAIZ", str(tmp_path))
+        .replace("LINHA_DE_USUARIO", "# (unit de usuario)")
+        .replace("ALVO_DE_INSTALACAO", "default.target")
+    )
+
+    for marcador in ("RAIZ", "LINHA_DE_USUARIO", "ALVO_DE_INSTALACAO"):
+        assert marcador not in gerada
+    assert f"ExecStart={tmp_path}/venv/bin/uvicorn" in gerada
+
+
+def test_o_requirements_do_worker_traz_o_accelerate():
+    """Sem ele nao existe `enable_model_cpu_offload()`, e o pipeline inteiro
+    vai para a VRAM — o dobro do pico, numa placa que ja esta apertada. O
+    diffusers o declara como opcional; aqui ele nao e."""
+    texto = (WORKER / "requirements.txt").read_text(encoding="utf-8")
+
+    assert "diffusers" in texto
+    assert "accelerate" in texto
+
+
+def test_o_release_semeia_a_conexao_de_imagem_sem_derrubar_a_implantacao():
+    """`--opcional`: uma instalacao sem gerador de imagem e o caso comum, e
+    nao pode fazer o deploy falhar."""
+    texto = (RAIZ / "deploy" / "scripts" / "release.sh").read_text(encoding="utf-8")
+
+    assert "configurar_imagem --opcional" in texto

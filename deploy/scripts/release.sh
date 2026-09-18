@@ -69,6 +69,11 @@ DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configura
 echo "==> Conexao de conversao (Docling)"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configurar_conversao --opcional
 
+# Tambem `--opcional`, e aqui o estado sem conexao e ainda mais comum: sem
+# gerador de imagem o artigo sai igual, apenas sem capa. O texto e o produto.
+echo "==> Conexao de imagem"
+DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configurar_imagem --opcional
+
 # Os prompts sao LINHAS no schema de cada tenant, e `migrate_schemas` cria
 # tabela e nao linha. O provisionamento ja semeia os tenants novos; isto
 # alcanca os que existiam antes, e conserta qualquer um que tenha ficado sem —

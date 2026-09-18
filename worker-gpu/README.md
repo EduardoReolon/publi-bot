@@ -12,6 +12,11 @@ de contar concorrencia e dois lugares para o mesmo defeito.
 |---|---|---|
 | `ollama serve` | 11434 | Geracao de texto |
 | `docling-api` | 8100 | PDF para Markdown |
+| `imagem-api` | 8101 | Imagem de capa (difusao) |
+
+Os tres dividem a mesma placa. Como, e o assunto de
+[Dividir a placa](#dividir-a-placa) mais abaixo — e nao e um detalhe: uma placa
+de 8 GB nao comporta dois desses modelos ao mesmo tempo.
 
 ## Regra que nao pode ser violada
 
@@ -72,6 +77,33 @@ sudo loginctl enable-linger "$USER"
 ```
 
 Use `--sistema` numa maquina dedicada, que precisa subir o servico no boot.
+
+### Servico de imagem de capa
+
+Mesmo venv e mesmo `.env` do Docling, porta 8101:
+
+```bash
+./venv/bin/pip install -r requirements.txt   # traz diffusers e accelerate
+./deploy/instalar.sh --imagem                # ou --tudo, para os dois
+```
+
+O que o `.env` controla:
+
+```bash
+IMAGEM_MODELO=stabilityai/stable-diffusion-xl-base-1.0
+IMAGEM_DEVICE=auto          # cpu | cuda | auto
+IMAGEM_PASSOS=25            # 1 a 4 nos modelos "turbo", com GUIDANCE=0
+IMAGEM_OCIOSO_SEGUNDOS=300  # tempo sem pedido ate devolver a placa
+```
+
+Ele fala o dialeto de imagem da OpenAI (`POST /v1/images/generations`,
+resposta em `b64_json`), que e o unico que o PubliBot conhece. A consequencia
+util: trocar este servico por um provedor pago e mudar a URL e a chave da
+conexao, sem tocar em codigo nenhum.
+
+O `instalar.sh --imagem` recusa subir se o venv nao tiver o `diffusers` — o
+caso de quem instalou o worker antes deste servico existir, e cujo sintoma
+seria um `ModuleNotFoundError` no journal.
 
 ### Python 3.14
 
@@ -146,25 +178,52 @@ python medir.py um-artigo.pdf --cuda
 
 Ou, pelo painel, em Conexoes de inferencia:
 
-| Campo | Ollama | Docling |
-|---|---|---|
-| Tipo | Compativel com OpenAI | Docling |
-| URL base | `http://100.x.y.z:11434` | `http://100.x.y.z:8100` |
-| Cargas | `["text"]` | `["vision_parse"]` |
-| Concorrencia maxima | **1** | **1** |
+| Campo | Ollama | Docling | Imagem |
+|---|---|---|---|
+| Tipo | Compativel com OpenAI | Docling | Geracao de imagem |
+| URL base | `http://100.x.y.z:11434` | `http://100.x.y.z:8100` | `http://100.x.y.z:8101` |
+| Cargas | `["text"]` | `["vision_parse"]` | `["image"]` |
+| Concorrencia maxima | **1** | **1** | **1** |
 
-Concorrencia 1 nos dois, e a mesma maquina: sao a mesma placa. Deixar 2 em
+Concorrencia 1 nos tres, e a mesma maquina: sao a mesma placa. Deixar 2 em
 qualquer um deles reintroduz exatamente o problema de VRAM descrito acima.
 
-## Dimensionamento
+Ou pelo terminal, que e o caminho sem formulario:
 
-Numa RTX 3050 de 8 GB, cabe **um** de cada vez:
+```bash
+python manage.py configurar_imagem --testar
+```
 
-- um modelo de texto de 7-8B quantizado (q4), com contexto moderado; **ou**
-- um modelo de imagem.
+## Dividir a placa
 
-Nunca os dois. E por isso que o PubliBot serializa por conexao e agrupa a fila
-por modelo carregado.
+Numa RTX 3050 de 8 GB cabe **um** modelo grande de cada vez: um de texto de
+7-8B quantizado, **ou** um de imagem. Nunca os dois inteiros.
+
+Nao ha arranjo perfeito para isso, e o sistema nao finge que ha. Sao cinco
+camadas, cada uma cobrindo o que a anterior deixa passar:
+
+1. **A reserva do PubliBot conta vagas por MAQUINA**, e nao por conexao
+   (`apps/inference/leases.py`). As tres conexoes apontam para o mesmo host,
+   entao gerar texto e gerar imagem se revezam. Cobre o caminho normal.
+2. **Um pedido por vez dentro de cada servico** (503 no segundo). Cobre quem
+   chamar por fora do PubliBot.
+3. **Os pesos do modelo de imagem ficam na RAM**, nao na VRAM
+   (`enable_model_cpu_offload`): o pico cai de ~7 GB para perto de 3,5 GB, e e
+   isso que permite o Ollama seguir carregado ao lado.
+4. **A placa e devolvida depois de `IMAGEM_OCIOSO_SEGUNDOS` sem pedido.**
+5. **Faltando VRAM, a imagem e refeita em CPU** — com WARNING no log e
+   `ultimo_dispositivo=cpu` no `/health/`. Leva minutos em vez de segundos,
+   mas nao falha.
+
+O que nenhuma cobre: o Ollama decide sozinho quando carregar modelo e nao
+participa de reserva nenhuma. Quando ele carrega um modelo grande no meio de
+uma geracao de imagem, quem entra e a camada 5 — e e exatamente por isso que
+ela existe, em vez de o pedido simplesmente falhar.
+
+A camada 5 e a unica que produz um resultado pior sem falhar, entao ela grita:
+`configurar_imagem --testar` relatando `ultimo=cpu` significa que a placa esta
+apertada. Reduza `IMAGEM_OCIOSO_SEGUNDOS`, gere em 512x512, ou use um modelo
+menor.
 
 **Meça antes de confiar:** quanto o Docling leva num artigo de 20 paginas, e
 quanto leva gerar 2000 palavras. Todo limite de tempo depende desses dois

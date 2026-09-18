@@ -407,10 +407,22 @@ python manage.py configurar_inferencia --testar
 Ele cria a conexao se faltar e PRESERVA a que existir — a conexao vive numa
 linha do banco, e nao num arquivo, para trocar de modelo sem implantar. Da para
 faze-lo pelo admin tambem (`/admin/inference/inferenceconnection/`), do tipo
-*Compativel com OpenAI*, com a carga `text` marcada. Para converter PDF com
-analise de layout, cadastre tambem uma do tipo *Docling* apontando para o
-`worker-gpu/`; sem ela, PDF cai no extrator local, que embaralha coluna dupla e
-nao le documento digitalizado.
+*Compativel com OpenAI*, com a carga `text` marcada.
+
+Ha mais duas, as duas opcionais e as duas atendidas por servicos em
+`worker-gpu/`, na maquina que tem a placa:
+
+```bash
+python manage.py configurar_conversao --testar   # PDF com analise de layout
+python manage.py configurar_imagem --testar      # imagem de capa
+```
+
+Sem a primeira, o PDF cai no extrator local, que embaralha coluna dupla e nao
+le documento digitalizado. Sem a segunda, o artigo sai igual, apenas sem capa
+— o Ollama nao gera imagem, e e por isso que ha um terceiro servico.
+
+As tres dividem a mesma placa, e a reserva conta vagas por MAQUINA para que se
+revezem: [`worker-gpu/README.md`](worker-gpu/README.md#dividir-a-placa).
 
 ## Comandos de tenant
 

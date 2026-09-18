@@ -79,14 +79,15 @@ def _capturar(monkeypatch) -> list[list[str]]:
 
 
 @pytest.fixture(autouse=True)
-def sem_worker_de_conversao(settings):
-    """O worker do Docling so sobe quando esta instalado NESTA maquina.
+def sem_workers_de_gpu(settings):
+    """Os servicos de GPU so sobem quando estao instalados NESTA maquina.
 
-    Neutralizado por padrao: se estivesse instalado na maquina de quem roda a
-    suite, metade dos testes de contagem passaria a ver um processo a mais — e
+    Neutralizados por padrao: se estivessem instalados na maquina de quem roda
+    a suite, metade dos testes de contagem passaria a ver processos a mais — e
     o resultado dependeria do que cada um tem no disco.
     """
     settings.CONVERSAO_BASE_URL = ""
+    settings.IMAGEM_BASE_URL = ""
 
 
 @override_settings(DEBUG=True)
@@ -317,6 +318,106 @@ def test_a_sonda_de_porta_ve_uma_porta_ocupada_como_ocupada():
         porta = servidor.getsockname()[1]
 
         assert _porta_ocupada("127.0.0.1", porta) is True
+
+
+# ---------------------------------------------------------------------------
+# O worker de imagem de capa
+# ---------------------------------------------------------------------------
+@override_settings(DEBUG=True)
+def test_sobe_o_worker_de_imagem_quando_ele_mora_aqui(monkeypatch, tmp_path, settings):
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    _fingir_diffusers(monkeypatch, tem=True)
+    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    imagem = [c for c in lancados if "imagem_api:app" in c]
+    assert len(imagem) == 1
+    assert "8101" in imagem[0]
+
+
+@override_settings(DEBUG=True)
+def test_os_dois_servicos_de_gpu_sobem_juntos(monkeypatch, tmp_path, settings):
+    """Portas diferentes, processos diferentes. Eles dividem a placa, e quem
+    os faz se revezar e a reserva por maquina do lado do PubliBot — nao o
+    numero de processos aqui."""
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    _fingir_diffusers(monkeypatch, tem=True)
+    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert len([c for c in lancados if "docling_api:app" in c]) == 1
+    assert len([c for c in lancados if "imagem_api:app" in c]) == 1
+
+
+@override_settings(DEBUG=True)
+def test_venv_sem_diffusers_nao_derruba_o_dev(monkeypatch, tmp_path, settings, capsys):
+    """Quem instalou o worker antes deste servico existir tem o venv sem o
+    `diffusers`. Tentar subir daria um ModuleNotFoundError — e como qualquer
+    processo que morre encerra todos, o `dev` inteiro cairia junto."""
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    _fingir_diffusers(monkeypatch, tem=False)
+    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert not [c for c in lancados if "imagem_api:app" in c]
+    assert "diffusers" in capsys.readouterr().out
+
+
+@override_settings(DEBUG=True)
+def test_sem_imagem_nao_sobe_mesmo_instalado(monkeypatch, tmp_path, settings):
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    _fingir_diffusers(monkeypatch, tem=True)
+    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_imagem=True, sem_conferir=True)
+
+    assert not [c for c in lancados if "imagem_api:app" in c]
+
+
+@override_settings(DEBUG=True)
+def test_sem_gerador_de_imagem_o_banner_diz_que_nao_havera_capa(monkeypatch, capsys):
+    """Sem esta linha, o unico aviso chegaria na tela de revisao, depois de o
+    artigo inteiro ter sido gerado."""
+    _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    saida = capsys.readouterr().out
+    assert "sem capa" in saida
+    assert "texto nao e afetado" in saida
+
+
+@override_settings(DEBUG=True)
+def test_imagem_em_outra_maquina_nao_sobe_copia_local(monkeypatch, tmp_path, settings, capsys):
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    _fingir_diffusers(monkeypatch, tem=True)
+    settings.IMAGEM_BASE_URL = "http://100.64.0.7:8101"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert not [c for c in lancados if "imagem_api:app" in c]
+    assert "outra maquina" in capsys.readouterr().out
+
+
+def _fingir_diffusers(monkeypatch, *, tem: bool) -> None:
+    """Responde pelo interpretador do worker sem executa-lo.
+
+    O binario que `_fingir_venv_do_worker` cria e um arquivo vazio: roda-lo
+    para descobrir se o `diffusers` esta la nao daria resposta nenhuma.
+    """
+    monkeypatch.setattr(
+        "apps.ops.management.commands.dev._tem_diffusers",
+        lambda: tem,
+    )
 
 
 def _fingir_venv_do_worker(monkeypatch, tmp_path) -> None:

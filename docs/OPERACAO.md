@@ -86,40 +86,86 @@ O comando e idempotente e **preserva** o que ja estiver no banco — a conexao
 vive numa linha, nao num arquivo, justamente para trocar de modelo sem mexer em
 codigo. Use `--atualizar` quando quiser sobrescrever com o `.env`.
 
-### 4a. Geracao de imagem (opcional)
+### 4a. Geracao de imagem de capa (opcional)
 
 Sem isto o artigo sai igual — **sem capa**. O ultimo passo da geracao pede tres
-opcoes de imagem; se nao houver conexao cadastrada, ele registra o motivo e
-termina, e a tela de revisao mostra:
+opcoes de imagem; nao havendo conexao, ele registra o motivo e termina, e a
+tela de revisao mostra por que veio sem imagem. O texto nao e afetado.
 
-> As capas nao foram geradas com o artigo: nenhuma conexao de geracao de imagem
-> disponivel. Cadastre uma em Configuracao > Inferencia, do tipo 'image'.
+**O Ollama nao serve aqui.** Ele serve modelos de texto e nao tem endpoint de
+imagem. O que o PubliBot fala e o dialeto da OpenAI —
+`POST /v1/images/generations` com `b64_json` — e ha duas formas de atende-lo:
 
-O Ollama **nao gera imagem**: ele serve modelos de texto. E preciso um endpoint
-que fale `POST /v1/images/generations` e devolva `b64_json` — o mesmo formato da
-OpenAI. Servem tanto um provedor pago quanto um servidor local que exponha essa
-rota.
+- **um provedor pago** (OpenAI e compativeis): cadastre a URL e a chave e pule
+  o resto desta secao;
+- **a sua placa**, pelo servico em `worker-gpu/imagem_api.py`. E o caminho
+  descrito abaixo.
 
-Nao ha comando para isto (ao contrario de `configurar_inferencia`), porque nao
-ha um provedor padrao a assumir. Cadastre pelo admin, em **Inferencia >
-Conexoes**:
+#### Subir o servico na maquina com placa
 
-| Campo | Valor |
+Na mesma pasta e no mesmo venv do Docling:
+
+```bash
+cd worker-gpu
+./venv/bin/pip install -r requirements.txt   # traz diffusers e accelerate
+./deploy/instalar.sh --imagem                # unit de usuario, porta 8101
+```
+
+O `.env` do worker (`worker-gpu/.env`) tem um bloco proprio. O que costuma
+mudar:
+
+| Variavel | Para que |
 |---|---|
-| Tipo | `image` |
-| Cargas (`workloads`) | `image` |
-| `base_url` | a raiz do servico, sem `/v1` |
-| `default_model` | o nome exato do modelo de imagem |
-| `max_concurrency` | `1` se dividir a placa com o Ollama |
+| `IMAGEM_MODELO` | qualquer modelo do diffusers. O padrao faz 1024x1024 nativo |
+| `IMAGEM_DEVICE` | `auto` usa a placa se houver; `cpu` para so conferir o caminho |
+| `IMAGEM_PASSOS` | 25 no SDXL; 1 a 4 nos modelos "turbo" (com `IMAGEM_GUIDANCE=0`) |
+| `IMAGEM_OCIOSO_SEGUNDOS` | quanto tempo sem pedido ate devolver a placa |
 
-Sobre a concorrencia: a reserva conta vagas **por maquina**, nao por conexao
-(ver `apps/inference/leases.py`). Duas conexoes no mesmo endereco disputam a
-mesma VRAM, e um `max_concurrency` alto nos dois faz o segundo modelo cair para
-CPU em silencio — o sintoma e uma geracao que de repente leva minutos.
+No `.env` do PubliBot:
 
-Depois de cadastrar, o botao **"Gerar tres opcoes de capa"** na tela de revisao
-funciona para os artigos que ja sairam sem imagem. Os proximos ja nascem com o
-primeiro lote.
+```
+IMAGEM_BASE_URL=http://127.0.0.1:8101      # ou o endereco Tailscale da maquina
+IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET do worker>
+```
+
+E, uma vez:
+
+```bash
+python manage.py configurar_imagem --testar
+```
+
+O `--testar` bate em `/health/` e diz **em que dispositivo** o modelo rodou por
+ultimo. Esse numero e o que importa: um worker que caiu para CPU continua
+entregando imagem, so que em minutos — e sem essa linha a conclusao natural
+seria "gerar imagem e lento mesmo".
+
+Em desenvolvimento, `manage.py dev` sobe o servico junto com os outros quando
+ele mora nesta maquina e a porta esta livre. Se a unit do systemd ja estiver de
+pe, ele usa a que ja existe e diz isso no banner.
+
+#### Dividir uma placa de 8 GB com o Ollama e o Docling
+
+Nao ha arranjo perfeito, e o sistema nao finge que ha. Sao cinco camadas:
+
+1. **A reserva conta vagas por MAQUINA**, e nao por conexao
+   (`apps/inference/leases.py`). Como as tres conexoes apontam para o mesmo
+   host, gerar texto e gerar imagem passam a se revezar. O
+   `configurar_imagem` avisa disso no cadastro.
+2. **Um pedido por vez dentro de cada servico.** O segundo recebe 503.
+3. **Os pesos ficam na RAM, nao na VRAM** (`enable_model_cpu_offload`): o pico
+   cai de ~7 GB para algo perto de 3,5 GB.
+4. **A placa e devolvida depois de `IMAGEM_OCIOSO_SEGUNDOS` sem pedido.**
+5. **Faltando VRAM, o pedido e refeito em CPU** — e o log diz, em WARNING, que
+   isso aconteceu. Leva minutos em vez de segundos, mas nao falha.
+
+O que nenhuma delas cobre: o Ollama decide sozinho quando carregar modelo e
+nao participa de reserva nenhuma. Quando ele carrega um modelo grande no meio
+de uma geracao, a camada 5 e a que entra — e e por isso que ela existe em vez
+de o servico simplesmente falhar.
+
+Se `manage.py configurar_imagem --testar` comecar a relatar
+`ultimo=cpu`, a placa esta apertada: reduza `IMAGEM_OCIOSO_SEGUNDOS`, gere em
+512x512, ou troque para um modelo menor.
 
 ### 4b. Conversao de PDF (Docling)
 
@@ -170,6 +216,7 @@ Suba como servico (o instalador confere tudo antes e mostra o `/health/`):
 
 ```bash
 ./deploy/instalar.sh          # unit de usuario, sem sudo
+./deploy/instalar.sh --tudo   # junto com o servico de imagem (secao 4a)
 ```
 
 Ou, para so experimentar, sem instalar nada:
@@ -446,6 +493,7 @@ python manage.py check_db          # banco, extensoes, schemas dos tenants
 python manage.py broker_status     # qual broker esta valendo, e se responde
 python manage.py configurar_inferencia --testar
 python manage.py configurar_conversao --testar
+python manage.py configurar_imagem --testar
 python manage.py reservas          # quem esta segurando a capacidade
 ```
 
@@ -460,7 +508,8 @@ python manage.py reservas          # quem esta segurando a capacidade
 | `todas as conexoes ... estao ocupadas` | `manage.py reservas` diz quem segura; `--liberar` solta as presas |
 | `o disjuntor esta aberto` | 5 falhas seguidas contra o LLM. A propria mensagem traz a ultima causa; conserte e `configurar_inferencia --atualizar` |
 | `nenhuma versao ativa para o prompt ...` | tenant sem prompts; `manage.py semear_prompts --todos` |
-| `nenhuma conexao de geracao de imagem disponivel` | nao ha conexao do tipo `image`; o artigo sai sem capa e o texto nao e afetado (secao 4a) |
+| `nenhuma conexao de geracao de imagem disponivel` | faltou `configurar_imagem`; o artigo sai sem capa e o texto nao e afetado (secao 4a) |
+| Gerar capa leva minutos | caiu para CPU. `configurar_imagem --testar` mostra `ultimo=cpu`; a placa esta sendo disputada |
 | Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
 | `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |
 | `ModuleNotFoundError: No module named 'cv2'` | venv do worker em Python 3.14 sem `opencv-python-headless` (reinstale o requirements) |

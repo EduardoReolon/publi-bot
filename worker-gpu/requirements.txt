@@ -30,3 +30,21 @@ docling==2.60.0
 #
 # A faixa e a mesma que o docling-ibm-models declara no extra dele.
 opencv-python-headless>=4.6.0.66,<5
+
+# ---------------------------------------------------------------------------
+# Geracao de imagem (imagem_api.py)
+# ---------------------------------------------------------------------------
+# O torch ja vem pelo docling; estes tres sao o que falta para rodar um modelo
+# de difusao.
+#
+# `accelerate` nao e opcional aqui, ainda que o diffusers o declare assim: e
+# dele o `enable_model_cpu_offload()`, que mantem os pesos na RAM e sobe para a
+# placa so o submodulo em uso. Sem ele o pipeline inteiro vai para a VRAM e uma
+# placa de 8 GB nao comporta SDXL ao lado de um modelo do Ollama.
+diffusers>=0.35,<0.42
+accelerate>=1.0,<2
+safetensors>=0.4,<1
+
+# `transformers` NAO e fixado aqui de proposito. O docling e o diffusers pedem
+# faixas proprias, e uma versao cravada neste arquivo passaria por cima das
+# duas — o sintoma seria um ImportError dentro de um dos dois, longe daqui.
