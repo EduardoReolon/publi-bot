@@ -608,3 +608,108 @@ def test_formula_desmontada_nao_vira_secao():
     titulos = [b.titulo for b in dividir_em_blocos(texto, e_markdown=False)]
     assert not any("Outer-dependence" in t for t in titulos)
     assert not any("W11" in t for t in titulos)
+
+
+# ---------------------------------------------------------------------------
+# O resumo preso na folha de rosto
+# ---------------------------------------------------------------------------
+# Num artigo real convertido pelo Docling, o `RESUMO` nao virou cabecalho: na
+# pagina ele e um texto pequeno em versal ao lado da ficha do artigo, e nao
+# parece titulo. O texto nao se perdeu — ficou dentro do primeiro bloco, colado
+# a autoria, ao e-mail e as palavras-chave.
+#
+# Importa porque o resumo e o trecho mais util do artigo para indexar: e a
+# unica parte escrita para dizer do que o trabalho trata.
+
+FOLHA_DE_ROSTO = """# Maximizando a Satisfacao do Cliente
+
+Lucas Lima Ribeiro
+UNIVC, Brazil, autor@exemplo.com
+
+INFORMACOES DO ARTIGO
+
+RESUMO
+
+Este estudo visa maximizar a satisfacao do cliente atraves da analise RFM.
+
+## 1. Introducao
+
+Kotler e Armstrong (2006) apontaram que atrair consumidores e importante.
+"""
+
+
+def test_o_resumo_vira_bloco_proprio():
+    blocos = dividir_em_blocos(FOLHA_DE_ROSTO, e_markdown=True)
+
+    titulos = [bloco.titulo for bloco in blocos]
+    assert titulos == ["Maximizando a Satisfacao do Cliente", "RESUMO", "1. Introducao"]
+
+    resumo = blocos[1]
+    assert resumo.conteudo.startswith("Este estudo visa")
+    # A autoria fica na capa, e nao dentro do resumo.
+    assert "autor@exemplo.com" not in resumo.conteudo
+
+
+def test_a_ordem_dos_blocos_continua_certa_depois_do_corte():
+    """`ordem` e o que preserva a sequencia do documento na tela e no indice."""
+    blocos = dividir_em_blocos(FOLHA_DE_ROSTO, e_markdown=True)
+
+    assert [bloco.ordem for bloco in blocos] == [0, 1, 2]
+
+
+def test_quando_o_docling_ja_marcou_o_resumo_nada_muda():
+    """O corte precisa ser inofensivo no caso bom, senao troca um problema por
+    outro: dois blocos de resumo, um deles vazio."""
+    ja_marcado = FOLHA_DE_ROSTO.replace("\nRESUMO\n", "\n## RESUMO\n")
+
+    blocos = dividir_em_blocos(ja_marcado, e_markdown=True)
+
+    assert [bloco.titulo for bloco in blocos] == [
+        "Maximizando a Satisfacao do Cliente",
+        "RESUMO",
+        "1. Introducao",
+    ]
+
+
+def test_rotulo_sem_texto_embaixo_nao_vira_bloco_vazio():
+    """Um bloco vazio na tela e so mais uma linha para a pessoa ler e
+    descartar."""
+    texto = "# Titulo\n\nAutor\n\nRESUMO\n"
+
+    blocos = dividir_em_blocos(texto, e_markdown=True)
+
+    assert len(blocos) == 1
+
+
+def test_a_palavra_resumo_no_meio_do_texto_nao_parte_nada():
+    """Procurar o rotulo em qualquer lugar acharia "Resumo" numa frase e
+    partiria a secao ali. So vale sozinho na linha, e so na folha de rosto."""
+    texto = (
+        "# Titulo\n\nEm resumo, os dados apontam para o mesmo lado.\n"
+        "O resumo executivo foi enviado a diretoria.\n"
+    )
+
+    blocos = dividir_em_blocos(texto, e_markdown=True)
+
+    assert len(blocos) == 1
+
+
+def test_o_corte_so_vale_na_folha_de_rosto():
+    """Um `Resumo` sozinho no fim de uma secao do meio do artigo nao e a
+    abertura, e parti-la ali inventaria estrutura."""
+    texto = (
+        "# Titulo\n\nTexto da capa.\n\n"
+        "## 3. Resultados\n\nOs numeros seguem.\n\nResumo\n\nDos achados acima.\n"
+    )
+
+    blocos = dividir_em_blocos(texto, e_markdown=True)
+
+    assert [bloco.titulo for bloco in blocos] == ["Titulo", "3. Resultados"]
+
+
+def test_abstract_em_ingles_tambem_e_reconhecido():
+    texto = "# A Study on Something\n\nJane Doe\n\nAbstract\n\nWe measured things.\n"
+
+    blocos = dividir_em_blocos(texto, e_markdown=True)
+
+    assert [bloco.titulo for bloco in blocos] == ["A Study on Something", "Abstract"]

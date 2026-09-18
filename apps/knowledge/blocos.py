@@ -100,6 +100,18 @@ MAXIMO_DE_VIRGULAS = 1
 # climate change affects..."), e nao numa linha propria. Separa-las importa
 # porque o resumo e o trecho de maior valor do artigo e sem isto ele fica
 # misturado com titulo, autores, filiacao e cabecalho da revista.
+# O mesmo rotulo, mas SOZINHO na linha e em qualquer caixa: `RESUMO`,
+# `Abstract`, `PALAVRAS-CHAVE`.
+#
+# O `PADRAO_DE_ABERTURA` abaixo espera o rotulo colado ao texto, que e como o
+# extrator local o entrega. O Docling preserva a quebra de linha do original, e
+# ali o rotulo fica sozinho — as vezes sem virar titulo, quando na pagina ele e
+# so um texto pequeno em versal ao lado da ficha do artigo.
+PADRAO_DE_ROTULO_SOZINHO = re.compile(
+    r"^(Abstract|Resumo|Summary|Keywords|Key words|Palavras-chave)\s*:?\s*$",
+    re.IGNORECASE,
+)
+
 PADRAO_DE_ABERTURA = re.compile(
     r"^(Abstract|Resumo|Summary|Keywords|Key words|Palavras-chave)\b[\s:.\u2013\u2014-]*(.*)$",
     re.IGNORECASE,
@@ -500,7 +512,59 @@ def dividir_em_blocos(markdown: str, *, e_markdown: bool = True) -> list[Bloco]:
         linhas_atuais = []
 
     fechar()
-    return blocos
+    return _separar_a_abertura(blocos)
+
+
+def _separar_a_abertura(blocos: list[Bloco]) -> list[Bloco]:
+    """Tira o resumo de dentro do primeiro bloco, quando ele ficou junto.
+
+    Num artigo real, o Docling reconheceu o titulo e a Introducao, mas nao o
+    `RESUMO`: na pagina ele e um texto pequeno em versal ao lado da ficha do
+    artigo, e nao parece cabecalho. O resumo entao nao se perde — ele fica
+    dentro do primeiro bloco, colado a autoria e a filiacao.
+
+    Isso importa porque o resumo e, de longe, o trecho mais util do artigo para
+    indexar: e a unica parte escrita para dizer do que o trabalho trata. Preso
+    num bloco que comeca com nome de autor e e-mail, ele e marcado junto com
+    ruido ou nao e marcado.
+
+    So o PRIMEIRO bloco, e so um rotulo SOZINHO na linha. Procurar o rotulo no
+    documento inteiro acharia "Resumo" no meio de uma frase e partiria a secao
+    ali; a folha de rosto e o unico lugar onde esse rotulo tem esse papel.
+    """
+    if not blocos:
+        return blocos
+
+    primeiro = blocos[0]
+    linhas = primeiro.conteudo.splitlines()
+
+    corte = next(
+        (i for i, linha in enumerate(linhas) if PADRAO_DE_ROTULO_SOZINHO.match(linha.strip())),
+        None,
+    )
+    if corte is None:
+        return blocos
+
+    antes = "\n".join(linhas[:corte]).strip()
+    rotulo = linhas[corte].strip().rstrip(":")
+    depois = "\n".join(linhas[corte + 1 :]).strip()
+
+    if not depois:
+        # Rotulo sem texto embaixo: separar criaria um bloco vazio, que na tela
+        # e so mais uma linha para a pessoa ler e descartar.
+        return blocos
+
+    novos = [
+        Bloco(ordem=0, nivel=primeiro.nivel, titulo=primeiro.titulo, conteudo=antes),
+        Bloco(ordem=1, nivel=max(primeiro.nivel, 1), titulo=rotulo, conteudo=depois),
+    ]
+    # A capa pode ficar vazia se o rotulo era a primeira linha do bloco.
+    novos = [bloco for bloco in novos if bloco.conteudo or bloco.titulo]
+
+    for posicao, bloco in enumerate(novos + blocos[1:]):
+        bloco.ordem = posicao
+
+    return novos + blocos[1:]
 
 
 def dividir_em_paragrafos(conteudo: str) -> list[str]:

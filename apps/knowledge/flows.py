@@ -27,6 +27,24 @@ logger = logging.getLogger("publibot.knowledge")
 # Um ano de publicacao plausivel. Sem a faixa, "Figura 1988x2" vira ano.
 PADRAO_DE_ANO = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
 
+# Um ano que pertence a uma CITACAO, e nao ao artigo.
+#
+# Os dois estilos correntes, nas duas ordens possiveis:
+#
+#     Guerra (2020)          Rust et al. (2004)      <- narrativa
+#     (Reichheld, 2011)      (Kotler e Keller, 2012) <- parentetica
+#
+# Ficam de fora justamente o que se quer manter: `v. 4, n. 2 (2025)`, onde o
+# parenteses tem so o ano e antes dele vem um numero, nao um sobrenome.
+_SOBRENOME = r"[A-Z\u00c0-\u00dd][\w'\u00c0-\u024f.-]*"
+PADRAO_DE_CITACAO = re.compile(
+    r"(?:"
+    rf"{_SOBRENOME}[^()\n]{{0,40}}?\(\s*(?:19[5-9]\d|20[0-4]\d)"
+    r"|"
+    rf"\([^()\n]{{0,60}}?{_SOBRENOME}[^()\n]{{0,60}}?(?:19[5-9]\d|20[0-4]\d)"
+    r")"
+)
+
 # Digito de filiacao colado ao nome: "Mikhail V . Chester2", "Yeowon Kim1".
 PADRAO_DE_FILIACAO = re.compile(r"\s*\d+\s*$")
 
@@ -257,6 +275,39 @@ def _autores_do_texto(cabecalho: list[str], titulo: str) -> str:
     return ""
 
 
+def _ano_do_cabecalho(cabecalho: list[str]) -> int | None:
+    """O ano do ARTIGO, ignorando os anos que ele cita.
+
+    A regra antiga era "o maior ano do cabecalho", e funcionava enquanto a
+    linha da revista sobrevivia a extracao: `v. 4, n. 2 (2025)` costuma trazer
+    o ano mais recente da primeira pagina.
+
+    O Docling derruba essa linha — de proposito, e e a mesma melhoria que
+    impede o numero de pagina de virar texto. Com ela some o unico lugar onde o
+    ano proprio aparecia, e o "maior ano" passa a eleger a citacao mais recente
+    da introducao. Num artigo de 2025 que cita um trabalho de 2020, o resultado
+    foi 2020: errado, e errado com confianca.
+
+    Descartadas as citacoes, quando nao sobra nada a resposta e NENHUM ano. Isso
+    e melhor do que parece: o campo fica vazio, a curadoria pede para preencher,
+    e um humano olha. Um ano errado nao pede nada a ninguem — ele so aparece,
+    meses depois, na citacao publicada no site do cliente.
+    """
+    texto = "\n".join(cabecalho)
+
+    citados: set[str] = set()
+    for trecho in PADRAO_DE_CITACAO.finditer(texto):
+        citados.update(PADRAO_DE_ANO.findall(trecho.group(0)))
+
+    candidatos = [ano for ano in PADRAO_DE_ANO.findall(texto) if ano not in citados]
+    if not candidatos:
+        return None
+
+    # Entre os que sobraram, o mais recente: uma primeira pagina pode trazer a
+    # data de recebimento junto com a de publicacao.
+    return max(int(ano) for ano in candidatos)
+
+
 def sugerir_metadados(
     markdown: str, *, metadados_do_arquivo: dict | None = None, e_markdown: bool = True
 ) -> dict:
@@ -291,12 +342,7 @@ def sugerir_metadados(
     if do_texto and (not autores or "et al." in do_texto or " e " in do_texto):
         autores = do_texto
 
-    ano = None
-    achados = PADRAO_DE_ANO.findall("\n".join(cabecalho))
-    if achados:
-        # O mais recente do cabecalho: um artigo cita anos antigos, mas o seu
-        # proprio ano tende a ser o maior ali.
-        ano = max(int(a) for a in achados)
+    ano = _ano_do_cabecalho(cabecalho)
 
     doi = extrair_doi(markdown[:5000]) or ""
     if not doi:

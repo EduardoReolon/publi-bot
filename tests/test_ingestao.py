@@ -218,6 +218,73 @@ def test_sugestao_nao_confunde_numero_com_ano():
     assert sugestoes["year"] is None
 
 
+# ---------------------------------------------------------------------------
+# O ano, e os anos que o artigo apenas cita
+# ---------------------------------------------------------------------------
+# Encontrado num artigo real de 2025 que cita um trabalho de 2020: o campo veio
+# 2020. A regra antiga era "o maior ano do cabecalho", que so funcionava
+# enquanto a linha da revista sobrevivia a extracao. O Docling derruba essa
+# linha — de proposito, junto com o numero de pagina — e o "maior ano" passou a
+# eleger a citacao mais recente.
+
+CABECALHO_COM_A_LINHA_DA_REVISTA = """v. 4, n. 2 (2025) | ISSN: 2676-0185
+Maximizando a Satisfacao do Cliente
+Lucas Lima Ribeiro
+
+1. Introducao
+Kotler e Armstrong (2006) apontaram que atrair consumidores e importante.
+O estudo realizado por Guerra (2020) analisou os fatores de recencia.
+O NPS e usado por empresas ao redor do mundo (Reichheld, 2011).
+"""
+
+
+def test_a_linha_da_revista_vence_os_anos_citados():
+    """`v. 4, n. 2 (2025)` e o ano do artigo; 2020 e 2011 sao de quem ele cita."""
+    sugestoes = sugerir_metadados(CABECALHO_COM_A_LINHA_DA_REVISTA, e_markdown=False)
+
+    assert sugestoes["year"] == 2025
+
+
+def test_sem_a_linha_da_revista_o_ano_fica_vazio():
+    """E o caso do Docling, que derruba o cabecalho de pagina.
+
+    Vazio e melhor do que parece: o campo em branco faz a curadoria pedir que
+    alguem preencha. Um ano errado nao pede nada — ele so aparece, meses
+    depois, na citacao publicada no site do cliente.
+    """
+    sem_revista = "\n".join(
+        linha for linha in CABECALHO_COM_A_LINHA_DA_REVISTA.splitlines() if "ISSN" not in linha
+    )
+
+    sugestoes = sugerir_metadados(sem_revista, e_markdown=False)
+
+    assert sugestoes["year"] is None
+
+
+@pytest.mark.parametrize(
+    "citacao",
+    [
+        "Segundo Guerra (2020), a matriz RFM ordena clientes.",
+        "proposto por Rust et al. (2004) em Return on marketing.",
+        "usado no mundo todo (Reichheld, 2011).",
+        "a literatura converge (Kotler e Keller, 2012).",
+    ],
+)
+def test_ano_de_citacao_nao_vira_ano_do_artigo(citacao):
+    assert sugerir_metadados(f"Titulo\n\n{citacao}\n", e_markdown=False)["year"] is None
+
+
+def test_ano_solto_no_cabecalho_continua_valendo():
+    """A regra descarta CITACAO, nao todo ano entre parenteses. Um ano que
+    aparece sozinho na folha de rosto continua sendo o candidato certo."""
+    sugestoes = sugerir_metadados(
+        "Revista de Nutricao Clinica\nPublicado em 2023\n\nResumo do trabalho.\n",
+        e_markdown=False,
+    )
+
+    assert sugestoes["year"] == 2023
+
+
 def test_sugestao_com_pouco_a_oferecer_diz_isso():
     """`campos_encontrados` baixo e o sinal para a tela insistir na conferencia."""
     sugestoes = sugerir_metadados("texto solto sem estrutura nenhuma")

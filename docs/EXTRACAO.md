@@ -236,6 +236,44 @@ continuam `IGUAL`.
 - **A regra ficaria especifica de uma revista.** `SECOES_FINAIS` e uma lista de
   palavras porque sao rotulos universais; "se comeca com JAWRA" nao seria.
 
+## O que o Docling melhorou, e o que ele levou junto
+
+O Docling descarta o cabecalho e o rodape de pagina — e por isso o numero da
+pagina deixa de virar texto no meio do artigo. E a melhoria certa, mas ela tem
+um efeito colateral que custou um diagnostico:
+
+**O ano do artigo mora no cabecalho.** `v. 4, n. 2 (2025) | ISSN: ...` e, em
+muita revista, o unico lugar da primeira pagina onde o ano proprio aparece.
+Sem essa linha, a regra antiga ("o maior ano do cabecalho") passava a eleger a
+citacao mais recente da introducao — num artigo de 2025 que cita um trabalho de
+2020, o resultado era **2020**.
+
+Hoje `_ano_do_cabecalho` descarta os anos que estao dentro de uma citacao, nos
+dois estilos correntes:
+
+```
+Guerra (2020)          Rust et al. (2004)        narrativa
+(Reichheld, 2011)      (Kotler e Keller, 2012)   parentetica
+```
+
+O que sobra e o ano do artigo. Quando nao sobra nada — o caso do Docling sem a
+linha da revista — a resposta e **nenhum ano**, e o campo fica vazio. Vazio e
+melhor do que parece: a curadoria pede para preencher e um humano olha. Um ano
+errado nao pede nada a ninguem; ele so aparece meses depois, na citacao
+publicada no site do cliente.
+
+**O resumo nem sempre vira cabecalho.** Quando o `RESUMO` e um texto pequeno em
+versal ao lado da ficha do artigo, o Docling nao o reconhece como titulo. O
+texto nao se perde — fica dentro do primeiro bloco, junto de autoria, e-mail e
+palavras-chave —, mas deixa de ser marcavel sozinho. E o trecho mais util do
+artigo para indexar: e a unica parte escrita para dizer do que o trabalho
+trata.
+
+`_separar_a_abertura` corta esse bloco quando encontra o rotulo SOZINHO numa
+linha, e so no primeiro bloco. As duas restricoes importam: procurar o rotulo
+no documento inteiro acharia "Resumo" no meio de uma frase e partiria a secao
+ali.
+
 ## Por que meu PDF saiu torto
 
 Confira nesta ordem:
