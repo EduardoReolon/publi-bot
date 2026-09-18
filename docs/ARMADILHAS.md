@@ -300,6 +300,29 @@ erro 500 numa pagina que nao usa o modelo para nada — foi assim que a armadilh
 acima apareceu. Hoje a busca no disco vem primeiro, e `_carregar()` so roda se
 o arquivo nao estiver la (que e quando ha, de fato, o que baixar).
 
+### Duas conexoes, uma placa so
+
+O Ollama em `:11434` e o Docling em `:8100` sao duas linhas no banco e o mesmo
+hardware. Com a contagem de reservas por CONEXAO, cada uma com
+`max_concurrency=1`, as duas podiam ficar ativas ao mesmo tempo — uma gerando
+texto, outra convertendo PDF.
+
+Numa placa de 8 GB isso estoura a VRAM, e o que acontece entao nao e erro: o
+processo cai para CPU em silencio. O trabalho termina, dezenas de vezes mais
+lento, sem log e sem nada no painel. O sintoma e alguem dizer que "hoje esta
+lento".
+
+Duas coisas davam a impressao de estar resolvido e nao estavam:
+
+- o `max_concurrency=1` em cada conexao — protege dentro de uma, nao entre duas;
+- o 503 do worker de conversao — protege contra duas CONVERSOES, e nao contra
+  uma conversao ao lado de uma geracao de texto, que sao servicos distintos e
+  cada um so sabe de si.
+
+Hoje a reserva conta por MAQUINA (`leases.vizinhas_de_hardware`), com o host
+derivado da `base_url`; e a conversao passa pela reserva, coisa que antes ela
+nao fazia — ela so fazia o POST.
+
 ---
 
 ## Django, templates e HTML

@@ -156,6 +156,12 @@ E cadastre:
 python manage.py configurar_conversao --testar
 ```
 
+Se voce instalou a unit do systemd, o `dev` NAO sobe um segundo worker: ele
+detecta a porta ja ocupada e usa o servico que esta de pe, dizendo isso no
+banner. Sem essa conferencia, o `uvicorn` falharia com "address already in use"
+e derrubaria o `dev` inteiro — porque qualquer processo que morre encerra
+todos.
+
 Feito isso, `manage.py dev` passa a subir o worker junto com os outros tres —
 mas so quando ele mora AQUI: a URL precisa apontar para `127.0.0.1` e o
 `worker-gpu/venv/` precisa existir. Apontando para outra maquina, ele nao sobe
@@ -178,6 +184,20 @@ Documentos ja convertidos pelo extrator local continuam como estao. Use
 **Converter de novo** na tela de curadoria para refaze-los: os trechos
 indexados sao desativados (nao apagados) e os metadados que voce conferiu a
 mao sao preservados.
+
+#### Uma placa, dois servicos
+
+O Ollama e o Docling costumam morar na mesma maquina, e o PubliBot trata os
+dois como UM recurso: as conexoes que apontam para o mesmo host dividem o mesmo
+limite de execucoes simultaneas. Enquanto um converte, o outro espera a vez — e
+esperar aqui e adiamento, nao falha: nao gasta tentativa.
+
+Isso nao e conservadorismo. Sem essa conta, uma conversao e uma geracao de
+texto simultaneas estouram a VRAM de uma placa de 8 GB, e o processo cai para
+CPU **em silencio** — dezenas de vezes mais lento, sem erro em lugar nenhum.
+
+Em CPU o problema nao existe, mas a espera continua: manter a regra vale mais
+que a vazao que ela custa num volume baixo.
 
 #### CPU ou placa
 

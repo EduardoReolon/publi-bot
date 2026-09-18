@@ -115,6 +115,10 @@ class Command(BaseCommand):
             )
         )
 
+        aviso = _nota_sobre_a_conversao(options, servicos)
+        if aviso:
+            self.stdout.write(aviso)
+
         processos: list[subprocess.Popen] = []
         try:
             for _, comando, ambiente in servicos:
@@ -250,6 +254,17 @@ def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
     if not python.exists():
         return None
 
+    # Ja ha alguem naquela porta? Entao o worker esta de pe — tipicamente como
+    # unit do systemd, que e como se roda numa maquina que serve o servidor.
+    # Subir o segundo daria "address already in use" e derrubaria o `dev`
+    # inteiro, porque qualquer processo que morre encerra todos.
+    #
+    # Nao e conflito: e o estado normal de quem instalou a unit. Usa-se o que
+    # ja esta la.
+    porta = endereco.port or 8100
+    if _porta_ocupada(endereco.hostname, porta):
+        return None
+
     return (
         "conversao",
         [
@@ -260,7 +275,7 @@ def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
             "--host",
             endereco.hostname,
             "--port",
-            str(endereco.port or 8100),
+            str(porta),
             # Um so: duas conversoes simultaneas estouram a VRAM, e o servico
             # ja recusa a segunda com 503 justamente por isso.
             "--workers",
@@ -270,6 +285,54 @@ def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
         ],
         _ambiente_do_worker(raiz),
     )
+
+
+def _nota_sobre_a_conversao(options, servicos) -> str:
+    """Explica por que o worker de conversao nao esta na lista.
+
+    O silencio aqui seria pior que o ruido. Quem instalou a unit do systemd ve
+    "Subindo: worker, beat, web" e conclui que a conversao nao vai acontecer —
+    quando ela vai, pelo servico que ja estava de pe. E quem NAO instalou nada
+    precisa saber que os PDFs vao sair pelo extrator local.
+    """
+    from urllib.parse import urlparse
+
+    if options["sem_conversao"] or any(nome == "conversao" for nome, _, _ in servicos):
+        return ""
+
+    url = getattr(settings, "CONVERSAO_BASE_URL", "")
+    if not url:
+        return (
+            "Conversao:  nenhuma (CONVERSAO_BASE_URL vazia). "
+            "PDF sai pelo extrator local, sem analise de layout."
+        )
+
+    endereco = urlparse(url)
+    if endereco.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return f"Conversao:  em outra maquina ({endereco.hostname}); nada a subir aqui."
+
+    if _porta_ocupada(endereco.hostname, endereco.port or 8100):
+        return f"Conversao:  ja de pe em {url} (servico proprio); nao subi outro."
+
+    return (
+        f"Conversao:  {url} aponta para c'a, mas worker-gpu/venv nao existe. "
+        f"PDF sai pelo extrator local."
+    )
+
+
+def _porta_ocupada(host: str, porta: int) -> bool:
+    """Se alguem ja aceita conexao ali.
+
+    Uma conexao TCP e nao uma requisicao HTTP: o que se quer saber e se a porta
+    esta tomada, e isso independe de quem a tomou. Perguntar `/health/` diria
+    se e o servico certo, mas responderia "livre" para uma porta ocupada por
+    outra coisa — e o `uvicorn` falharia do mesmo jeito.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sonda:
+        sonda.settimeout(0.3)
+        return sonda.connect_ex((host, porta)) == 0
 
 
 def _ambiente_do_worker(raiz: Path) -> dict[str, str]:

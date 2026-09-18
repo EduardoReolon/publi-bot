@@ -40,6 +40,40 @@ def _leases_ativas(connection: InferenceConnection):
     )
 
 
+def vizinhas_de_hardware(connection: InferenceConnection) -> list[InferenceConnection]:
+    """As conexoes ativas que apontam para a MESMA maquina, incluindo esta.
+
+    O Ollama em `:11434` e o Docling em `:8100` sao duas linhas no banco e uma
+    placa so. Contar reservas por conexao deixaria as duas ativas ao mesmo
+    tempo — uma gerando texto, outra convertendo PDF — e numa placa de 8 GB
+    isso estoura a VRAM.
+
+    O que acontece entao nao e um erro: o processo cai para CPU em silencio, o
+    trabalho continua e fica dezenas de vezes mais lento. Nao ha log, nao ha
+    excecao, nao ha nada no painel. O sintoma e alguem dizer "hoje esta lento".
+    """
+    if not connection.maquina:
+        return [connection]
+
+    return [
+        candidata
+        for candidata in InferenceConnection.objects.filter(is_active=True)
+        if candidata.maquina == connection.maquina
+    ]
+
+
+def _capacidade_da_maquina(vizinhas: list[InferenceConnection]) -> int:
+    """Quantas execucoes simultaneas a maquina inteira aguenta.
+
+    O MENOR limite entre as conexoes que a dividem, e nao a soma. Cada uma
+    declara quanto aquele hardware suporta; a mais conservadora e a que sabe de
+    alguma restricao que as outras nao sabem, e somar limites seria concluir
+    que duas conexoes de 1 aguentam 2 — a conclusao exata que o comentario de
+    `max_concurrency` desaconselha.
+    """
+    return min(candidata.max_concurrency for candidata in vizinhas)
+
+
 def liberar_expiradas(connection: InferenceConnection | None = None) -> int:
     """Fecha reservas que passaram do prazo.
 
@@ -71,10 +105,26 @@ def adquirir(
 
         liberar_expiradas(travada)
 
-        if _leases_ativas(travada).count() >= travada.max_concurrency:
+        # A conta e por MAQUINA, nao por conexao. Duas conexoes que apontam
+        # para o mesmo host dividem a mesma placa (ver `vizinhas_de_hardware`).
+        vizinhas = vizinhas_de_hardware(travada)
+        liberar_expiradas()
+        capacidade = _capacidade_da_maquina(vizinhas)
+
+        agora = timezone.now()
+        ocupadas = InferenceLease.objects.filter(
+            connection__in=vizinhas, released_at__isnull=True, expires_at__gt=agora
+        ).count()
+
+        if ocupadas >= capacidade:
+            if len(vizinhas) > 1:
+                nomes = ", ".join(sorted(c.name for c in vizinhas if c.pk != travada.pk))
+                raise SemCapacidade(
+                    f"a maquina {travada.maquina!r} ja esta com {capacidade} "
+                    f"execucao(oes) simultanea(s). Ela e dividida com: {nomes}."
+                )
             raise SemCapacidade(
-                f"{travada.name!r} ja esta com {travada.max_concurrency} "
-                f"execucao(oes) simultanea(s)"
+                f"{travada.name!r} ja esta com {capacidade} execucao(oes) simultanea(s)"
             )
 
         return InferenceLease.objects.create(

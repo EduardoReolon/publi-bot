@@ -121,6 +121,24 @@ class InferenceConnection(models.Model):
         return f"{self.name} ({escopo})"
 
     @property
+    def maquina(self) -> str:
+        """O host desta conexao, usado para agrupar quem divide o mesmo hardware.
+
+        Duas conexoes podem ser distintas no banco e ainda assim disputar a
+        MESMA placa: o Ollama em `:11434` e o Docling em `:8100` da mesma
+        maquina sao o caso normal deste projeto. Cada uma com
+        `max_concurrency=1` permitiria duas execucoes simultaneas ali — que e
+        exatamente o que a reserva existe para impedir.
+
+        O host e derivado da URL em vez de configurado a parte porque uma
+        segunda fonte de verdade so acrescentaria uma forma de errar: mudar o
+        endereco e esquecer o agrupamento daria de volta o problema, sem sinal.
+        """
+        from urllib.parse import urlparse
+
+        return (urlparse(self.base_url).hostname or "").lower()
+
+    @property
     def circuito_aberto(self) -> bool:
         """Se a conexao esta em quarentena apos falhas seguidas."""
         return bool(self.circuit_open_until and self.circuit_open_until > timezone.now())

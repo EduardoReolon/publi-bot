@@ -248,6 +248,77 @@ def test_o_env_do_worker_vence_o_do_terminal(tmp_path, settings):
     assert ambiente["WORKER_SHARED_SECRET"] == "o-do-worker"
 
 
+@override_settings(DEBUG=True)
+def test_nao_sobe_um_segundo_worker_na_porta_ja_ocupada(monkeypatch, tmp_path, settings):
+    """Numa maquina que serve o servidor, o worker roda pelo systemd.
+
+    Subir o segundo daria "address already in use", e como o `dev` derruba
+    todos quando qualquer um morre, o comando inteiro cairia junto — por causa
+    de um servico que ja estava funcionando.
+    """
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+    monkeypatch.setattr("apps.ops.management.commands.dev._porta_ocupada", lambda host, porta: True)
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert not any("docling_api:app" in c for c in lancados)
+
+
+@override_settings(DEBUG=True)
+def test_diz_por_que_a_conversao_nao_esta_na_lista(monkeypatch, tmp_path, settings, capsys):
+    """O silencio seria pior que o ruido: quem instalou a unit veria
+    "Subindo: worker, beat, web" e concluiria que a conversao nao vai
+    acontecer — quando ela vai, pelo servico que ja estava de pe."""
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+    monkeypatch.setattr("apps.ops.management.commands.dev._porta_ocupada", lambda host, porta: True)
+    _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert "ja de pe" in capsys.readouterr().out
+
+
+@override_settings(DEBUG=True)
+def test_sem_conversao_configurada_avisa_do_extrator_local(monkeypatch, settings, capsys):
+    settings.CONVERSAO_BASE_URL = ""
+    _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert "extrator local" in capsys.readouterr().out
+
+
+def test_a_sonda_de_porta_ve_uma_porta_livre_como_livre():
+    """Sem isto o `dev` nunca subiria o worker, e a causa seria invisivel."""
+    import socket
+
+    from apps.ops.management.commands.dev import _porta_ocupada
+
+    # Uma porta que o SO acabou de liberar: o teste nao depende de numero fixo,
+    # que poderia estar em uso nesta maquina por acaso.
+    with socket.socket() as reservada:
+        reservada.bind(("127.0.0.1", 0))
+        porta = reservada.getsockname()[1]
+
+    assert _porta_ocupada("127.0.0.1", porta) is False
+
+
+def test_a_sonda_de_porta_ve_uma_porta_ocupada_como_ocupada():
+    import socket
+
+    from apps.ops.management.commands.dev import _porta_ocupada
+
+    with socket.socket() as servidor:
+        servidor.bind(("127.0.0.1", 0))
+        servidor.listen(1)
+        porta = servidor.getsockname()[1]
+
+        assert _porta_ocupada("127.0.0.1", porta) is True
+
+
 def _fingir_venv_do_worker(monkeypatch, tmp_path) -> None:
     """Cria a arvore que `_servico_de_conversao` procura, sem instalar nada."""
     import sys as _sys

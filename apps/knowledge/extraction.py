@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from apps.inference.leases import SemCapacidade, reserva
 from apps.inference.models import InferenceConnection
 from apps.inference.security import decifrar_chave
 
@@ -119,16 +120,31 @@ def _extrair_com_docling(document, conexao, *, timeout: float) -> ResultadoDaExt
     finally:
         document.original_file.close()
 
+    # A conversao reserva capacidade, como a geracao de texto.
+    #
+    # O worker ja recusa a segunda chamada com 503, mas isso protege so contra
+    # DUAS CONVERSOES. O caso perigoso e outro: o Docling convertendo enquanto
+    # o Ollama gera texto, na mesma placa. Sao dois servicos diferentes, cada
+    # um so sabe de si, e nenhum dos dois recusaria nada — a VRAM estoura e o
+    # processo cai para CPU em silencio, dezenas de vezes mais lento, sem erro.
+    #
+    # A reserva e por maquina (`leases.vizinhas_de_hardware`), entao ela cobre
+    # exatamente essa combinacao.
     try:
-        resposta = httpx.post(
-            f"{conexao.base_url.rstrip('/')}/parse/",
-            files=arquivos,
-            headers={
-                "X-Worker-Secret": segredo,
-                "X-Expected-Sha256": document.file_sha256,
-            },
-            timeout=timeout,
-        )
+        with reserva(conexao, owner_key=f"conversao:{document.pk}"):
+            resposta = httpx.post(
+                f"{conexao.base_url.rstrip('/')}/parse/",
+                files=arquivos,
+                headers={
+                    "X-Worker-Secret": segredo,
+                    "X-Expected-Sha256": document.file_sha256,
+                },
+                timeout=timeout,
+            )
+    except SemCapacidade as exc:
+        # Nao e falha: a maquina esta ocupada. `ConversorOcupado` ja e tratado
+        # como adiamento pelo fluxo, e adiar nao gasta tentativa.
+        raise ConversorOcupado(f"a maquina de conversao esta ocupada: {exc}") from exc
     except httpx.HTTPError as exc:
         raise ConversorOcupado(f"worker de conversao inalcancavel: {exc}") from exc
 
