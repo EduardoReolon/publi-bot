@@ -291,6 +291,7 @@ python manage.py configurar_inferencia --testar
 | POST devolve 400 sem explicacao | porta fora de `DEV_SERVER_PORT` (CSRF compara a origem inteira) |
 | Trabalho parado em `WAITING_CAPACITY` | Ollama inacessivel, ou beat nao esta rodando |
 | `SemModeloConfigurado` | faltou `configurar_inferencia` |
+| `External data path escapes model directory` | cache do modelo em links; `rm -rf .model_cache` e deixe baixar de novo |
 | Tarefas somem sem erro | Redis compartilhado sem `REDIS_NAMESPACE` |
 | `relation "content_..." does not exist` a cada minuto | task do beat sem varredura por tenant (ver ARMADILHAS) |
 

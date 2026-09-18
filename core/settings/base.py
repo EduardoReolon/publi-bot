@@ -10,6 +10,7 @@ pt-BR na interface).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from core import env
@@ -323,10 +324,8 @@ if BROKER_BACKEND == "postgres":
     #
     # Por isso as variaveis sao reescritas para concordar com a decisao tomada
     # acima, em vez de disputada com ela.
-    import os as _os
-
-    _os.environ["CELERY_BROKER_URL"] = CELERY_BROKER_URL
-    _os.environ["CELERY_RESULT_BACKEND"] = CELERY_RESULT_BACKEND
+    os.environ["CELERY_BROKER_URL"] = CELERY_BROKER_URL
+    os.environ["CELERY_RESULT_BACKEND"] = CELERY_RESULT_BACKEND
 else:
     CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
     CELERY_RESULT_BACKEND = env.get("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
@@ -499,6 +498,34 @@ EMBEDDING_MAX_TOKENS = env.integer("EMBEDDING_MAX_TOKENS", 480)
 
 # Onde o modelo e carregado. O download tem cerca de 2 GB e acontece uma vez.
 EMBEDDING_CACHE_DIR = env.get("EMBEDDING_CACHE_DIR", str(BASE_DIR / ".model_cache"))
+
+# O cache do HuggingFace guarda cada arquivo em `blobs/<2 primeiros digitos do
+# hash>/` e deixa no diretorio do modelo apenas um LINK SIMBOLICO para la. Dois
+# arquivos do mesmo modelo caem, portanto, em pastas diferentes.
+#
+# Isso quebra o carregamento do ONNX. O modelo de embedding vem em duas partes
+# — `model.onnx` e os 2 GB de pesos em `model.onnx_data` — e desde a versao
+# 1.22 o onnxruntime valida o caminho da segunda: ele resolve o link da
+# primeira, adota a pasta resultante como a unica permitida, e recusa a segunda
+# por estar fora dela:
+#
+#   FAIL : External data path validation failed ... path escapes model directory
+#   resolved path: ".model_cache/blobs/9e/9eac14..."
+#   allowed directory: ".model_cache/blobs/29"
+#
+# Encontrado numa instalacao nova. Nao aparece em toda maquina: o fastembed
+# tenta primeiro o proprio CDN, que entrega os arquivos lado a lado, e so cai
+# no HuggingFace quando aquele falha. Ou seja, funciona ate o dia em que o
+# download tomar o outro caminho — e ai a mensagem fala de "external data",
+# nunca de cache.
+#
+# Com os links desligados, o HuggingFace escreve arquivos de verdade lado a
+# lado e o carregamento passa. Verificado nas duas direcoes: com link, o erro
+# acima; com arquivo real no mesmo lugar, a sessao abre.
+#
+# Precisa ser aqui. O `huggingface_hub` le esta variavel UMA VEZ, no import, e
+# guarda numa constante de modulo: definida depois, nao tem efeito nenhum.
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
 
 # Impede que o fastembed tente o HuggingFace quando o modelo ja esta em cache.
 # Util em rede restrita e em CI.

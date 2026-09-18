@@ -30,6 +30,21 @@ pgvector==0.5.0
 # execucao, cacheado em EMBEDDING_CACHE_DIR.
 fastembed==0.8.0
 
+# Dependencias TRANSITIVAS do fastembed, fixadas aqui de proposito.
+#
+# Elas nao apareciam neste arquivo, e por isso flutuavam: uma instalacao nova
+# meses depois trazia versoes que ninguem tinha testado. Foi exatamente o que
+# aconteceu — o onnxruntime 1.22 passou a validar o caminho da segunda parte do
+# modelo e uma maquina recem-formatada quebrou na tela de curadoria, com uma
+# mensagem que falava de "external data path" e nao de versao nenhuma.
+#
+# Fixar o que se instala nao e zelo: o cabecalho deste arquivo ja diz que
+# producao nao deve receber versao que ninguem testou, e uma dependencia
+# indireta e software instalado como qualquer outro.
+onnxruntime==1.29.0
+huggingface-hub==1.28.0
+tokenizers==0.23.1
+
 # --- Multi-tenancy (schema por tenant) -------------------------------------
 # django-tenants 3.14.0 declara django<6.2,>=5.2 — compativel com 5.2 LTS.
 django-tenants==3.14.0

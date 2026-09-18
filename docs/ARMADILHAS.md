@@ -244,6 +244,64 @@ do `public`, explicitamente.
 
 ---
 
+## Modelo de embedding
+
+### `External data path escapes model directory` — e o cache, nao a versao
+
+```
+onnxruntime...Fail: [ONNXRuntimeError] : FAIL : External data path validation
+failed for initializer: embeddings.word_embeddings.weight. Error: External data
+path escapes model directory.
+resolved path:     ".model_cache/blobs/9e/9eac14..."
+allowed directory: ".model_cache/blobs/29"
+```
+
+Encontrado numa maquina recem-formatada, na tela de curadoria de um documento.
+
+O modelo vem em DUAS partes: `model.onnx`, com o grafo, e `model.onnx_data`,
+com os 2 GB de pesos. O cache do HuggingFace guarda cada arquivo em
+`blobs/<dois primeiros digitos do hash>/` e deixa no diretorio do modelo apenas
+um link simbolico — as duas partes caem em pastas diferentes. Desde a 1.22 o
+onnxruntime resolve o link da primeira, adota a pasta resultante como a unica
+permitida, e recusa a segunda.
+
+Duas coisas tornam isso dificil de achar:
+
+1. **Nao acontece em toda maquina.** O fastembed tenta primeiro o proprio CDN,
+   que entrega os arquivos lado a lado; so cai no HuggingFace quando aquele
+   falha. A mesma versao de tudo funciona numa maquina e quebra na outra.
+2. **A mensagem nao fala de cache.** Fala de "external data" e de dois
+   diretorios de hash.
+
+Verificado nas duas direcoes, com o modelo real: com link para `blobs/`, o erro
+acima; com arquivo de verdade no mesmo lugar, a sessao abre.
+
+Tratado em tres lugares:
+
+- `HF_HUB_DISABLE_SYMLINKS=1` em `core/settings/base.py`, para nao voltar a
+  acontecer. Precisa ser no settings: o `huggingface_hub` le essa variavel uma
+  unica vez, no import, e guarda numa constante de modulo.
+- `_traduzir_falha_de_carregamento` em `apps/knowledge/embeddings.py`, porque a
+  variavel acima nao conserta um cache ja escrito assim — a saida e apagar a
+  pasta, e o erro agora diz isso.
+- `onnxruntime`, `huggingface-hub` e `tokenizers` fixados em
+  `requirements.txt`. Eram transitivos e flutuavam: foi uma instalacao nova,
+  meses depois, que trouxe a versao com a validacao.
+
+### Contar token nao precisa do modelo, mas carregava 2 GB
+
+`contar_tokens()` usa o `tokenizer.json`, um arquivo de 17 MB. A funcao que o
+localizava chamava `_carregar()` ANTES de olhar o disco — e `_carregar()` abre a
+sessao ONNX inteira.
+
+O efeito: a curadoria, que conta os tokens de cada bloco, pagava o modelo
+completo so para medir texto. E qualquer defeito de carregamento do ONNX virava
+erro 500 numa pagina que nao usa o modelo para nada — foi assim que a armadilha
+acima apareceu. Hoje a busca no disco vem primeiro, e `_carregar()` so roda se
+o arquivo nao estiver la (que e quando ha, de fato, o que baixar).
+
+---
+
 ## Django, templates e HTML
 
 ### `{# #}` de varias linhas nao e comentario

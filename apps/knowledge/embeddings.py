@@ -84,11 +84,15 @@ class FastEmbedClient(EmbeddingClient):
                 if self._modelo is None:
                     from fastembed import TextEmbedding
 
-                    self._modelo = TextEmbedding(
-                        self.model_name,
-                        cache_dir=settings.EMBEDDING_CACHE_DIR,
-                        local_files_only=settings.EMBEDDING_LOCAL_FILES_ONLY,
-                    )
+                    try:
+                        self._modelo = TextEmbedding(
+                            self.model_name,
+                            cache_dir=settings.EMBEDDING_CACHE_DIR,
+                            local_files_only=settings.EMBEDDING_LOCAL_FILES_ONLY,
+                        )
+                    except Exception as erro:
+                        _traduzir_falha_de_carregamento(erro)
+                        raise
         return self._modelo
 
     def embed_query(self, texto: str) -> list[float]:
@@ -115,16 +119,65 @@ class FastEmbedClient(EmbeddingClient):
         return len(self._tokenizer.encode(f"passage: {texto}").ids)
 
     def _caminho_do_tokenizer(self):
+        """Onde esta o `tokenizer.json`, baixando o modelo se preciso.
+
+        Procura no disco ANTES de chamar `_carregar()`, e essa ordem importa.
+        Contar tokens precisa de um arquivo de 17 MB; `_carregar()` abre uma
+        sessao ONNX de 2 GB. Como a curadoria conta os tokens de cada bloco, a
+        ordem invertida fazia a tela pagar o modelo inteiro para medir texto — e
+        transformava qualquer defeito de carregamento do ONNX em erro 500 numa
+        pagina que nao precisava do modelo para nada.
+        """
         from pathlib import Path
 
-        self._carregar()
         base = Path(settings.EMBEDDING_CACHE_DIR)
-        candidatos = list(base.glob("**/tokenizer.json"))
+        candidatos = sorted(base.glob("**/tokenizer.json"))
+        if not candidatos:
+            # Nao esta em disco: ai sim vale carregar, porque e o carregamento
+            # que dispara o download.
+            self._carregar()
+            candidatos = sorted(base.glob("**/tokenizer.json"))
+
         if not candidatos:
             raise FileNotFoundError(
                 f"tokenizer.json nao encontrado em {base}. O modelo foi baixado?"
             )
         return candidatos[0]
+
+
+def _traduzir_falha_de_carregamento(erro: Exception) -> None:
+    """Levanta um erro com instrucao quando a causa e o cache em links.
+
+    A mensagem original fala de "external data path" e de dois diretorios de
+    hash, e nao menciona cache em lugar nenhum:
+
+        FAIL : External data path validation failed for initializer:
+        embeddings.word_embeddings.weight. Error: External data path escapes
+        model directory. ... allowed directory: ".model_cache/blobs/29"
+
+    O que aconteceu: os dois arquivos do modelo (`model.onnx` e os 2 GB de
+    `model.onnx_data`) foram guardados no formato do HuggingFace, cada um numa
+    pasta `blobs/<hash>` diferente, com links simbolicos apontando para la — e o
+    onnxruntime recusa uma segunda parte que esteja fora da pasta da primeira.
+
+    `HF_HUB_DISABLE_SYMLINKS` (ligado em `core/settings/base.py`) impede que
+    isso volte a acontecer, mas nao conserta um cache ja escrito assim: os
+    arquivos ja estao no disco e nada sera baixado de novo. Por isso a saida e
+    apagar a pasta.
+    """
+    texto = str(erro)
+    if "External data path" not in texto and "escapes model directory" not in texto:
+        return
+
+    raise RuntimeError(
+        f"O cache do modelo de embedding esta no formato de links do "
+        f"HuggingFace, que o onnxruntime recusa desde a versao 1.22.\n\n"
+        f"Apague o cache e deixe baixar de novo (~2 GB):\n"
+        f"    rm -rf {settings.EMBEDDING_CACHE_DIR}\n\n"
+        f"O download seguinte ja vem no formato certo: "
+        f"`HF_HUB_DISABLE_SYMLINKS` esta ligado no settings.\n\n"
+        f"Mensagem original: {texto}"
+    ) from erro
 
 
 class FakeEmbeddingClient(EmbeddingClient):
