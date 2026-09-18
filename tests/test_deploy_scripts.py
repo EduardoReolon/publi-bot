@@ -325,3 +325,110 @@ def test_o_bootstrap_confere_a_regra_antes_de_instalar():
     texto = (RAIZ / "deploy" / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
 
     assert texto.index("visudo -c") < texto.index("/etc/sudoers.d/publibot-deploy")
+
+
+# ---------------------------------------------------------------------------
+# Instalador do worker de conversao
+# ---------------------------------------------------------------------------
+WORKER = RAIZ / "worker-gpu"
+INSTALAR = WORKER / "deploy" / "instalar.sh"
+
+
+def _worker_falso(tmp_path: Path, env: str) -> Path:
+    """Uma arvore que parece a do worker, sem os 3 GB de torch."""
+    (tmp_path / "deploy").mkdir()
+    shutil.copy(INSTALAR, tmp_path / "deploy" / "instalar.sh")
+    shutil.copy(WORKER / "deploy" / "docling-api.service", tmp_path / "deploy")
+    (tmp_path / "venv" / "bin").mkdir(parents=True)
+    uvicorn = tmp_path / "venv" / "bin" / "uvicorn"
+    uvicorn.touch()
+    uvicorn.chmod(0o755)
+    (tmp_path / ".env").write_text(env, encoding="utf-8")
+    return tmp_path
+
+
+def _instalar(raiz: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(  # noqa: S603 - o alvo e um script do proprio repositorio
+        [shutil.which("bash") or "/bin/bash", str(raiz / "deploy" / "instalar.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_o_instalador_recusa_bind_em_todas_as_interfaces(tmp_path):
+    """Um endpoint que aceita PDF e roda modelo, aberto na internet, deixa a
+    placa disponivel para qualquer pessoa. Recusar aqui e mais barato que
+    descobrir depois."""
+    raiz = _worker_falso(tmp_path, "BIND_HOST=0.0.0.0\nWORKER_SHARED_SECRET=abc\n")
+
+    resultado = _instalar(raiz)
+
+    assert resultado.returncode == 1
+    # O bandit ve o literal e nao o teste: esta linha EXIGE que o instalador
+    # recuse esse endereco, por isso a dispensa ao lado. (Escrever "n-o-q-a"
+    # no inicio deste comentario o transformaria numa diretiva de verdade,
+    # que o ruff entao acusaria de nao suprimir nada.)
+    assert "0.0.0.0" in resultado.stderr  # noqa: S104
+    assert "Tailscale" in resultado.stderr
+
+
+def test_o_instalador_recusa_segredo_vazio(tmp_path):
+    """Sem segredo o servico sobe e responde 500 a TODA conversao, com uma
+    mensagem que fala de configuracao sem dizer qual arquivo preencher."""
+    raiz = _worker_falso(tmp_path, "BIND_HOST=127.0.0.1\nWORKER_SHARED_SECRET=\n")
+
+    resultado = _instalar(raiz)
+
+    assert resultado.returncode == 1
+    assert "WORKER_SHARED_SECRET" in resultado.stderr
+    # Diz de onde vem o par do outro lado, que e a parte que se esquece.
+    assert "CONVERSAO_SEGREDO" in resultado.stderr
+
+
+def test_o_instalador_recusa_sem_o_venv(tmp_path):
+    (tmp_path / "deploy").mkdir()
+    shutil.copy(INSTALAR, tmp_path / "deploy" / "instalar.sh")
+    (tmp_path / ".env").write_text("BIND_HOST=127.0.0.1\nWORKER_SHARED_SECRET=abc\n")
+
+    resultado = _instalar(tmp_path)
+
+    assert resultado.returncode == 1
+    assert "requirements.txt" in resultado.stderr
+
+
+def test_a_unit_gerada_nao_deixa_marcador_para_tras(tmp_path):
+    """O molde nao e arquivo pronto. Um marcador que sobrevivesse viraria um
+    caminho literal chamado "RAIZ", e o systemd falharia ao carregar."""
+    molde = (WORKER / "deploy" / "docling-api.service").read_text(encoding="utf-8")
+
+    gerada = (
+        molde.replace("RAIZ", str(tmp_path))
+        .replace("LINHA_DE_USUARIO", "# (unit de usuario)")
+        .replace("ALVO_DE_INSTALACAO", "default.target")
+    )
+
+    for marcador in ("RAIZ", "LINHA_DE_USUARIO", "ALVO_DE_INSTALACAO"):
+        assert marcador not in gerada
+    assert f"WorkingDirectory={tmp_path}" in gerada
+    assert f"ExecStart={tmp_path}/venv/bin/uvicorn" in gerada
+
+
+def test_a_unit_sobe_um_processo_so():
+    """Duas conversoes simultaneas estouram a VRAM, e o resultado e 15x mais
+    lento sem erro que denuncie."""
+    molde = (WORKER / "deploy" / "docling-api.service").read_text(encoding="utf-8")
+
+    assert "--workers 1" in molde
+    assert "Restart=always" in molde
+
+
+def test_o_requirements_do_worker_fixa_o_opencv():
+    """O `cv2` nao vem sozinho em Python 3.14: quem o trazia era o `rapidocr`,
+    que o Docling pede so para `python_version < "3.14"`. Sem este pin, a
+    analise de tabela quebra com ModuleNotFoundError na primeira conversao."""
+    texto = (WORKER / "requirements.txt").read_text(encoding="utf-8")
+
+    assert "opencv-python-headless" in texto
+    # A variante completa linka libGL, que uma maquina sem tela nao tem.
+    assert "\nopencv-python>" not in texto

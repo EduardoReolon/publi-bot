@@ -131,7 +131,13 @@ cp .env.example .env                     # defina WORKER_SHARED_SECRET
 Em desenvolvimento, `BIND_HOST=127.0.0.1` serve. Em producao precisa ser o
 endereco Tailscale — nunca `0.0.0.0`.
 
-Suba:
+Suba como servico (o instalador confere tudo antes e mostra o `/health/`):
+
+```bash
+./deploy/instalar.sh          # unit de usuario, sem sudo
+```
+
+Ou, para so experimentar, sem instalar nada:
 
 ```bash
 WORKER_SHARED_SECRET=... uvicorn docling_api:app --host 127.0.0.1 --port 8100
@@ -149,6 +155,15 @@ E cadastre:
 ```bash
 python manage.py configurar_conversao --testar
 ```
+
+Feito isso, `manage.py dev` passa a subir o worker junto com os outros tres —
+mas so quando ele mora AQUI: a URL precisa apontar para `127.0.0.1` e o
+`worker-gpu/venv/` precisa existir. Apontando para outra maquina, ele nao sobe
+copia nenhuma. Para desligar num dia especifico, `--sem-conversao`.
+
+O `.env` do worker e lido junto, o mesmo arquivo que o systemd usa. Sem isso o
+worker do `dev` ignoraria o seu `DOCLING_DEVICE` e se comportaria diferente do
+configurado — e a diferenca apareceria so como "aqui esta mais lento".
 
 O `--testar` chama `/health/` e imprime o dispositivo em uso. Isso importa:
 trocar `DOCLING_DEVICE` e esquecer de reiniciar o worker nao gera erro nenhum
@@ -387,6 +402,7 @@ python manage.py configurar_conversao --testar
 | `SemModeloConfigurado` | faltou `configurar_inferencia` |
 | Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
 | `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |
+| `ModuleNotFoundError: No module named 'cv2'` | venv do worker em Python 3.14 sem `opencv-python-headless` (reinstale o requirements) |
 | `External data path escapes model directory` | cache do modelo em links; `rm -rf .model_cache` e deixe baixar de novo |
 | Tarefas somem sem erro | Redis compartilhado sem `REDIS_NAMESPACE` |
 | `relation "content_..." does not exist` a cada minuto | task do beat sem varredura por tenant (ver ARMADILHAS) |

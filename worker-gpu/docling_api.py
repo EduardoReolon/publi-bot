@@ -26,6 +26,7 @@ import hashlib
 import hmac
 import logging
 import os
+import sys
 import threading
 import time
 
@@ -48,6 +49,36 @@ THREADS = int(os.environ.get("DOCLING_THREADS", 0))
 # E de longe a parte mais cara em CPU, e a maioria dos artigos cientificos nao
 # precisa dela. Ligue quando encontrar um PDF escaneado.
 OCR = os.environ.get("DOCLING_OCR", "false").lower() in {"1", "true", "yes", "sim"}
+
+
+def _conferir_ocr() -> None:
+    """Recusa subir com OCR ligado sem o motor de OCR instalado.
+
+    O Docling pede o motor assim:
+
+        rapidocr<4.0.0,>=3.3; python_version < "3.14"
+
+    Em Python 3.14 o marcador nao casa e o pacote simplesmente nao entra. Sem
+    esta conferencia, o servico subiria normalmente, responderia `/health/` com
+    `"ocr": true`, e falharia SO na primeira conversao de um PDF digitalizado —
+    o caso mais raro, que e justamente quando ninguem esta olhando.
+    """
+    import importlib.util
+
+    if not OCR or importlib.util.find_spec("rapidocr") is not None:
+        return
+
+    raise RuntimeError(
+        f"DOCLING_OCR esta ligado, mas o motor de OCR (rapidocr) nao esta "
+        f"instalado. Neste Python ({sys.version_info.major}."
+        f"{sys.version_info.minor}) o Docling nao o instala: ele o declara "
+        f'apenas para `python_version < "3.14"`.\n'
+        f"Use um Python 3.12 ou 3.13 no venv do worker, ou deixe "
+        f"DOCLING_OCR=false — PDF com camada de texto nao precisa de OCR."
+    )
+
+
+_conferir_ocr()
 
 app = FastAPI(title="PubliBot — servico Docling", version="1.0.0")
 

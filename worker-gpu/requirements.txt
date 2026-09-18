@@ -9,3 +9,24 @@ python-multipart==0.0.20
 # Conversao de PDF com analise de layout. Traz torch como dependencia — cerca
 # de 2 GB, e o motivo de este arquivo ser separado do requirements da nuvem.
 docling==2.60.0
+
+# O `cv2`, que o Docling importa para analisar a estrutura de TABELA.
+#
+# Ele nao vem sozinho, e a razao e sutil. O `docling-ibm-models` declara o
+# opencv apenas como extra opcional; quem o trazia de fato era o `rapidocr`,
+# que o Docling pede assim:
+#
+#     rapidocr<4.0.0,>=3.3; python_version < "3.14"
+#
+# Em Python 3.14 esse marcador nao casa, o rapidocr nao entra, e o opencv some
+# junto. A falha aparece so na primeira conversao, dentro do Docling:
+#
+#     ModuleNotFoundError: No module named 'cv2'
+#
+# `headless` e nao a variante completa: aquela linka bibliotecas de interface
+# grafica (libGL) que uma maquina sem tela nao tem, e o sintoma seria
+# `libGL.so.1: cannot open shared object file` — trocando um erro de
+# dependencia por outro.
+#
+# A faixa e a mesma que o docling-ibm-models declara no extra dele.
+opencv-python-headless>=4.6.0.66,<5

@@ -55,9 +55,40 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env   # defina WORKER_SHARED_SECRET e BIND_HOST
-sudo cp docling-api.service /etc/systemd/system/
-sudo systemctl enable --now docling-api
+./deploy/instalar.sh   # unit de usuario; --sistema para unit de sistema
 ```
+
+O `instalar.sh` preenche os caminhos desta maquina no molde da unit, habilita,
+sobe e confere o `/health/`. Antes disso ele recusa tres coisas que so dariam
+erro depois: venv ausente, `WORKER_SHARED_SECRET` vazio (o servico sobe e
+responde 500 a toda conversao) e `BIND_HOST=0.0.0.0`.
+
+Unit de **usuario** e o padrao, e e o que faz sentido num computador pessoal:
+nao pede sudo e sobe junto com a sua sessao. Para mante-la de pe com a maquina
+ligada e ninguem logado:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+Use `--sistema` numa maquina dedicada, que precisa subir o servico no boot.
+
+### Python 3.14
+
+Duas dependencias do Docling tem marcador `python_version < "3.14"`, e nesse
+Python elas simplesmente nao entram:
+
+| Pacote | Consequencia |
+|---|---|
+| `rapidocr` | sem OCR. O servico recusa subir com `DOCLING_OCR=true`. |
+| `opencv` (vinha junto do rapidocr) | quebraria a analise de TABELA |
+
+O segundo e o pior, porque `docling-ibm-models` declara o opencv apenas como
+extra opcional: sem o rapidocr, ninguem o instala, e a falha aparece so na
+primeira conversao, como `ModuleNotFoundError: No module named 'cv2'`. Por isso
+o `requirements.txt` daqui fixa `opencv-python-headless` explicitamente.
+
+Se voce precisa de OCR, use Python 3.12 ou 3.13 no venv do worker.
 
 #### Sem placa, por enquanto
 

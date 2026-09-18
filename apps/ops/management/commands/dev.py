@@ -31,6 +31,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from django.conf import settings
 from django.core.management import call_command
@@ -58,6 +59,14 @@ class Command(BaseCommand):
             help=(
                 "Nao sobe o agendador. Nada roda por horario: publicacao, "
                 "varredura de trabalhos parados e liberacao de reservas param."
+            ),
+        )
+        parser.add_argument(
+            "--sem-conversao",
+            action="store_true",
+            help=(
+                "Nao sobe o worker de conversao de PDF, mesmo que ele esteja "
+                "instalado aqui. Os PDFs caem no extrator local."
             ),
         )
         parser.add_argument(
@@ -101,17 +110,17 @@ class Command(BaseCommand):
             self.style.NOTICE(
                 f"Broker:   {_sem_segredo(broker)}  (BROKER_BACKEND={settings.BROKER_BACKEND})\n"
                 f"Web:      http://{settings.ROOT_DOMAIN}:{porta}/\n"
-                f"Subindo:  {', '.join(nome for nome, _ in servicos)}\n"
+                f"Subindo:  {', '.join(nome for nome, _, _ in servicos)}\n"
                 "Ctrl+C encerra todos."
             )
         )
 
         processos: list[subprocess.Popen] = []
         try:
-            for _, comando in servicos:
+            for _, comando, ambiente in servicos:
                 # Os comandos sao montados em `_servicos`, a partir de
                 # `sys.executable` e de constantes; nada vem de entrada externa.
-                processos.append(subprocess.Popen(comando))  # noqa: S603
+                processos.append(subprocess.Popen(comando, env=ambiente))  # noqa: S603
 
             # Espera QUALQUER um terminar, e entao derruba o resto. Deixar os
             # outros de pe seria pior que parar: o servidor sozinho aceita
@@ -134,8 +143,12 @@ class Command(BaseCommand):
                     processo.kill()
 
 
-def _servicos(options) -> list[tuple[str, list[str]]]:
-    """Os processos que compoem o sistema, em pares (nome, comando).
+def _servicos(options) -> list[tuple[str, list[str], dict[str, str] | None]]:
+    """Os processos que compoem o sistema: (nome, comando, ambiente).
+
+    O ambiente e `None` para quem herda o do terminal, que e o caso de quase
+    todos. So o worker de conversao precisa do proprio: ele mora em outro venv,
+    com outro `.env`.
 
     ESTE e o ponto de extensao. Um processo novo — outro worker, um servico
     auxiliar — entra aqui, e `manage.py dev` continua sendo o unico comando que
@@ -144,7 +157,7 @@ def _servicos(options) -> list[tuple[str, list[str]]]:
     dois e o que mantem "roda na minha maquina" e "roda no servidor" com o mesmo
     significado.
     """
-    servicos: list[tuple[str, list[str]]] = []
+    servicos: list[tuple[str, list[str], dict[str, str] | None]] = []
 
     if not options["sem_worker"]:
         worker = [
@@ -163,7 +176,7 @@ def _servicos(options) -> list[tuple[str, list[str]]]:
             # O pool `prefork` nao tem suporte oficial no Windows desde o
             # Celery 4 e falha de forma erratica.
             worker += ["-P", "solo"]
-        servicos.append(("worker", worker))
+        servicos.append(("worker", worker, None))
 
     if not options["sem_beat"]:
         servicos.append(
@@ -185,13 +198,112 @@ def _servicos(options) -> list[tuple[str, list[str]]]:
                     # o do banco, entao nao ha estado local a preservar.
                     "--pidfile=",
                 ],
+                None,
             )
         )
 
+    if not options["sem_conversao"]:
+        conversao = _servico_de_conversao()
+        if conversao is not None:
+            servicos.append(conversao)
+
     # O web vem por ultimo de proposito: assim a primeira linha que rola na tela
     # depois do banner e a dele, que e onde se olha.
-    servicos.append(("web", [sys.executable, "manage.py", "runserver", options["addrport"]]))
+    servicos.append(("web", [sys.executable, "manage.py", "runserver", options["addrport"]], None))
     return servicos
+
+
+def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
+    """O worker do Docling, se ele morar NESTA maquina.
+
+    Em producao ele nao mora: roda onde esta a placa e e alcancado por
+    Tailscale (ADR-0007). Em desenvolvimento costuma ser a mesma maquina, e ai
+    subir tres processos a mao e esquecer o quarto e o mesmo erro de sempre.
+
+    Tres condicoes, e cada uma existe por um motivo:
+
+    - `CONVERSAO_BASE_URL` aponta para c'a. Apontando para outra maquina, subir
+      uma copia local daria dois servicos e um deles receberia trabalho nenhum.
+    - o venv proprio existe. O Docling traz torch (~3 GB) e NAO entra no venv
+      da nuvem; sem isso, o comando tentaria subir algo que nao esta instalado.
+    - a porta da URL e a que passamos ao uvicorn, para os dois concordarem sem
+      ninguem editar duas coisas.
+
+    Faltando qualquer uma, devolve None em silencio: nao ter o worker aqui e
+    um estado legitimo, e a tela de curadoria ja avisa quando a conversao saiu
+    pelo extrator local.
+    """
+    from urllib.parse import urlparse
+
+    url = getattr(settings, "CONVERSAO_BASE_URL", "")
+    if not url:
+        return None
+
+    endereco = urlparse(url)
+    if endereco.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return None
+
+    raiz = Path(settings.BASE_DIR) / "worker-gpu"
+    python = raiz / "venv" / "bin" / "python"
+    if sys.platform == "win32":
+        python = raiz / "venv" / "Scripts" / "python.exe"
+    if not python.exists():
+        return None
+
+    return (
+        "conversao",
+        [
+            str(python),
+            "-m",
+            "uvicorn",
+            "docling_api:app",
+            "--host",
+            endereco.hostname,
+            "--port",
+            str(endereco.port or 8100),
+            # Um so: duas conversoes simultaneas estouram a VRAM, e o servico
+            # ja recusa a segunda com 503 justamente por isso.
+            "--workers",
+            "1",
+            "--app-dir",
+            str(raiz),
+        ],
+        _ambiente_do_worker(raiz),
+    )
+
+
+def _ambiente_do_worker(raiz: Path) -> dict[str, str]:
+    """O ambiente do worker: o `.env` dele por cima do do terminal.
+
+    Ler o `worker-gpu/.env` aqui nao e conveniencia. Esse arquivo e o mesmo que
+    o systemd le por `EnvironmentFile` quando o servico roda de verdade; sem
+    le-lo, o worker subido pelo `dev` ignoraria `DOCLING_DEVICE` e
+    `DOCLING_THREADS` e se comportaria diferente do que voce configurou — a
+    diferenca apareceria so como "aqui esta mais lento", sem causa visivel.
+
+    O segredo tem uma ponte: no PubliBot ele se chama `CONVERSAO_SEGREDO`, no
+    worker `WORKER_SHARED_SECRET`. Sao dois nomes para o mesmo valor, cada um
+    com o nome que faz sentido do seu lado. Se o `.env` do worker nao o
+    definir, o do PubliBot vale — assim um arquivo so basta em
+    desenvolvimento.
+    """
+    import os
+
+    ambiente = dict(os.environ)
+
+    arquivo = raiz / ".env"
+    if arquivo.is_file():
+        for linha in arquivo.read_text(encoding="utf-8").splitlines():
+            limpa = linha.strip()
+            if not limpa or limpa.startswith("#") or "=" not in limpa:
+                continue
+            chave, _, valor = limpa.partition("=")
+            ambiente[chave.strip()] = valor.strip().strip('"').strip("'")
+
+    if not ambiente.get("WORKER_SHARED_SECRET"):
+        ambiente["WORKER_SHARED_SECRET"] = getattr(settings, "CONVERSAO_SEGREDO", "")
+
+    return ambiente
 
 
 def _sem_segredo(url: str) -> str:

@@ -78,6 +78,17 @@ def _capturar(monkeypatch) -> list[list[str]]:
     return lancados
 
 
+@pytest.fixture(autouse=True)
+def sem_worker_de_conversao(settings):
+    """O worker do Docling so sobe quando esta instalado NESTA maquina.
+
+    Neutralizado por padrao: se estivesse instalado na maquina de quem roda a
+    suite, metade dos testes de contagem passaria a ver um processo a mais — e
+    o resultado dependeria do que cada um tem no disco.
+    """
+    settings.CONVERSAO_BASE_URL = ""
+
+
 @override_settings(DEBUG=True)
 def test_dev_sobe_os_tres_processos(monkeypatch):
     """Um comando, o sistema inteiro.
@@ -146,6 +157,109 @@ def test_dev_usa_pool_solo_no_windows(monkeypatch):
 
     assert "-P" in lancados[0]
     assert lancados[0][lancados[0].index("-P") + 1] == "solo"
+
+
+# ---------------------------------------------------------------------------
+# O worker de conversao (Docling)
+# ---------------------------------------------------------------------------
+@override_settings(DEBUG=True)
+def test_sobe_o_worker_de_conversao_quando_ele_mora_aqui(monkeypatch, tmp_path, settings):
+    """Em desenvolvimento o Docling costuma rodar na mesma maquina, e subir
+    tres processos a mao e esquecer o quarto e o mesmo erro de sempre."""
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    conversao = [c for c in lancados if "docling_api:app" in c]
+    assert len(conversao) == 1
+    assert "8100" in conversao[0]
+
+
+@override_settings(DEBUG=True)
+def test_nao_sobe_o_worker_que_esta_em_outra_maquina(monkeypatch, tmp_path, settings):
+    """Em producao ele roda onde esta a placa (ADR-0007). Subir uma copia local
+    daria dois servicos, e um deles nao receberia trabalho nenhum."""
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    settings.CONVERSAO_BASE_URL = "http://100.64.0.9:8100"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert not any("docling_api:app" in c for c in lancados)
+
+
+@override_settings(DEBUG=True)
+def test_sem_o_venv_do_worker_nao_tenta_subir(monkeypatch, settings):
+    """O Docling traz torch (~3 GB) e nao entra no venv da nuvem. Sem o venv
+    proprio, tentar subir seria pedir um modulo que nao existe."""
+    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conferir=True)
+
+    assert not any("docling_api:app" in c for c in lancados)
+
+
+@override_settings(DEBUG=True)
+def test_sem_conversao_nao_sobe_mesmo_instalado(monkeypatch, tmp_path, settings):
+    _fingir_venv_do_worker(monkeypatch, tmp_path)
+    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+    lancados = _capturar(monkeypatch)
+
+    call_command("dev", sem_conversao=True, sem_conferir=True)
+
+    assert not any("docling_api:app" in c for c in lancados)
+
+
+def test_o_worker_recebe_o_segredo_com_o_nome_que_ele_espera(monkeypatch, tmp_path, settings):
+    """Sao dois nomes para o mesmo valor: `CONVERSAO_SEGREDO` no PubliBot,
+    `WORKER_SHARED_SECRET` no worker. Sem a ponte, o worker sobe sem segredo e
+    responde 500 a toda conversao — com uma mensagem que fala de configuracao,
+    nao de qual arquivo preencher."""
+    from apps.ops.management.commands.dev import _ambiente_do_worker
+
+    settings.CONVERSAO_SEGREDO = "o-segredo-do-env-do-publibot"
+
+    ambiente = _ambiente_do_worker(tmp_path)
+
+    assert ambiente["WORKER_SHARED_SECRET"] == "o-segredo-do-env-do-publibot"
+
+
+def test_o_env_do_worker_vence_o_do_terminal(tmp_path, settings):
+    """Esse arquivo e o MESMO que o systemd le por `EnvironmentFile`. Ignora-lo
+    faria o worker do `dev` rodar com outro dispositivo do que o configurado —
+    e a diferenca apareceria so como "aqui esta mais lento"."""
+    from apps.ops.management.commands.dev import _ambiente_do_worker
+
+    (tmp_path / ".env").write_text(
+        "# um comentario\n"
+        "DOCLING_DEVICE=cuda\n"
+        'WORKER_SHARED_SECRET="o-do-worker"\n'
+        "linha solta sem igual\n",
+        encoding="utf-8",
+    )
+    settings.CONVERSAO_SEGREDO = "o-do-publibot"
+
+    ambiente = _ambiente_do_worker(tmp_path)
+
+    assert ambiente["DOCLING_DEVICE"] == "cuda"
+    assert ambiente["WORKER_SHARED_SECRET"] == "o-do-worker"
+
+
+def _fingir_venv_do_worker(monkeypatch, tmp_path) -> None:
+    """Cria a arvore que `_servico_de_conversao` procura, sem instalar nada."""
+    import sys as _sys
+
+    from django.conf import settings as _settings
+
+    subpasta = "Scripts" if _sys.platform == "win32" else "bin"
+    nome = "python.exe" if _sys.platform == "win32" else "python"
+    binario = tmp_path / "worker-gpu" / "venv" / subpasta / nome
+    binario.parent.mkdir(parents=True)
+    binario.touch()
+    monkeypatch.setattr(_settings, "BASE_DIR", tmp_path)
 
 
 # ---------------------------------------------------------------------------

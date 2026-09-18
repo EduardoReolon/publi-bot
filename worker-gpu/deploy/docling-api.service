@@ -1,0 +1,44 @@
+# Molde, nao arquivo pronto: os marcadores em caixa alta abaixo sao trocados
+# pelo `instalar.sh`. Um caminho fixo aqui estaria errado em toda maquina menos
+# uma, e este servico roda tanto num desktop pessoal quanto num servidor.
+#
+#   ./deploy/instalar.sh              unit de usuario (systemctl --user)
+#   ./deploy/instalar.sh --sistema    unit de sistema (precisa de sudo)
+#
+# Nao edite a copia instalada: ela e reescrita a cada `instalar.sh`. O que muda
+# de maquina para maquina vive no `.env`, que a unit le por EnvironmentFile.
+
+[Unit]
+Description=PubliBot — servico Docling
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+LINHA_DE_USUARIO
+WorkingDirectory=RAIZ
+EnvironmentFile=RAIZ/.env
+
+# `--host` vem do .env. Numa maquina que atende a nuvem, precisa ser o
+# endereco da Tailscale e NUNCA 0.0.0.0: um endpoint que aceita PDF e roda
+# modelo, aberto na internet, deixa a placa disponivel para qualquer pessoa.
+ExecStart=RAIZ/venv/bin/uvicorn docling_api:app \
+    --host ${BIND_HOST} \
+    --port ${BIND_PORT} \
+    --workers 1
+
+# UM worker. Dois processos significam duas conversoes simultaneas, e a VRAM
+# nao comporta.
+Restart=always
+RestartSec=10
+
+# Maior que a conversao mais longa: matar no meio perde o trabalho. Em CPU uma
+# conversao demora bem mais que em placa — se voce roda em CPU e ve o servico
+# ser reiniciado no meio, e este numero que precisa subir.
+TimeoutStopSec=300
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=ALVO_DE_INSTALACAO
