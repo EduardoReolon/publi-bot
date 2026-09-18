@@ -178,11 +178,22 @@ def escolher_conexao(
     if not candidatas:
         return None
 
-    for c in candidatas:
-        liberar_expiradas(c)
+    liberar_expiradas()
 
     def folga(c: InferenceConnection) -> int:
-        return c.max_concurrency - _leases_ativas(c).count()
+        """A vaga que sobra na MAQUINA, nao na conexao.
+
+        Precisa ser a mesma conta de `adquirir`. Enquanto esta funcao contava
+        por conexao e aquela por maquina, a escolha entregava uma conexao que
+        a reserva ia recusar em seguida — o trabalho fazia a viagem inteira
+        para levar `SemCapacidade` e ser adiado, duas vezes por tentativa.
+        """
+        vizinhas = vizinhas_de_hardware(c)
+        agora = timezone.now()
+        ocupadas = InferenceLease.objects.filter(
+            connection__in=vizinhas, released_at__isnull=True, expires_at__gt=agora
+        ).count()
+        return _capacidade_da_maquina(vizinhas) - ocupadas
 
     com_vaga = [c for c in candidatas if folga(c) > 0]
     if not com_vaga:
@@ -197,6 +208,43 @@ def escolher_conexao(
         return (exclusiva, modelo_carregado, -folga(c))
 
     return sorted(com_vaga, key=prioridade)[0]
+
+
+def descrever_ocupacao(*, workload: str = "", tenant=None) -> str:
+    """Quem esta segurando a capacidade agora, em uma frase.
+
+    "Todas as conexoes estao ocupadas" e verdadeiro e inutil: nao diz qual
+    conexao, nem desde quando, nem se alguem ainda esta do outro lado. Um
+    processo que morreu segurando a reserva produz exatamente a mesma frase de
+    uma inferencia saudavel em curso, e a diferenca entre as duas e a diferenca
+    entre esperar e agir.
+    """
+    agora = timezone.now()
+    ativas = (
+        InferenceLease.objects.filter(released_at__isnull=True, expires_at__gt=agora)
+        .select_related("connection")
+        .order_by("acquired_at")
+    )
+
+    partes = []
+    for lease in ativas:
+        minutos = int((agora - lease.acquired_at).total_seconds() // 60)
+        partes.append(f"{lease.connection.name!r} ha {minutos} min")
+
+    if not partes:
+        # Sem reserva ativa e sem vaga: sobrou o disjuntor.
+        return (
+            "nenhuma conexao esta disponivel. Nao ha reserva em curso, entao o "
+            "motivo e o disjuntor aberto apos falhas seguidas — confira em "
+            "Configuracao > Inferencia."
+        )
+
+    return (
+        "todas as conexoes de inferencia estao ocupadas: "
+        + "; ".join(partes)
+        + ". Se algum desses processos ja morreu, solte com "
+        "`manage.py reservas --liberar`."
+    )
 
 
 def registrar_falha(connection: InferenceConnection, *, limite: int = 5, minutos: int = 15) -> None:

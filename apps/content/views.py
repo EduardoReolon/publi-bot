@@ -29,6 +29,7 @@ from apps.content.services import (
 )
 from apps.content.tasks import gerar_artigo, responder_pergunta
 from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+from apps.ops.models import GenerationJob
 from apps.ops.orchestrator import PassoAdiado
 
 logger = logging.getLogger("publibot.content")
@@ -120,6 +121,28 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
 
     if pauta.articles.exists():
         messages.error(request, _("Esta pauta ja tem artigo. Gerar de novo criaria concorrencia."))
+        return redirect("content:pautas")
+
+    # O artigo so passa a existir quando a geracao termina, entao a guarda
+    # acima nao cobre o segundo clique: ate la, `articles` esta vazio. Dois
+    # cliques criavam dois trabalhos para a mesma pauta — que disputam a mesma
+    # placa e, se ambos chegassem ao fim, produziriam dois artigos.
+    em_andamento = GenerationJob.objects.filter(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        status__in=[
+            GenerationJob.Status.PENDING,
+            GenerationJob.Status.RUNNING,
+            GenerationJob.Status.WAITING_CAPACITY,
+        ],
+    ).first()
+
+    if em_andamento is not None:
+        messages.info(
+            request,
+            _("Esta pauta ja esta sendo gerada (trabalho %(id)s). Acompanhe em Operacao.")
+            % {"id": str(em_andamento.pk)[:8]},
+        )
         return redirect("content:pautas")
 
     job = gerar_artigo(pauta)

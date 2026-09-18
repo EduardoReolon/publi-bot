@@ -154,6 +154,7 @@ E cadastre:
 
 ```bash
 python manage.py configurar_conversao --testar
+python manage.py reservas          # quem esta segurando a capacidade
 ```
 
 Se voce instalou a unit do systemd, o `dev` NAO sobe um segundo worker: ele
@@ -410,6 +411,7 @@ python manage.py check_db          # banco, extensoes, schemas dos tenants
 python manage.py broker_status     # qual broker esta valendo, e se responde
 python manage.py configurar_inferencia --testar
 python manage.py configurar_conversao --testar
+python manage.py reservas          # quem esta segurando a capacidade
 ```
 
 | Sintoma | Causa provavel |
@@ -420,6 +422,7 @@ python manage.py configurar_conversao --testar
 | POST devolve 400 sem explicacao | porta fora de `DEV_SERVER_PORT` (CSRF compara a origem inteira) |
 | Trabalho parado em `WAITING_CAPACITY` | Ollama inacessivel, ou beat nao esta rodando |
 | `SemModeloConfigurado` | faltou `configurar_inferencia` |
+| `todas as conexoes ... estao ocupadas` | `manage.py reservas` diz quem segura; `--liberar` solta as presas |
 | `nenhuma versao ativa para o prompt ...` | tenant sem prompts; `manage.py semear_prompts --todos` |
 | Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
 | `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |

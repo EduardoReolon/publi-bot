@@ -332,6 +332,34 @@ erro 500 numa pagina que nao usa o modelo para nada — foi assim que a armadilh
 acima apareceu. Hoje a busca no disco vem primeiro, e `_carregar()` so roda se
 o arquivo nao estiver la (que e quando ha, de fato, o que baixar).
 
+### Reserva presa deixa tudo parado por uma hora, em silencio
+
+```
+todas as conexoes de inferencia estao ocupadas
+```
+
+A reserva dura `lease_seconds` — 3600s por padrao, para caber a inferencia
+mais longa. Se o processo que a tomou morre (worker reiniciado, Ctrl+C no meio
+de uma geracao), ninguem a solta: `release-expired-leases` so libera as
+VENCIDAS, e ela so vence dali a uma hora.
+
+Nesse intervalo, todo trabalho novo e adiado com a frase acima — que e
+verdadeira e inutil. Ela nao diz qual conexao, nem desde quando, nem se alguem
+ainda esta do outro lado. Uma inferencia saudavel em curso produz exatamente a
+mesma frase.
+
+Hoje a mensagem nomeia quem segura e ha quanto tempo, e `manage.py reservas`
+lista e solta:
+
+```bash
+manage.py reservas              # quem esta segurando
+manage.py reservas --liberar    # solta as que passam de 15 min
+```
+
+O corte em 15 minutos e deliberado: soltar uma reserva viva poe duas tarefas
+na mesma placa, que e o problema que a reserva existe para evitar. `--tudo`
+ignora o corte, e so deve ser usado com o Ollama parado.
+
 ### Duas conexoes, uma placa so
 
 O Ollama em `:11434` e o Docling em `:8100` sao duas linhas no banco e o mesmo

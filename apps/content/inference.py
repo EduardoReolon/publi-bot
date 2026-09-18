@@ -111,7 +111,12 @@ def executar_prompt(
                 "Cadastre uma em Configuracao > Inferencia."
             )
         # Existem conexoes, mas nenhuma com vaga ou fora do circuito aberto.
-        raise PassoAdiado("todas as conexoes de inferencia estao ocupadas", tentar_em_segundos=120)
+        # A mensagem nomeia quem esta segurando: sem isso, um processo que
+        # morreu com a reserva na mao produz a mesma frase de uma inferencia
+        # saudavel em curso, e nao ha como saber se cabe esperar ou agir.
+        from apps.inference.leases import descrever_ocupacao
+
+        raise PassoAdiado(descrever_ocupacao(), tentar_em_segundos=120)
 
     modelo = versao.model_name or conexao.default_model
     if not modelo:

@@ -1239,3 +1239,59 @@ def test_a_tela_de_curadoria_oferece_os_dois_downloads(ambiente):
 
     assert reverse("knowledge:baixar_original", args=[documento.pk]) in corpo
     assert reverse("knowledge:baixar_markdown", args=[documento.pk]) in corpo
+
+
+@pytest.mark.django_db
+def test_clicar_gerar_duas_vezes_nao_cria_dois_trabalhos(ambiente, monkeypatch):
+    """O artigo so passa a existir quando a geracao TERMINA.
+
+    A guarda antiga olhava `pauta.articles`, que fica vazia o tempo todo entre
+    os dois cliques. O resultado eram dois trabalhos para a mesma pauta,
+    disputando a mesma placa — e, se ambos chegassem ao fim, dois artigos.
+    """
+    from apps.content.models import Topic
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Matriz RFM", status=Topic.Status.APPROVED)
+
+    # A geracao e assincrona: o `.delay()` nao pode rodar dentro do teste.
+    monkeypatch.setattr("apps.ops.tasks.advance_generation_job.delay", lambda *a, **k: None)
+
+    for _tentativa in range(2):
+        client.post(reverse("content:gerar", args=[pauta.pk]))
+
+    assert (
+        GenerationJob.objects.filter(
+            kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(pauta.pk)
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_um_trabalho_que_ja_terminou_nao_barra_uma_geracao_nova(ambiente, monkeypatch):
+    """A guarda e contra o clique duplo, nao contra tentar de novo depois de
+    uma falha. Barrar um trabalho ja encerrado deixaria a pauta travada."""
+    from apps.content.models import Topic
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Matriz RFM", status=Topic.Status.APPROVED)
+    GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        status=GenerationJob.Status.FAILED,
+    )
+    monkeypatch.setattr("apps.ops.tasks.advance_generation_job.delay", lambda *a, **k: None)
+
+    client.post(reverse("content:gerar", args=[pauta.pk]))
+
+    assert (
+        GenerationJob.objects.filter(
+            kind=GenerationJob.Kind.PILLAR_ARTICLE,
+            target_object_id=str(pauta.pk),
+            status=GenerationJob.Status.PENDING,
+        ).count()
+        == 1
+    )

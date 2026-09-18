@@ -191,3 +191,93 @@ def test_a_conversao_reserva_de_fato(tenant_factory, monkeypatch):
         # tentativa (o fluxo trata `ConversorOcupado` como `PassoAdiado`).
         with pytest.raises(ConversorOcupado, match="ocupada"):
             extrair_markdown(documento)
+
+
+# ---------------------------------------------------------------------------
+# A escolha e a reserva precisam contar igual
+# ---------------------------------------------------------------------------
+def test_a_escolha_nao_entrega_conexao_que_a_reserva_vai_recusar():
+    """As duas contas tem de ser a mesma.
+
+    Enquanto `escolher_conexao` contava por conexao e `adquirir` por maquina, a
+    escolha devolvia uma conexao livre cuja MAQUINA estava ocupada — e o
+    trabalho fazia a viagem inteira para levar `SemCapacidade` e ser adiado.
+    """
+    from apps.inference.leases import escolher_conexao
+
+    ollama = _conexao("Ollama", f"http://{TAILSCALE}:11434")
+    _conexao("Docling", f"http://{TAILSCALE}:8100", kind=InferenceConnection.Kind.DOCLING)
+
+    # O Docling esta convertendo: a maquina inteira esta ocupada.
+    adquirir(InferenceConnection.objects.get(name="Docling"), owner_key="conversao")
+
+    assert escolher_conexao(workload=InferenceConnection.Workload.TEXT) is None
+    assert ollama.max_concurrency == 1  # a conexao em si estaria "livre"
+
+
+def test_a_mensagem_de_ocupado_diz_quem_esta_segurando():
+    """ "Todas as conexoes estao ocupadas" e verdadeiro e inutil.
+
+    Um processo que morreu com a reserva na mao produz a mesma frase de uma
+    inferencia saudavel em curso — e a diferenca entre as duas e a diferenca
+    entre esperar e agir.
+    """
+    from apps.inference.leases import descrever_ocupacao
+
+    _conexao("Ollama", f"http://{TAILSCALE}:11434")
+    adquirir(InferenceConnection.objects.get(name="Ollama"), owner_key="texto")
+
+    frase = descrever_ocupacao()
+
+    assert "Ollama" in frase
+    assert "min" in frase
+    assert "reservas --liberar" in frase
+
+
+def test_sem_reserva_ativa_a_mensagem_aponta_o_disjuntor():
+    """Sem vaga e sem reserva, sobrou o circuito aberto. Mandar a pessoa
+    procurar reserva ali seria manda-la para o lugar errado."""
+    from apps.inference.leases import descrever_ocupacao
+
+    assert "disjuntor" in descrever_ocupacao()
+
+
+def test_reservas_lista_e_libera_as_presas(capsys):
+    """Sem este comando, a unica saida para uma reserva presa era esperar uma
+    hora ou abrir o banco na mao."""
+    from datetime import timedelta
+
+    from django.core.management import call_command
+    from django.utils import timezone
+
+    from apps.inference.models import InferenceLease
+
+    conexao = _conexao("Ollama", f"http://{TAILSCALE}:11434")
+    lease = adquirir(conexao, owner_key="texto")
+    # Envelhece a reserva: uma recem-criada quase sempre e trabalho de verdade.
+    InferenceLease.objects.filter(pk=lease.pk).update(
+        acquired_at=timezone.now() - timedelta(minutes=40)
+    )
+
+    call_command("reservas")
+    assert "suspeita" in capsys.readouterr().out
+
+    call_command("reservas", liberar=True)
+
+    lease.refresh_from_db()
+    assert lease.released_at is not None
+
+
+def test_reservas_nao_solta_uma_inferencia_recem_comecada(capsys):
+    """Soltar uma reserva viva poe duas tarefas na mesma placa — o problema
+    que a reserva existe para evitar."""
+    from django.core.management import call_command
+
+    conexao = _conexao("Ollama", f"http://{TAILSCALE}:11434")
+    lease = adquirir(conexao, owner_key="texto")
+
+    call_command("reservas", liberar=True)
+
+    lease.refresh_from_db()
+    assert lease.released_at is None
+    assert "--liberar --tudo" in capsys.readouterr().out
