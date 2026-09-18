@@ -9,14 +9,18 @@ descobrir depois de meses que cada documento prende o worker por meia hora.
     python medir.py artigo.pdf --cpu --threads 1
     python medir.py artigo.pdf --cuda
 
-Rode na maquina que vai HOSPEDAR o servico, nunca na VM da nuvem: e ela que
-converte. Com `--threads 1` da para estimar o pior caso de uma maquina de um
-nucleo so.
+Rode na maquina que vai HOSPEDAR o servico. A VM da nuvem nao converte nada:
+ela so faz a requisicao HTTP (ADR-0007), entao medir la nao responde nada.
 
-Os dois tempos sao separados de proposito. A **carga** acontece uma vez por
-processo e o servico a paga so na primeira conversao depois de subir; a
-**conversao** e o que se paga por documento, e e o unico numero que importa
-para decidir.
+Sem `--threads`, usa todos os nucleos — e e assim que o servico vai rodar.
+`--threads 1` serve para outra pergunta: quanto disso e paralelismo, ou como
+seria numa maquina de um nucleo so. Nao confunda um com o outro na hora de
+decidir.
+
+Ele converte o mesmo arquivo DUAS vezes de proposito. A primeira carrega os
+modelos junto; a segunda e o que o servico realmente paga por documento, porque
+ele fica de pe entre uma conversao e outra. Olhar so a primeira superestima o
+custo de cada PDF — e pode fazer comprar uma placa que nao era necessaria.
 
 Primeira execucao baixa os modelos de layout do HuggingFace (algumas centenas
 de MB). Numa rede que bloqueie `huggingface.co` isto falha, e a mensagem fala
@@ -83,15 +87,28 @@ def main() -> int:
 
     tamanho = caminho.stat().st_size
 
-    inicio = time.perf_counter()
     conversor = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opcoes)}
     )
-    carga = time.perf_counter() - inicio
+
+    # Converte DUAS vezes, e a repeticao nao e por estatistica.
+    #
+    # Construir o `DocumentConverter` nao carrega modelo nenhum: o Docling monta
+    # o pipeline dentro do PRIMEIRO `convert()` e o guarda em cache
+    # (`document_converter.py::_get_pipeline`). Cronometrar so a construcao
+    # devolve zero e sugere que a carga e gratis — quando na verdade ela esta
+    # inteira dentro da primeira conversao.
+    #
+    # Isso importa para decidir: o servico fica de pe, entao o que ele paga por
+    # documento e a SEGUNDA medida, nao a primeira. Confundir as duas
+    # superestima o custo de cada PDF e pode comprar uma placa por engano.
+    inicio = time.perf_counter()
+    resultado = conversor.convert(str(caminho))
+    primeira = time.perf_counter() - inicio
 
     inicio = time.perf_counter()
     resultado = conversor.convert(str(caminho))
-    conversao = time.perf_counter() - inicio
+    seguintes = time.perf_counter() - inicio
 
     markdown = resultado.document.export_to_markdown()
     paginas = len(resultado.document.pages) or 1
@@ -99,12 +116,19 @@ def main() -> int:
     print()
     print(f"Arquivo:     {caminho.name}  ({tamanho / 1024:.0f} KB, {paginas} pagina(s))")
     print(f"Dispositivo: {dispositivo.value}  threads={args.threads or 'auto'}  ocr={args.ocr}")
-    print(f"Carga:       {carga:6.1f}s   (uma vez por processo, nao por documento)")
-    print(f"Conversao:   {conversao:6.1f}s   ({conversao / paginas:.1f}s por pagina)")
+    print(f"1a conversao:  {primeira:6.1f}s   (inclui carregar os modelos)")
+    print(
+        f"As seguintes:  {seguintes:6.1f}s   "
+        f"({seguintes / paginas:.1f}s por pagina)  <- e este que decide"
+    )
+    print(f"Carga dos modelos: ~{max(primeira - seguintes, 0):.1f}s, uma vez por processo")
     print()
-    print("Para decidir: o servico converte um documento por vez. O numero que")
-    print("importa e a CONVERSAO, e a pergunta e se esse tempo cabe no seu ritmo")
-    print("de envio de documentos — nao se ele e 'rapido'.")
+    print("O servico fica de pe entre conversoes, entao ele paga a primeira linha")
+    print("so depois de subir. Por documento, paga a segunda.")
+    print()
+    print("A pergunta nao e se o tempo e 'rapido': o worker converte UM por vez e")
+    print("o PubliBot adia o resto em vez de falhar. A pergunta e se cabe no seu")
+    print("ritmo de envio de documentos.")
     print()
 
     # Sinais de que a analise de layout funcionou. Sao o que distingue este
