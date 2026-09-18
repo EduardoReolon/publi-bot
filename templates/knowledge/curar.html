@@ -17,6 +17,32 @@
     {% endif %}
   </p>
 
+  {% comment %}
+    Os dois arquivos que respondem "o que o conversor entendeu?".
+
+    A tela mostra o resultado ja dividido em blocos, que e o que serve para
+    curar — mas esconde a causa quando algo sai torto. Num artigo, o Docling
+    leu a ficha da primeira pagina como TABELA e picou o resumo em fragmentos:
+    na tela aquilo era so um bloco estranho; no Markdown, a causa estava
+    visivel na primeira olhada.
+
+    O Markdown e montado na hora, a partir do que ja esta no banco. Gravar um
+    `.md` ao lado do PDF criaria um segundo lugar para o mesmo dado, que
+    desatualiza na primeira reconversao.
+  {% endcomment %}
+  <p class="acoes">
+    {% if documento.original_file %}
+      <a class="botao secundario" href="{% url 'knowledge:baixar_original' documento.pk %}">
+        {% translate "Baixar o arquivo enviado" %}
+      </a>
+    {% endif %}
+    {% if documento.markdown_full %}
+      <a class="botao secundario" href="{% url 'knowledge:baixar_markdown' documento.pk %}">
+        {% translate "Baixar o texto convertido (.md)" %}
+      </a>
+    {% endif %}
+  </p>
+
   {% if documento.failure_reason %}
     <div class="aviso ruim">
       <strong>{% translate "A conversao falhou." %}</strong> {{ documento.failure_reason }}

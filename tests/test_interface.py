@@ -1121,3 +1121,121 @@ def test_sem_conexao_de_imagem_a_tela_explica(ambiente, artigo_para_revisar):
 
     assert resposta.status_code == 200
     assert "Inferencia" in resposta.content.decode()
+
+
+# ---------------------------------------------------------------------------
+# Baixar o original e o texto convertido
+# ---------------------------------------------------------------------------
+# Existem para responder "o que o conversor entendeu?". A tela mostra o
+# resultado ja dividido em blocos, que e o que serve para curar, mas esconde a
+# causa quando algo sai torto: num artigo o Docling leu a ficha da primeira
+# pagina como TABELA e picou o resumo em fragmentos. Na tela era so um bloco
+# estranho; no Markdown, a causa estava visivel.
+
+
+@pytest.mark.django_db
+def test_baixa_o_arquivo_enviado_com_nome_e_extensao(ambiente):
+    """A URL e um UUID. Sem `filename`, o arquivo chegaria como
+    `a1b2c3d4-...`, sem extensao, e o sistema nao saberia abrir.
+
+    O nome nao e exatamente o que a pessoa enviou: o `Document` guarda o
+    caminho no disco, onde o Django ja pos um sufixo contra colisao. O que se
+    garante aqui e nome legivel + extensao certa.
+    """
+    _, _, client = ambiente
+    documento = Document.objects.create(
+        category=DocumentCategory.objects.first(),
+        original_file=ContentFile(b"%PDF-1.4 conteudo", name="matriz_rfm.pdf"),
+        file_sha256="a" * 64,
+        file_size_bytes=17,
+        status=Document.Status.CURATED,
+    )
+
+    resposta = client.get(reverse("knowledge:baixar_original", args=[documento.pk]))
+
+    assert resposta.status_code == 200
+    nome = resposta["Content-Disposition"]
+    assert nome.startswith("attachment;")
+    assert "matriz_rfm" in nome and nome.rstrip('"').endswith(".pdf")
+
+
+@pytest.mark.django_db
+def test_baixa_o_markdown_montado_na_hora(ambiente):
+    """Nao vai para disco: `markdown_full` ja esta no banco, e gravar um `.md`
+    ao lado do PDF criaria um segundo lugar para o mesmo dado."""
+    _, _, client = ambiente
+    documento = Document.objects.create(
+        category=DocumentCategory.objects.first(),
+        original_file=ContentFile(b"%PDF", name="matriz_rfm.pdf"),
+        file_sha256="b" * 64,
+        file_size_bytes=4,
+        markdown_full="## Titulo\n\nO conteudo convertido.\n",
+        status=Document.Status.CURATED,
+    )
+
+    resposta = client.get(reverse("knowledge:baixar_markdown", args=[documento.pk]))
+
+    assert resposta.status_code == 200
+    assert resposta["Content-Type"].startswith("text/markdown")
+    nome = resposta["Content-Disposition"]
+    assert "matriz_rfm" in nome and nome.rstrip('"').endswith(".md")
+    assert b"O conteudo convertido." in resposta.content
+
+
+@pytest.mark.django_db
+def test_sem_texto_guardado_o_download_do_markdown_nao_devolve_vazio(ambiente):
+    """O texto integral e descartado para algumas licencas. Um `.md` em branco
+    faria a pessoa procurar o que ela fez de errado."""
+    _, _, client = ambiente
+    documento = Document.objects.create(
+        category=DocumentCategory.objects.first(),
+        original_file=ContentFile(b"%PDF", name="estudo.pdf"),
+        file_sha256="c" * 64,
+        file_size_bytes=4,
+        markdown_full="",
+        status=Document.Status.CURATED,
+    )
+
+    resposta = client.get(reverse("knowledge:baixar_markdown", args=[documento.pk]))
+
+    assert resposta.status_code == 404
+
+
+@pytest.mark.django_db
+def test_os_downloads_exigem_sessao(ambiente, django_user_model):
+    """O PDF do acervo nao e publico: `MEDIA_ROOT` fica atras de
+    `/protected-media/`, que o Nginx serve como `internal`, e estas views sao
+    a unica porta."""
+    _, _, client = ambiente
+    documento = Document.objects.create(
+        category=DocumentCategory.objects.first(),
+        original_file=ContentFile(b"%PDF", name="estudo.pdf"),
+        file_sha256="d" * 64,
+        file_size_bytes=4,
+        markdown_full="# Titulo",
+        status=Document.Status.CURATED,
+    )
+    client.logout()
+
+    for rota in ("knowledge:baixar_original", "knowledge:baixar_markdown"):
+        resposta = client.get(reverse(rota, args=[documento.pk]))
+        assert resposta.status_code == 302, rota
+        assert "/entrar" in resposta["Location"] or "login" in resposta["Location"], rota
+
+
+@pytest.mark.django_db
+def test_a_tela_de_curadoria_oferece_os_dois_downloads(ambiente):
+    _, _, client = ambiente
+    documento = Document.objects.create(
+        category=DocumentCategory.objects.first(),
+        original_file=ContentFile(b"%PDF", name="estudo.pdf"),
+        file_sha256="e" * 64,
+        file_size_bytes=4,
+        markdown_full="# Titulo\n\nTexto.",
+        status=Document.Status.CURATED,
+    )
+
+    corpo = client.get(reverse("knowledge:curar", args=[documento.pk])).content.decode()
+
+    assert reverse("knowledge:baixar_original", args=[documento.pk]) in corpo
+    assert reverse("knowledge:baixar_markdown", args=[documento.pk]) in corpo

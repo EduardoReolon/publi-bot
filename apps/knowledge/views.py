@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -26,6 +26,7 @@ from apps.knowledge.services import (
     possiveis_duplicatas,
 )
 from apps.knowledge.tasks import iniciar_ingestao
+from core.arquivos import entregar_arquivo
 
 logger = logging.getLogger("publibot.knowledge")
 
@@ -205,6 +206,61 @@ def _processar_curadoria(request: HttpRequest, documento: Document) -> HttpRespo
 
     messages.success(request, _("Salvo. %(total)s trecho(s) no indice.") % {"total": criados})
     return redirect("knowledge:curar", pk=documento.pk)
+
+
+@login_required
+def baixar_original(request: HttpRequest, pk) -> HttpResponse:
+    """Devolve o arquivo que foi enviado, com o nome original.
+
+    O PDF nao e publico: `MEDIA_ROOT` fica atras de `/protected-media/`, que o
+    Nginx serve como `internal`. Esta view e a unica porta, e ela exige sessao
+    e resolve o documento DENTRO do schema do tenant — um id de outro cliente
+    simplesmente nao existe aqui.
+    """
+    documento = get_object_or_404(Document, pk=pk)
+
+    if not documento.original_file:
+        raise Http404("documento sem arquivo")
+
+    return entregar_arquivo(
+        documento.original_file,
+        tipo="application/pdf" if documento.nome_do_arquivo.endswith(".pdf") else "text/plain",
+        nome_para_baixar=documento.nome_do_arquivo,
+    )
+
+
+@login_required
+def baixar_markdown(request: HttpRequest, pk) -> HttpResponse:
+    """Devolve o resultado da conversao, montado na hora.
+
+    Nao vai para disco: `markdown_full` ja esta no banco, e gravar um `.md` ao
+    lado do PDF criaria um segundo lugar para o mesmo dado — que desatualiza na
+    primeira reconversao e nao acompanha o descarte do texto integral.
+
+    Serve para comparar o que o conversor entendeu com o que a pagina mostra.
+    Foi assim que se descobriu que, num artigo, o Docling tinha lido a ficha do
+    artigo como TABELA e picado o resumo em fragmentos: na tela aquilo era so
+    um bloco estranho; no Markdown, a causa estava visivel.
+    """
+    documento = get_object_or_404(Document, pk=pk)
+
+    if not documento.markdown_full:
+        raise Http404(
+            "este documento nao tem texto convertido guardado "
+            "(a licenca pode ter pedido o descarte do texto integral)"
+        )
+
+    resposta = HttpResponse(documento.markdown_full, content_type="text/markdown; charset=utf-8")
+    nome = (documento.nome_do_arquivo or "documento").rsplit(".", 1)[0]
+    resposta["Content-Disposition"] = f'attachment; filename="{_sanear_nome(nome)}.md"'
+    return resposta
+
+
+def _sanear_nome(nome: str) -> str:
+    """O nome vem de um arquivo enviado, entao e entrada externa."""
+    limpo = nome.replace('"', "").replace("\\", "")
+    limpo = "".join(c for c in limpo if c.isprintable() and c not in "\r\n")
+    return limpo.strip() or "documento"
 
 
 @login_required

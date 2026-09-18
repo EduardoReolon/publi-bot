@@ -575,25 +575,9 @@ def capa_publica(request: HttpRequest, pk) -> HttpResponse:
             Article.Status.PUSH_FAILED,
         ],
     )
-    return _entregar_arquivo(imagem.image, tipo="image/webp")
+    from core.arquivos import entregar_arquivo
 
-
-def _entregar_arquivo(arquivo, *, tipo: str) -> HttpResponse:
-    """Delega ao Nginx quando ha um na frente; streama quando nao ha.
-
-    Streamar pelo worker prende um processo do Gunicorn por download. Com o
-    X-Accel-Redirect o Python responde em milissegundos e quem envia os bytes e
-    o servidor de arquivos, que existe para isso.
-    """
-    from django.conf import settings
-    from django.http import FileResponse
-
-    if settings.USAR_X_ACCEL:
-        resposta = HttpResponse(content_type=tipo)
-        resposta["X-Accel-Redirect"] = f"{settings.PREFIXO_X_ACCEL}{arquivo.name}"
-        return resposta
-
-    return FileResponse(arquivo.open("rb"), content_type=tipo)
+    return entregar_arquivo(imagem.image, tipo="image/webp")
 
 
 # ---------------------------------------------------------------------------
