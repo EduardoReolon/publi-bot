@@ -63,6 +63,12 @@ DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py bootstrap
 echo "==> Conexao de inferencia"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configurar_inferencia
 
+# Mesma logica da conexao de inferencia, com `--opcional`: uma instalacao sem
+# worker de conversao e um estado legitimo (os PDFs sao recusados em producao,
+# o resto do sistema funciona), e nao pode derrubar a implantacao.
+echo "==> Conexao de conversao (Docling)"
+DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configurar_conversao --opcional
+
 echo "==> Arquivos estaticos"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py collectstatic --noinput
 

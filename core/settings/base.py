@@ -489,6 +489,23 @@ INFERENCIA_CONCORRENCIA = env.integer("INFERENCIA_CONCORRENCIA", 1)
 # tarefas passam a disputar a mesma placa.
 INFERENCIA_RESERVA_SEGUNDOS = env.integer("INFERENCIA_RESERVA_SEGUNDOS", 3600)
 
+# ---------------------------------------------------------------------------
+# Semente da conexao de conversao (Docling)
+# ---------------------------------------------------------------------------
+# Mesma logica da conexao de inferencia: a fonte da verdade e uma linha no
+# banco, e isto aqui so existe para o `manage.py configurar_conversao` criar
+# essa linha sem ninguem abrir o admin.
+#
+# O servico vive em `worker-gpu/` e fala HTTP. Em desenvolvimento, na propria
+# maquina; em producao, no endereco que o Tailscale da a ela. Quem converte
+# nunca e a VM da nuvem: ela so faz a requisicao.
+CONVERSAO_NOME = env.get("CONVERSAO_NOME", "Conversao de PDF")
+CONVERSAO_BASE_URL = env.get("CONVERSAO_BASE_URL", "")
+
+# O mesmo valor de `WORKER_SHARED_SECRET` no `.env` do worker. Sem ele o worker
+# devolve 401 e a conversao falha sem dizer que o problema e credencial.
+CONVERSAO_SEGREDO = env.get("CONVERSAO_SEGREDO", "")
+
 EMBEDDING_MODEL = env.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)
 

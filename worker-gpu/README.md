@@ -94,7 +94,26 @@ meio da conversao — nao no boot.
 
 ## Cadastro no PubliBot
 
-No painel, em Conexoes de inferencia:
+Pelo terminal da nuvem, com `CONVERSAO_BASE_URL` e `CONVERSAO_SEGREDO` no
+`.env` de la (esse segredo e o MESMO `WORKER_SHARED_SECRET` daqui):
+
+```bash
+python manage.py configurar_conversao --testar
+```
+
+O `--testar` chama `/health/` e imprime o dispositivo em uso. Vale o segundo
+que custa: o erro mais comum aqui nao e de configuracao e sim de rede — o
+servico escutando num endereco que a nuvem nao alcanca, ou o Tailscale fora do
+ar. Sem essa confirmacao isso so apareceria dentro de um job.
+
+Para medir antes de decidir entre CPU e placa, nesta maquina:
+
+```bash
+python medir.py um-artigo.pdf --cpu --threads 1   # pior caso, um nucleo
+python medir.py um-artigo.pdf --cuda
+```
+
+Ou, pelo painel, em Conexoes de inferencia:
 
 | Campo | Ollama | Docling |
 |---|---|---|

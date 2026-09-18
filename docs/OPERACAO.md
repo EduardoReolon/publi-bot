@@ -86,6 +86,99 @@ O comando e idempotente e **preserva** o que ja estiver no banco — a conexao
 vive numa linha, nao num arquivo, justamente para trocar de modelo sem mexer em
 codigo. Use `--atualizar` quando quiser sobrescrever com o `.env`.
 
+### 4b. Conversao de PDF (Docling)
+
+Sem isto o sistema **nao para** — e esse e o problema. Ele cai no extrator
+local (`pypdf`), que devolve a camada de texto do arquivo sem interpretar a
+pagina. O texto continua parecendo correto.
+
+O que se perde, verificado no mesmo PDF gerado de duas formas:
+
+| | `pypdf` | Docling |
+|---|---|---|
+| Tabela | vira coluna de numeros soltos: `Braco / n / Ganho / p / 0,8 g/kg / 40 / ...` | tabela em Markdown |
+| Cabecalho e rodape da pagina | entram no corpo como se fossem conteudo | separados |
+| Secoes | so sobrevivem se o texto as numerar ("1 Introducao") | cabecalhos `#` de verdade |
+| Coluna dupla | **depende do arquivo** | sempre em ordem de leitura |
+
+A ultima linha e a perigosa. A ordem que o `pypdf` devolve e a ordem em que o
+produtor do PDF escreveu as operacoes de desenho — que num arquivo se encaixa
+e no seguinte nao. No mesmo artigo, escrito na outra ordem, as duas colunas se
+intercalam frase a frase:
+
+```
+E1. A suplementacao proteica em idosos tem sido
+D1. Utilizou-se ANOVA de medidas repetidas com
+estudada ha decadas.
+correcao de Bonferroni.
+```
+
+Continua parecendo texto. Vai para o indice, e sai citado num artigo publicado.
+
+**O Docling nao roda nesta maquina nem na VM da nuvem.** Ele roda onde esta a
+placa (ADR-0007); a nuvem so faz a requisicao HTTP. Em desenvolvimento, "onde
+esta a placa" e a sua propria maquina.
+
+Na maquina do worker, uma vez:
+
+```bash
+cd worker-gpu
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt          # traz torch, ~3 GB
+cp .env.example .env                     # defina WORKER_SHARED_SECRET
+```
+
+Em desenvolvimento, `BIND_HOST=127.0.0.1` serve. Em producao precisa ser o
+endereco Tailscale — nunca `0.0.0.0`.
+
+Suba:
+
+```bash
+WORKER_SHARED_SECRET=... uvicorn docling_api:app --host 127.0.0.1 --port 8100
+```
+
+De volta no PubliBot, ponha no `.env`:
+
+```bash
+CONVERSAO_BASE_URL=http://127.0.0.1:8100
+CONVERSAO_SEGREDO=<o mesmo WORKER_SHARED_SECRET>
+```
+
+E cadastre:
+
+```bash
+python manage.py configurar_conversao --testar
+```
+
+O `--testar` chama `/health/` e imprime o dispositivo em uso. Isso importa:
+trocar `DOCLING_DEVICE` e esquecer de reiniciar o worker nao gera erro nenhum
+— so deixa a conversao lenta, e a conclusao natural vira "o Docling e lento
+mesmo".
+
+A **primeira** conversao baixa os modelos de layout do HuggingFace (algumas
+centenas de MB) e falha com `ProxyError` numa rede que bloqueie
+`huggingface.co` — no meio da conversao, nao no boot.
+
+Documentos ja convertidos pelo extrator local continuam como estao. Use
+**Converter de novo** na tela de curadoria para refaze-los: os trechos
+indexados sao desativados (nao apagados) e os metadados que voce conferiu a
+mao sao preservados.
+
+#### CPU ou placa
+
+O Docling **nao exige GPU**: a analise de layout roda em CPU, e a placa muda o
+tempo, nao o resultado. Meca antes de decidir, na maquina que vai hospedar:
+
+```bash
+python medir.py um-artigo-de-verdade.pdf --cpu --threads 1   # pior caso
+python medir.py um-artigo-de-verdade.pdf --cuda
+```
+
+O numero que decide e o de CONVERSAO, nao o de carga — a carga acontece uma
+vez por processo. E a pergunta nao e se o tempo e "rapido", e sim se cabe no
+seu ritmo de envio de documentos: o worker converte **um por vez**, e o
+PubliBot adia o resto em vez de falhar.
+
 ### 5. Rodar
 
 Um comando:
@@ -281,6 +374,7 @@ por mais 15 minutos, e concluiria que o comando nao funcionou.
 python manage.py check_db          # banco, extensoes, schemas dos tenants
 python manage.py broker_status     # qual broker esta valendo, e se responde
 python manage.py configurar_inferencia --testar
+python manage.py configurar_conversao --testar
 ```
 
 | Sintoma | Causa provavel |
@@ -291,6 +385,8 @@ python manage.py configurar_inferencia --testar
 | POST devolve 400 sem explicacao | porta fora de `DEV_SERVER_PORT` (CSRF compara a origem inteira) |
 | Trabalho parado em `WAITING_CAPACITY` | Ollama inacessivel, ou beat nao esta rodando |
 | `SemModeloConfigurado` | faltou `configurar_inferencia` |
+| Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
+| `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |
 | `External data path escapes model directory` | cache do modelo em links; `rm -rf .model_cache` e deixe baixar de novo |
 | Tarefas somem sem erro | Redis compartilhado sem `REDIS_NAMESPACE` |
 | `relation "content_..." does not exist` a cada minuto | task do beat sem varredura por tenant (ver ARMADILHAS) |
