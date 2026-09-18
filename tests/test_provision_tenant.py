@@ -48,8 +48,13 @@ def test_provision_tenant_cria_registro_schema_e_migrations(public_tenant):
     assert "auth_user" not in tabelas
     assert "django_migrations" in tabelas
 
-    with connection.cursor() as cursor:
-        cursor.execute(f'DROP SCHEMA IF EXISTS "{tenant.schema_name}" CASCADE')
+    # Sem DROP SCHEMA aqui, pelo motivo que `conftest.py` documenta:
+    # `CREATE SCHEMA` e transacional no PostgreSQL e o pytest-django reverte a
+    # transacao de cada teste, entao o schema some sozinho. Um DROP explicito
+    # roda ainda DENTRO dessa transacao e falha com "cannot DROP TABLE
+    # content_promptversion because it has pending trigger events" assim que o
+    # provisionamento passa a gravar linhas — que e exatamente o que ele faz
+    # desde que semeia os prompts.
 
 
 @pytest.mark.django_db
@@ -87,5 +92,11 @@ def test_provision_tenant_domain_default_usa_root_domain(public_tenant, settings
     assert domain.domain == "prov-tres.publibot.test"
 
     connection.set_schema_to_public()
-    with connection.cursor() as cursor:
-        cursor.execute(f'DROP SCHEMA IF EXISTS "{tenant.schema_name}" CASCADE')
+
+    # Sem DROP SCHEMA aqui, pelo motivo que `conftest.py` documenta:
+    # `CREATE SCHEMA` e transacional no PostgreSQL e o pytest-django reverte a
+    # transacao de cada teste, entao o schema some sozinho. Um DROP explicito
+    # roda ainda DENTRO dessa transacao e falha com "cannot DROP TABLE
+    # content_promptversion because it has pending trigger events" assim que o
+    # provisionamento passa a gravar linhas — que e exatamente o que ele faz
+    # desde que semeia os prompts.

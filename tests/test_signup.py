@@ -175,7 +175,14 @@ def test_task_de_provisionamento_cria_o_schema(public_tenant, cliente_publico):
             [tenant.schema_name],
         )
         assert cursor.fetchone() is not None
-        cursor.execute(f'DROP SCHEMA IF EXISTS "{tenant.schema_name}" CASCADE')
+
+    # Sem DROP SCHEMA aqui, pelo motivo que `conftest.py` documenta:
+    # `CREATE SCHEMA` e transacional no PostgreSQL e o pytest-django reverte a
+    # transacao de cada teste, entao o schema some sozinho. Um DROP explicito
+    # roda ainda DENTRO dessa transacao e falha com "cannot DROP TABLE
+    # content_promptversion because it has pending trigger events" assim que o
+    # provisionamento passa a gravar linhas — que e exatamente o que ele faz
+    # desde que semeia os prompts.
 
 
 @pytest.mark.django_db

@@ -242,6 +242,38 @@ A suite nao pegava isso porque chamava cada task ja de dentro de um
 nao como o beat as roda. `tests/test_beat_por_tenant.py` chama todas a partir
 do `public`, explicitamente.
 
+### Tenant novo nasce sem prompt nenhum
+
+```
+LookupError: nenhuma versao ativa para o prompt 'consensus_filter'
+```
+
+No primeiro clique em "gerar artigo", no segundo passo do fluxo.
+
+`garantir_prompts_padrao` existia e estava correta. **Ninguem em producao a
+chamava** — so os testes, na fixture de ambiente. `migrate_schemas` cria as
+TABELAS de `apps.content`; as linhas ficavam por conta de uma funcao que so
+rodava na suite.
+
+E o mesmo padrao de `bootstrap_public` e `configurar_inferencia`: migration
+cria tabela, nao cria linha. A diferenca e que aqui a suite inteira passava,
+porque cada teste semeava por conta propria — o caminho real nao era exercido
+por ninguem.
+
+O sintoma e tardio na pior medida possivel. O cadastro funciona, as telas
+abrem, o acervo indexa, a pauta e criada, o RAG acha as fontes. O sistema so
+revela que nunca teve com o que gerar depois que a pessoa fez todo o trabalho.
+
+Hoje os DOIS caminhos de provisionamento semeiam (a task da tela de cadastro e
+o `manage.py provision_tenant`), o `release.sh` roda `semear_prompts --todos`
+para alcancar quem ja existia, e `tests/test_prompts_do_tenant.py` provisiona
+como a aplicacao provisiona — sem chamar a semeadora a mao, que era justamente
+o engano.
+
+Falhar ao semear nao derruba o provisionamento: um tenant sem prompts se
+conserta com um comando, um tenant preso em "provisionando" nao se conserta
+pela tela.
+
 ---
 
 ## Modelo de embedding

@@ -363,6 +363,33 @@ def garantir_prompts_padrao() -> None:
             )
 
 
+def semear_prompts_no_schema(schema_name: str, *, logger=None) -> None:
+    """`garantir_prompts_padrao`, mas de fora do tenant e sem derrubar quem chama.
+
+    Os dois caminhos de provisionamento — a task e o `manage.py
+    provision_tenant` — criam o schema a partir do `public`, entao precisam
+    entrar nele para escrever. E nenhum dos dois pode morrer por causa disto:
+    um tenant sem prompts se conserta com `manage.py semear_prompts`; um tenant
+    preso em "provisionando" nao se conserta pela tela.
+    """
+    import logging
+
+    from django_tenants.utils import schema_context
+
+    registro = logger or logging.getLogger("publibot.content")
+
+    try:
+        with schema_context(schema_name):
+            garantir_prompts_padrao()
+    except Exception:
+        registro.exception(
+            "Nao foi possivel semear os prompts em %s. "
+            "Rode: manage.py tenant_command semear_prompts --schema=%s",
+            schema_name,
+            schema_name,
+        )
+
+
 @transaction.atomic
 def aplicar_rascunho_de_resposta(question, markdown_bruto: str, *, trechos, site=None):
     """Grava a resposta a uma pergunta, com as mesmas travas do artigo.

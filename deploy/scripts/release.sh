@@ -69,6 +69,13 @@ DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configura
 echo "==> Conexao de conversao (Docling)"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py configurar_conversao --opcional
 
+# Os prompts sao LINHAS no schema de cada tenant, e `migrate_schemas` cria
+# tabela e nao linha. O provisionamento ja semeia os tenants novos; isto
+# alcanca os que existiam antes, e conserta qualquer um que tenha ficado sem —
+# um tenant sem prompts sobe inteiro e so falha ao gerar o primeiro artigo.
+echo "==> Prompts iniciais"
+DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py semear_prompts --todos
+
 echo "==> Arquivos estaticos"
 DJANGO_SETTINGS_MODULE=core.settings.prod "$VENV/bin/python" manage.py collectstatic --noinput
 

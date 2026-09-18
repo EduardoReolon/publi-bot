@@ -77,6 +77,15 @@ def provision_tenant(self, tenant_id: str) -> str:
         # tentativa; depois dos retries o estado FAILED permanece visivel.
         raise self.retry(exc=exc) from exc
 
+    # `migrate_schemas` cria as TABELAS de `apps.content`, nao as linhas. Sem
+    # isto o tenant nasce com zero prompts, e a primeira geracao de artigo morre
+    # no segundo passo com `LookupError: nenhuma versao ativa para o prompt
+    # 'consensus_filter'` — depois de o cadastro funcionar, as telas abrirem, o
+    # acervo indexar e a pauta ser criada.
+    from apps.content.services import semear_prompts_no_schema
+
+    semear_prompts_no_schema(tenant.schema_name, logger=logger)
+
     with transaction.atomic():
         Tenant.objects.filter(pk=tenant.pk).update(
             status=Tenant.Status.ACTIVE,

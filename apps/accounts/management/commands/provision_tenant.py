@@ -90,6 +90,12 @@ class Command(BaseCommand):
             tenant.save(update_fields=["status", "provisioning_error"])
             raise CommandError(f"Falha ao criar o schema: {exc}") from exc
 
+        # Mesmo motivo da task: schema sem prompts sobe inteiro e so falha ao
+        # gerar o primeiro artigo.
+        from apps.content.services import semear_prompts_no_schema
+
+        semear_prompts_no_schema(schema_name)
+
         tenant.status = Tenant.Status.ACTIVE
         tenant.provisioned_at = timezone.now()
         # Limpar o erro faz parte de retomar: deixa-lo gravado mantem a tela de
