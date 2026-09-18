@@ -231,6 +231,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "tem_autores": Author.objects.filter(is_active=True).exists(),
         "posicoes_de_link": Article.LinkPlacement.choices,
         "lotes_de_capa": _lotes_de_capa(artigo),
+        "motivo_sem_capa": _motivo_sem_capa(artigo),
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "proximo_horario": _proximo_horario(),
     }
@@ -247,6 +248,41 @@ def _lotes_de_capa(artigo) -> list[dict]:
     for imagem in artigo.images.all():
         lotes.setdefault(imagem.batch, []).append(imagem)
     return [{"numero": n, "opcoes": v} for n, v in sorted(lotes.items())]
+
+
+def _motivo_sem_capa(artigo) -> str:
+    """Por que a geracao automatica de capa nao produziu nada.
+
+    O passo de capa nao derruba o trabalho: ele grava o motivo e segue, porque
+    a essa altura o artigo ja esta pronto (apps/content/flows.py). O preco
+    disso e que a falha fica escondida num payload — a tela mostraria apenas
+    "nenhuma opcao gerada ainda", que e o mesmo texto de quem nunca pediu.
+
+    Trazer o motivo para ca e o que separa "ainda nao pedi" de "falta cadastrar
+    a conexao de imagem".
+    """
+    from apps.ops.models import GenerationJob
+
+    if artigo.images.exists() or not artigo.topic_id:
+        return ""
+
+    job = (
+        GenerationJob.objects.filter(
+            kind=GenerationJob.Kind.PILLAR_ARTICLE,
+            target_object_id=str(artigo.topic_id),
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if job is None:
+        return ""
+
+    for payload in (job.step_payloads or {}).values():
+        # `capas` no payload identifica o passo da capa sem depender do numero
+        # dele, que muda quando um passo novo entra na frente.
+        if isinstance(payload, dict) and "capas" in payload and payload.get("motivo"):
+            return str(payload["motivo"])
+    return ""
 
 
 def _trabalho_em_curso(artigo):
@@ -527,6 +563,7 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
     de novo.
     """
     from apps.content.capas import LimiteDeLotes, SemConexaoDeImagem, gerar_opcoes
+    from apps.inference.leases import SemCapacidade
 
     artigo = get_object_or_404(Article, pk=pk)
 
@@ -535,7 +572,13 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
     except (SemConexaoDeImagem, LimiteDeLotes) as exc:
         messages.error(request, str(exc))
         return redirect("content:revisar", pk=artigo.pk)
-    except PassoAdiado:
+    # `SemCapacidade` junto com `PassoAdiado` porque as duas chegam aqui pelo
+    # mesmo caminho e significam a mesma coisa para quem clicou: a descricao da
+    # capa passa por `executar_prompt`, que adia, e a geracao da imagem passa
+    # por `reserva`, que levanta `SemCapacidade` crua. Sem esta segunda, uma
+    # maquina ocupada respondia 500 numa tela em que a pessoa so precisava
+    # tentar de novo mais tarde.
+    except (PassoAdiado, SemCapacidade):
         messages.error(
             request,
             _("As conexoes de inferencia estao ocupadas agora. Tente em alguns minutos."),

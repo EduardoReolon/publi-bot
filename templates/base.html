@@ -124,6 +124,10 @@
        a altura minima do corpo completo, seis secoes empurram os botoes para
        fora da tela e a pagina deixa de ser navegavel. */
     textarea.curto { min-height: 9rem; }
+    /* A meta description tem 160 caracteres. Numa caixa alta ela flutuaria num
+       campo quase todo vazio; numa linha unica so se leria o pedaco sob o
+       cursor. Tres linhas mostram a frase inteira. */
+    textarea.mini { min-height: 4.5rem; font: 1rem/1.5 inherit; }
     select, input[type=url], input[type=number], input[type=datetime-local] {
       width: 100%; padding: .6rem .7rem; font-size: 1rem; color: var(--texto);
       background: var(--fundo); border: 1px solid var(--borda); border-radius: .4rem;
@@ -133,6 +137,11 @@
     .botao.secundario { background: none; color: var(--realce); border: 1px solid var(--borda); }
     .botao.perigo { background: var(--erro); }
     .acoes { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+    /* Sugestao de titulo: o botao primeiro, o texto depois. A pessoa percorre
+       a lista lendo e clica na linha que escolheu, sem procurar o controle. */
+    .sugestao { display: flex; gap: .7rem; align-items: baseline; }
+    .sugestao .texto { flex: 1; }
+    .sugestao button { padding: .3rem .7rem; font-size: .85rem; white-space: nowrap; }
     .vazio { color: var(--suave); padding: 1.5rem 0; }
 
     /* Histograma de distancias: mostra onde a massa cai em relacao ao corte.

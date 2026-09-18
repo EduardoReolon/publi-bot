@@ -42,7 +42,7 @@ from apps.content.services import (
 from apps.knowledge.models import RetrievalQuery, SuperChunk
 from apps.knowledge.services import recuperar
 from apps.ops.models import GenerationJob
-from apps.ops.orchestrator import Continuar, Fluxo, Passo, registrar_fluxo
+from apps.ops.orchestrator import Continuar, Fluxo, Passo, PassoAdiado, registrar_fluxo
 
 logger = logging.getLogger("publibot.content")
 
@@ -431,6 +431,49 @@ def passo_montar(job: GenerationJob) -> dict:
     return {"article_id": str(article.pk), "palavras": article.word_count}
 
 
+def passo_gerar_capas(job: GenerationJob) -> dict:
+    """Gera as opcoes de capa junto com o artigo, sem esperar um clique.
+
+    Vem DEPOIS de montar, de proposito. A descricao da capa se apoia no resumo
+    e na meta description, escritos no passo de metadados, e nesta altura o
+    artigo ja esta gravado e aguardando revisao: se a ilustracao falhar, o que
+    se perde e a ilustracao, nao o texto.
+
+    E por isso este passo nao derruba o trabalho. Sem conexao de imagem
+    cadastrada, ou com o gerador fora do ar, ele registra o motivo no payload
+    e termina. A tela de revisao continua oferecendo "gerar opcoes de capa"
+    para o momento em que a conexao existir — o contrario (marcar o trabalho
+    inteiro como falho depois do artigo pronto) mandaria alguem investigar uma
+    geracao que deu certo.
+
+    Gerar nao e escolher: nenhuma das opcoes entra no artigo sozinha. A capa
+    continua sendo escolha de quem revisa (apps/content/capas.py).
+    """
+    from apps.content.capas import LimiteDeLotes, SemConexaoDeImagem, gerar_opcoes
+    from apps.inference.leases import SemCapacidade
+    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+
+    article = _artigo_do_job(job)
+
+    try:
+        criadas = gerar_opcoes(article, site=_site_do_tenant())
+    except SemCapacidade as exc:
+        # Maquina ocupada nao e falha: a capa espera a vez como qualquer outra
+        # inferencia. `PassoAdiado` nao gasta tentativa.
+        raise PassoAdiado(str(exc), tentar_em_segundos=180) from exc
+    except (
+        SemConexaoDeImagem,
+        LimiteDeLotes,
+        ProviderTransientError,
+        ProviderPermanentError,
+    ) as exc:
+        logger.warning("Artigo %s saiu sem opcoes de capa: %s", article.pk, exc)
+        return {"article_id": str(article.pk), "capas": 0, "motivo": str(exc)}
+
+    logger.info("Artigo %s: %s opcao(oes) de capa geradas junto.", article.pk, len(criadas))
+    return {"article_id": str(article.pk), "capas": len(criadas)}
+
+
 def _chunks_por_id(ids: list[str]) -> list[SuperChunk]:
     """Recarrega os trechos na ordem gravada.
 
@@ -561,13 +604,18 @@ def passo_responder(job: GenerationJob) -> dict:
 # ---------------------------------------------------------------------------
 # Registro
 # ---------------------------------------------------------------------------
-# O artigo sai em seis rodadas curtas, e nao numa chamada grande. Cada passo tem
-# o contexto minimo do que faz: o planejamento ve as fontes e devolve um plano,
+# O artigo sai em rodadas curtas, e nao numa chamada grande. Cada passo tem o
+# contexto minimo do que faz: o planejamento ve as fontes e devolve um plano,
 # cada secao ve as fontes dela e o esqueleto, a abertura ve o esqueleto pronto e
 # os metadados veem a abertura. Nenhum deles precisa do artigo inteiro na
 # frente — que e o que permite um modelo pequeno fazer isto bem.
 #
 # "redigir secoes" se repete: uma chamada por secao, com `Continuar`.
+#
+# "gerar capas" fecha a fila porque a ilustracao acompanha o texto: quem revisa
+# encontra as opcoes ja prontas na tela em vez de pedir e esperar. Fica por
+# ultimo, e nao derruba o trabalho se falhar, porque a essa altura o artigo ja
+# esta gravado.
 registrar_fluxo(
     Fluxo(
         kind=GenerationJob.Kind.PILLAR_ARTICLE,
@@ -579,6 +627,7 @@ registrar_fluxo(
             Passo(numero=4, nome="abertura e fecho", executar=passo_abertura_e_fecho),
             Passo(numero=5, nome="metadados de busca", executar=passo_metadados_de_busca),
             Passo(numero=6, nome="montar", executar=passo_montar),
+            Passo(numero=7, nome="gerar capas", executar=passo_gerar_capas),
         ],
     )
 )
@@ -598,6 +647,11 @@ registrar_fluxo(
 
 # Replanejar: joga fora o esqueleto e recomeca do plano, com as MESMAS fontes.
 # E o caminho para quando o problema e a estrutura, e nao o texto.
+#
+# Sem "gerar capas": as opcoes do artigo continuam la, e nada foi descartado.
+# Gerar um lote novo a cada replanejamento cobraria imagem por uma reescrita
+# que talvez nem mude o assunto — e o botao na tela de revisao existe para
+# quando mudar.
 registrar_fluxo(
     Fluxo(
         kind=GenerationJob.Kind.ARTICLE_REPLAN,

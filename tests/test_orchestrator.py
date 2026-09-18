@@ -28,6 +28,24 @@ from apps.ops.orchestrator import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _registro_de_fluxos_intacto():
+    """Devolve o registro global de fluxos como estava.
+
+    Os testes daqui trocam o fluxo real do artigo por um de brinquedo, e o
+    registro e um dicionario de modulo — a troca sobrevivia ao teste. Quem
+    rodasse depois e olhasse o fluxo do artigo encontraria `passo-2` no lugar
+    de `montar`, e a ordem de coleta do pytest passava a decidir se a suite
+    passava. Foi assim que este vazamento apareceu.
+    """
+    from apps.ops import orchestrator
+
+    original = dict(orchestrator._FLUXOS)
+    yield
+    orchestrator._FLUXOS.clear()
+    orchestrator._FLUXOS.update(original)
+
+
 @pytest.fixture
 def tenant_ops(tenant_factory):
     tenant = tenant_factory("operacao")

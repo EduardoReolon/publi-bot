@@ -454,6 +454,135 @@ def test_aprovar_agenda_e_sai_da_fila_de_revisao(ambiente, artigo_para_revisar):
 
 
 # ---------------------------------------------------------------------------
+# Titulo sugerido e meta description
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_cada_titulo_sugerido_tem_botao_que_o_leva_ao_campo(ambiente, artigo_para_revisar):
+    """Copiar a mao um titulo de ate 60 caracteres e onde nasce o erro de
+    digitacao — e o titulo vira a URL do artigo no site do cliente."""
+    _, _, client = ambiente
+    Article.objects.filter(pk=artigo_para_revisar.pk).update(
+        thesis_json={
+            "titulos_sugeridos": [
+                "Monitoramento na gestacao: o que muda",
+                'Gestacao e monitoramento: o "novo" padrao',
+            ]
+        }
+    )
+
+    corpo = client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+
+    assert corpo.count('class="botao secundario usar-titulo"') == 2
+    assert 'data-titulo="Monitoramento na gestacao: o que muda"' in corpo
+    # O titulo com aspas sai escapado: e o motivo de ele ir num `data-`, e nao
+    # dentro de um `onclick`, onde quebraria a pagina.
+    assert 'data-titulo="Gestacao e monitoramento: o &quot;novo&quot; padrao"' in corpo
+    assert 'o "novo" padrao' not in corpo
+
+
+@pytest.mark.django_db
+def test_o_botao_nao_troca_o_titulo_sozinho(ambiente, artigo_para_revisar):
+    """Escrever no campo e uma coisa; salvar e outra. Trocar o titulo muda a
+    URL de um artigo que a pauta ja nomeou, e isso passa pelo Salvar."""
+    _, _, client = ambiente
+    Article.objects.filter(pk=artigo_para_revisar.pk).update(
+        thesis_json={"titulos_sugeridos": ["Um titulo bem melhor"]}
+    )
+
+    client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    )
+
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.title == "Artigo em revisao"
+
+
+@pytest.mark.django_db
+def test_meta_description_e_caixa_de_varias_linhas(ambiente, artigo_para_revisar):
+    """160 caracteres numa linha unica so mostram o pedaco sob o cursor. Quem
+    revisa precisa ler a frase inteira — e o que o buscador exibe."""
+    _, _, client = ambiente
+
+    corpo = client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+
+    assert '<textarea name="meta_description"' in corpo
+    # O limite continua valendo, e e o que a contagem na tela acompanha.
+    assert 'maxlength="160"' in corpo
+
+
+@pytest.mark.django_db
+def test_a_meta_description_editada_continua_sendo_gravada(ambiente, artigo_para_revisar):
+    """A troca de widget nao pode mexer no que o formulario grava: o campo tem
+    o mesmo nome e o mesmo limite de antes."""
+    _, _, client = ambiente
+
+    client.post(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
+        _dados_de_aprovacao(acao="salvar", meta_description="O que o leitor ganha ao abrir."),
+    )
+
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.meta_description == "O que o leitor ganha ao abrir."
+
+
+@pytest.mark.django_db
+def test_a_tela_diz_por_que_o_artigo_veio_sem_capa(ambiente, artigo_para_revisar):
+    """O passo de capa nao derruba o trabalho: ele grava o motivo e segue. Sem
+    trazer o motivo para ca, a tela mostraria "nenhuma opcao ainda" — o mesmo
+    texto de quem nunca pediu — e a causa ficaria so no log."""
+    from apps.content.models import Topic
+    from apps.ops.models import GenerationJob
+
+    pauta = Topic.objects.create(title="Monitoramento na gestacao")
+    Article.objects.filter(pk=artigo_para_revisar.pk).update(topic=pauta)
+    GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        total_steps=8,
+        step_payloads={"7": {"capas": 0, "motivo": "nenhuma conexao de imagem disponivel."}},
+    )
+
+    _, _, client = ambiente
+    corpo = client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+
+    assert "nao foram geradas com o artigo" in corpo
+    assert "nenhuma conexao de imagem disponivel" in corpo
+
+
+@pytest.mark.django_db
+def test_com_capa_gerada_a_tela_nao_repete_um_motivo_velho(ambiente, artigo_para_revisar):
+    """O motivo e de uma tentativa que falhou. Depois que as opcoes existem —
+    pelo botao, por exemplo — repeti-lo seria acusar um problema resolvido."""
+    from apps.content.models import Topic
+    from apps.ops.models import GenerationJob
+
+    pauta = Topic.objects.create(title="Monitoramento na gestacao")
+    Article.objects.filter(pk=artigo_para_revisar.pk).update(topic=pauta)
+    GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        total_steps=8,
+        step_payloads={"7": {"capas": 0, "motivo": "nenhuma conexao de imagem disponivel."}},
+    )
+    artigo_para_revisar.images.create(
+        batch=1, order=1, prompt="x", image=ContentFile(b"webp", name="capa.webp")
+    )
+
+    _, _, client = ambiente
+    corpo = client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+
+    assert "nao foram geradas com o artigo" not in corpo
+
+
+# ---------------------------------------------------------------------------
 # Perguntas
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db

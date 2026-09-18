@@ -706,3 +706,44 @@ do `align-items` padrao (`stretch`).
 `recuperar()` grava `RetrievalQuery`. Se o teste de consulta da tela usasse esse
 caminho, cada calibracao entraria nas metricas que a propria tela mostra — e
 calibrar pioraria o diagnostico. A medicao roda por fora e nao grava nada.
+
+### Um passo novo no fim do fluxo pode reprovar um artigo que ficou pronto
+
+A geracao de capa entrou como passo 7 do fluxo do artigo pilar, depois de
+`montar`. Se ela levantasse excecao como qualquer outro passo, o trabalho
+inteiro iria para `FAILED` **com o artigo ja gravado e aguardando revisao** —
+alguem seria mandado investigar uma geracao que deu certo, e o painel diria
+"falhou" sobre um texto pronto.
+
+Por isso o passo distingue tres coisas que parecem uma:
+
+- **sem conexao de imagem, ou o gerador recusou** — grava `{"capas": 0,
+  "motivo": ...}` e termina. O artigo e o produto; a ilustracao nao;
+- **maquina ocupada** (`SemCapacidade`) — vira `PassoAdiado`, que nao gasta
+  tentativa. Devolver "sem capa" aqui perderia a imagem por um motivo
+  passageiro;
+- **qualquer outra excecao** — falha de verdade, e sobe.
+
+O preco de nao falhar e a falha ficar escondida. Por isso o motivo sai do
+payload e vai para a tela de revisao (`_motivo_sem_capa`): sem isso a pagina
+mostraria "nenhuma opcao de capa gerada ainda", que e exatamente o texto de
+quem nunca pediu.
+
+### `SemCapacidade` nao e `PassoAdiado`
+
+Duas excecoes para a mesma situacao, em camadas diferentes:
+`executar_prompt` ja converte para `PassoAdiado`, mas `reserva()` levanta
+`SemCapacidade` crua. A view de gerar capas tratava so a primeira — e a
+geracao da imagem passa pela segunda. Uma placa ocupada devolvia **500** numa
+tela onde a pessoa so precisava tentar mais tarde.
+
+Quem chama `reserva()` fora de `executar_prompt` precisa tratar as duas.
+
+### Fixture que registra fluxo vazava para os outros arquivos
+
+`_FLUXOS` e um dicionario de modulo. Os testes do orquestrador registram um
+fluxo de brinquedo sob `PILLAR_ARTICLE` e nunca devolviam o original: quem
+rodasse depois e olhasse o fluxo do artigo encontrava `passo-2` no lugar de
+`montar`. Funcionava por ordem alfabetica de coleta — `test_flows` vinha antes
+de `test_orchestrator` — e quebrou quando um arquivo novo entrou no meio.
+Hoje uma fixture `autouse` restaura o registro.

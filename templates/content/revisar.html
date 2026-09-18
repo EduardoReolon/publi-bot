@@ -202,9 +202,10 @@
     <h2>{% translate "Capa" %}</h2>
     <p class="pre-visualizacao">
       {% blocktranslate trimmed %}
-        As opcoes vem em lotes de tres, porque escolher exige comparar. Nada e
-        descartado: a melhor pode ser a do primeiro lote. O artigo so leva capa
-        se voce escolher uma.
+        O primeiro lote e gerado junto com o artigo. As opcoes vem de tres em
+        tres, porque escolher exige comparar, e nada e descartado: a melhor
+        pode ser a do primeiro lote. O artigo so leva capa se voce escolher
+        uma.
       {% endblocktranslate %}
     </p>
 
@@ -231,7 +232,22 @@
         </div>
       </form>
     {% empty %}
-      <p class="vazio">{% translate "Nenhuma opcao de capa gerada ainda." %}</p>
+      {% if motivo_sem_capa %}
+        {% comment %}
+          A geracao tentou e nao conseguiu. Sem este aviso a tela diria apenas
+          "nenhuma opcao ainda" — o mesmo texto de quem nunca pediu — e o
+          motivo ficaria so no log.
+        {% endcomment %}
+        <div class="aviso ruim">
+          <strong>{% translate "As capas nao foram geradas com o artigo:" %}</strong>
+          {{ motivo_sem_capa }}
+          <div class="pre-visualizacao" style="margin-top:.4rem">
+            {% translate "Resolvido isso, o botao abaixo gera o primeiro lote." %}
+          </div>
+        </div>
+      {% else %}
+        <p class="vazio">{% translate "Nenhuma opcao de capa gerada ainda." %}</p>
+      {% endif %}
     {% endfor %}
 
     <form method="post" action="{% url 'content:gerar_capas' artigo.pk %}">
@@ -252,13 +268,25 @@
     <p class="pre-visualizacao">
       {% blocktranslate trimmed %}
         Opcoes para busca, geradas a partir da abertura. O titulo atual nao foi
-        trocado sozinho — a pauta o nomeou. Copie o que preferir para o campo
-        Titulo abaixo.
+        trocado sozinho — a pauta o nomeou. "Usar este" escreve a opcao no
+        campo Titulo abaixo; a troca so vale depois de salvar.
       {% endblocktranslate %}
     </p>
     <ul class="lista">
       {% for sugestao in titulos_sugeridos %}
-        <li><code>{{ sugestao }}</code> <span class="selo">{{ sugestao|length }}</span></li>
+        {% comment %}
+          O titulo vai no `data-`, e nao num `onclick`: assim o texto passa pelo
+          escape do Django em vez de virar codigo. Um titulo com aspas ou
+          apostrofo — comum em portugues — quebraria a pagina no outro caminho.
+        {% endcomment %}
+        <li class="sugestao">
+          <button type="button" class="botao secundario usar-titulo"
+                  data-titulo="{{ sugestao }}">
+            {% translate "Usar este" %}
+          </button>
+          <span class="texto"><code>{{ sugestao }}</code></span>
+          <span class="selo">{{ sugestao|length }}</span>
+        </li>
       {% endfor %}
     </ul>
   {% endif %}
@@ -408,4 +436,49 @@
       </div>
     </div>
   </form>
+
+  <script>
+    // Duas ajudas pequenas na tela de revisao. Nenhuma delas guarda estado:
+    // se o JavaScript nao rodar, o formulario continua inteiro — o titulo se
+    // digita a mao e a contagem vira so um numero a menos.
+    (function () {
+      var titulo = document.getElementById("id_title");
+
+      // "Usar este" escreve a sugestao no campo. Nao salva: trocar o titulo
+      // muda a URL do artigo, e isso passa pelo mesmo Salvar de sempre.
+      if (titulo) {
+        var botoes = document.querySelectorAll(".usar-titulo");
+        for (var i = 0; i < botoes.length; i++) {
+          botoes[i].addEventListener("click", function (evento) {
+            titulo.value = evento.currentTarget.dataset.titulo;
+            // Rolar ate o campo: a lista de sugestoes fica acima do
+            // formulario, e sem isto o clique parece nao ter feito nada.
+            titulo.scrollIntoView({ block: "center" });
+            titulo.focus();
+          });
+        }
+      }
+
+      // Contagem de caracteres da meta description. O `maxlength` ja impede
+      // passar do limite, mas em silencio: sem o numero, quem escreve descobre
+      // o corte quando a frase para de aceitar letra.
+      var meta = document.getElementById("id_meta_description");
+      if (meta) {
+        var limite = parseInt(meta.getAttribute("maxlength"), 10) || 160;
+        var contador = document.createElement("span");
+        contador.className = "selo";
+        contador.style.marginLeft = ".5rem";
+
+        var rotulo = document.querySelector('label[for="id_meta_description"]');
+        if (rotulo) { rotulo.appendChild(contador); }
+
+        function contar() {
+          contador.textContent = meta.value.length + "/" + limite;
+          contador.className = meta.value.length >= limite ? "selo ruim" : "selo";
+        }
+        meta.addEventListener("input", contar);
+        contar();
+      }
+    })();
+  </script>
 {% endblock %}

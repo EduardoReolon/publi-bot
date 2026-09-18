@@ -36,10 +36,19 @@ class RevisaoDeArtigo(forms.Form):
     """
 
     title = forms.CharField(label=_("Titulo"), max_length=300)
+    # Caixa de varias linhas, e nao uma linha so: o texto tem ate 160
+    # caracteres e numa linha unica so se ve o pedaco sob o cursor. Quem revisa
+    # precisa ler a frase inteira para julga-la — e o que o Google mostra
+    # embaixo do titulo.
+    #
+    # O `maxlength` vem do proprio `max_length`, entao o navegador para de
+    # aceitar tecla no limite. Isso e silencioso, e por isso a tela conta os
+    # caracteres ao lado do rotulo.
     meta_description = forms.CharField(
         label=_("Meta description"),
         max_length=160,
         required=False,
+        widget=forms.Textarea(attrs={"rows": 3, "class": "mini"}),
         help_text=_("Ate 160 caracteres. E o que aparece no resultado de busca."),
     )
     body_markdown = forms.CharField(widget=forms.Textarea, label=_("Corpo (Markdown)"))

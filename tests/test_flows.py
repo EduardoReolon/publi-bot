@@ -12,36 +12,25 @@ que as travas de link continuam valendo quando o texto vem por este caminho.
 
 from __future__ import annotations
 
-import hashlib
 import json
 
 import pytest
-from django.core.files.base import ContentFile
 from django_tenants.utils import schema_context
 
 from apps.content.models import Article, Question, Topic
 from apps.content.services import garantir_prompts_padrao
-from apps.inference.models import InferenceConnection
 from apps.inference.providers.base import LLMResponse, ProviderTransientError
-from apps.knowledge.models import Document, DocumentCategory, SuperChunk
-from apps.knowledge.services import salvar_super_chunk
 from apps.ops.models import GenerationJob, InferenceLog
 from apps.ops.orchestrator import avancar, criar_job
 
 
 @pytest.fixture(autouse=True)
-def embedding_falso(settings):
-    settings.EMBEDDING_CLIENT = "apps.knowledge.embeddings.FakeEmbeddingClient"
-    # O cliente falso gera vetores por hash: deterministicos, mas sem relacao
-    # semantica nenhuma entre si. Manter o limiar real aqui faria a recuperacao
-    # devolver vazio sempre, e estes testes olham a SEQUENCIA dos passos. O
-    # limiar tem teste proprio, medido com o modelo de verdade (ADR-0014).
-    settings.RAG_MAX_COSINE_DISTANCE = 2.0
-    from apps.knowledge.embeddings import get_embedding_client
+def _embedding_falso_em_todo_o_arquivo(embedding_falso):
+    """Todo teste daqui olha a sequencia dos passos, nao a qualidade da busca.
 
-    get_embedding_client.cache_clear()
-    yield
-    get_embedding_client.cache_clear()
+    A fixture em si mora no conftest, porque outro arquivo tambem a usa; este
+    atalho existe so para nao ter de pedi-la em cada assinatura.
+    """
 
 
 class ModeloFalso:
@@ -136,47 +125,6 @@ METADADOS = json.dumps(
 
 # O roteiro completo do fluxo do artigo, na ordem em que o modelo e chamado.
 ROTEIRO_DO_ARTIGO = [TESE, PLANO, SECAO_A, SECAO_B, MOLDURA, METADADOS]
-
-
-@pytest.fixture
-def tenant_com_acervo(tenant_factory, settings):
-    """Um tenant com um documento indexado e uma conexao de inferencia."""
-    tenant = tenant_factory("fluxos")
-    with schema_context(tenant.schema_name):
-        garantir_prompts_padrao()
-
-        categoria = DocumentCategory.objects.create(name="Artigo", slug="artigo")
-        documento = Document.objects.create(
-            category=categoria,
-            title="Estudo sobre o efeito",
-            authors="Souza, M.",
-            year=2024,
-            source_url="https://revista.exemplo.org/estudo",
-            file_sha256=hashlib.sha256(b"estudo").hexdigest(),
-            original_file=ContentFile(b"pdf", name="estudo.pdf"),
-            license="cc-by",
-            status=Document.Status.CURATED,
-        )
-        salvar_super_chunk(
-            document=documento,
-            kind=SuperChunk.Kind.ABSTRACT,
-            content="O efeito observado no experimento sobre metabolismo.",
-        )
-        yield tenant
-
-
-@pytest.fixture
-def conexao():
-    """Conexao de inferencia — vive no schema public, compartilhada."""
-    return InferenceConnection.objects.create(
-        name="GPU local",
-        kind=InferenceConnection.Kind.OPENAI_COMPATIBLE,
-        base_url="http://127.0.0.1:11434",
-        workloads=[InferenceConnection.Workload.TEXT],
-        default_model="modelo-de-teste",
-        max_concurrency=1,
-        is_active=True,
-    )
 
 
 def _rodar_ate_o_fim(job_id: str, maximo: int = 30) -> str:

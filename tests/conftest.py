@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.db import connection
 
 from apps.accounts.models import Domain, Tenant, User
@@ -105,3 +108,82 @@ def _exige_pgvector(django_db_setup, django_db_blocker):
             f"tenant.",
             pytrace=False,
         )
+
+
+# ---------------------------------------------------------------------------
+# Um tenant pronto para rodar o fluxo de geracao
+# ---------------------------------------------------------------------------
+# Moram aqui, e nao no arquivo que os usa mais, porque dois arquivos de teste
+# precisam do mesmo cenario. Importar fixture de um modulo de teste para outro
+# funciona por acidente e o lint acusa como redefinicao; conftest e o lugar
+# que o pytest oferece para isto.
+
+
+@pytest.fixture
+def embedding_falso(settings):
+    """Vetores por hash: deterministicos, sem relacao semantica entre si.
+
+    Nao e autouse: os testes que medem a busca de verdade precisam do modelo
+    real (ADR-0014), e liga-lo para a suite inteira apagaria justamente o que
+    eles verificam. Quem quer o falso pede.
+
+    O limiar sobe junto porque, com vetores sem semantica, o corte real faria
+    a recuperacao devolver vazio sempre — e o que estes testes olham e a
+    SEQUENCIA dos passos, nao a qualidade da busca.
+    """
+    settings.EMBEDDING_CLIENT = "apps.knowledge.embeddings.FakeEmbeddingClient"
+    settings.RAG_MAX_COSINE_DISTANCE = 2.0
+    from apps.knowledge.embeddings import get_embedding_client
+
+    get_embedding_client.cache_clear()
+    yield
+    get_embedding_client.cache_clear()
+
+
+@pytest.fixture
+def tenant_com_acervo(tenant_factory, embedding_falso):
+    """Um tenant com um documento indexado, dentro do schema dele."""
+    from django_tenants.utils import schema_context
+
+    from apps.content.services import garantir_prompts_padrao
+    from apps.knowledge.models import Document, DocumentCategory, SuperChunk
+    from apps.knowledge.services import salvar_super_chunk
+
+    tenant = tenant_factory("fluxos")
+    with schema_context(tenant.schema_name):
+        garantir_prompts_padrao()
+
+        categoria = DocumentCategory.objects.create(name="Artigo", slug="artigo")
+        documento = Document.objects.create(
+            category=categoria,
+            title="Estudo sobre o efeito",
+            authors="Souza, M.",
+            year=2024,
+            source_url="https://revista.exemplo.org/estudo",
+            file_sha256=hashlib.sha256(b"estudo").hexdigest(),
+            original_file=ContentFile(b"pdf", name="estudo.pdf"),
+            license="cc-by",
+            status=Document.Status.CURATED,
+        )
+        salvar_super_chunk(
+            document=documento,
+            kind=SuperChunk.Kind.ABSTRACT,
+            content="O efeito observado no experimento sobre metabolismo.",
+        )
+        yield tenant
+
+
+@pytest.fixture
+def conexao(db):
+    """Conexao de inferencia — vive no schema public, compartilhada."""
+    from apps.inference.models import InferenceConnection
+
+    return InferenceConnection.objects.create(
+        name="GPU local",
+        kind=InferenceConnection.Kind.OPENAI_COMPATIBLE,
+        base_url="http://127.0.0.1:11434",
+        workloads=[InferenceConnection.Workload.TEXT],
+        default_model="modelo-de-teste",
+        max_concurrency=1,
+        is_active=True,
+    )

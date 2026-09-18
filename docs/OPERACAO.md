@@ -86,6 +86,41 @@ O comando e idempotente e **preserva** o que ja estiver no banco — a conexao
 vive numa linha, nao num arquivo, justamente para trocar de modelo sem mexer em
 codigo. Use `--atualizar` quando quiser sobrescrever com o `.env`.
 
+### 4a. Geracao de imagem (opcional)
+
+Sem isto o artigo sai igual — **sem capa**. O ultimo passo da geracao pede tres
+opcoes de imagem; se nao houver conexao cadastrada, ele registra o motivo e
+termina, e a tela de revisao mostra:
+
+> As capas nao foram geradas com o artigo: nenhuma conexao de geracao de imagem
+> disponivel. Cadastre uma em Configuracao > Inferencia, do tipo 'image'.
+
+O Ollama **nao gera imagem**: ele serve modelos de texto. E preciso um endpoint
+que fale `POST /v1/images/generations` e devolva `b64_json` — o mesmo formato da
+OpenAI. Servem tanto um provedor pago quanto um servidor local que exponha essa
+rota.
+
+Nao ha comando para isto (ao contrario de `configurar_inferencia`), porque nao
+ha um provedor padrao a assumir. Cadastre pelo admin, em **Inferencia >
+Conexoes**:
+
+| Campo | Valor |
+|---|---|
+| Tipo | `image` |
+| Cargas (`workloads`) | `image` |
+| `base_url` | a raiz do servico, sem `/v1` |
+| `default_model` | o nome exato do modelo de imagem |
+| `max_concurrency` | `1` se dividir a placa com o Ollama |
+
+Sobre a concorrencia: a reserva conta vagas **por maquina**, nao por conexao
+(ver `apps/inference/leases.py`). Duas conexoes no mesmo endereco disputam a
+mesma VRAM, e um `max_concurrency` alto nos dois faz o segundo modelo cair para
+CPU em silencio — o sintoma e uma geracao que de repente leva minutos.
+
+Depois de cadastrar, o botao **"Gerar tres opcoes de capa"** na tela de revisao
+funciona para os artigos que ja sairam sem imagem. Os proximos ja nascem com o
+primeiro lote.
+
 ### 4b. Conversao de PDF (Docling)
 
 Sem isto o sistema **nao para** — e esse e o problema. Ele cai no extrator
@@ -425,6 +460,7 @@ python manage.py reservas          # quem esta segurando a capacidade
 | `todas as conexoes ... estao ocupadas` | `manage.py reservas` diz quem segura; `--liberar` solta as presas |
 | `o disjuntor esta aberto` | 5 falhas seguidas contra o LLM. A propria mensagem traz a ultima causa; conserte e `configurar_inferencia --atualizar` |
 | `nenhuma versao ativa para o prompt ...` | tenant sem prompts; `manage.py semear_prompts --todos` |
+| `nenhuma conexao de geracao de imagem disponivel` | nao ha conexao do tipo `image`; o artigo sai sem capa e o texto nao e afetado (secao 4a) |
 | Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
 | `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |
 | `ModuleNotFoundError: No module named 'cv2'` | venv do worker em Python 3.14 sem `opencv-python-headless` (reinstale o requirements) |
