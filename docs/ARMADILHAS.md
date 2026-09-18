@@ -332,6 +332,26 @@ erro 500 numa pagina que nao usa o modelo para nada — foi assim que a armadilh
 acima apareceu. Hoje a busca no disco vem primeiro, e `_carregar()` so roda se
 o arquivo nao estiver la (que e quando ha, de fato, o que baixar).
 
+### "Disjuntor aberto" descrevia o mecanismo, nao a causa
+
+Depois de cinco falhas seguidas contra uma conexao, o circuito abre por 15
+minutos. A mensagem dizia:
+
+```
+o motivo e o disjuntor aberto apos falhas seguidas
+```
+
+O que ela informa, quem le ja tinha deduzido da propria frase. O que falta e a
+CAUSA das cinco falhas: conexao recusada (o Ollama nao esta de pe), modelo
+inexistente (o nome nao bate com o `ollama list`), 401 (chave errada). Sao
+tres problemas com tres consertos, e o sistema ja tinha a resposta gravada em
+`InferenceLog.error` — ela so nunca chegava a ninguem.
+
+Hoje a mensagem traz o nome da conexao, quantas falhas, quando reabre e o
+texto do ultimo erro. E lembra que `configurar_inferencia --atualizar` reabre
+na hora, em vez de esperar os 15 minutos — senao a pessoa conserta o problema,
+tenta de novo, ve a mesma mensagem e conclui que o conserto nao funcionou.
+
 ### Reserva presa deixa tudo parado por uma hora, em silencio
 
 ```

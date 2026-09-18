@@ -234,12 +234,80 @@ def test_a_mensagem_de_ocupado_diz_quem_esta_segurando():
     assert "reservas --liberar" in frase
 
 
-def test_sem_reserva_ativa_a_mensagem_aponta_o_disjuntor():
+def test_sem_reserva_ativa_a_mensagem_aponta_o_disjuntor(tenant_factory):
     """Sem vaga e sem reserva, sobrou o circuito aberto. Mandar a pessoa
     procurar reserva ali seria manda-la para o lugar errado."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
     from apps.inference.leases import descrever_ocupacao
 
-    assert "disjuntor" in descrever_ocupacao()
+    conexao = _conexao("Ollama", f"http://{TAILSCALE}:11434")
+    InferenceConnection.objects.filter(pk=conexao.pk).update(
+        consecutive_failures=5,
+        circuit_open_until=timezone.now() + timedelta(minutes=12),
+    )
+
+    frase = descrever_ocupacao()
+
+    assert "disjuntor" in frase
+    assert "Ollama" in frase
+    assert "5 falhas" in frase
+    assert "configurar_inferencia --atualizar" in frase
+
+
+def test_a_mensagem_do_disjuntor_carrega_a_causa(tenant_factory):
+    """ "Disjuntor aberto apos falhas seguidas" descreve o MECANISMO, que quem
+    le ja deduziu da propria frase. Falta a causa — conexao recusada, modelo
+    inexistente, chave invalida sao tres problemas com tres consertos, e a
+    resposta ja estava gravada em `InferenceLog.error`."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from django_tenants.utils import schema_context
+
+    from apps.inference.leases import descrever_ocupacao
+    from apps.ops.models import InferenceLog
+
+    conexao = _conexao("Ollama", f"http://{TAILSCALE}:11434")
+    InferenceConnection.objects.filter(pk=conexao.pk).update(
+        consecutive_failures=5,
+        circuit_open_until=timezone.now() + timedelta(minutes=12),
+    )
+
+    tenant = tenant_factory("com_log")
+    with schema_context(tenant.schema_name):
+        InferenceLog.objects.create(
+            connection=conexao,
+            model_name="qwen2.5:7b-instruct",
+            workload="text",
+            succeeded=False,
+            error="model 'qwen2.5:7b-instruct' not found, try pulling it first",
+        )
+
+        frase = descrever_ocupacao()
+
+    assert "not found" in frase
+
+
+def test_sem_log_no_schema_a_mensagem_nao_quebra(tenant_factory):
+    """`InferenceLog` vive no schema do tenant e esta funcao pode ser chamada
+    de fora dele. Nao achar o registro nao pode virar excecao: sem o detalhe,
+    o resto da frase ainda ajuda."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.inference.leases import descrever_ocupacao
+
+    conexao = _conexao("Ollama", f"http://{TAILSCALE}:11434")
+    InferenceConnection.objects.filter(pk=conexao.pk).update(
+        consecutive_failures=7,
+        circuit_open_until=timezone.now() + timedelta(minutes=3),
+    )
+
+    assert "7 falhas" in descrever_ocupacao()
 
 
 def test_reservas_lista_e_libera_as_presas(capsys):

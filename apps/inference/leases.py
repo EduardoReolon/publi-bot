@@ -233,11 +233,7 @@ def descrever_ocupacao(*, workload: str = "", tenant=None) -> str:
 
     if not partes:
         # Sem reserva ativa e sem vaga: sobrou o disjuntor.
-        return (
-            "nenhuma conexao esta disponivel. Nao ha reserva em curso, entao o "
-            "motivo e o disjuntor aberto apos falhas seguidas — confira em "
-            "Configuracao > Inferencia."
-        )
+        return _descrever_disjuntor()
 
     return (
         "todas as conexoes de inferencia estao ocupadas: "
@@ -245,6 +241,73 @@ def descrever_ocupacao(*, workload: str = "", tenant=None) -> str:
         + ". Se algum desses processos ja morreu, solte com "
         "`manage.py reservas --liberar`."
     )
+
+
+def _descrever_disjuntor() -> str:
+    """Por que o disjuntor abriu, e nao apenas que ele abriu.
+
+    "Disjuntor aberto apos falhas seguidas" descreve o MECANISMO, e quem le ja
+    sabia disso pela propria frase. O que falta e a causa: conexao recusada,
+    modelo inexistente, chave invalida. Sao tres problemas diferentes, com tres
+    consertos diferentes, e o sistema ja tem a resposta gravada em
+    `InferenceLog.error` — ela so nunca chegava a ninguem.
+    """
+    agora = timezone.now()
+    fechadas = [
+        conexao
+        for conexao in InferenceConnection.objects.filter(is_active=True)
+        if conexao.circuito_aberto
+    ]
+
+    if not fechadas:
+        return (
+            "nenhuma conexao de inferencia esta disponivel, e nao ha reserva em "
+            "curso nem disjuntor aberto. Confira se alguma conexao ativa atende "
+            "a carga pedida em Configuracao > Inferencia."
+        )
+
+    partes = []
+    for conexao in fechadas:
+        reabre = conexao.circuit_open_until
+        minutos = max(0, int((reabre - agora).total_seconds() // 60)) if reabre else 0
+        detalhe = (
+            f"{conexao.name!r} ({conexao.consecutive_failures} falhas seguidas, "
+            f"reabre em {minutos} min)"
+        )
+        ultimo = _ultimo_erro(conexao)
+        if ultimo:
+            detalhe += f": {ultimo}"
+        partes.append(detalhe)
+
+    return (
+        "o disjuntor esta aberto — "
+        + "; ".join(partes)
+        + ". Depois de corrigir, `manage.py configurar_inferencia --atualizar` "
+        "reabre na hora, em vez de esperar."
+    )
+
+
+def _ultimo_erro(connection: InferenceConnection, *, limite: int = 200) -> str:
+    """A ultima falha registrada para esta conexao, se alcancavel.
+
+    `InferenceLog` vive no schema do TENANT e esta funcao pode ser chamada de
+    fora dele. Nao encontrar o registro nao pode transformar uma mensagem util
+    numa excecao: sem o detalhe, o resto da frase ainda ajuda.
+    """
+    try:
+        from apps.ops.models import InferenceLog
+
+        log = (
+            InferenceLog.objects.filter(connection=connection, succeeded=False)
+            .order_by("-created_at")
+            .first()
+        )
+    except Exception:
+        return ""
+
+    if log is None or not log.error:
+        return ""
+    return log.error[:limite].replace("\n", " ").strip()
 
 
 def registrar_falha(connection: InferenceConnection, *, limite: int = 5, minutos: int = 15) -> None:

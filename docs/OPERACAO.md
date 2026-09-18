@@ -423,6 +423,7 @@ python manage.py reservas          # quem esta segurando a capacidade
 | Trabalho parado em `WAITING_CAPACITY` | Ollama inacessivel, ou beat nao esta rodando |
 | `SemModeloConfigurado` | faltou `configurar_inferencia` |
 | `todas as conexoes ... estao ocupadas` | `manage.py reservas` diz quem segura; `--liberar` solta as presas |
+| `o disjuntor esta aberto` | 5 falhas seguidas contra o LLM. A propria mensagem traz a ultima causa; conserte e `configurar_inferencia --atualizar` |
 | `nenhuma versao ativa para o prompt ...` | tenant sem prompts; `manage.py semear_prompts --todos` |
 | Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
 | `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |
