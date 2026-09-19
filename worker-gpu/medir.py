@@ -9,8 +9,8 @@ descobrir depois de meses que cada documento prende o worker por meia hora.
     python medir.py artigo.pdf --cpu --threads 1
     python medir.py artigo.pdf --cuda
 
-Rode na maquina que vai HOSPEDAR o servico. A VM da nuvem nao converte nada:
-ela so faz a requisicao HTTP (ADR-0007), entao medir la nao responde nada.
+Rode na maquina que vai HOSPEDAR o servico. Quem chama nao converte nada —
+so faz a requisicao HTTP —, entao medir do lado do cliente nao responde nada.
 
 Sem `--threads`, usa todos os nucleos — e e assim que o servico vai rodar.
 `--threads 1` serve para outra pergunta: quanto disso e paralelismo, ou como
@@ -127,8 +127,8 @@ def main() -> int:
     print("so depois de subir. Por documento, paga a segunda.")
     print()
     print("A pergunta nao e se o tempo e 'rapido': o worker converte UM por vez e")
-    print("o PubliBot adia o resto em vez de falhar. A pergunta e se cabe no seu")
-    print("ritmo de envio de documentos.")
+    print("recusa o resto com 503, para o cliente adiar. A pergunta e se cabe no")
+    print("seu ritmo de envio de documentos.")
     print()
 
     # Sinais de que a analise de layout funcionou. Sao o que distingue este

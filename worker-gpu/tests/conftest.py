@@ -56,10 +56,11 @@ def worker(ambiente):
 def segredo() -> str:
     """Por fixture, e nao por import.
 
-    Enquanto este diretorio convive com o PubliBot na mesma arvore, os dois
-    tem um pacote `tests` sem `__init__.py` — namespace packages, que o
-    Python funde. Um `from tests.conftest import ...` aqui pode resolver para
-    o conftest do vizinho, que importa Django e explode na coleta.
+    `tests/` nao tem `__init__.py` — e um namespace package. Se este
+    repositorio for posto ao lado de outro que tambem tenha um `tests/`
+    (foi o caso enquanto ele morava dentro do PubliBot), o Python funde os
+    dois, e um `from tests.conftest import ...` aqui pode resolver para o
+    conftest do vizinho e explodir na coleta. Pela fixture isso nao acontece.
     """
     return SEGREDO
 
