@@ -862,7 +862,7 @@ ver com a causa: `configurar_imagem --testar` respondendo **`timed out`** —
 nao "connection refused" — enquanto uma capa era gerada.
 
 No Starlette, um handler `async def` roda **no event loop**; um handler `def`
-roda numa thread do pool. Os dois servicos de `worker-gpu/` eram `async def` e
+roda numa thread do pool. Os dois servicos do worker eram `async def` e
 chamavam, de dentro, a coisa mais bloqueante que fazem: rodar um modelo de
 difusao, converter um PDF com analise de layout. Enquanto isso durava, o
 processo inteiro ficava parado — `/health/` nao respondia, e a segunda

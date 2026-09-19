@@ -10,11 +10,7 @@ requires-python = ">=3.12"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# `worker-gpu` e OUTRO repositorio, convivendo nesta arvore ate ser movido.
-# Ele tem o proprio `pyproject.toml`, com a propria configuracao de lint — e
-# rodar as regras deste projeto sobre ele produziria queixas que ninguem la
-# vai atender.
-extend-exclude = ["migrations", "venv", ".venv", "worker-gpu"]
+extend-exclude = ["migrations", "venv", ".venv"]
 
 [tool.ruff.lint]
 select = [

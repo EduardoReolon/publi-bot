@@ -31,9 +31,6 @@ ignorar = [
   "**/__pycache__/**",
   "**/__init__.py",
   "**/*.pyc",
-  # Outro repositorio, convivendo nesta arvore ate ser movido. O que ele
-  # documenta esta no README e no INTEGRACAO.md dele.
-  "worker-gpu/**",
   "**/*.po",
   "**/*.mo",
   "locale/**",
