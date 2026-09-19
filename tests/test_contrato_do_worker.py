@@ -92,15 +92,87 @@ def test_o_adaptador_de_imagem_le_a_resposta_do_worker(monkeypatch):
     assert geradas[0].prompt_revisado == "o prompt usado"
 
 
+def _documento_de_teste():
+    """Um PDF minusculo gravado num tenant, que e o que a extracao recebe."""
+    import hashlib
+
+    from django.core.files.base import ContentFile
+
+    from apps.knowledge.models import Document, DocumentCategory
+
+    bruto = b"%PDF-1.4 conteudo qualquer"
+    categoria, _ = DocumentCategory.objects.get_or_create(name="Artigo", slug="artigo")
+    return Document.objects.create(
+        category=categoria,
+        original_file=ContentFile(bruto, name="estudo.pdf"),
+        file_sha256=hashlib.sha256(bruto).hexdigest(),
+        file_size_bytes=len(bruto),
+        status=Document.Status.UPLOADED,
+    )
+
+
+def _conexao_de_conversao():
+    from apps.inference.models import InferenceConnection
+    from apps.inference.security import guardar_chave
+
+    conexao = InferenceConnection(
+        name="Worker",
+        kind=InferenceConnection.Kind.DOCLING,
+        base_url="http://worker:8090",
+        is_active=True,
+    )
+    guardar_chave(conexao, "segredo")
+    conexao.save()
+    return conexao
+
+
+def _resposta_falsa(monkeypatch, corpo: dict, status: int = 200):
+    """A conversao usa `httpx.post` direto, nao um `Client`."""
+    import httpx
+
+    def post(url, **kwargs):
+        return httpx.Response(status, json=corpo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+
+
 @pytest.mark.django_db
 def test_a_extracao_le_a_resposta_de_conversao(monkeypatch, tenant_factory):
-    """O campo que importa e `markdown`. O `sha256` volta conferido pelo
-    worker, e o `bytes` e informativo."""
-    exemplo = _exemplo("conversao-resposta.json")
+    """Aqui roda o adaptador de verdade, e nao so uma conferencia sobre o
+    arquivo de exemplo: e a leitura de `markdown` e `duration_ms` que quebraria
+    se o worker renomeasse um campo."""
+    from django_tenants.utils import schema_context
 
-    assert "markdown" in exemplo
-    assert exemplo["markdown"].startswith("#")
-    assert len(exemplo["sha256"]) in {63, 64}
+    from apps.knowledge.extraction import _extrair_com_docling
+
+    exemplo = _exemplo("conversao-resposta.json")
+    _resposta_falsa(monkeypatch, exemplo)
+
+    tenant = tenant_factory("contrato")
+    with schema_context(tenant.schema_name):
+        resultado = _extrair_com_docling(_documento_de_teste(), _conexao_de_conversao(), timeout=5)
+
+    assert resultado.markdown == exemplo["markdown"]
+    assert resultado.markdown.startswith("#")
+    assert resultado.metodo == "docling"
+    assert resultado.duracao_ms == exemplo["duration_ms"]
+
+
+@pytest.mark.django_db
+def test_o_503_na_conversao_adia_em_vez_de_falhar(monkeypatch, tenant_factory):
+    """Mesmo contrato do texto e da imagem, no caminho do PDF: um 503 e a placa
+    ocupada, nao um documento ruim. Tratado como falha, ele gastaria as
+    tentativas de um envio que so precisava da vez."""
+    from django_tenants.utils import schema_context
+
+    from apps.knowledge.extraction import ConversorOcupado, _extrair_com_docling
+
+    _resposta_falsa(monkeypatch, _exemplo("ocupada-resposta.json"), status=503)
+
+    tenant = tenant_factory("contrato-503")
+    with schema_context(tenant.schema_name):
+        with pytest.raises(ConversorOcupado):
+            _extrair_com_docling(_documento_de_teste(), _conexao_de_conversao(), timeout=5)
 
 
 def test_o_503_do_worker_tem_os_campos_que_o_cliente_le():

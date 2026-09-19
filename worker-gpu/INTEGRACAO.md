@@ -20,6 +20,37 @@ O corpo e a resposta são os mesmos do dialeto da OpenAI. Se o seu cliente já
 usa uma biblioteca compatível, trocar a URL base e a chave costuma bastar —
 **menos o 503**, que é o que exige código novo.
 
+## Primeiro contato
+
+Antes de escrever código, confirme os três de fora para dentro. Se algum
+falhar aqui, não é o seu cliente que está errado.
+
+```bash
+WORKER=http://<maquina>:8090
+SEGREDO=<o WORKER_SHARED_SECRET do worker>
+
+# 1. Está de pé? (sem credencial, de propósito)
+curl -s $WORKER/health/ | jq
+
+# 2. A credencial vale? Sem ela isto dá 401.
+curl -s -H "Authorization: Bearer $SEGREDO" $WORKER/v1/models | jq
+
+# 3. Uma geração de verdade, curta.
+curl -s -H "Authorization: Bearer $SEGREDO" -H 'Content-Type: application/json' \
+  -d '{"model":"qwen2.5:7b-instruct","messages":[{"role":"user","content":"diga ok"}]}' \
+  $WORKER/v1/chat/completions | jq -r '.choices[0].message.content'
+```
+
+| O que veio | O que significa |
+|---|---|
+| `401` | segredo errado, ou faltou o cabeçalho |
+| `404` na rota | aquela rota está desligada (`IMAGEM_ATIVA`/`CONVERSAO_ATIVA`) |
+| `503` | está funcionando — a placa só está ocupada agora |
+| nada, e o curl expira | o worker não está escutando nesse endereço |
+
+O `/health/` responde sem credencial de propósito: um diagnóstico que precisa
+de segredo não serve para descobrir por que o segredo não funciona.
+
 ## O contrato do 503
 
 Esta é a parte que decide se a integração vai funcionar sob carga.
@@ -145,7 +176,7 @@ sem avisar.
 O tamanho quase não muda o tempo (veja o README): o custo é dominado por mover
 pesos entre RAM e VRAM. Peça o tamanho que você quer publicar.
 
-### Conversão de PDF
+### Conversão de PDF (Docling)
 
 ```http
 POST /parse/
@@ -155,11 +186,103 @@ X-Expected-Sha256: <opcional>
 multipart/form-data, campo `file`
 ```
 
-Resposta: `contrato/conversao-resposta.json`.
+```json
+{"markdown": "# Titulo\n\nUm paragrafo.",
+ "sha256": "e3b0c4...",
+ "bytes": 30,
+ "duration_ms": 1200}
+```
 
-Mande o `X-Expected-Sha256`. Sem ele, um arquivo truncado no caminho é
-convertido em silêncio, e o Markdown de um documento que ninguém pediu entra
-no seu acervo.
+Exemplo completo em `contrato/conversao-resposta.json`.
+
+#### O que ele realmente faz
+
+Por trás está o **[Docling](https://github.com/docling-project/docling)**, da
+IBM. Ele não lê a camada de texto do PDF — ele **olha a página** com modelos de
+visão e reconstrói a estrutura antes de escrever qualquer coisa.
+
+A diferença não é de acabamento, é de correção. Num artigo científico de duas
+colunas, um extrator de camada de texto (pdftotext, PyPDF2, pdfminer) devolve
+as frases **intercaladas**: a primeira linha da coluna esquerda, a primeira da
+direita, a segunda da esquerda. O resultado parece texto — tem palavras
+corretas, pontuação, parágrafos — e só na leitura atenta se descobre que as
+frases não se encadeiam. É o pior tipo de defeito: passa por revisão
+automatizada, passa por contagem de caracteres, e envenena tudo o que for
+construído em cima.
+
+O que o Docling identifica e o que faz com cada coisa:
+
+| Na página | No Markdown |
+|---|---|
+| ordem de leitura (coluna dupla, caixas, barras laterais) | texto em ordem linear correta |
+| títulos e subtítulos, por hierarquia visual | `#`, `##`, `###` |
+| parágrafos | blocos separados por linha em branco |
+| listas | `-` e `1.` |
+| **tabelas**, com células mescladas | tabela em Markdown (`do_table_structure=True`) |
+| figuras e legendas | a legenda vira texto; a imagem não é exportada |
+| cabeçalho, rodapé, número de página | **descartados** |
+| notas de rodapé | texto, fora do corpo |
+| fórmulas e código | blocos próprios |
+
+É por isso que a saída serve para **separar um artigo em seções por título**:
+os `#` do Markdown correspondem à hierarquia que estava na página, não a um
+palpite sobre tamanho de fonte. Quem consome pode fatiar por heading com
+confiança.
+
+#### O que ele *não* faz
+
+- **Não devolve as imagens.** Só o Markdown. Se você precisa das figuras,
+  extraia-as do PDF por outro caminho.
+- **Não devolve coordenadas nem número de página.** A resposta é texto
+  corrido; se você precisa de "onde na página", esta rota não serve.
+- **Não decide se o documento é bom.** Um PDF digitalizado torto converte, e
+  converte mal.
+- **Não classifica nem resume.** Metadados (título, autores, DOI) você extrai
+  do Markdown do seu lado — é o que o PubliBot faz.
+
+#### PDF digitalizado: OCR
+
+PDF **sem camada de texto** — o que sai de um scanner — precisa de OCR, e ele
+vem **desligado por padrão** (`DOCLING_OCR=false`). Desligado, uma página
+digitalizada converte para quase nada, sem erro.
+
+Se o seu acervo tem digitalizações, o dono da máquina liga `DOCLING_OCR=true`
+no `.env` do worker. Confira em `/health/`:
+
+```bash
+curl -s http://<worker>:8090/health/ | jq .conversao
+# {"dispositivo": "auto", "ocr": false, "threads": "auto", "carregado": true}
+```
+
+O worker **recusa subir** com OCR ligado e o motor ausente, em vez de falhar só
+na primeira digitalização — o caso raro, que é justamente quando ninguém está
+olhando.
+
+#### Tempo, GPU e o primeiro pedido
+
+A análise de layout **não precisa de GPU**: a placa muda o tempo, não o
+resultado. Dá para operar a rota numa máquina sem placa nenhuma.
+
+Duas coisas afetam o relógio do seu lado:
+
+- **o primeiro pedido carrega os modelos** — dezenas de segundos a mais, uma
+  vez por reinício do worker. Depois disso o conversor fica residente;
+- **a conversão disputa o mesmo lock** que texto e imagem. Um PDF grande
+  chegando enquanto uma imagem é gerada leva `503`, como qualquer outra rota.
+
+Por isso o timeout sugerido é 600 s, e por isso um PDF não deve ser convertido
+dentro de uma requisição web do seu sistema: é trabalho de fila.
+
+#### Limites e integridade
+
+- **Tamanho:** acima de `MAX_PDF_BYTES` (padrão 100 MB) a resposta é `413`.
+- **Formato:** a rota é para PDF. Outros formatos que o Docling aceita não
+  estão expostos aqui.
+- **Mande o `X-Expected-Sha256`.** Sem ele, um arquivo truncado no caminho é
+  convertido em silêncio, e o Markdown de um documento que ninguém pediu entra
+  no seu acervo. Com ele, a resposta é `422` e você sabe que precisa reenviar.
+  O `sha256` volta na resposta de qualquer forma — guarde-o: é como você
+  descobre depois que dois documentos do acervo são o mesmo arquivo.
 
 ### Saúde
 

@@ -39,19 +39,42 @@ lock, ninguém está gerando texto.
 
 ## Instalação
 
+Cinco passos, nesta ordem. O `instalar.sh` é o **último** deles — ele instala
+a unit do systemd e confere que o serviço sobe; ele não cria o venv, não
+instala dependências, não escreve o `.env` e não baixa modelo. Rodado antes da
+hora, ele para com o erro dizendo o que falta.
+
 ```bash
+# 1. Ambiente. São vários GB (torch, docling, diffusers).
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 
-cp .env.example .env          # defina WORKER_SHARED_SECRET e BIND_HOST
-./venv/bin/python baixar_modelo.py    # os ~7 GB do modelo de imagem, uma vez
+# 2. Configuração.
+cp .env.example .env
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"   # WORKER_SHARED_SECRET
+
+# 3. Endereço de escuta: edite BIND_HOST no .env (veja a tabela adiante).
+
+# 4. Pesos do modelo de imagem: ~7 GB, uma vez.
+./venv/bin/python baixar_modelo.py
+
+# 5. Unit do systemd + conferência de /health/.
 ./deploy/instalar.sh
 ```
 
-O `baixar_modelo.py` não é opcional na prática. O serviço carrega o modelo de
-forma preguiçosa, e o primeiro pedido de todos não carrega: **baixa**. Sem
-isso, o primeiro cliente a pedir uma imagem espera minutos e leva um tempo
-esgotado. O `/health/` informa `baixado`.
+O passo 4 não é opcional na prática. O serviço carrega o modelo de forma
+preguiçosa, e o primeiro pedido de todos não carrega: **baixa**. Sem isso, o
+primeiro cliente a pedir uma imagem espera minutos e leva um tempo esgotado. O
+`/health/` informa `baixado`.
+
+O Docling baixa os modelos dele sozinho, no primeiro `/parse/` — são bem
+menores, mas valem um pedido de aquecimento antes de pôr em produção.
+
+Falta ainda o Ollama, que é um serviço separado desta máquina e tem
+configuração própria — a seção seguinte.
+
+> Qual Python? O OCR do Docling não é instalável em 3.14 (veja a seção do
+> Docling). Se você for usar OCR, crie o venv com 3.12 ou 3.13.
 
 ### O Ollama
 
@@ -74,6 +97,47 @@ sudo systemctl daemon-reload && sudo systemctl restart ollama
 `OLLAMA_KEEP_ALIVE` deixa de ser crítico: o worker descarrega o modelo quando
 precisa da placa para imagem. Mantê-lo alto passa a ser vantagem — o texto não
 recarrega à toa.
+
+### O Docling (conversão de PDF)
+
+A rota `/parse/` usa o [Docling](https://github.com/docling-project/docling):
+ele olha a página com modelos de visão e reconstrói a estrutura — ordem de
+leitura em coluna dupla, títulos, tabelas, legendas — em vez de ler a camada
+de texto. O `INTEGRACAO.md` descreve em detalhe o que ele identifica e o que
+descarta; aqui está só o que você regula nesta máquina.
+
+| Variável | Padrão | O que muda |
+|---|---|---|
+| `CONVERSAO_ATIVA` | `sim` | `nao` remove a rota. Use se esta máquina só gera imagem |
+| `DOCLING_DEVICE` | `auto` | `cpu`, `cuda` ou `auto` |
+| `DOCLING_THREADS` | `0` (o Docling decide) | só vale em CPU |
+| `DOCLING_OCR` | `nao` | ligue **apenas** se o acervo tem PDF digitalizado |
+| `MAX_PDF_BYTES` | 100 MB | acima disso a resposta é `413` |
+
+**GPU não é requisito.** A análise de layout roda em CPU; a placa muda o
+tempo, não o resultado. Meça antes de decidir:
+
+```bash
+./venv/bin/python medir.py um-artigo.pdf          # como está configurado
+./venv/bin/python medir.py um-artigo.pdf --cpu
+./venv/bin/python medir.py um-artigo.pdf --cuda
+```
+
+Em `cuda`, lembre que a conversão passa a **disputar a placa** com o texto e a
+imagem — o lock é o mesmo. Numa máquina com uma placa só e Ollama residente,
+`cpu` costuma ser a escolha certa mesmo sendo mais lenta: ela converte em
+paralelo à geração de texto, em vez de esperar a vez.
+
+O **OCR** é a parte cara e vem desligado. PDF com camada de texto não precisa
+dele; PDF digitalizado sem ele converte para quase nada, **sem erro**. Se
+ligar, o motor precisa estar instalado — o worker recusa subir sem ele, em vez
+de falhar só na primeira digitalização.
+
+> O OCR do Docling (`rapidocr`) só é declarado para Python < 3.14. Se o venv
+> for 3.14, `DOCLING_OCR=sim` não sobe. Use 3.12 ou 3.13.
+
+O primeiro `/parse/` depois de cada reinício carrega os modelos: dezenas de
+segundos a mais, uma vez. `/health/` mostra `conversao.carregado`.
 
 ### O endereço de escuta
 
