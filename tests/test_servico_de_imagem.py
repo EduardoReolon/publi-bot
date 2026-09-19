@@ -357,3 +357,94 @@ def test_o_pipeline_nao_vai_inteiro_para_a_placa():
 
     assert chamou("enable_model_cpu_offload")
     assert not chamou("to", "cuda")
+
+
+# ---------------------------------------------------------------------------
+# O servico continua respondendo enquanto gera
+# ---------------------------------------------------------------------------
+def test_health_responde_durante_uma_geracao(servico, monkeypatch):
+    """Encontrado em uso: `/health/` dava "timed out" enquanto uma capa era
+    gerada, e o diagnostico inteiro parava junto.
+
+    A causa e uma so, e vale para qualquer servico FastAPI deste repositorio:
+    um handler `async def` roda NO EVENT LOOP. Uma chamada bloqueante dentro
+    dele — e rodar um modelo de difusao e a mais bloqueante possivel — congela
+    o processo todo. Nenhuma outra requisicao chega a ser lida.
+
+    Um handler `def` (sem async) roda numa thread do pool, e o loop continua
+    livre. A diferenca sao seis letras e nada no comportamento aparente ate o
+    dia em que a requisicao demora minutos.
+
+    O `with` importa: so dentro dele o TestClient usa UM event loop para todas
+    as requisicoes, que e como o uvicorn se comporta. Sem ele cada chamada
+    ganha um loop proprio e o defeito desaparece do teste sem ter sumido do
+    servico.
+    """
+    import threading
+    import time
+
+    comecou = threading.Event()
+
+    def demorada(dispositivo, pedido, quantas, largura, altura):
+        comecou.set()
+        time.sleep(2.0)
+        return [b"png-demorado"]
+
+    monkeypatch.setattr(servico, "_gerar_imagens", demorada)
+
+    with TestClient(servico.app) as cliente:
+        geracao = threading.Thread(
+            target=lambda: cliente.post(
+                "/v1/images/generations", json={"prompt": "x"}, headers=_cabecalhos()
+            ),
+            daemon=True,
+        )
+        geracao.start()
+        assert comecou.wait(timeout=10), "a geracao nem comecou"
+
+        inicio = time.perf_counter()
+        resposta = cliente.get("/health/")
+        decorrido = time.perf_counter() - inicio
+
+        geracao.join(timeout=20)
+
+    assert resposta.status_code == 200
+    assert decorrido < 1.5, f"/health/ esperou a geracao terminar ({decorrido:.1f}s)"
+    # E, ja que respondeu, respondeu a verdade.
+    assert resposta.json()["busy"] is True
+
+
+def test_a_segunda_geracao_recebe_503_em_vez_de_esperar(servico, monkeypatch):
+    """O par do teste acima. Com o loop bloqueado, o semaforo era decorativo:
+    a segunda requisicao nao era processada, entao nao havia o que recusar.
+    Com o handler fora do loop, ela chega e leva o 503 que o PubliBot entende
+    como "tente de novo"."""
+    import threading
+    import time
+
+    comecou = threading.Event()
+
+    def demorada(dispositivo, pedido, quantas, largura, altura):
+        comecou.set()
+        time.sleep(2.0)
+        return [b"png"]
+
+    monkeypatch.setattr(servico, "_gerar_imagens", demorada)
+
+    with TestClient(servico.app) as cliente:
+        primeira = threading.Thread(
+            target=lambda: cliente.post(
+                "/v1/images/generations", json={"prompt": "x"}, headers=_cabecalhos()
+            ),
+            daemon=True,
+        )
+        primeira.start()
+        assert comecou.wait(timeout=10)
+
+        segunda = cliente.post(
+            "/v1/images/generations", json={"prompt": "y"}, headers=_cabecalhos()
+        )
+
+        primeira.join(timeout=20)
+
+    assert segunda.status_code == 503

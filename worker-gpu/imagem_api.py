@@ -311,6 +311,9 @@ class PedidoDeImagem(BaseModel):
     seed: int | None = Field(default=None)
 
 
+_baixado: bool = False
+
+
 def _modelo_esta_no_disco() -> bool:
     """Se os pesos ja estao no cache local.
 
@@ -323,20 +326,44 @@ def _modelo_esta_no_disco() -> bool:
     Conservador: qualquer duvida devolve False, porque "talvez precise baixar"
     e um aviso barato e "nao precisa" errado custa a espera inteira.
     """
+    global _baixado
+
+    # Uma vez verdadeiro, sempre verdadeiro: pesos nao se desbaixam, e varrer o
+    # cache a cada `/health/` poria trabalho de disco num endpoint que existe
+    # para responder rapido.
+    if _baixado:
+        return True
+
     if os.path.isdir(MODELO):
+        _baixado = True
         return True
 
     try:
         from huggingface_hub import snapshot_download
 
         snapshot_download(MODELO, local_files_only=True)
-        return True
     except Exception:
         return False
 
+    _baixado = True
+    return True
 
+
+# ---------------------------------------------------------------------------
+# Os handlers abaixo sao `def`, e NAO `async def`. Isto nao e estilo.
+#
+# No Starlette, um handler `async def` roda no event loop; um handler `def`
+# roda numa thread do pool. Rodar um modelo de difusao e a operacao mais
+# bloqueante que este processo faz — com ela no loop, o processo inteiro
+# congela: `/health/` nao responde, a segunda requisicao nem e lida, e o
+# semaforo de uma-por-vez vira decoracao porque nao ha o que recusar.
+#
+# O sintoma em uso foi `configurar_imagem --testar` dizendo "timed out"
+# enquanto uma capa era gerada — o diagnostico parando exatamente quando era
+# preciso.
+# ---------------------------------------------------------------------------
 @app.get("/health/")
-async def health():
+def health():
     return {
         "status": "ok",
         "service": "imagem-api",
@@ -356,13 +383,13 @@ async def health():
 
 
 @app.get("/v1/models")
-async def modelos():
+def modelos():
     """O `health()` do cliente do PubliBot bate aqui."""
     return {"object": "list", "data": [{"id": MODELO, "object": "model"}]}
 
 
 @app.post("/v1/images/generations")
-async def gerar(
+def gerar(
     pedido: PedidoDeImagem,
     authorization: str | None = Header(default=None),
     x_worker_secret: str | None = Header(default=None),

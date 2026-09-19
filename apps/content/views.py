@@ -594,7 +594,23 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
             _("As conexoes de inferencia estao ocupadas agora. Tente em alguns minutos."),
         )
         return redirect("content:revisar", pk=artigo.pk)
-    except (ProviderTransientError, ProviderPermanentError) as exc:
+    except ProviderTransientError as exc:
+        # Tempo esgotado e o caso comum aqui, e ele NAO significa que a geracao
+        # parou: o worker continua desenhando e segurando a vaga dele. Dizer
+        # "recusou o pedido" mandaria a pessoa clicar de novo, e o clique
+        # seguinte bate num servico ocupado.
+        logger.warning("Artigo %s: geracao de capa nao respondeu a tempo: %s", artigo.pk, exc)
+        messages.error(
+            request,
+            _(
+                "O gerador de imagem nao respondeu a tempo. Ele pode ainda estar "
+                "trabalhando: espere um minuto e atualize a pagina antes de pedir "
+                "de novo. Detalhe: %s"
+            )
+            % exc,
+        )
+        return redirect("content:revisar", pk=artigo.pk)
+    except ProviderPermanentError as exc:
         logger.warning("Artigo %s: falha ao gerar capas: %s", artigo.pk, exc)
         messages.error(request, _("O gerador de imagem recusou o pedido: %s") % exc)
         return redirect("content:revisar", pk=artigo.pk)

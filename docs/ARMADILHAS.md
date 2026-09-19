@@ -842,3 +842,35 @@ que nao gasta tentativa.
 A licao que passa do caso: **quando uma funcao devolve `None` por mais de um
 motivo, quem chama precisa distinguir.** Um `None` que significa duas coisas
 sempre vira uma mensagem que esta errada em metade das vezes.
+
+### `async def` num handler que faz trabalho bloqueante congela o processo
+
+Encontrado em uso, e demorou a aparecer porque o sintoma nao parece ter nada a
+ver com a causa: `configurar_imagem --testar` respondendo **`timed out`** —
+nao "connection refused" — enquanto uma capa era gerada.
+
+No Starlette, um handler `async def` roda **no event loop**; um handler `def`
+roda numa thread do pool. Os dois servicos de `worker-gpu/` eram `async def` e
+chamavam, de dentro, a coisa mais bloqueante que fazem: rodar um modelo de
+difusao, converter um PDF com analise de layout. Enquanto isso durava, o
+processo inteiro ficava parado — `/health/` nao respondia, e a segunda
+requisicao nem chegava a ser lida.
+
+Duas consequencias que pareciam defeitos separados:
+
+- **o diagnostico parava justamente quando era preciso.** `--testar` dava
+  tempo esgotado, e a conclusao natural era que o servico estava fora do ar;
+- **o semaforo de um-pedido-por-vez virava decoracao.** O 503 nunca chegava a
+  ninguem, porque a segunda requisicao nao era processada — ela so esperava. O
+  teste que reproduz isso mostra as duas geracoes terminando em serie, com 200
+  nas duas.
+
+A correcao sao seis letras por handler. O que custa e perceber: nada no
+comportamento aparente denuncia a diferenca ate o dia em que uma requisicao
+passa de alguns segundos.
+
+Os testes que guardam isso (`test_servico_de_imagem.py`,
+`test_servico_de_conversao.py`) precisam do `with TestClient(app) as cliente:`
+— so dentro do `with` o cliente usa UM event loop para todas as requisicoes,
+como o uvicorn. Sem o `with`, cada chamada ganha um loop proprio e o defeito
+desaparece do teste sem ter sumido do servico.

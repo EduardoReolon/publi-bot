@@ -89,6 +89,7 @@ padroes = [
   "tests/test_blocos.py",
   "tests/test_ingestao.py",
   "tests/test_conferencia.py",
+  "tests/test_servico_de_conversao.py",
 ]
 
 [[bloco]]

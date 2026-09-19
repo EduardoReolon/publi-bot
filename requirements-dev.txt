@@ -40,3 +40,8 @@ PyYAML==6.0.3
 # quando ocupado, formato da resposta), com a parte pesada substituida. Torch e
 # diffusers continuam fora daqui.
 fastapi==0.121.2
+
+# O servico de conversao recebe o PDF por multipart. Sem isto o FastAPI recusa
+# ate registrar a rota, e o modulo nem importa — entao nenhum teste alcanca
+# `docling_api`.
+python-multipart==0.0.20

@@ -855,6 +855,7 @@ python manage.py reservas          # quem esta segurando a capacidade
 | `nenhuma versao ativa para o prompt ...` | tenant sem prompts; `manage.py semear_prompts --todos` |
 | `nenhuma conexao de geracao de imagem disponivel` | faltou `configurar_imagem`; o artigo sai sem capa e o texto nao e afetado (secao 4a) |
 | Gerar capa fica girando e depois da erro | a primeira geracao BAIXA o modelo (~7 GB). Rode `baixar_modelo.py` na maquina da placa |
+| `/health/` do worker da `timed out` (nao "refused") | ele esta ocupado gerando. Se persistir sem nada em curso, confira o journal da unit |
 | `could not open extension control file` no bootstrap | falta `postgresql-<versao>-pgvector` |
 | Unit de usuario nao sobe no boot | falta `sudo loginctl enable-linger $USER` |
 | Log do worker de GPU nao aparece no `dev` | ele e unit do systemd: `journalctl --user -u imagem-api -f` |

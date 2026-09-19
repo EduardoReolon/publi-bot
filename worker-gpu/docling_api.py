@@ -30,7 +30,7 @@ import sys
 import threading
 import time
 
-from fastapi import FastAPI, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(asctime)s %(message)s")
@@ -151,8 +151,14 @@ def _conferir_segredo(recebido: str | None) -> None:
         raise HTTPException(401, "Credencial invalida.")
 
 
+# Os handlers abaixo sao `def`, e NAO `async def`. No Starlette, `async def`
+# roda no event loop e `def` roda numa thread do pool — e converter um PDF
+# com analise de layout e uma chamada bloqueante de dezenas de segundos. No
+# loop, ela congela o processo: `/health/` nao responde e a segunda requisicao
+# nem e lida, entao o 503 de "ja ha uma conversao em curso" nunca chega a
+# ninguem. Foi assim que o servico de imagem, irmao deste, travou em uso.
 @app.get("/health/")
-async def health():
+def health():
     return {
         "status": "ok",
         "service": "docling-api",
@@ -166,8 +172,7 @@ async def health():
 
 
 @app.post("/parse/")
-async def parse(
-    request: Request,
+def parse(
     file: UploadFile,
     x_worker_secret: str | None = Header(default=None),
     x_expected_sha256: str | None = Header(default=None),
@@ -180,7 +185,10 @@ async def parse(
     """
     _conferir_segredo(x_worker_secret)
 
-    conteudo = await file.read()
+    # `file.file.read()`, e nao `await file.read()`: num handler sincrono nao
+    # ha corrotina a esperar. O `UploadFile` guarda o arquivo num
+    # `SpooledTemporaryFile`, que e justamente o objeto sincrono por tras.
+    conteudo = file.file.read()
 
     if len(conteudo) > TAMANHO_MAXIMO:
         raise HTTPException(413, f"Arquivo excede {TAMANHO_MAXIMO} bytes.")
