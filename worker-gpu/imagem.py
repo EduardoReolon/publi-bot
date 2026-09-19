@@ -276,7 +276,7 @@ def gerar(pedido: PedidoDeImagem):
     largura, altura = _medidas(pedido.size)
 
     try:
-        with ARBITRO.usar("imagem"):
+        with ARBITRO.usar("imagem", modelo=IMAGEM_MODELO):
             # Com o lock na mao: ninguem esta gerando texto, entao mandar o
             # Ollama soltar a VRAM e seguro. E a razao de o arbitro existir.
             if OLLAMA_DESCARREGAR_PARA_IMAGEM:

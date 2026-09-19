@@ -18,11 +18,17 @@ def ocupada(erro: GpuOcupada) -> JSONResponse:
     ou em 60s quando falta um minuto e meio — desperdicio num caso, um 503
     extra garantido no outro.
     """
-    return JSONResponse(
-        {"error": {"code": "gpu_ocupada", "message": str(erro), "ocupante": erro.ocupante}},
-        status_code=503,
-        headers={"Retry-After": str(erro.falta)},
-    )
+    corpo = {
+        "code": "gpu_ocupada",
+        "message": str(erro),
+        "ocupante": erro.ocupante,
+    }
+    # So quando se sabe. `"modelo": null` diria "nenhum modelo", que e outra
+    # coisa — o cliente leria isso como "a placa esta limpa".
+    if erro.modelo:
+        corpo["modelo"] = erro.modelo
+
+    return JSONResponse({"error": corpo}, status_code=503, headers={"Retry-After": str(erro.falta)})
 
 
 def indisponivel(codigo: str, mensagem: str, *, retry_after: int = 60) -> JSONResponse:

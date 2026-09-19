@@ -102,6 +102,9 @@ def health():
         "contrato_versao": CONTRATO_VERSAO,
         "ocupada": ocupacao is not None,
         "ocupante": ocupacao.tarefa if ocupacao else None,
+        # Qual modelo esta em uso agora. Quem planeja um lote le isto junto
+        # com `ollama.carregados` para escolher pedidos que nao paguem troca.
+        "modelo": ocupacao.modelo if ocupacao else None,
         "ha_segundos": ocupacao.ha_quantos_segundos if ocupacao else 0,
         "rotas": {
             "texto": True,

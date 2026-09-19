@@ -49,12 +49,19 @@ logger = logging.getLogger("worker-gpu.arbitro")
 
 
 class GpuOcupada(RuntimeError):
-    """A placa esta com outro trabalho. Traz quanto falta, em segundos."""
+    """A placa esta com outro trabalho. Traz quanto falta, em segundos.
 
-    def __init__(self, ocupante: str, falta: int):
+    `modelo` e o que esta carregado agora, quando se sabe. Ele viaja no 503
+    porque e ali que ele decide alguma coisa: o cliente que recebeu a recusa
+    esta escolhendo o que mandar em seguida, e mandar um pedido do modelo que
+    ja esta na placa nao paga a troca.
+    """
+
+    def __init__(self, ocupante: str, falta: int, modelo: str | None = None):
         super().__init__(f"a GPU esta em uso por {ocupante!r}; tente em {falta}s")
         self.ocupante = ocupante
         self.falta = falta
+        self.modelo = modelo
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,10 @@ class Ocupacao:
 
     tarefa: str
     desde: float
+    # O modelo em uso, quando a tarefa tem um. Vem de quem pediu, e nao de
+    # uma consulta ao Ollama: perguntar `/api/ps` a cada 503 seria uma viagem
+    # a mais para saber o que este processo ja sabe.
+    modelo: str | None = None
 
     @property
     def ha_quantos_segundos(self) -> int:
@@ -96,11 +107,13 @@ class Arbitro:
         return self.ocupacao is not None
 
     @contextmanager
-    def usar(self, tarefa: str, *, espera: float | None = None):
+    def usar(self, tarefa: str, *, modelo: str | None = None, espera: float | None = None):
         """Toma a GPU, ou levanta `GpuOcupada`.
 
         `tarefa` e o rotulo que aparece no 503 e no `/health/`: e o que
         transforma "ocupado" em "ocupado gerando imagem ha 20 segundos".
+        `modelo` acrescenta *qual* modelo, para quem esta escolhendo o proximo
+        pedido.
         """
         limite = ESPERA_PELO_LOCK if espera is None else espera
 
@@ -117,10 +130,11 @@ class Arbitro:
             raise GpuOcupada(
                 atual.tarefa if atual else "outro trabalho",
                 atual.falta_estimado if atual else 30,
+                atual.modelo if atual else None,
             )
 
         with self._mural:
-            self._ocupacao = Ocupacao(tarefa=tarefa, desde=time.monotonic())
+            self._ocupacao = Ocupacao(tarefa=tarefa, desde=time.monotonic(), modelo=modelo)
 
         comeco = time.monotonic()
         try:

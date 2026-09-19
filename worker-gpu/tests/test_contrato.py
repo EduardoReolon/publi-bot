@@ -121,10 +121,14 @@ def test_a_resposta_de_conversao_tem_a_forma_publicada(cliente, cabecalhos):
 
 def test_o_503_tem_a_forma_publicada(worker, cabecalhos):
     """O corpo do 503 e contrato como qualquer outro: `error.code` e o campo
-    que o cliente le para decidir entre esperar e desistir."""
+    que o cliente le para decidir entre esperar e desistir.
+
+    A ocupacao aqui carrega `modelo` porque as rotas de verdade carregam: o
+    texto passa o que o cliente pediu, a imagem passa o `IMAGEM_MODELO`.
+    """
     from arbitro import ARBITRO
 
-    with ARBITRO.usar("imagem"):
+    with ARBITRO.usar("texto", modelo="qwen2.5:7b-instruct"):
         resposta = TestClient(worker.app).post(
             "/v1/chat/completions",
             json={"messages": [{"role": "user", "content": "oi"}]},
@@ -134,6 +138,82 @@ def test_o_503_tem_a_forma_publicada(worker, cabecalhos):
     assert resposta.status_code == 503
     assert _forma(_exemplo("ocupada-resposta.json")) <= _forma(resposta.json())
     assert int(resposta.headers["Retry-After"]) > 0
+
+
+def test_o_503_diz_qual_modelo_esta_na_placa(worker, cabecalhos):
+    """E o campo que decide o que o cliente manda EM SEGUIDA. Sem ele, quem
+    leva a recusa so sabe "volte em 18s" — e pode voltar com um pedido de
+    outro modelo, pagando uma troca que daria para evitar."""
+    from arbitro import ARBITRO
+
+    with ARBITRO.usar("texto", modelo="qwen2.5:7b-instruct"):
+        resposta = TestClient(worker.app).post(
+            "/v1/chat/completions",
+            json={"model": "outro", "messages": [{"role": "user", "content": "oi"}]},
+            headers=cabecalhos,
+        )
+
+    assert resposta.json()["error"]["modelo"] == "qwen2.5:7b-instruct"
+
+
+def test_sem_modelo_conhecido_o_campo_nao_aparece(worker, cabecalhos):
+    """`"modelo": null` seria lido como "a placa esta limpa", que e o
+    contrario do que um 503 diz. Ausente e a unica forma honesta de dizer
+    "nao sei"."""
+    from arbitro import ARBITRO
+
+    with ARBITRO.usar("conversao"):
+        resposta = TestClient(worker.app).post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "oi"}]},
+            headers=cabecalhos,
+        )
+
+    assert "modelo" not in resposta.json()["error"]
+
+
+def test_o_modelo_pedido_pelo_cliente_chega_ao_ollama_e_ao_arbitro(worker, cabecalhos, monkeypatch):
+    """Cada cliente escolhe o seu — o CRM tem um modelo por tenant. O worker
+    nao impoe nem substitui: ele arbitra a placa, nao a escolha.
+
+    E o mesmo nome precisa chegar aos DOIS lugares. Se ele so chegasse ao
+    Ollama, o 503 de quem tentou ao mesmo tempo nao saberia dizer o que esta
+    na placa — que e a unica razao de o arbitro guardar isso.
+    """
+    import ollama
+    from arbitro import ARBITRO
+
+    visto = {}
+
+    def conversar(corpo, cabecalhos):
+        visto["pedido"] = corpo.get("model")
+        ocupacao = ARBITRO.ocupacao
+        visto["no_arbitro"] = ocupacao.modelo if ocupacao else None
+        return 200, {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+    monkeypatch.setattr(ollama, "conversar", conversar)
+
+    TestClient(worker.app).post(
+        "/v1/chat/completions",
+        json={"model": "llama3.1:70b", "messages": [{"role": "user", "content": "oi"}]},
+        headers=cabecalhos,
+    )
+
+    assert visto["pedido"] == "llama3.1:70b"
+    assert visto["no_arbitro"] == "llama3.1:70b"
+
+
+def test_o_health_diz_qual_modelo_esta_em_uso(worker, cabecalhos):
+    """Para quem planeja um lote: uma consulta, e a escolha dos proximos
+    pedidos sai dela."""
+    from arbitro import ARBITRO
+
+    cliente = TestClient(worker.app)
+
+    assert cliente.get("/health/").json()["modelo"] is None
+
+    with ARBITRO.usar("texto", modelo="qwen2.5:7b-instruct"):
+        assert cliente.get("/health/").json()["modelo"] == "qwen2.5:7b-instruct"
 
 
 def test_a_versao_do_contrato_aparece_no_health(cliente):

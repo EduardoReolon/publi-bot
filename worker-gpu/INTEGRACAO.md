@@ -51,6 +51,13 @@ curl -s -H "Authorization: Bearer $SEGREDO" -H 'Content-Type: application/json' 
 O `/health/` responde sem credencial de propósito: um diagnóstico que precisa
 de segredo não serve para descobrir por que o segredo não funciona.
 
+**Não há rota de teste, e é de propósito.** Uma que não tocasse a placa
+provaria só que o processo está de pé — o que o `/health/` já diz, melhor. E
+uma que tocasse a placa seria um pedido normal, competindo pelo lock como
+qualquer outro, com a desvantagem de gastar GPU sem produzir nada. Os três
+comandos acima são o teste: `/health/` para o processo, `/v1/models` para a
+credencial, e uma geração curta para o caminho inteiro.
+
 ## O contrato do 503
 
 Esta é a parte que decide se a integração vai funcionar sob carga.
@@ -122,6 +129,75 @@ para `agora + Retry-After` e sair — **nunca** um `sleep` segurando o processo:
 a placa pode estar ocupada por minutos, e você prende um worker inteiro
 esperando.
 
+## Modelo por cliente, e afinidade
+
+**O modelo é de quem pede.** O worker repassa o corpo ao Ollama praticamente
+intacto — o `model` que você mandar é o que roda. Um CRM com modelo por tenant
+e um padrão de sistema funciona sem nada especial aqui: o worker arbitra a
+placa, não a escolha.
+
+Dois limites honestos: o modelo precisa existir no Ollama da máquina
+(`GET /v1/models` lista), e trocar de modelo **custa**. Com
+`OLLAMA_MAX_LOADED_MODELS=1` — a configuração recomendada numa placa só — um
+modelo diferente expulsa o que estava carregado. Não é falha, é tempo: o
+próximo pedido espera o carregamento.
+
+### Como saber o que está na placa
+
+Três formas, da mais barata para a mais cara:
+
+| De onde | O que diz | Custa |
+|---|---|---|
+| um **200** seu | o seu modelo é o que está carregado agora | nada |
+| o **503** que você levou | `error.modelo` — o que está em uso | nada |
+| `GET /health/` | `modelo` (em uso) e `ollama.carregados` (residentes) | uma viagem |
+
+A primeira é a que se esquece: depois de uma resposta bem-sucedida, você já
+sabe. Não precisa perguntar.
+
+A segunda é a que fecha o ciclo. Antes, um 503 dizia só "volte em 18s"; agora
+diz **com o quê** vale voltar:
+
+```json
+{"error": {"code": "gpu_ocupada",
+           "message": "a GPU esta em uso por 'texto'; tente em 18s",
+           "ocupante": "texto",
+           "modelo": "qwen2.5:7b-instruct"}}
+```
+
+`modelo` só aparece quando se sabe qual é. **Ausente não quer dizer nenhum** —
+quer dizer que a tarefa em curso não tem modelo nomeado (uma conversão de
+PDF, por exemplo).
+
+### O padrão: ordenar a fila, não esperar por ela
+
+Sabendo o modelo residente, a sua fila escolhe melhor:
+
+```python
+def proximo(fila, modelo_na_placa):
+    # Primeiro os que nao pagam troca...
+    for trabalho in fila:
+        if trabalho.modelo == modelo_na_placa:
+            return trabalho
+    # ...e, nao havendo, qualquer um: trocar e caro, parar e pior.
+    return fila[0] if fila else None
+```
+
+Duas regras que impedem isso de virar um problema novo:
+
+- **É uma dica, nunca uma garantia.** Entre você ler e você postar, outro
+  cliente pode tomar a placa e trocar o modelo. Nada pode depender disso estar
+  certo — no pior caso você paga uma troca, que é exatamente o que aconteceria
+  sem afinidade nenhuma.
+- **Não deixe um tenant na fila para sempre.** Preferir o modelo carregado sem
+  limite é uma receita de inanição: o tenant do modelo menos usado nunca é
+  atendido. Limite a sequência (N trabalhos, ou X minutos) e depois pague a
+  troca.
+
+Não vale a pena ir além disso do lado do cliente. Prioridade de verdade —
+justiça, envelhecimento, reserva com hora marcada — é trabalho do árbitro, e
+o `arbitro.py` diz explicitamente que hoje ele não faz nada disso.
+
 ## Timeouts do seu lado
 
 | Rota | Timeout sugerido |
@@ -152,6 +228,9 @@ Authorization: Bearer <segredo>
 ```
 
 Resposta: `contrato/texto-resposta.json`.
+
+`model` é seu: o worker repassa o que você mandar, sem impor nem substituir.
+Veja **Modelo por cliente, e afinidade** para o que isso custa quando muda.
 
 `stream: true` recebe **422**. O árbitro precisa saber quando o trabalho
 termina para soltar a placa, e uma resposta em streaming só termina quando o
@@ -322,3 +401,4 @@ nova neste arquivo explicando o quê.
 - [ ] Timeouts generosos
 - [ ] Exemplos de `contrato/` copiados para os seus testes
 - [ ] Reagendar, nunca `sleep`
+- [ ] Se usa modelo por cliente: afinidade é dica, e com limite de sequência

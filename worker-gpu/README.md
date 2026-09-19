@@ -201,6 +201,7 @@ journalctl --user -u worker-gpu -f
 |---|---|
 | `503 gpu_ocupada` | funcionando como projetado; o cliente deve voltar depois |
 | `503 sem_vram` | o Ollama não soltou a placa. Veja `ollama.carregados` no `/health/` |
+| um cliente sempre paga troca de modelo | `/health/` diz `modelo` (em uso) e `ollama.carregados` (residentes); veja a afinidade no `INTEGRACAO.md` |
 | `503 ollama_indisponivel` | o Ollama caiu, ou `OLLAMA_URL` está errado |
 | `/health/` dá `timed out` | um handler bloqueante no event loop — nenhum deveria ser `async def` |
 | `baixado: false` | rode `baixar_modelo.py` antes do primeiro uso |

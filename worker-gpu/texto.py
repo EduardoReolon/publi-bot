@@ -44,7 +44,10 @@ def chat(corpo: dict):
         )
 
     try:
-        with ARBITRO.usar("texto"):
+        # O modelo vem do cliente, intacto. Quem chama decide — o CRM tem um
+        # modelo por tenant, o PubliBot tem o da conexao. Anota-lo no arbitro
+        # e o que permite ao proximo 503 dizer *qual* modelo esta na placa.
+        with ARBITRO.usar("texto", modelo=corpo.get("model")):
             status, dados = ollama.conversar(corpo, {})
     except GpuOcupada as erro:
         return respostas.ocupada(erro)
