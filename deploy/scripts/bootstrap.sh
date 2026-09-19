@@ -146,6 +146,27 @@ fi
 set -a; source <(sudo cat "$ARQUIVO_ENV" | grep -E '^[A-Z_]+=') ; set +a
 
 echo "==> PostgreSQL: papel, banco e extensoes"
+
+# O `vector` nao vem com o PostgreSQL: e um pacote a parte, e casado com a
+# versao do servidor. Sem esta conferencia o bootstrap seguiria ate o
+# `CREATE EXTENSION` e morreria com "could not open extension control file" —
+# no meio da instalacao, depois de ja ter criado usuario, venv e segredos.
+for extensao in vector unaccent; do
+    if ! sudo -u postgres psql -tAc \
+        "SELECT 1 FROM pg_available_extensions WHERE name='$extensao'" | grep -q 1; then
+        maior="$(sudo -u postgres psql -tAc \
+            "SELECT current_setting('server_version_num')::int / 10000")"
+        echo "ERRO: a extensao '$extensao' nao esta disponivel neste PostgreSQL." >&2
+        if [[ "$extensao" == "vector" ]]; then
+            echo "  sudo apt install postgresql-$maior-pgvector" >&2
+        else
+            echo "  sudo apt install postgresql-contrib" >&2
+        fi
+        echo "  O pacote e casado com a versao do servidor (aqui: $maior)." >&2
+        exit 1
+    fi
+done
+
 sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
 BEGIN

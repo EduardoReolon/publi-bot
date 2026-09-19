@@ -96,8 +96,16 @@ Mesmo venv e mesmo `.env` do Docling, porta 8101:
 
 ```bash
 ./venv/bin/pip install -r requirements.txt   # traz diffusers e accelerate
+./venv/bin/python baixar_modelo.py           # os ~7 GB do modelo, uma vez
 ./deploy/instalar.sh --imagem                # ou --tudo, para os dois
 ```
+
+O `baixar_modelo.py` nao e opcional na pratica. O servico carrega o modelo de
+forma preguicosa, e o primeiro pedido de todos nao carrega: **baixa**. Quem
+clica em "gerar tres opcoes de capa" fica olhando o navegador girar por
+minutos, sem nada no terminal (o log esta no journal), e no fim leva um erro
+de tempo esgotado. O `/health/` informa `baixado`, e o
+`configurar_imagem --testar` avisa quando for falso.
 
 O que o `.env` controla:
 

@@ -337,6 +337,42 @@ Abra `http://publibot.localhost:8000`. Use `publibot.localhost`, nao
 cookie, o login nao atravessa para o subdominio do tenant, e a tela de login
 reaparece sem explicacao.
 
+**Conferir:**
+
+```bash
+python manage.py check_db        # banco, extensoes, schemas, tenant raiz
+python manage.py broker_status   # qual broker esta valendo, e se responde
+curl -sI http://publibot.localhost:8000/healthz/ | head -1
+```
+
+#### O `dev` e as units do systemd na mesma maquina
+
+Se voce instalou os servicos de GPU como unit (Parte 3) na maquina em que
+tambem desenvolve, os dois convivem — e a regra e uma so: **o `dev` nao sobe o
+que ja esta de pe.** Ele testa a porta antes e usa o servico existente, porque
+subir um segundo daria "address already in use" e derrubaria o `dev` inteiro,
+ja que qualquer processo que morre encerra todos.
+
+O banner diz qual dos dois casos e o seu:
+
+```
+Conversao:  ja de pe em http://127.0.0.1:8100 (servico proprio); nao subi outro.
+Imagem:     ja de pe em http://127.0.0.1:8101 (servico proprio); nao subi outro.
+```
+
+Isso significa que os pedidos estao indo para as units do systemd, e nao para
+processos filhos do `dev`. A consequencia pratica que mais confunde: **o log
+deles nao aparece no terminal do `dev`**. Ele esta no journal.
+
+```bash
+journalctl --user -u imagem-api -f
+journalctl --user -u docling-api -f
+```
+
+Se o banner disser outra coisa — "nenhuma", "em outra maquina", "worker-gpu/
+venv nao existe" —, ai sim o `dev` esta usando (ou deixando de usar) algo
+proprio, e a frase diz qual.
+
 ### 6. Primeiro tenant
 
 ```bash
@@ -345,11 +381,78 @@ python manage.py provision_tenant acme --name="ACME Ltda"
 
 Depois entre em `http://acme.publibot.localhost:8000`.
 
+### 7. Roteiro de aceitacao
+
+O mesmo da Parte 2, passo 8 — vale igual aqui. E o unico teste que exercita a
+cadeia inteira: enviar PDF, conferir que a conversao veio com analise de
+layout, vetorizar blocos, criar pauta, gerar artigo, acompanhar em Operacao,
+abrir o artigo com capa, aprovar.
+
+Duas diferencas em desenvolvimento:
+
+- o `PERMITIR_EXTRACAO_LOCAL=True` do `.env.example` deixa o PDF passar pelo
+  extrator local quando nao ha Docling. Em producao ele e recusado. Se voce
+  quer testar o caminho de producao, desligue-o aqui tambem;
+- sem `IMAGEM_BASE_URL`, o artigo sai sem capa e o passo registra o motivo.
+  Nao e falha: o texto e o produto.
+
 ---
 
 ## Parte 2 — Servidor
 
-### Uma vez por maquina
+Cada passo termina com **como conferir**. A ordem importa e nao e arbitraria:
+um passo que falha em silencio so aparece dois passos depois, com um erro que
+nao menciona a causa — e esta secao esta escrita para isso nao acontecer.
+
+Se algum comando de conferencia nao devolver o que esta escrito, pare ali. O
+proximo passo vai funcionar mesmo assim e o problema vai reaparecer mais
+tarde, disfarcado.
+
+### O que precisa existir antes
+
+| | Por que |
+|---|---|
+| VM Linux com acesso `sudo` | a VM ARM da Oracle serve; ela **nao** roda modelo nenhum |
+| Dominio com DNS curinga (`*.exemplo.com.br`) | cada tenant vive num subdominio (ADR-0003) |
+| Uma maquina com placa, alcancavel por Tailscale | o Ollama, o Docling e a geracao de imagem rodam la (ADR-0007) |
+| Chave ssh para o GitHub Actions | so se voce for implantar pelo push |
+
+A VM da nuvem nunca roda inferencia. Ela serve as telas, guarda o banco e faz
+requisicoes HTTP para a maquina da placa. Dimensionar a nuvem para rodar
+modelo e o erro caro deste projeto.
+
+### Passo 1 — Pacotes do sistema
+
+```bash
+sudo apt update
+sudo apt install -y git curl python3-venv \
+     postgresql postgresql-contrib redis-server nginx
+```
+
+O `vector` **nao** vem com o PostgreSQL: e um pacote a parte, casado com a
+versao do servidor.
+
+```bash
+psql --version                                  # anote a versao maior (ex.: 16)
+sudo apt install -y postgresql-16-pgvector      # troque o 16 pela sua
+```
+
+**Conferir:**
+
+```bash
+systemctl is-active postgresql redis-server nginx   # active, active, active
+redis-cli ping                                      # PONG
+sudo -u postgres psql -tAc \
+  "SELECT 1 FROM pg_available_extensions WHERE name='vector'"   # 1
+```
+
+A ultima linha e a que mais se esquece. Sem ela o `bootstrap.sh` vai ate o
+meio e morre em `could not open extension control file` — depois de ja ter
+criado usuario, venv e segredos. (Hoje ele confere antes e para com a linha do
+`apt` certa; a conferencia aqui existe para voce nao descobrir isso pelo
+erro.)
+
+### Passo 2 — Codigo e bootstrap
 
 ```bash
 sudo mkdir -p /srv/publibot && sudo chown "$USER" /srv/publibot
@@ -357,9 +460,15 @@ git clone <repo> /srv/publibot && cd /srv/publibot
 ./deploy/scripts/bootstrap.sh
 ```
 
-O bootstrap cria usuario de sistema, diretorios, venv, banco com as extensoes,
-units do systemd habilitados no boot, rotacao de log, a regra de sudo da
-implantacao, e **gera os segredos** em `/etc/publibot/env`.
+O bootstrap cria o usuario de sistema, os diretorios, o venv, o banco com as
+extensoes no schema `extensions`, as units do systemd habilitadas no boot, a
+rotacao de log, a regra de sudo da implantacao, e **gera os segredos** em
+`/etc/publibot/env`.
+
+**Ele nunca sobrescreve esse arquivo.** Nao e zelo excessivo: regenerar
+`NODE_KEY_ENCRYPTION_KEY` por cima torna irrecuperaveis todas as credenciais
+de site ja guardadas, e o erro so apareceria na proxima publicacao, como falha
+de autenticacao contra o site do cliente.
 
 A regra de sudo (`deploy/sudoers/publibot-deploy`) e o que permite implantar
 por ssh sem ninguem na frente do terminal: um ssh nao interativo nao tem onde
@@ -367,45 +476,201 @@ digitar senha, e sem ela o `sudo systemctl` do release espera um prompt que
 ninguem ve — a implantacao morre por timeout DEPOIS das migrations, com o
 servico ainda no codigo antigo. Ela nomeia um a um os comandos permitidos, so
 sobre as units deste projeto: um `NOPASSWD: ALL` daria ao `DEPLOY_KEY`
-guardado no GitHub o poder de root sobre a maquina, e este servidor e
-compartilhado.
+guardado no GitHub o poder de root sobre a maquina.
 
-Ele nunca sobrescreve esse arquivo. Nao e zelo excessivo: regenerar
-`NODE_KEY_ENCRYPTION_KEY` por cima torna irrecuperaveis todas as credenciais de
-site ja guardadas, e o erro so apareceria na proxima publicacao, como falha de
-autenticacao contra o site do cliente.
+**Conferir:**
 
-Depois dele, sobram quatro coisas — e so uma vez:
+```bash
+sudo test -f /etc/publibot/env && echo "env existe"
+sudo grep -c AJUSTE /etc/publibot/env       # quantos campos faltam preencher
+systemctl is-enabled publibot.socket celery-publibot celery-beat-publibot
+sudo -u postgres psql -d publibot -tAc \
+  "SELECT extname, nspname FROM pg_extension e
+     JOIN pg_namespace n ON n.oid = e.extnamespace
+    WHERE extname IN ('vector','unaccent')"   # as duas em 'extensions'
+```
 
-1. Ajustar em `/etc/publibot/env` os campos marcados `AJUSTE`:
-   `ROOT_DOMAIN`, `DJANGO_ALLOWED_HOSTS`, `INFERENCIA_BASE_URL` (o endereco
-   Tailscale do Ollama) e `INFERENCIA_MODELO`.
-2. Nginx e TLS — ver `deploy/nginx/publibot.conf`.
-3. `./deploy/scripts/release.sh`
-4. `venv/bin/python manage.py createsuperuser`
+As extensoes precisam estar em `extensions`, **nao** em `public`. Com um
+schema por tenant, uma extensao so no `public` funciona para o primeiro tenant
+e falha no segundo, com `type "vector" does not exist` — o erro classico deste
+projeto.
 
-### Toda implantacao
+### Passo 3 — Preencher o que o bootstrap nao sabe
+
+```bash
+sudo nano /etc/publibot/env
+```
+
+Os campos marcados `AJUSTE`:
+
+| Variavel | Valor |
+|---|---|
+| `ROOT_DOMAIN` | `exemplo.com.br` — sem `www`, sem protocolo |
+| `DJANGO_ALLOWED_HOSTS` | `exemplo.com.br,.exemplo.com.br` |
+| `INFERENCIA_BASE_URL` | `http://<ip-tailscale-da-placa>:11434` |
+| `INFERENCIA_MODELO` | o nome exato do `ollama list` |
+
+E, se a maquina da placa tambem for converter PDF e gerar imagem (Parte 1,
+secoes 4a e 4b):
+
+```
+CONVERSAO_BASE_URL=http://<ip-tailscale-da-placa>:8100
+CONVERSAO_SEGREDO=<o WORKER_SHARED_SECRET do worker>
+IMAGEM_BASE_URL=http://<ip-tailscale-da-placa>:8101
+IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET>
+```
+
+**Conferir:**
+
+```bash
+sudo grep -c AJUSTE /etc/publibot/env      # 0
+tailscale status | grep <nome-da-placa>    # a maquina aparece
+curl -s http://<ip-tailscale-da-placa>:11434/api/tags | head -c 200
+```
+
+O `curl` roda **da VM**, nao da sua maquina: o que interessa e se a nuvem
+alcanca a placa. Alcancar do seu notebook nao diz nada.
+
+### Passo 4 — Nginx e TLS
+
+```bash
+sudo cp deploy/nginx/publibot.conf /etc/nginx/sites-available/publibot
+sudo sed -i 's/publibot.com.br/exemplo.com.br/g' /etc/nginx/sites-available/publibot
+sudo ln -sf /etc/nginx/sites-available/publibot /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+O certificado precisa ser **curinga** (`*.exemplo.com.br`): cada tenant e um
+subdominio, e um certificado so para o dominio raiz faz o primeiro cliente ver
+um aviso de seguranca. Certificado curinga exige validacao DNS-01:
+
+```bash
+sudo certbot certonly --manual --preferred-challenges dns \
+     -d exemplo.com.br -d '*.exemplo.com.br'
+```
+
+**Conferir:**
+
+```bash
+sudo nginx -t                                    # syntax is ok
+curl -sI https://exemplo.com.br/healthz/ | head -1
+curl -sI https://qualquer-coisa.exemplo.com.br/ | head -1   # o curinga responde
+```
+
+O `/healthz/` responde **antes** da resolucao de tenant, de proposito: um
+health check que passa pela resolucao devolveria 404 num dominio sem tenant, e
+o balanceador concluiria que a aplicacao esta fora do ar.
+
+### Passo 5 — Primeira implantacao
 
 ```bash
 ./deploy/scripts/release.sh
 ```
 
 Busca o codigo, instala dependencias, roda `check --deploy`, recusa model sem
-migration, migra `public` e todos os tenants, confere o tenant raiz, semeia a
-conexao de inferencia, coleta estaticos, **sincroniza os units** e recarrega os
-servicos — nessa ordem, e a ordem importa: migrations antes de reiniciar, senao
-o codigo novo consulta colunas que ainda nao existem.
+migration, migra `public` e todos os tenants, confere o tenant raiz, semeia as
+conexoes de inferencia, semeia os prompts, coleta estaticos, **sincroniza as
+units** e recarrega os servicos — nessa ordem, e a ordem importa: migrations
+antes de reiniciar, senao o codigo novo consulta colunas que ainda nao
+existem.
 
-A sincronizacao dos units resolve uma armadilha silenciosa. Eles sao
-versionados no repositorio, mas o systemd le de `/etc/systemd/system`; sem
+A sincronizacao das units resolve uma armadilha silenciosa. Elas sao
+versionadas no repositorio, mas o systemd le de `/etc/systemd/system`; sem
 copiar, editar um `.service` nao tem efeito nenhum e nada avisa — a mudanca
 esta no git, foi revisada, foi implantada, e o servico segue com a versao
 antiga. O `daemon-reload` so acontece quando algo mudou de fato.
 
+**Conferir:**
+
+```bash
+systemctl is-active publibot celery-publibot celery-beat-publibot
+cd /srv/publibot && venv/bin/python manage.py check_db
+venv/bin/python manage.py broker_status
+```
+
+O `check_db` confere banco, extensoes, `search_path` e o tenant raiz de uma
+vez. O `broker_status` diz **qual** broker esta valendo — a confusao entre
+Redis e Postgres como broker produz uma fila que aceita mensagens que ninguem
+consome.
+
+### Passo 6 — Conexoes de inferencia
+
+```bash
+venv/bin/python manage.py configurar_inferencia --testar
+venv/bin/python manage.py configurar_conversao --testar
+venv/bin/python manage.py configurar_imagem --testar
+```
+
+Os tres sao idempotentes e **preservam** o que ja estiver no banco: a conexao
+vive numa linha, e nao num arquivo, para trocar de modelo sem implantar
+(ADR-0012).
+
+**Conferir:** o `--testar` ja e a conferencia. Leia a resposta, nao so o
+codigo de saida:
+
+- `configurar_conversao` deve dizer `dispositivo=cuda`. Se disser `cpu`, o
+  worker esta sem placa e a conversao vai levar minutos;
+- `configurar_imagem` deve dizer `dispositivo=cuda` e `baixado=True`. Com
+  `baixado` falso, a primeira geracao de capa baixa alguns GB **dentro da
+  requisicao** — rode `./venv/bin/python baixar_modelo.py` na maquina da placa
+  antes de usar.
+
+### Passo 7 — Primeiro acesso
+
+```bash
+venv/bin/python manage.py createsuperuser
+venv/bin/python manage.py provision_tenant acme --name="ACME Ltda"
+```
+
+**Conferir:** abra `https://acme.exemplo.com.br/`, entre, e veja o painel.
+
+Se o login reaparecer sem erro nenhum, o `ROOT_DOMAIN` tem um rotulo so: o
+navegador DESCARTA o atributo `Domain` do cookie e a sessao nao atravessa para
+o subdominio.
+
+### Passo 8 — Roteiro de aceitacao
+
+Ate aqui tudo esta de pe. Isto confere que o sistema **funciona**, e e o unico
+passo que exercita a cadeia inteira. Vale a pena na primeira implantacao e
+depois de qualquer mudanca grande.
+
+| # | Faca | Confere que |
+|---|---|---|
+| 1 | Envie um PDF em **Documentos > Enviar** | upload, fila e worker |
+| 2 | Abra o documento em instantes | a conversao rodou na maquina da placa |
+| 3 | Veja se **nao** ha aviso de "texto extraido sem analise de layout" | o Docling atendeu; se houver, caiu no extrator local |
+| 4 | Marque alguns blocos e vetorize | o modelo de embedding e o pgvector |
+| 5 | Crie uma pauta e clique em **gerar artigo** | prompts semeados e o Ollama |
+| 6 | Acompanhe em **Operacao** | o orquestrador avanca passo a passo |
+| 7 | Abra o artigo pronto | as citacoes viraram links e a capa veio junto |
+| 8 | Aprove e agende | a trava de autor e a cadencia |
+
+Cada linha que falhar tem uma entrada na tabela de **Diagnostico**, no fim
+deste arquivo.
+
+Do passo 5 ao 7 o tempo depende da placa, nao da nuvem. Num artigo de seis
+secoes com um modelo 7B, conte alguns minutos — e, se a capa entrar junto,
+mais um ou dois. **Nao** clique de novo achando que travou: a tela de operacao
+mostra o passo em curso.
+
+### Toda implantacao, depois disso
+
+```bash
+./deploy/scripts/release.sh
+```
+
+**Conferir:**
+
+```bash
+systemctl is-active publibot celery-publibot celery-beat-publibot
+curl -sI https://exemplo.com.br/healthz/ | head -1
+journalctl -u publibot -n 20 --no-pager
+```
+
 ### Implantacao pelo GitHub
 
-`.github/workflows/ci.yml` roda a suite a cada push e, quando o commit entra na
-`main`, entra no servidor por ssh e roda **o mesmo** `release.sh` de cima.
+`.github/workflows/ci.yml` roda a suite a cada push e, quando o commit entra
+na `main`, entra no servidor por ssh e roda **o mesmo** `release.sh` de cima.
 
 Nao ha copia de arquivo nem sequencia repetida no workflow. Descrever a
 implantacao duas vezes — uma no script, outra no YAML — cria dois caminhos que
@@ -424,15 +689,25 @@ Quatro segredos no repositorio (Settings > Secrets and variables > Actions):
 Nao existe um segredo com o `.env` de producao, e a ausencia e deliberada: os
 segredos sao gerados **no servidor**, uma unica vez, pelo `bootstrap.sh`, e
 nunca sobrescritos. Guardar o arquivo inteiro num secret significaria
-reescrever `/etc/publibot/env` a cada implantacao — e um `NODE_KEY_ENCRYPTION_KEY`
-diferente do que cifrou as credenciais as torna irrecuperaveis, com o erro
-aparecendo dias depois, como falha de autenticacao contra o site do cliente.
+reescrever `/etc/publibot/env` a cada implantacao — e um
+`NODE_KEY_ENCRYPTION_KEY` diferente do que cifrou as credenciais as torna
+irrecuperaveis, com o erro aparecendo dias depois, como falha de autenticacao
+contra o site do cliente.
+
+**Conferir que a implantacao chegou** (e nao so que o workflow ficou verde):
+
+```bash
+ssh servidor 'cd /srv/publibot && git rev-parse --short HEAD'
+```
+
+Compare com o commit da `main`. Um workflow verde diz que o ssh rodou, nao que
+o servico reiniciou com o codigo novo.
 
 O job de teste sobe PostgreSQL e Redis de verdade, com a extensao `vector` no
-schema `extensions` do `template1` — a mesma preparacao que o `setup-db.sh` faz
-na sua maquina. Um banco falso passaria em tudo e nao diria nada sobre schema
-por tenant, `search_path` ou prefixo de chave, que e exatamente o que este
-projeto tem de mais fragil.
+schema `extensions` do `template1` — a mesma preparacao que o `setup-db.sh`
+faz na sua maquina. Um banco falso passaria em tudo e nao diria nada sobre
+schema por tenant, `search_path` ou prefixo de chave, que e exatamente o que
+este projeto tem de mais fragil.
 
 ### Redis compartilhado
 
@@ -452,6 +727,76 @@ redis-cli --scan --pattern 'celery*'     # deve vir vazio
 
 Separar so por numero de base (`/0`, `/1`) dependeria de ninguem repetir o
 numero, e um `FLUSHDB` de um projeto ainda levaria o outro junto.
+
+---
+
+## Parte 3 — A maquina da placa
+
+Ela atende a nuvem e a sua maquina de desenvolvimento, e e a mesma nos dois
+casos. Nao roda Django, nem Celery, nem banco: so tres servicos HTTP
+(ADR-0007).
+
+| Servico | Porta | Sobe como |
+|---|---|---|
+| `ollama serve` | 11434 | unit propria do Ollama |
+| `docling-api` | 8100 | `worker-gpu/deploy/instalar.sh` |
+| `imagem-api` | 8101 | `worker-gpu/deploy/instalar.sh --imagem` |
+
+```bash
+cd worker-gpu
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+cp .env.example .env          # defina WORKER_SHARED_SECRET e BIND_HOST
+./venv/bin/python baixar_modelo.py    # os ~7 GB do modelo de imagem, uma vez
+./deploy/instalar.sh --tudo
+```
+
+O `BIND_HOST` decide quem alcanca os servicos, e e onde se erra:
+
+| Valor | Quem alcanca |
+|---|---|
+| `127.0.0.1` | so esta maquina — serve enquanto o PubliBot roda aqui do lado |
+| `$(tailscale ip -4)` | a VM da nuvem tambem |
+| `0.0.0.0` | a internet inteira. O instalador recusa |
+
+**Trocar de `127.0.0.1` para o endereco da Tailscale exige reinstalar as
+units** (`./deploy/instalar.sh --tudo`), porque o endereco entra na linha de
+comando do uvicorn.
+
+**Conferir**, da VM da nuvem:
+
+```bash
+curl -s http://<ip-tailscale>:8100/health/
+curl -s http://<ip-tailscale>:8101/health/
+```
+
+### As units sobem sozinhas no boot?
+
+Depende de como foram instaladas, e a diferenca pega todo mundo uma vez:
+
+| Instalacao | Sobe quando |
+|---|---|
+| `./deploy/instalar.sh` (padrao, unit de **usuario**) | voce faz login na maquina |
+| o mesmo, **mais** `sudo loginctl enable-linger $USER` | no boot, sem login |
+| `./deploy/instalar.sh --sistema` | no boot, sempre |
+
+Numa maquina pessoal que tambem serve a nuvem, `enable-linger` e o que voce
+quer: reiniciar o computador e ter os servicos de volta sem abrir sessao
+grafica.
+
+```bash
+sudo loginctl enable-linger "$USER"
+loginctl show-user "$USER" | grep Linger      # Linger=yes
+```
+
+### Onde fica o log
+
+No journal, **nao** no terminal do `manage.py dev`. Esta e a confusao mais
+comum quando os dois convivem na mesma maquina:
+
+```bash
+journalctl --user -u imagem-api -f
+journalctl --user -u docling-api -f
+```
 
 ---
 
@@ -509,6 +854,10 @@ python manage.py reservas          # quem esta segurando a capacidade
 | `o disjuntor esta aberto` | 5 falhas seguidas contra o LLM. A propria mensagem traz a ultima causa; conserte e `configurar_inferencia --atualizar` |
 | `nenhuma versao ativa para o prompt ...` | tenant sem prompts; `manage.py semear_prompts --todos` |
 | `nenhuma conexao de geracao de imagem disponivel` | faltou `configurar_imagem`; o artigo sai sem capa e o texto nao e afetado (secao 4a) |
+| Gerar capa fica girando e depois da erro | a primeira geracao BAIXA o modelo (~7 GB). Rode `baixar_modelo.py` na maquina da placa |
+| `could not open extension control file` no bootstrap | falta `postgresql-<versao>-pgvector` |
+| Unit de usuario nao sobe no boot | falta `sudo loginctl enable-linger $USER` |
+| Log do worker de GPU nao aparece no `dev` | ele e unit do systemd: `journalctl --user -u imagem-api -f` |
 | Gerar capa leva minutos | caiu para CPU. `configurar_imagem --testar` mostra `ultimo=cpu`; a placa esta sendo disputada |
 | Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
 | `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |

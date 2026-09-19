@@ -311,6 +311,30 @@ class PedidoDeImagem(BaseModel):
     seed: int | None = Field(default=None)
 
 
+def _modelo_esta_no_disco() -> bool:
+    """Se os pesos ja estao no cache local.
+
+    O que esta pergunta evita: a primeira geracao de todas nao CARREGA o
+    modelo, ela o BAIXA — cerca de 7 GB. Numa tela sincrona isso e o navegador
+    girando por varios minutos e terminando em tempo esgotado. Quem consulta o
+    `/health/` (o `configurar_imagem --testar`) consegue avisar antes, em vez
+    de a pessoa descobrir clicando.
+
+    Conservador: qualquer duvida devolve False, porque "talvez precise baixar"
+    e um aviso barato e "nao precisa" errado custa a espera inteira.
+    """
+    if os.path.isdir(MODELO):
+        return True
+
+    try:
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(MODELO, local_files_only=True)
+        return True
+    except Exception:
+        return False
+
+
 @app.get("/health/")
 async def health():
     return {
@@ -318,6 +342,9 @@ async def health():
         "service": "imagem-api",
         "busy": not _uma_por_vez._value,
         "model": MODELO,
+        # Baixado != carregado. O primeiro custa minutos e acontece uma vez; o
+        # segundo custa dezenas de segundos e acontece depois de cada ociosidade.
+        "baixado": _modelo_esta_no_disco(),
         # O configurado e o que de fato rodou por ultimo. Os dois, porque a
         # diferenca entre eles e exatamente o caso que interessa: pediram
         # `cuda` e a VRAM faltou.

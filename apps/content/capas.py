@@ -48,6 +48,16 @@ class SemConexaoDeImagem(RuntimeError):
     """Nenhuma conexao de geracao de imagem cadastrada e ativa."""
 
 
+class GeradorDeImagemOcupado(RuntimeError):
+    """Ha conexao de imagem, mas a maquina esta sem vaga agora.
+
+    Separada de `SemConexaoDeImagem` porque as duas pedem acoes opostas: uma e
+    "cadastre uma conexao", a outra e "espere". Enquanto as duas eram a mesma
+    excecao, uma placa ocupada mandava a pessoa cadastrar uma conexao que ja
+    existia e ja funcionava.
+    """
+
+
 class LimiteDeLotes(RuntimeError):
     """O artigo ja tem lotes demais."""
 
@@ -107,19 +117,41 @@ def gerar_opcoes(
 
 
 def _conexao_de_imagem():
+    """A conexao de imagem com vaga agora.
+
+    `escolher_conexao` devolve `None` por dois motivos que nao se parecem em
+    nada: **nao ha conexao de imagem nenhuma**, ou **ha e esta sem vaga** (a
+    placa ocupada, ou o disjuntor aberto). Enquanto os dois caiam na mesma
+    excecao, a segunda situacao mandava a pessoa "cadastrar uma conexao do tipo
+    image" — que ja existia, respondia ao `--testar` e estava gerando imagem no
+    pedido anterior.
+
+    O caminho do texto (`apps/content/inference.py`) ja separava os dois. Este
+    nao, e a divergencia custou uma investigacao.
+    """
     from apps.content.inference import _tenant_atual
-    from apps.inference.leases import escolher_conexao
+    from apps.inference.leases import descrever_ocupacao, escolher_conexao
     from apps.inference.models import InferenceConnection
 
     conexao = escolher_conexao(
         workload=InferenceConnection.Workload.IMAGE, tenant=_tenant_atual(), model_name=""
     )
-    if conexao is None:
+    if conexao is not None:
+        return conexao
+
+    existe_alguma = any(
+        candidata.atende(InferenceConnection.Workload.IMAGE)
+        for candidata in InferenceConnection.objects.filter(is_active=True)
+    )
+    if not existe_alguma:
         raise SemConexaoDeImagem(
             "nenhuma conexao de geracao de imagem disponivel. Cadastre uma em "
             "Configuracao > Inferencia, do tipo 'image'."
         )
-    return conexao
+
+    # `descrever_ocupacao` nomeia quem segura a reserva e ha quanto tempo, ou
+    # explica o disjuntor. E a diferenca entre esperar e agir.
+    raise GeradorDeImagemOcupado(descrever_ocupacao())
 
 
 def _registrar_uso(conexao, modelo: str, quantas: int) -> None:

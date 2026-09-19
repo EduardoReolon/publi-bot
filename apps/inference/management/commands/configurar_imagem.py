@@ -214,6 +214,18 @@ class Command(BaseCommand):
             )
         )
 
+        if dados.get("baixado") is False:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Os pesos do modelo ainda NAO estao no disco do worker. A "
+                    "primeira geracao vai baixa-los (alguns GB) dentro da "
+                    "requisicao, e a tela vai parecer travada ate esgotar o "
+                    "tempo.\n"
+                    "Na maquina do worker, antes de usar:\n"
+                    "    ./venv/bin/python baixar_modelo.py"
+                )
+            )
+
         if dados.get("device") == "cpu":
             self.stdout.write(
                 "Configurado para CPU: uma imagem leva MINUTOS. Para usar a "

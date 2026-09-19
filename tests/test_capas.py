@@ -306,3 +306,77 @@ def test_uma_capa_por_artigo_no_banco(artigo, geracao_falsa):
 
     with pytest.raises(IntegrityError), transaction.atomic():
         ArticleImage.objects.filter(pk=segunda.pk).update(is_chosen=True)
+
+
+# ---------------------------------------------------------------------------
+# "Sem conexao" e "ocupado" sao problemas opostos
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_sem_nenhuma_conexao_de_imagem_manda_cadastrar(artigo):
+    """O caso legitimo: nao ha gerador de imagem nenhum."""
+    with pytest.raises(SemConexaoDeImagem, match="Cadastre uma"):
+        gerar_opcoes(artigo)
+
+
+@pytest.mark.django_db
+def test_placa_ocupada_nao_manda_cadastrar_o_que_ja_existe(artigo):
+    """Encontrado em uso, e o erro custou uma investigacao.
+
+    `escolher_conexao` devolve `None` por dois motivos opostos: nao ha conexao
+    de imagem, ou ha e a maquina esta sem vaga. Os dois caiam na mesma frase —
+    "cadastre uma conexao do tipo image" — e a pessoa a lia depois de a conexao
+    ter sido cadastrada, testada com `--testar` e usada no pedido anterior, que
+    era justamente o que estava segurando a vaga.
+    """
+    from apps.content.capas import GeradorDeImagemOcupado
+    from apps.inference.leases import adquirir
+    from apps.inference.models import InferenceConnection
+
+    imagem = InferenceConnection.objects.create(
+        name="Geracao de imagem",
+        kind=InferenceConnection.Kind.IMAGE,
+        base_url="http://127.0.0.1:8101",
+        workloads=[InferenceConnection.Workload.IMAGE],
+        default_model="sdxl",
+        max_concurrency=1,
+        is_active=True,
+    )
+    adquirir(imagem, owner_key="o-pedido-anterior")
+
+    with pytest.raises(GeradorDeImagemOcupado) as erro:
+        gerar_opcoes(artigo)
+
+    assert "Cadastre uma" not in str(erro.value)
+    assert "o-pedido-anterior" in str(erro.value) or "ocupad" in str(erro.value)
+
+
+@pytest.mark.django_db
+def test_o_texto_ocupando_a_placa_tambem_bloqueia_a_imagem(artigo):
+    """A reserva conta por MAQUINA. Uma geracao de artigo em curso ocupa a
+    vaga da capa — de proposito, porque e a mesma placa."""
+    from apps.content.capas import GeradorDeImagemOcupado
+    from apps.inference.leases import adquirir
+    from apps.inference.models import InferenceConnection
+
+    texto = InferenceConnection.objects.create(
+        name="LLM principal",
+        kind=InferenceConnection.Kind.OPENAI_COMPATIBLE,
+        base_url="http://127.0.0.1:11434",
+        workloads=[InferenceConnection.Workload.TEXT],
+        default_model="qwen2.5:7b-instruct",
+        max_concurrency=1,
+        is_active=True,
+    )
+    InferenceConnection.objects.create(
+        name="Geracao de imagem",
+        kind=InferenceConnection.Kind.IMAGE,
+        base_url="http://127.0.0.1:8101",
+        workloads=[InferenceConnection.Workload.IMAGE],
+        default_model="sdxl",
+        max_concurrency=1,
+        is_active=True,
+    )
+    adquirir(texto, owner_key="gerando-artigo")
+
+    with pytest.raises(GeradorDeImagemOcupado):
+        gerar_opcoes(artigo)

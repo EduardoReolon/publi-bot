@@ -817,3 +817,28 @@ Isso atinge exatamente quem ja tinha o worker instalado, porque o `.env` dele
 e anterior a variavel — e atualizar o `.env.example` no repositorio nao
 conserta quem nao vai copia-lo de novo. O instalador passou a exigir as
 variaveis que as units interpolam, imprimindo a linha a acrescentar.
+
+### "Cadastre uma conexao" quando ela ja existe e esta ocupada
+
+`escolher_conexao` devolve `None` por dois motivos que nao se parecem em nada:
+nao ha conexao para aquela carga, ou ha e esta sem vaga (placa ocupada, ou
+disjuntor aberto). O caminho do texto separava os dois desde sempre; o da
+imagem colapsava ambos em:
+
+    nenhuma conexao de geracao de imagem disponivel. Cadastre uma em
+    Configuracao > Inferencia, do tipo 'image'.
+
+Encontrado em uso, e da pior forma: a pessoa clicou em gerar capas, o pedido
+ficou minutos baixando o modelo segurando a reserva, ela atualizou a pagina e
+clicou de novo — e o sistema mandou cadastrar uma conexao que existia, que o
+`configurar_imagem --testar` acabara de confirmar, e que naquele exato momento
+estava gerando a imagem do pedido anterior.
+
+Hoje sao duas excecoes: `SemConexaoDeImagem` ("cadastre") e
+`GeradorDeImagemOcupado` ("espere", com `descrever_ocupacao` nomeando quem
+segura a reserva e ha quanto tempo). A segunda vira `PassoAdiado` no fluxo,
+que nao gasta tentativa.
+
+A licao que passa do caso: **quando uma funcao devolve `None` por mais de um
+motivo, quem chama precisa distinguir.** Um `None` que significa duas coisas
+sempre vira uma mensagem que esta errada em metade das vezes.

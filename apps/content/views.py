@@ -562,7 +562,12 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
     olhando a tela, e mandar para a fila sem nada mudar na tela faria ela pedir
     de novo.
     """
-    from apps.content.capas import LimiteDeLotes, SemConexaoDeImagem, gerar_opcoes
+    from apps.content.capas import (
+        GeradorDeImagemOcupado,
+        LimiteDeLotes,
+        SemConexaoDeImagem,
+        gerar_opcoes,
+    )
     from apps.inference.leases import SemCapacidade
 
     artigo = get_object_or_404(Article, pk=pk)
@@ -570,6 +575,11 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
     try:
         criadas = gerar_opcoes(artigo, site=_site())
     except (SemConexaoDeImagem, LimiteDeLotes) as exc:
+        messages.error(request, str(exc))
+        return redirect("content:revisar", pk=artigo.pk)
+    except GeradorDeImagemOcupado as exc:
+        # A mensagem ja nomeia quem segura a reserva e ha quanto tempo. A frase
+        # generica de "ocupado" abaixo serve para o caso sem detalhe.
         messages.error(request, str(exc))
         return redirect("content:revisar", pk=artigo.pk)
     # `SemCapacidade` junto com `PassoAdiado` porque as duas chegam aqui pelo

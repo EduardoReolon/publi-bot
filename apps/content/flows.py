@@ -449,7 +449,12 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
     Gerar nao e escolher: nenhuma das opcoes entra no artigo sozinha. A capa
     continua sendo escolha de quem revisa (apps/content/capas.py).
     """
-    from apps.content.capas import LimiteDeLotes, SemConexaoDeImagem, gerar_opcoes
+    from apps.content.capas import (
+        GeradorDeImagemOcupado,
+        LimiteDeLotes,
+        SemConexaoDeImagem,
+        gerar_opcoes,
+    )
     from apps.inference.leases import SemCapacidade
     from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
 
@@ -457,9 +462,12 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
 
     try:
         criadas = gerar_opcoes(article, site=_site_do_tenant())
-    except SemCapacidade as exc:
+    except (SemCapacidade, GeradorDeImagemOcupado) as exc:
         # Maquina ocupada nao e falha: a capa espera a vez como qualquer outra
         # inferencia. `PassoAdiado` nao gasta tentativa.
+        #
+        # As duas excecoes sao o mesmo fato em camadas diferentes: a escolha da
+        # conexao nao achou vaga, ou achou e a reserva a perdeu no caminho.
         raise PassoAdiado(str(exc), tentar_em_segundos=180) from exc
     except (
         SemConexaoDeImagem,

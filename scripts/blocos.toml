@@ -169,6 +169,7 @@ padroes = [
   # lado do Docling, mas o que ele faz pertence a este bloco — e o cabecalho
   # dele guarda as cinco camadas que dividem a VRAM entre os tres servicos.
   "worker-gpu/imagem_api.py",
+  "worker-gpu/baixar_modelo.py",
   "docs/adr/ADR-0019-tres-opcoes-de-capa.md",
   "tests/test_capas.py",
   "tests/test_imagens.py",
