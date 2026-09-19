@@ -29,19 +29,3 @@ pre-commit==4.3.0
 # preso a `main`. Chega junto com o pre-commit de qualquer jeito; declarado
 # aqui para a suite nao depender de dependencia transitiva alheia.
 PyYAML==6.0.3
-
-# --- Servicos de GPU, para a suite conseguir exercita-los -------------------
-# `worker-gpu/` tem o proprio requirements e o proprio venv: ele traz torch e
-# nao entra no da nuvem. Mas os servicos de la sao FastAPI, e sem o FastAPI
-# aqui nenhum teste conseguia sequer importa-los — o resultado era um servico
-# que recebe credencial, decide 503 e responde ao PubliBot sem um unico teste.
-#
-# So o FastAPI, e nao o resto: o que se testa e o HTTP (credencial, recusa
-# quando ocupado, formato da resposta), com a parte pesada substituida. Torch e
-# diffusers continuam fora daqui.
-fastapi==0.121.2
-
-# O servico de conversao recebe o PDF por multipart. Sem isto o FastAPI recusa
-# ate registrar a rota, e o modulo nem importa — entao nenhum teste alcanca
-# `docling_api`.
-python-multipart==0.0.20

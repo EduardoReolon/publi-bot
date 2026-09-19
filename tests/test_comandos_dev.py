@@ -79,15 +79,15 @@ def _capturar(monkeypatch) -> list[list[str]]:
 
 
 @pytest.fixture(autouse=True)
-def sem_workers_de_gpu(settings):
-    """Os servicos de GPU so sobem quando estao instalados NESTA maquina.
+def sem_worker_de_gpu(settings):
+    """O worker de GPU so sobe quando o checkout esta NESTA maquina.
 
-    Neutralizados por padrao: se estivessem instalados na maquina de quem roda
-    a suite, metade dos testes de contagem passaria a ver processos a mais — e
+    Neutralizado por padrao: se estivesse instalado na maquina de quem roda a
+    suite, metade dos testes de contagem passaria a ver um processo a mais — e
     o resultado dependeria do que cada um tem no disco.
     """
-    settings.CONVERSAO_BASE_URL = ""
-    settings.IMAGEM_BASE_URL = ""
+    settings.WORKER_GPU_DIR = ""
+    settings.INFERENCIA_BASE_URL = ""
 
 
 @override_settings(DEBUG=True)
@@ -161,148 +161,155 @@ def test_dev_usa_pool_solo_no_windows(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# O worker de conversao (Docling)
+# O worker de GPU
 # ---------------------------------------------------------------------------
+# Ele vive em OUTRO repositorio. O `dev` so o sobe por conveniencia, quando o
+# checkout esta nesta maquina e a porta esta livre — e o que se testa aqui e
+# exatamente quando ele NAO deve subir, porque cada um desses casos, errado,
+# derruba o `dev` inteiro ou cria um segundo arbitro.
 @override_settings(DEBUG=True)
-def test_sobe_o_worker_de_conversao_quando_ele_mora_aqui(monkeypatch, tmp_path, settings):
-    """Em desenvolvimento o Docling costuma rodar na mesma maquina, e subir
-    tres processos a mao e esquecer o quarto e o mesmo erro de sempre."""
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+def test_sobe_o_worker_quando_ele_mora_aqui(monkeypatch, tmp_path, settings):
+    _fingir_checkout_do_worker(tmp_path, settings)
+    settings.INFERENCIA_BASE_URL = "http://127.0.0.1:8090"
     lancados = _capturar(monkeypatch)
 
     call_command("dev", sem_conferir=True)
 
-    conversao = [c for c in lancados if "docling_api:app" in c]
-    assert len(conversao) == 1
-    assert "8100" in conversao[0]
+    worker = [c for c in lancados if "app:app" in c]
+    assert len(worker) == 1
+    assert "8090" in worker[0]
 
 
 @override_settings(DEBUG=True)
-def test_nao_sobe_o_worker_que_esta_em_outra_maquina(monkeypatch, tmp_path, settings):
-    """Em producao ele roda onde esta a placa (ADR-0007). Subir uma copia local
-    daria dois servicos, e um deles nao receberia trabalho nenhum."""
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    settings.CONVERSAO_BASE_URL = "http://100.64.0.9:8100"
+def test_nao_sobe_o_worker_que_esta_em_outra_maquina(monkeypatch, tmp_path, settings, capsys):
+    """Subir uma copia local daria DOIS arbitros — e dois arbitros sobre uma
+    placa nao arbitram nada: cada um acharia a GPU livre."""
+    _fingir_checkout_do_worker(tmp_path, settings)
+    settings.INFERENCIA_BASE_URL = "http://100.64.0.7:8090"
     lancados = _capturar(monkeypatch)
 
     call_command("dev", sem_conferir=True)
 
-    assert not any("docling_api:app" in c for c in lancados)
+    assert not [c for c in lancados if "app:app" in c]
+    assert "outra maquina" in capsys.readouterr().out
 
 
 @override_settings(DEBUG=True)
-def test_sem_o_venv_do_worker_nao_tenta_subir(monkeypatch, settings):
-    """O Docling traz torch (~3 GB) e nao entra no venv da nuvem. Sem o venv
-    proprio, tentar subir seria pedir um modulo que nao existe."""
-    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+def test_sem_o_caminho_do_checkout_nao_tenta_subir(monkeypatch, settings, capsys):
+    """Sem palpite de caminho: o worker e outro repositorio, e adivinhar
+    `../worker-gpu` acertaria so na maquina de quem escreveu."""
+    settings.INFERENCIA_BASE_URL = "http://127.0.0.1:8090"
+    settings.WORKER_GPU_DIR = ""
     lancados = _capturar(monkeypatch)
 
     call_command("dev", sem_conferir=True)
 
-    assert not any("docling_api:app" in c for c in lancados)
+    assert not [c for c in lancados if "app:app" in c]
+    assert "WORKER_GPU_DIR" in capsys.readouterr().out
 
 
 @override_settings(DEBUG=True)
-def test_sem_conversao_nao_sobe_mesmo_instalado(monkeypatch, tmp_path, settings):
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
+def test_sem_gpu_nao_sobe_mesmo_instalado(monkeypatch, tmp_path, settings):
+    _fingir_checkout_do_worker(tmp_path, settings)
+    settings.INFERENCIA_BASE_URL = "http://127.0.0.1:8090"
     lancados = _capturar(monkeypatch)
 
-    call_command("dev", sem_conversao=True, sem_conferir=True)
+    call_command("dev", sem_gpu=True, sem_conferir=True)
 
-    assert not any("docling_api:app" in c for c in lancados)
-
-
-def test_o_worker_recebe_o_segredo_com_o_nome_que_ele_espera(monkeypatch, tmp_path, settings):
-    """Sao dois nomes para o mesmo valor: `CONVERSAO_SEGREDO` no PubliBot,
-    `WORKER_SHARED_SECRET` no worker. Sem a ponte, o worker sobe sem segredo e
-    responde 500 a toda conversao — com uma mensagem que fala de configuracao,
-    nao de qual arquivo preencher."""
-    from apps.ops.management.commands.dev import _ambiente_do_worker
-
-    settings.CONVERSAO_SEGREDO = "o-segredo-do-env-do-publibot"
-
-    ambiente = _ambiente_do_worker(tmp_path)
-
-    assert ambiente["WORKER_SHARED_SECRET"] == "o-segredo-do-env-do-publibot"
-
-
-def test_o_env_do_worker_vence_o_do_terminal(tmp_path, settings):
-    """Esse arquivo e o MESMO que o systemd le por `EnvironmentFile`. Ignora-lo
-    faria o worker do `dev` rodar com outro dispositivo do que o configurado —
-    e a diferenca apareceria so como "aqui esta mais lento"."""
-    from apps.ops.management.commands.dev import _ambiente_do_worker
-
-    (tmp_path / ".env").write_text(
-        "# um comentario\n"
-        "DOCLING_DEVICE=cuda\n"
-        'WORKER_SHARED_SECRET="o-do-worker"\n'
-        "linha solta sem igual\n",
-        encoding="utf-8",
-    )
-    settings.CONVERSAO_SEGREDO = "o-do-publibot"
-
-    ambiente = _ambiente_do_worker(tmp_path)
-
-    assert ambiente["DOCLING_DEVICE"] == "cuda"
-    assert ambiente["WORKER_SHARED_SECRET"] == "o-do-worker"
+    assert not [c for c in lancados if "app:app" in c]
 
 
 @override_settings(DEBUG=True)
-def test_nao_sobe_um_segundo_worker_na_porta_ja_ocupada(monkeypatch, tmp_path, settings):
-    """Numa maquina que serve o servidor, o worker roda pelo systemd.
+def test_nao_sobe_um_segundo_worker_na_porta_ja_ocupada(monkeypatch, tmp_path, settings, capsys):
+    """O estado normal de quem instalou a unit. Subir o segundo daria
+    "address already in use" e derrubaria o `dev` inteiro, porque qualquer
+    processo que morre encerra todos."""
+    import socket
 
-    Subir o segundo daria "address already in use", e como o `dev` derruba
-    todos quando qualquer um morre, o comando inteiro cairia junto — por causa
-    de um servico que ja estava funcionando.
-    """
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
-    monkeypatch.setattr("apps.ops.management.commands.dev._porta_ocupada", lambda host, porta: True)
+    _fingir_checkout_do_worker(tmp_path, settings)
     lancados = _capturar(monkeypatch)
 
-    call_command("dev", sem_conferir=True)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+        servidor.bind(("127.0.0.1", 0))
+        servidor.listen(1)
+        settings.INFERENCIA_BASE_URL = f"http://127.0.0.1:{servidor.getsockname()[1]}"
 
-    assert not any("docling_api:app" in c for c in lancados)
+        call_command("dev", sem_conferir=True)
 
-
-@override_settings(DEBUG=True)
-def test_diz_por_que_a_conversao_nao_esta_na_lista(monkeypatch, tmp_path, settings, capsys):
-    """O silencio seria pior que o ruido: quem instalou a unit veria
-    "Subindo: worker, beat, web" e concluiria que a conversao nao vai
-    acontecer — quando ela vai, pelo servico que ja estava de pe."""
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
-    monkeypatch.setattr("apps.ops.management.commands.dev._porta_ocupada", lambda host, porta: True)
-    _capturar(monkeypatch)
-
-    call_command("dev", sem_conferir=True)
-
+    assert not [c for c in lancados if "app:app" in c]
     assert "ja de pe" in capsys.readouterr().out
 
 
 @override_settings(DEBUG=True)
-def test_sem_conversao_configurada_avisa_do_extrator_local(monkeypatch, settings, capsys):
-    settings.CONVERSAO_BASE_URL = ""
+def test_sem_inferencia_configurada_o_banner_avisa(monkeypatch, capsys):
+    """Sem worker nao ha texto, capa nem conversao — e nada disso falha de
+    forma visivel sozinho."""
     _capturar(monkeypatch)
 
     call_command("dev", sem_conferir=True)
 
-    assert "extrator local" in capsys.readouterr().out
+    assert "Sem texto, capa ou conversao" in capsys.readouterr().out
+
+
+@override_settings(DEBUG=True)
+def test_o_worker_recebe_o_segredo_com_o_nome_que_ele_espera(monkeypatch, tmp_path, settings):
+    """Aqui a variavel se chama `INFERENCIA_API_KEY`; la,
+    `WORKER_SHARED_SECRET`. Sem a ponte, o worker sobe e responde 500 a toda
+    chamada — com uma mensagem que fala de configuracao sem dizer qual
+    arquivo preencher."""
+    _fingir_checkout_do_worker(tmp_path, settings)
+    settings.INFERENCIA_BASE_URL = "http://127.0.0.1:8090"
+    settings.INFERENCIA_API_KEY = "o-segredo"
+
+    ambientes = []
+
+    def falso_popen(argv, *a, **k):
+        ambientes.append((argv, k.get("env")))
+        processo = ProcessoFalso(argv)
+        processo.terminate()
+        return processo
+
+    monkeypatch.setattr("subprocess.Popen", falso_popen)
+    call_command("dev", sem_conferir=True)
+
+    do_worker = next(env for argv, env in ambientes if "app:app" in argv)
+    assert do_worker["WORKER_SHARED_SECRET"] == "o-segredo"
+
+
+@override_settings(DEBUG=True)
+def test_o_env_do_worker_vence_o_do_terminal(tmp_path, settings, monkeypatch):
+    """E o mesmo arquivo que o systemd le por `EnvironmentFile`. Ignora-lo
+    faria o worker do `dev` se comportar diferente do configurado, e a
+    diferenca apareceria so como "aqui esta mais lento"."""
+    raiz = _fingir_checkout_do_worker(tmp_path, settings)
+    (raiz / ".env").write_text("IMAGEM_DEVICE=cuda\nWORKER_SHARED_SECRET=do-arquivo\n")
+    settings.INFERENCIA_BASE_URL = "http://127.0.0.1:8090"
+    settings.INFERENCIA_API_KEY = "do-django"
+
+    ambientes = []
+
+    def falso_popen(argv, *a, **k):
+        ambientes.append((argv, k.get("env")))
+        processo = ProcessoFalso(argv)
+        processo.terminate()
+        return processo
+
+    monkeypatch.setattr("subprocess.Popen", falso_popen)
+    call_command("dev", sem_conferir=True)
+
+    do_worker = next(env for argv, env in ambientes if "app:app" in argv)
+    assert do_worker["IMAGEM_DEVICE"] == "cuda"
+    assert do_worker["WORKER_SHARED_SECRET"] == "do-arquivo"
 
 
 def test_a_sonda_de_porta_ve_uma_porta_livre_como_livre():
-    """Sem isto o `dev` nunca subiria o worker, e a causa seria invisivel."""
     import socket
 
     from apps.ops.management.commands.dev import _porta_ocupada
 
-    # Uma porta que o SO acabou de liberar: o teste nao depende de numero fixo,
-    # que poderia estar em uso nesta maquina por acaso.
-    with socket.socket() as reservada:
-        reservada.bind(("127.0.0.1", 0))
-        porta = reservada.getsockname()[1]
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sonda:
+        sonda.bind(("127.0.0.1", 0))
+        porta = sonda.getsockname()[1]
 
     assert _porta_ocupada("127.0.0.1", porta) is False
 
@@ -312,126 +319,25 @@ def test_a_sonda_de_porta_ve_uma_porta_ocupada_como_ocupada():
 
     from apps.ops.management.commands.dev import _porta_ocupada
 
-    with socket.socket() as servidor:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
         servidor.bind(("127.0.0.1", 0))
         servidor.listen(1)
-        porta = servidor.getsockname()[1]
 
-        assert _porta_ocupada("127.0.0.1", porta) is True
-
-
-# ---------------------------------------------------------------------------
-# O worker de imagem de capa
-# ---------------------------------------------------------------------------
-@override_settings(DEBUG=True)
-def test_sobe_o_worker_de_imagem_quando_ele_mora_aqui(monkeypatch, tmp_path, settings):
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    _fingir_diffusers(monkeypatch, tem=True)
-    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
-    lancados = _capturar(monkeypatch)
-
-    call_command("dev", sem_conferir=True)
-
-    imagem = [c for c in lancados if "imagem_api:app" in c]
-    assert len(imagem) == 1
-    assert "8101" in imagem[0]
+        assert _porta_ocupada("127.0.0.1", servidor.getsockname()[1]) is True
 
 
-@override_settings(DEBUG=True)
-def test_os_dois_servicos_de_gpu_sobem_juntos(monkeypatch, tmp_path, settings):
-    """Portas diferentes, processos diferentes. Eles dividem a placa, e quem
-    os faz se revezar e a reserva por maquina do lado do PubliBot — nao o
-    numero de processos aqui."""
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    _fingir_diffusers(monkeypatch, tem=True)
-    settings.CONVERSAO_BASE_URL = "http://127.0.0.1:8100"
-    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
-    lancados = _capturar(monkeypatch)
-
-    call_command("dev", sem_conferir=True)
-
-    assert len([c for c in lancados if "docling_api:app" in c]) == 1
-    assert len([c for c in lancados if "imagem_api:app" in c]) == 1
-
-
-@override_settings(DEBUG=True)
-def test_venv_sem_diffusers_nao_derruba_o_dev(monkeypatch, tmp_path, settings, capsys):
-    """Quem instalou o worker antes deste servico existir tem o venv sem o
-    `diffusers`. Tentar subir daria um ModuleNotFoundError — e como qualquer
-    processo que morre encerra todos, o `dev` inteiro cairia junto."""
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    _fingir_diffusers(monkeypatch, tem=False)
-    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
-    lancados = _capturar(monkeypatch)
-
-    call_command("dev", sem_conferir=True)
-
-    assert not [c for c in lancados if "imagem_api:app" in c]
-    assert "diffusers" in capsys.readouterr().out
-
-
-@override_settings(DEBUG=True)
-def test_sem_imagem_nao_sobe_mesmo_instalado(monkeypatch, tmp_path, settings):
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    _fingir_diffusers(monkeypatch, tem=True)
-    settings.IMAGEM_BASE_URL = "http://127.0.0.1:8101"
-    lancados = _capturar(monkeypatch)
-
-    call_command("dev", sem_imagem=True, sem_conferir=True)
-
-    assert not [c for c in lancados if "imagem_api:app" in c]
-
-
-@override_settings(DEBUG=True)
-def test_sem_gerador_de_imagem_o_banner_diz_que_nao_havera_capa(monkeypatch, capsys):
-    """Sem esta linha, o unico aviso chegaria na tela de revisao, depois de o
-    artigo inteiro ter sido gerado."""
-    _capturar(monkeypatch)
-
-    call_command("dev", sem_conferir=True)
-
-    saida = capsys.readouterr().out
-    assert "sem capa" in saida
-    assert "texto nao e afetado" in saida
-
-
-@override_settings(DEBUG=True)
-def test_imagem_em_outra_maquina_nao_sobe_copia_local(monkeypatch, tmp_path, settings, capsys):
-    _fingir_venv_do_worker(monkeypatch, tmp_path)
-    _fingir_diffusers(monkeypatch, tem=True)
-    settings.IMAGEM_BASE_URL = "http://100.64.0.7:8101"
-    lancados = _capturar(monkeypatch)
-
-    call_command("dev", sem_conferir=True)
-
-    assert not [c for c in lancados if "imagem_api:app" in c]
-    assert "outra maquina" in capsys.readouterr().out
-
-
-def _fingir_diffusers(monkeypatch, *, tem: bool) -> None:
-    """Responde pelo interpretador do worker sem executa-lo.
-
-    O binario que `_fingir_venv_do_worker` cria e um arquivo vazio: roda-lo
-    para descobrir se o `diffusers` esta la nao daria resposta nenhuma.
-    """
-    monkeypatch.setattr(
-        "apps.ops.management.commands.dev._tem_diffusers",
-        lambda: tem,
-    )
-
-
-def _fingir_venv_do_worker(monkeypatch, tmp_path) -> None:
-    """Cria a arvore que `_servico_de_conversao` procura, sem instalar nada."""
+def _fingir_checkout_do_worker(tmp_path, settings):
+    """Uma arvore que parece o checkout do worker, sem os 3 GB de torch."""
     import sys as _sys
 
-    from django.conf import settings as _settings
-
+    raiz = tmp_path / "worker-gpu"
     subpasta = "Scripts" if _sys.platform == "win32" else "bin"
     nome = "python.exe" if _sys.platform == "win32" else "python"
-    binario = tmp_path / "worker-gpu" / "venv" / subpasta / nome
+    binario = raiz / "venv" / subpasta / nome
     binario.parent.mkdir(parents=True)
     binario.touch()
-    monkeypatch.setattr(_settings, "BASE_DIR", tmp_path)
+    settings.WORKER_GPU_DIR = str(raiz)
+    return raiz
 
 
 # ---------------------------------------------------------------------------

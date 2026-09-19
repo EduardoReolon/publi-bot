@@ -64,282 +64,74 @@ python manage.py createsuperuser
 `public`, mas nao a LINHA que o django-tenants consulta para resolver um host.
 Sem ela a primeira requisicao devolve `No tenant for hostname`.
 
-### 4. Ollama
+### 4. O worker de GPU
+
+Tudo que precisa de placa — texto, imagem de capa e conversao de PDF — roda
+num servico so, o **worker-gpu**, que vive em **outro repositorio**. Ele e um
+arbitro: a placa e indivisivel, e um modelo de texto grande ja ocupa quase
+toda a VRAM.
+
+A instalacao esta no README dele. O resumo:
 
 ```bash
-ollama pull qwen2.5:7b-instruct
-ollama list                       # confira o nome EXATO
+git clone <repo-do-worker> ~/codes/worker-gpu
+cd ~/codes/worker-gpu
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+cp .env.example .env               # WORKER_SHARED_SECRET e BIND_HOST
+./venv/bin/python baixar_modelo.py # os ~7 GB do modelo de imagem, uma vez
+./deploy/instalar.sh
 ```
 
-Ponha esse nome em `INFERENCIA_MODELO` no `.env` e cadastre a conexao:
+O Ollama passa a ser **interno**, em loopback: quem publica na rede e o
+worker. Falar com o Ollama direto contorna o arbitro.
 
-```bash
-python manage.py configurar_inferencia --testar
-```
-
-O `--testar` faz uma requisicao de verdade e distingue os dois motivos de
-falha: *nao consegui chegar ate voce* (rede, porta, servico parado) e *cheguei
-e voce respondeu outra coisa* (endereco errado). Sem isso, o problema so
-apareceria dentro do primeiro job, minutos depois.
-
-O comando e idempotente e **preserva** o que ja estiver no banco — a conexao
-vive numa linha, nao num arquivo, justamente para trocar de modelo sem mexer em
-codigo. Use `--atualizar` quando quiser sobrescrever com o `.env`.
-
-### 4a. Geracao de imagem de capa (opcional)
-
-Sem isto o artigo sai igual — **sem capa**. O ultimo passo da geracao pede tres
-opcoes de imagem; nao havendo conexao, ele registra o motivo e termina, e a
-tela de revisao mostra por que veio sem imagem. O texto nao e afetado.
-
-**O Ollama nao serve aqui.** Ele serve modelos de texto e nao tem endpoint de
-imagem. O que o PubliBot fala e o dialeto da OpenAI —
-`POST /v1/images/generations` com `b64_json` — e ha duas formas de atende-lo:
-
-- **um provedor pago** (OpenAI e compativeis): cadastre a URL e a chave e pule
-  o resto desta secao;
-- **a sua placa**, pelo servico em `worker-gpu/imagem_api.py`. E o caminho
-  descrito abaixo.
-
-#### Subir o servico na maquina com placa
-
-Na mesma pasta e no mesmo venv do Docling:
-
-```bash
-cd worker-gpu
-./venv/bin/pip install -r requirements.txt   # traz diffusers e accelerate
-./deploy/instalar.sh --imagem                # unit de usuario, porta 8101
-```
-
-O `.env` do worker (`worker-gpu/.env`) tem um bloco proprio. O que costuma
-mudar:
-
-| Variavel | Para que |
-|---|---|
-| `IMAGEM_MODELO` | qualquer modelo do diffusers. O padrao faz 1024x1024 nativo |
-| `IMAGEM_DEVICE` | `auto` usa a placa se houver; `cpu` para so conferir o caminho |
-| `IMAGEM_PASSOS` | 25 no SDXL; 1 a 4 nos modelos "turbo" (com `IMAGEM_GUIDANCE=0`) |
-| `IMAGEM_OCIOSO_SEGUNDOS` | quanto tempo sem pedido ate devolver a placa |
-| `IMAGEM_PERMITIR_CPU` | gerar em CPU quando a VRAM nao cabe. **Desligado** |
-| `IMAGEM_TEMPO_MAXIMO` | teto por geracao, em segundos |
-
-O tamanho da capa **nao** fica aqui: ele viaja no pedido, entao mora no
-`IMAGEM_TAMANHO` do `.env` do PubliBot. Trocar no lugar errado nao da erro —
-so nao muda nada.
-
-#### Meca antes de escolher
-
-```bash
-./venv/bin/python medir_imagem.py --tamanhos 512x288,768x432,1024x576
-./venv/bin/python medir_imagem.py --cpu --tamanhos 512x288
-```
-
-Ele mede a SEGUNDA geracao de cada combinacao (a primeira inclui a montagem do
-pipeline, que se paga uma vez) e grava as imagens em `medicoes/` — numero sem
-imagem ao lado nao ajuda a escolher.
-
-O tamanho e o segundo maior fator; o primeiro e o modelo. Um SDXL a 1024x576
-tem 44% menos area que 1024x1024, e isso aparece inteiro no relogio.
-
-#### Quando a placa nao cabe
-
-Este e o caso de quem roda um modelo de texto grande na mesma placa. Um modelo
-de 30B em 8 GB de VRAM ja transborda para a RAM sozinho; nao sobra VRAM para
-difusao nenhuma.
-
-O servico **recusa** em vez de cair para CPU, e a recusa e deliberada. Medido
-num caso real, um lote em CPU custou **8h23min de CPU, 11 GB de RAM e 2 GB de
-swap**, com a maquina inutilizavel enquanto isso. Recusando, o PubliBot recebe
-503, o trabalho volta para a fila e a capa sai quando a placa vagar.
-
-Se ainda assim quiser: `IMAGEM_PERMITIR_CPU=true` — depois de medir. E deixe o
-`IMAGEM_TEMPO_MAXIMO` ligado: sem ele nao ha como interromper o laco de
-difusao, e ate um `systemctl restart` fica preso esperando.
-
-Com 8 GB divididos com um modelo grande, as saidas reais sao:
-
-| Caminho | Custo |
-|---|---|
-| Modelo de imagem menor (SD 1.5 a 512) | qualidade menor, cabe com folga |
-| Descarregar o modelo de texto antes | `OLLAMA_KEEP_ALIVE=0`, texto mais lento |
-| Um provedor pago de imagem | some o problema de VRAM, entra custo por imagem |
-| Nao gerar capa | o artigo sai igual; e o padrao |
-
-No `.env` do PubliBot:
+De volta aqui, no `.env`:
 
 ```
-IMAGEM_BASE_URL=http://127.0.0.1:8101      # ou o endereco Tailscale da maquina
-IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET do worker>
+INFERENCIA_BASE_URL=http://127.0.0.1:8090
+INFERENCIA_MODELO=<o nome exato do `ollama list`>
+INFERENCIA_API_KEY=<o WORKER_SHARED_SECRET do worker>
+
+CONVERSAO_BASE_URL=http://127.0.0.1:8090
+CONVERSAO_SEGREDO=<o mesmo>
+
+IMAGEM_BASE_URL=http://127.0.0.1:8090
+IMAGEM_SEGREDO=<o mesmo>
+
+# So para o `manage.py dev` subir o worker junto
+WORKER_GPU_DIR=~/codes/worker-gpu
 ```
 
 E, uma vez:
 
 ```bash
+python manage.py configurar_inferencia --testar
+python manage.py configurar_conversao --testar
 python manage.py configurar_imagem --testar
 ```
 
-O `--testar` bate em `/health/` e diz **em que dispositivo** o modelo rodou por
-ultimo. Esse numero e o que importa: um worker que caiu para CPU continua
-entregando imagem, so que em minutos — e sem essa linha a conclusao natural
-seria "gerar imagem e lento mesmo".
+**Conferir:** os tres `--testar` sao a conferencia. Leia a resposta, nao so o
+codigo de saida — `dispositivo=cpu` quando voce esperava `cuda` significa que
+o trabalho vai levar minutos em vez de segundos, sem erro nenhum.
 
-Em desenvolvimento, `manage.py dev` sobe o servico junto com os outros quando
-ele mora nesta maquina e a porta esta livre. Se a unit do systemd ja estiver de
-pe, ele usa a que ja existe e diz isso no banner.
+#### As tres coisas que este projeto precisa saber
 
-#### Dividir uma placa de 8 GB com o Ollama e o Docling
+**As tres URLs sao a mesma.** Continuam separadas porque uma delas pode virar
+um provedor pago, e porque a reserva por maquina
+(`apps/inference/leases.py`) usa o host de cada uma para saber que elas
+dividem hardware.
 
-Nao ha arranjo perfeito, e o sistema nao finge que ha. Sao cinco camadas:
+**O 503 nao e erro.** O worker recusa quando a placa esta ocupada, com
+`Retry-After`. Deste lado vira `PassoAdiado`, que nao gasta tentativa. Se
+voce vir trabalhos esgotando tentativas por 503, o defeito esta no
+tratamento.
 
-1. **A reserva conta vagas por MAQUINA**, e nao por conexao
-   (`apps/inference/leases.py`). Como as tres conexoes apontam para o mesmo
-   host, gerar texto e gerar imagem passam a se revezar. O
-   `configurar_imagem` avisa disso no cadastro.
-2. **Um pedido por vez dentro de cada servico.** O segundo recebe 503.
-3. **Os pesos ficam na RAM, nao na VRAM** (`enable_model_cpu_offload`): o pico
-   cai de ~7 GB para algo perto de 3,5 GB.
-4. **A placa e devolvida depois de `IMAGEM_OCIOSO_SEGUNDOS` sem pedido.**
-5. **Faltando VRAM, o pedido e refeito em CPU** — e o log diz, em WARNING, que
-   isso aconteceu. Leva minutos em vez de segundos, mas nao falha.
-
-O que nenhuma delas cobre: o Ollama decide sozinho quando carregar modelo e
-nao participa de reserva nenhuma. Quando ele carrega um modelo grande no meio
-de uma geracao, a camada 5 e a que entra — e e por isso que ela existe em vez
-de o servico simplesmente falhar.
-
-Se `manage.py configurar_imagem --testar` comecar a relatar
-`ultimo=cpu`, a placa esta apertada: reduza `IMAGEM_OCIOSO_SEGUNDOS`, gere em
-512x512, ou troque para um modelo menor.
-
-### 4b. Conversao de PDF (Docling)
-
-Sem isto o sistema **nao para** — e esse e o problema. Ele cai no extrator
-local (`pypdf`), que devolve a camada de texto do arquivo sem interpretar a
-pagina. O texto continua parecendo correto.
-
-O que se perde, verificado no mesmo PDF gerado de duas formas:
-
-| | `pypdf` | Docling |
-|---|---|---|
-| Tabela | vira coluna de numeros soltos: `Braco / n / Ganho / p / 0,8 g/kg / 40 / ...` | tabela em Markdown |
-| Cabecalho e rodape da pagina | entram no corpo como se fossem conteudo | separados |
-| Secoes | so sobrevivem se o texto as numerar ("1 Introducao") | cabecalhos `#` de verdade |
-| Coluna dupla | **depende do arquivo** | sempre em ordem de leitura |
-
-A ultima linha e a perigosa. A ordem que o `pypdf` devolve e a ordem em que o
-produtor do PDF escreveu as operacoes de desenho — que num arquivo se encaixa
-e no seguinte nao. No mesmo artigo, escrito na outra ordem, as duas colunas se
-intercalam frase a frase:
-
-```
-E1. A suplementacao proteica em idosos tem sido
-D1. Utilizou-se ANOVA de medidas repetidas com
-estudada ha decadas.
-correcao de Bonferroni.
-```
-
-Continua parecendo texto. Vai para o indice, e sai citado num artigo publicado.
-
-**O Docling nao roda nesta maquina nem na VM da nuvem.** Ele roda onde esta a
-placa (ADR-0007); a nuvem so faz a requisicao HTTP. Em desenvolvimento, "onde
-esta a placa" e a sua propria maquina.
-
-Na maquina do worker, uma vez:
-
-```bash
-cd worker-gpu
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt          # traz torch, ~3 GB
-cp .env.example .env                     # defina WORKER_SHARED_SECRET
-```
-
-Em desenvolvimento, `BIND_HOST=127.0.0.1` serve. Em producao precisa ser o
-endereco Tailscale — nunca `0.0.0.0`.
-
-Suba como servico (o instalador confere tudo antes e mostra o `/health/`):
-
-```bash
-./deploy/instalar.sh          # unit de usuario, sem sudo
-./deploy/instalar.sh --tudo   # junto com o servico de imagem (secao 4a)
-```
-
-Ou, para so experimentar, sem instalar nada:
-
-```bash
-WORKER_SHARED_SECRET=... uvicorn docling_api:app --host 127.0.0.1 --port 8100
-```
-
-De volta no PubliBot, ponha no `.env`:
-
-```bash
-CONVERSAO_BASE_URL=http://127.0.0.1:8100
-CONVERSAO_SEGREDO=<o mesmo WORKER_SHARED_SECRET>
-```
-
-E cadastre:
-
-```bash
-python manage.py configurar_conversao --testar
-python manage.py reservas          # quem esta segurando a capacidade
-```
-
-Se voce instalou a unit do systemd, o `dev` NAO sobe um segundo worker: ele
-detecta a porta ja ocupada e usa o servico que esta de pe, dizendo isso no
-banner. Sem essa conferencia, o `uvicorn` falharia com "address already in use"
-e derrubaria o `dev` inteiro — porque qualquer processo que morre encerra
-todos.
-
-Feito isso, `manage.py dev` passa a subir o worker junto com os outros tres —
-mas so quando ele mora AQUI: a URL precisa apontar para `127.0.0.1` e o
-`worker-gpu/venv/` precisa existir. Apontando para outra maquina, ele nao sobe
-copia nenhuma. Para desligar num dia especifico, `--sem-conversao`.
-
-O `.env` do worker e lido junto, o mesmo arquivo que o systemd usa. Sem isso o
-worker do `dev` ignoraria o seu `DOCLING_DEVICE` e se comportaria diferente do
-configurado — e a diferenca apareceria so como "aqui esta mais lento".
-
-O `--testar` chama `/health/` e imprime o dispositivo em uso. Isso importa:
-trocar `DOCLING_DEVICE` e esquecer de reiniciar o worker nao gera erro nenhum
-— so deixa a conversao lenta, e a conclusao natural vira "o Docling e lento
-mesmo".
-
-A **primeira** conversao baixa os modelos de layout do HuggingFace (algumas
-centenas de MB) e falha com `ProxyError` numa rede que bloqueie
-`huggingface.co` — no meio da conversao, nao no boot.
-
-Documentos ja convertidos pelo extrator local continuam como estao. Use
-**Converter de novo** na tela de curadoria para refaze-los: os trechos
-indexados sao desativados (nao apagados) e os metadados que voce conferiu a
-mao sao preservados.
-
-#### Uma placa, dois servicos
-
-O Ollama e o Docling costumam morar na mesma maquina, e o PubliBot trata os
-dois como UM recurso: as conexoes que apontam para o mesmo host dividem o mesmo
-limite de execucoes simultaneas. Enquanto um converte, o outro espera a vez — e
-esperar aqui e adiamento, nao falha: nao gasta tentativa.
-
-Isso nao e conservadorismo. Sem essa conta, uma conversao e uma geracao de
-texto simultaneas estouram a VRAM de uma placa de 8 GB, e o processo cai para
-CPU **em silencio** — dezenas de vezes mais lento, sem erro em lugar nenhum.
-
-Em CPU o problema nao existe, mas a espera continua: manter a regra vale mais
-que a vazao que ela custa num volume baixo.
-
-#### CPU ou placa
-
-O Docling **nao exige GPU**: a analise de layout roda em CPU, e a placa muda o
-tempo, nao o resultado. Meca antes de decidir, na maquina que vai hospedar:
-
-```bash
-python medir.py um-artigo-de-verdade.pdf --cpu --threads 1   # pior caso
-python medir.py um-artigo-de-verdade.pdf --cuda
-```
-
-O numero que decide e o de CONVERSAO, nao o de carga — a carga acontece uma
-vez por processo. E a pergunta nao e se o tempo e "rapido", e sim se cabe no
-seu ritmo de envio de documentos: o worker converte **um por vez**, e o
-PubliBot adia o resto em vez de falhar.
+**Sem worker, o sistema nao para — e esse e o risco.** Sem conversao, o PDF
+cai no extrator local, que devolve a camada de texto sem interpretar a
+pagina: num artigo de coluna dupla as colunas se intercalam e o texto
+continua parecendo correto. Por isso `PERMITIR_EXTRACAO_LOCAL` vem desligado
+em producao. Sem geracao de imagem, o artigo sai igual, apenas sem capa — e
+isso e legitimo.
 
 ### 5. Rodar
 
@@ -400,8 +192,7 @@ ja que qualquer processo que morre encerra todos.
 O banner diz qual dos dois casos e o seu:
 
 ```
-Conversao:  ja de pe em http://127.0.0.1:8100 (servico proprio); nao subi outro.
-Imagem:     ja de pe em http://127.0.0.1:8101 (servico proprio); nao subi outro.
+GPU:      ja de pe em http://127.0.0.1:8090 (servico proprio); nao subi outro.
 ```
 
 Isso significa que os pedidos estao indo para as units do systemd, e nao para
@@ -409,8 +200,7 @@ processos filhos do `dev`. A consequencia pratica que mais confunde: **o log
 deles nao aparece no terminal do `dev`**. Ele esta no journal.
 
 ```bash
-journalctl --user -u imagem-api -f
-journalctl --user -u docling-api -f
+journalctl --user -u worker-gpu -f
 ```
 
 Se o banner disser outra coisa — "nenhuma", "em outra maquina", "worker-gpu/
@@ -551,16 +341,16 @@ Os campos marcados `AJUSTE`:
 |---|---|
 | `ROOT_DOMAIN` | `exemplo.com.br` — sem `www`, sem protocolo |
 | `DJANGO_ALLOWED_HOSTS` | `exemplo.com.br,.exemplo.com.br` |
-| `INFERENCIA_BASE_URL` | `http://<ip-tailscale-da-placa>:11434` |
+| `INFERENCIA_BASE_URL` | `http://<ip-tailscale-da-placa>:8090` (o worker, nao o Ollama) |
 | `INFERENCIA_MODELO` | o nome exato do `ollama list` |
 
 E, se a maquina da placa tambem for converter PDF e gerar imagem (Parte 1,
 secoes 4a e 4b):
 
 ```
-CONVERSAO_BASE_URL=http://<ip-tailscale-da-placa>:8100
+CONVERSAO_BASE_URL=http://<ip-tailscale-da-placa>:8090
 CONVERSAO_SEGREDO=<o WORKER_SHARED_SECRET do worker>
-IMAGEM_BASE_URL=http://<ip-tailscale-da-placa>:8101
+IMAGEM_BASE_URL=http://<ip-tailscale-da-placa>:8090
 IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET>
 ```
 
@@ -569,7 +359,7 @@ IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET>
 ```bash
 sudo grep -c AJUSTE /etc/publibot/env      # 0
 tailscale status | grep <nome-da-placa>    # a maquina aparece
-curl -s http://<ip-tailscale-da-placa>:11434/api/tags | head -c 200
+curl -s http://<ip-tailscale-da-placa>:8090/health/ | head -c 300
 ```
 
 O `curl` roda **da VM**, nao da sua maquina: o que interessa e se a nuvem
@@ -776,73 +566,75 @@ numero, e um `FLUSHDB` de um projeto ainda levaria o outro junto.
 
 ## Parte 3 — A maquina da placa
 
-Ela atende a nuvem e a sua maquina de desenvolvimento, e e a mesma nos dois
-casos. Nao roda Django, nem Celery, nem banco: so tres servicos HTTP
-(ADR-0007).
+Ela roda o **worker-gpu**, que vive em **outro repositorio**. A placa e um
+recurso da maquina, compartilhado por mais de um sistema — enquanto o codigo
+dela morava aqui dentro, era so questao de tempo ate um segundo consumidor
+precisar do mesmo e nao ter como.
 
-| Servico | Porta | Sobe como |
-|---|---|---|
-| `ollama serve` | 11434 | unit propria do Ollama |
-| `docling-api` | 8100 | `worker-gpu/deploy/instalar.sh` |
-| `imagem-api` | 8101 | `worker-gpu/deploy/instalar.sh --imagem` |
+O worker e um **arbitro**: um processo, um lock, e tudo passa por ele.
 
-```bash
-cd worker-gpu
-python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-cp .env.example .env          # defina WORKER_SHARED_SECRET e BIND_HOST
-./venv/bin/python baixar_modelo.py    # os ~7 GB do modelo de imagem, uma vez
-./deploy/instalar.sh --tudo
-```
-
-O `BIND_HOST` decide quem alcanca os servicos, e e onde se erra:
-
-| Valor | Quem alcanca |
+| Rota | O que faz |
 |---|---|
-| `127.0.0.1` | so esta maquina — serve enquanto o PubliBot roda aqui do lado |
-| `$(tailscale ip -4)` | a VM da nuvem tambem |
-| `0.0.0.0` | a internet inteira. O instalador recusa |
+| `POST /v1/chat/completions` | texto — repassa ao Ollama |
+| `POST /v1/images/generations` | imagem de capa |
+| `POST /parse/` | PDF para Markdown com analise de layout |
+| `GET /health/` | estado, sem credencial |
 
-**Trocar de `127.0.0.1` para o endereco da Tailscale exige reinstalar as
-units** (`./deploy/instalar.sh --tudo`), porque o endereco entra na linha de
-comando do uvicorn.
+O Ollama passa a ser **interno**: so o worker fala com ele, em loopback. Falar
+com o Ollama direto contorna o arbitro, e ai a geracao de imagem volta a
+encontrar a VRAM cheia — que foi o defeito que motivou tudo isto.
 
-**Conferir**, da VM da nuvem:
+A instalacao, a configuracao e o diagnostico estao no README do worker. Aqui
+fica so o que este projeto precisa saber.
 
-```bash
-curl -s http://<ip-tailscale>:8100/health/
-curl -s http://<ip-tailscale>:8101/health/
+### O que o PubliBot configura
+
+As tres URLs apontam para o **mesmo** endereco, e continuam separadas porque
+uma delas pode virar um provedor pago e porque a reserva por maquina
+(`apps/inference/leases.py`) usa o host de cada uma para saber que dividem
+hardware.
+
+```
+INFERENCIA_BASE_URL=http://<endereco>:8090
+INFERENCIA_API_KEY=<o WORKER_SHARED_SECRET do worker>
+
+CONVERSAO_BASE_URL=http://<endereco>:8090
+CONVERSAO_SEGREDO=<o mesmo>
+
+IMAGEM_BASE_URL=http://<endereco>:8090
+IMAGEM_SEGREDO=<o mesmo>
 ```
 
-### As units sobem sozinhas no boot?
-
-Depende de como foram instaladas, e a diferenca pega todo mundo uma vez:
-
-| Instalacao | Sobe quando |
-|---|---|
-| `./deploy/instalar.sh` (padrao, unit de **usuario**) | voce faz login na maquina |
-| o mesmo, **mais** `sudo loginctl enable-linger $USER` | no boot, sem login |
-| `./deploy/instalar.sh --sistema` | no boot, sempre |
-
-Numa maquina pessoal que tambem serve a nuvem, `enable-linger` e o que voce
-quer: reiniciar o computador e ter os servicos de volta sem abrir sessao
-grafica.
+E, uma vez:
 
 ```bash
-sudo loginctl enable-linger "$USER"
-loginctl show-user "$USER" | grep Linger      # Linger=yes
+python manage.py configurar_inferencia --testar
+python manage.py configurar_conversao --testar
+python manage.py configurar_imagem --testar
 ```
 
-### Onde fica o log
+### Em desenvolvimento, na mesma maquina
 
-No journal, **nao** no terminal do `manage.py dev`. Esta e a confusao mais
-comum quando os dois convivem na mesma maquina:
+`manage.py dev` sobe o worker junto quando o checkout esta aqui e a porta
+esta livre:
+
+```
+WORKER_GPU_DIR=~/codes/worker-gpu
+```
+
+Se a unit do systemd ja estiver de pe, ele usa a que existe e diz isso no
+banner. O log dela esta no journal, **nao** no terminal do `dev`:
 
 ```bash
-journalctl --user -u imagem-api -f
-journalctl --user -u docling-api -f
+journalctl --user -u worker-gpu -f
 ```
 
----
+### O 503 nao e erro
+
+O worker recusa quando a placa esta ocupada, com `Retry-After`. Deste lado
+isso vira `PassoAdiado`, que **nao gasta tentativa** — nada deu errado, so
+nao era a hora. Se voce vir trabalhos esgotando tentativas por 503, o defeito
+esta no tratamento, nao no worker.
 
 ## Quando o Ollama cai
 
@@ -904,7 +696,8 @@ python manage.py reservas          # quem esta segurando a capacidade
 | `/health/` do worker da `timed out` (nao "refused") | ele esta ocupado gerando. Se persistir sem nada em curso, confira o journal da unit |
 | `could not open extension control file` no bootstrap | falta `postgresql-<versao>-pgvector` |
 | Unit de usuario nao sobe no boot | falta `sudo loginctl enable-linger $USER` |
-| Log do worker de GPU nao aparece no `dev` | ele e unit do systemd: `journalctl --user -u imagem-api -f` |
+| Log do worker de GPU nao aparece no `dev` | ele e unit do systemd: `journalctl --user -u worker-gpu -f` |
+| `503 gpu_ocupada` num trabalho | funcionando como projetado: o worker arbitra a placa e o trabalho e adiado |
 | Gerar capa leva minutos | caiu para CPU. `configurar_imagem --testar` mostra `ultimo=cpu`; a placa esta sendo disputada |
 | Aviso de "texto extraido sem analise de layout" | faltou `configurar_conversao` (worker Docling) |
 | `ProxyError` no meio da conversao | a rede do worker bloqueia `huggingface.co` |

@@ -115,7 +115,7 @@ texto corrido. A GPU muda o **tempo** da conversao, nao o resultado — entao da
 para subir o servico em CPU agora e trocar depois.
 
 ```bash
-# worker-gpu/.env
+# .env do worker-gpu (outro repositorio)
 DOCLING_DEVICE=cpu     # comece assim, sem placa
 DOCLING_THREADS=4      # so em CPU; 0 deixa o Docling decidir
 DOCLING_OCR=false      # OCR e a parte mais cara e artigo com texto nao precisa
@@ -125,8 +125,8 @@ Quando a placa existir, e uma linha:
 
 ```bash
 DOCLING_DEVICE=cuda
-sudo systemctl restart docling-api
-curl -s http://127.0.0.1:8100/health/   # confere: {"device": "cuda", ...}
+systemctl --user restart worker-gpu
+curl -s http://127.0.0.1:8090/health/   # confere: conversao.dispositivo
 ```
 
 **Nada muda no PubliBot.** Ele fala HTTP com o servico e nao sabe onde o modelo
@@ -279,7 +279,7 @@ ali.
 Confira nesta ordem:
 
 1. **O aviso vermelho aparece na curadoria?** Entao rodou o extrator local. A
-   solucao de verdade e subir o worker Docling (`worker-gpu/`) e cadastrar a
+   solucao de verdade e subir o worker de GPU (repositorio proprio) e cadastrar a
    conexao em Inferencia — nao mexer nas heuristicas.
 2. **O texto do bloco esta legivel?** Se palavras vem emendadas ou aspas viraram
    simbolos (`Bsafe-to-fail^`), o problema e a extracao, nao a divisao.

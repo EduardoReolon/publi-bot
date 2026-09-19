@@ -382,6 +382,11 @@ ignora o corte, e so deve ser usado com o Ollama parado.
 
 ### Duas conexoes, uma placa so
 
+> Historico: hoje os tres endpoints moram num servico so, o `worker-gpu`, que
+> arbitra a placa com um lock unico. A entrada abaixo descreve o arranjo
+> anterior — vale pelo raciocinio, que continua sendo o motivo de o arbitro
+> existir.
+
 O Ollama em `:11434` e o Docling em `:8100` sao duas linhas no banco e o mesmo
 hardware. Com a contagem de reservas por CONEXAO, cada uma com
 `max_concurrency=1`, as duas podiam ficar ativas ao mesmo tempo — uma gerando
@@ -761,8 +766,9 @@ ocupar o dobro. O sintoma aparece dias depois, e em outro lugar: o Ollama
 comeca a cair para CPU.
 
 Nao da para flagrar isso sem placa. O que da e impedir a linha de voltar ao
-arquivo, e `test_servico_de_imagem.py` faz isso pela arvore sintatica — por
-texto encontraria o comentario que explica a armadilha.
+arquivo, e ha um teste que faz isso pela arvore sintatica — por texto
+encontraria o comentario que explica a armadilha. Ele foi junto com o codigo
+para o repositorio do worker; se voce esta lendo isto aqui, o guarda esta la.
 
 ### O Ollama nao participa de reserva nenhuma
 
@@ -772,10 +778,16 @@ O Ollama, porem, decide sozinho quando carregar e descarregar modelo:
 da ultima chamada, e isso nao aparece em reserva alguma.
 
 Entao a serializacao do PubliBot nao basta: ele pode ter soltado a reserva de
-texto e o modelo continuar na VRAM quando a geracao de imagem comeca. Por isso
-o servico de imagem refaz o pedido em CPU quando falta VRAM, em vez de falhar
-— e por isso ele registra WARNING quando faz isso. A alternativa (falhar) daria
-um artigo sem capa por um motivo que se resolve sozinho em minutos.
+texto e o modelo continuar na VRAM quando a geracao de imagem comeca.
+
+A primeira saida foi refazer o pedido em CPU quando faltasse VRAM. Era pior
+que o problema: um unico lote levava dezenas de minutos e 17 GB de RAM, e as
+imagens saiam ruins. Hoje a CPU esta desligada por padrao no worker, e a
+resposta correta e outra — **o worker manda o Ollama descarregar** antes de
+gerar imagem, o que so e seguro porque todo pedido de GPU passa por ele. Nao
+havendo vaga, ele devolve 503 com `Retry-After`, e quem pediu adia. Um artigo
+sem capa por alguns minutos e melhor que a maquina inteira parada por uma
+hora.
 
 ### Uma dependencia nova no venv do worker quebra o `manage.py dev` inteiro
 
@@ -784,10 +796,10 @@ porque o servidor sozinho aceita cadastros que nunca serao provisionados. A
 consequencia e que um `ModuleNotFoundError` no worker de GPU nao afeta so a
 geracao de imagem: derruba o web e o worker do Celery junto.
 
-Foi o caso ao acrescentar o `diffusers`: quem ja tinha o `worker-gpu/venv`
-instalado antes tinha o venv sem ele. Por isso `_servico_de_imagem` pergunta
-ao interpretador do worker se o pacote existe antes de tentar subir, e o
-banner diz o que rodar para instalar.
+Foi o caso ao acrescentar o `diffusers`: quem ja tinha o venv do worker
+instalado antes tinha o venv sem ele. Por isso `_servico_de_gpu` confere o
+checkout e o interpretador do worker antes de tentar subir, e o banner diz o
+que rodar para instalar.
 
 ### `BIND_HOST` no worker sobrevive errado porque o `manage.py dev` o ignora
 
@@ -914,3 +926,45 @@ O `or` tem precedencia MENOR que o `>=`, entao isto e `a or (0 >= 5)` — ou
 seja, `a or False`. Qualquer lote existente ja bloqueava, e um teto de cinco
 valia um. Nao levanta erro, nao aparece em revisao rapida, e o sintoma ("nao
 deixa gerar mais capas") parece regra de produto.
+
+### Tres locks sobre uma placa nao protegem nada
+
+O `worker-gpu` era tres coisas: o Ollama, um servico de conversao e um de
+imagem, cada um num processo. Cada um tinha o proprio semaforo de
+"um-pedido-por-vez" — e cada um protegia a si mesmo, nenhum aos outros. O
+Ollama, entao, nao participava de nada: ele decide sozinho quando carregar e
+descarregar modelo.
+
+O resultado era previsivel em retrospecto e invisivel na hora: a difusao
+encontrava a placa cheia, caia para CPU, e um unico lote consumia horas de
+processador e 17 GB de RAM.
+
+A reserva por maquina deste projeto (`leases.vizinhas_de_hardware`) ajudava,
+mas so para o que ELE despacha. Um segundo consumidor — no caso, um CRM
+falando com o mesmo Ollama por Tailscale — passava por fora e contaminava
+tudo, inclusive as medicoes que se fazia para entender o problema.
+
+Hoje o worker e um processo so, com um lock so, e **todo** pedido de GPU entra
+por ele, inclusive o texto. So por isso descarregar o Ollama antes de gerar
+imagem e seguro: detendo o lock, ninguem esta gerando texto.
+
+A licao geral: **um lock em memoria so vale se todos os caminhos passarem por
+aquele processo.** Enquanto houver uma porta dos fundos — um cliente falando
+direto com o recurso — o lock e decoracao.
+
+### Um recurso da maquina nao pertence a um projeto
+
+O worker morava dentro deste repositorio porque foi aqui que ele nasceu. A
+placa, porem, e da maquina: quando um segundo sistema precisou dela, nao
+havia como — e a saida improvisada (falar com o Ollama direto) foi
+exatamente o que quebrou a arbitragem.
+
+O sinal de que algo esta no repositorio errado nao e "ficou grande": e um
+segundo consumidor aparecer e nao ter como usar sem copiar.
+
+O preco da separacao foi um teste: havia um que rodava o cliente de verdade
+deste projeto contra o app do worker, no mesmo processo, e era ele que impedia
+os dois de divergirem num nome de campo. Ele nao pode existir entre
+repositorios. O substituto sao os exemplos em `tests/contrato_do_worker/`,
+conferidos dos dois lados — la contra a resposta real, aqui contra os
+adaptadores. E menos forte, e a diferenca esta documentada no README de la.

@@ -469,15 +469,29 @@ PERMITIR_EXTRACAO_LOCAL = env.boolean("PERMITIR_EXTRACAO_LOCAL", True)
 # primeiro job, com o erro longe da causa.
 INFERENCIA_NOME = env.get("INFERENCIA_NOME", "LLM principal")
 
-# Em desenvolvimento, o Ollama da propria maquina. Em producao o MESMO Ollama,
-# alcancado pelo endereco que o Tailscale da a ele — muda a URL, nao o resto.
+# O WORKER de GPU, e nao mais o Ollama direto.
+#
+# O worker e o arbitro da placa: texto, imagem e conversao passam por ele e
+# se revezam num lock so. Enquanto cada cliente falava com o Ollama direto,
+# ninguem sabia quando a placa estava ocupada — e a geracao de imagem
+# encontrava a VRAM cheia, caindo para CPU em silencio.
+#
+# As tres URLs (`INFERENCIA_`, `CONVERSAO_`, `IMAGEM_`) apontam para o MESMO
+# endereco agora. Continuam separadas porque um dia uma delas pode ser um
+# provedor pago, e porque a reserva por maquina do `leases.py` usa o host de
+# cada uma.
+#
+#   dev :  http://127.0.0.1:8090
+#   prod:  http://<nome-ou-ip-tailscale>:8090
 INFERENCIA_BASE_URL = env.get("INFERENCIA_BASE_URL", "")
 
 # Nome exato do `ollama list`. Um nome que nao existe no servidor devolve 404
 # em toda chamada, e a mensagem do Ollama nao diz que o problema e o nome.
 INFERENCIA_MODELO = env.get("INFERENCIA_MODELO", "")
 
-# O Ollama nao exige chave; as demais APIs compativeis exigem.
+# O segredo do worker (`WORKER_SHARED_SECRET` no `.env` dele). Viaja como
+# `Authorization: Bearer`. Um provedor pago usa este mesmo campo para a chave
+# da conta.
 INFERENCIA_API_KEY = env.get("INFERENCIA_API_KEY", "")
 
 # Uma inferencia por vez, por padrao. Nao e ajuste de desempenho: numa placa de
@@ -490,15 +504,16 @@ INFERENCIA_CONCORRENCIA = env.integer("INFERENCIA_CONCORRENCIA", 1)
 INFERENCIA_RESERVA_SEGUNDOS = env.integer("INFERENCIA_RESERVA_SEGUNDOS", 3600)
 
 # ---------------------------------------------------------------------------
-# Semente da conexao de conversao (Docling)
+# Semente da conexao de conversao (PDF -> texto)
 # ---------------------------------------------------------------------------
 # Mesma logica da conexao de inferencia: a fonte da verdade e uma linha no
 # banco, e isto aqui so existe para o `manage.py configurar_conversao` criar
 # essa linha sem ninguem abrir o admin.
 #
-# O servico vive em `worker-gpu/` e fala HTTP. Em desenvolvimento, na propria
-# maquina; em producao, no endereco que o Tailscale da a ela. Quem converte
-# nunca e a VM da nuvem: ela so faz a requisicao.
+# Quem converte e o worker de GPU — outro repositorio, na maquina da placa —
+# e a conversa e HTTP. Em desenvolvimento aponta para a propria maquina; em
+# producao, para o endereco que o Tailscale da a ela. A VM da nuvem nunca
+# converte: ela so faz a requisicao.
 CONVERSAO_NOME = env.get("CONVERSAO_NOME", "Conversao de PDF")
 CONVERSAO_BASE_URL = env.get("CONVERSAO_BASE_URL", "")
 
@@ -516,9 +531,10 @@ CONVERSAO_SEGREDO = env.get("CONVERSAO_SEGREDO", "")
 # igual, apenas sem capa, e o ultimo passo da geracao registra o motivo em vez
 # de falhar. O Ollama NAO serve aqui — ele nao gera imagem.
 #
-# Quando preenchido, costuma apontar para a MESMA maquina do Docling (outra
-# porta). E de proposito: a reserva conta vagas por maquina, entao as duas
-# conexoes passam a se revezar na placa em vez de disputa-la.
+# Quando preenchido, aponta para o MESMO endereco da conversao: hoje as duas
+# rotas moram no mesmo worker, que arbitra a placa com um lock so. A reserva
+# daqui conta vagas por maquina e continua valendo — ela evita mandar um
+# pedido que ja se sabe que vai voltar 503.
 IMAGEM_NOME = env.get("IMAGEM_NOME", "Geracao de imagem")
 IMAGEM_BASE_URL = env.get("IMAGEM_BASE_URL", "")
 
@@ -541,9 +557,20 @@ IMAGEM_SEGREDO = env.get("IMAGEM_SEGREDO", "")
 # pixel custa tempo de placa — 1024x576 tem 44% menos area que 1024x1024, e a
 # diferenca aparece inteira no relogio.
 #
-# Meca antes de mudar: `worker-gpu/medir_imagem.py` compara tamanhos na sua
-# maquina e grava as imagens lado a lado.
+# Meca antes de mudar: o `medir_imagem.py` do repositorio do worker compara
+# tamanhos na sua maquina e grava as imagens lado a lado.
 IMAGEM_TAMANHO = env.get("IMAGEM_TAMANHO", "1024x576")
+
+# ---------------------------------------------------------------------------
+# Onde mora o worker de GPU, quando ele esta nesta maquina
+# ---------------------------------------------------------------------------
+# So o `manage.py dev` usa: ele sobe o worker junto quando o checkout esta
+# aqui e a porta esta livre. Em producao isto fica vazio — la o worker roda na
+# maquina da placa, como unit propria, e a nuvem so faz requisicao HTTP.
+#
+# Um caminho e nao um palpite: o worker e OUTRO repositorio, e adivinhar
+# `../worker-gpu` acertaria na maquina de quem escreveu e erraria nas demais.
+WORKER_GPU_DIR = env.get("WORKER_GPU_DIR", "")
 
 EMBEDDING_MODEL = env.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)

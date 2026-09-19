@@ -10,7 +10,11 @@ requires-python = ">=3.12"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["migrations", "venv", ".venv"]
+# `worker-gpu` e OUTRO repositorio, convivendo nesta arvore ate ser movido.
+# Ele tem o proprio `pyproject.toml`, com a propria configuracao de lint — e
+# rodar as regras deste projeto sobre ele produziria queixas que ninguem la
+# vai atender.
+extend-exclude = ["migrations", "venv", ".venv", "worker-gpu"]
 
 [tool.ruff.lint]
 select = [
@@ -38,10 +42,6 @@ ignore = [
 "**/test_*.py" = ["S105", "S106", "T20"]
 # Scripts utilitarios podem imprimir.
 "scripts/*.py" = ["T20"]
-# O worker de conversao nao e importado por este projeto: ele roda na maquina
-# com a placa, com o proprio requirements. O `medir.py` de la e uma ferramenta
-# de terminal, e o terminal e a saida dele.
-"worker-gpu/*.py" = ["T20"]
 "convert_requirements.py" = ["ALL"]
 
 [tool.ruff.lint.isort]

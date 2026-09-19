@@ -410,7 +410,7 @@ faze-lo pelo admin tambem (`/admin/inference/inferenceconnection/`), do tipo
 *Compativel com OpenAI*, com a carga `text` marcada.
 
 Ha mais duas, as duas opcionais e as duas atendidas por servicos em
-`worker-gpu/`, na maquina que tem a placa:
+no **worker-gpu** — outro repositorio, na maquina que tem a placa:
 
 ```bash
 python manage.py configurar_conversao --testar   # PDF com analise de layout
@@ -422,7 +422,8 @@ le documento digitalizado. Sem a segunda, o artigo sai igual, apenas sem capa
 — o Ollama nao gera imagem, e e por isso que ha um terceiro servico.
 
 As tres dividem a mesma placa, e a reserva conta vagas por MAQUINA para que se
-revezem: [`worker-gpu/README.md`](worker-gpu/README.md#dividir-a-placa).
+revezem. Na verdade quem as revezar hoje e o proprio worker, que e um
+arbitro: tudo passa por ele e disputa um lock so.
 
 ## Comandos de tenant
 
@@ -484,7 +485,7 @@ docs/
     reference/django/  implementacao que passa nos testes de contrato
 fixtures/
   extracao/          resultado esperado da extracao, por PDF de conferencia
-worker-gpu/      Servicos HTTP da maquina com GPU
+(o worker de GPU vive em repositorio proprio)
 tests/           Suite principal
 tests_contrato/  Contrato exercitado nos dois lados
 ```

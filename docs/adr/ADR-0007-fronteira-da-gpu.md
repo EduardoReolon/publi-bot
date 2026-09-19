@@ -24,7 +24,7 @@ Celery, nem banco, nem servidor de aplicacao.
 | Servico na maquina com GPU | Papel |
 |---|---|
 | `ollama serve` | Geracao de texto |
-| Wrapper HTTP do Docling (`worker-gpu/`) | PDF para Markdown |
+| `worker-gpu` (repositorio proprio) | texto, imagem e PDF, arbitrados |
 | ComfyUI ou equivalente (futuro) | Geracao de imagem |
 
 Todos escutam **apenas no endereco da rede privada (Tailscale)**, nunca em

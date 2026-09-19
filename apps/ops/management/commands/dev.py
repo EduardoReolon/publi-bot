@@ -1,10 +1,13 @@
 """Sobe TODOS os processos do projeto num terminal so, em desenvolvimento.
 
-Sao tres sempre — web, worker e beat — mais os dois servicos de GPU quando eles
-moram nesta maquina: a conversao de PDF e a geracao de imagem de capa. Este
-comando e o unico lugar que precisa saber disso. Acrescentar outro amanha e
-acrescentar uma linha em `_servicos()`: quem usa continua rodando
-`manage.py dev`.
+Sao tres sempre — web, worker e beat — mais o worker de GPU quando ele mora
+nesta maquina. Este comando e o unico lugar que precisa saber disso.
+Acrescentar outro amanha e acrescentar uma linha em `_servicos()`: quem usa
+continua rodando `manage.py dev`.
+
+O worker de GPU vive em OUTRO repositorio: a placa e um recurso da maquina,
+compartilhado com outros sistemas, e nao um detalhe deste projeto. O `dev` so
+o sobe por conveniencia, quando `WORKER_GPU_DIR` aponta para um checkout dele.
 
 Este comando existe por um motivo empirico: a separacao em processos e correta,
 e mesmo assim tropeca. Um cadastro de tenant depende do worker (ADR-0001), e sem
@@ -64,19 +67,11 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
-            "--sem-conversao",
+            "--sem-gpu",
             action="store_true",
             help=(
-                "Nao sobe o worker de conversao de PDF, mesmo que ele esteja "
-                "instalado aqui. Os PDFs caem no extrator local."
-            ),
-        )
-        parser.add_argument(
-            "--sem-imagem",
-            action="store_true",
-            help=(
-                "Nao sobe o worker de geracao de imagem, mesmo que ele esteja "
-                "instalado aqui. Os artigos saem sem capa."
+                "Nao sobe o worker de GPU, mesmo que ele esteja instalado "
+                "aqui. Sem ele nao ha texto, capa nem conversao de PDF."
             ),
         )
         parser.add_argument(
@@ -125,12 +120,9 @@ class Command(BaseCommand):
             )
         )
 
-        for aviso in (
-            _nota_sobre_a_conversao(options, servicos),
-            _nota_sobre_a_imagem(options, servicos),
-        ):
-            if aviso:
-                self.stdout.write(aviso)
+        aviso = _nota_sobre_a_gpu(options, servicos)
+        if aviso:
+            self.stdout.write(aviso)
 
         processos: list[subprocess.Popen] = []
         try:
@@ -219,15 +211,10 @@ def _servicos(options) -> list[tuple[str, list[str], dict[str, str] | None]]:
             )
         )
 
-    if not options["sem_conversao"]:
-        conversao = _servico_de_conversao()
-        if conversao is not None:
-            servicos.append(conversao)
-
-    if not options["sem_imagem"]:
-        imagem = _servico_de_imagem()
-        if imagem is not None:
-            servicos.append(imagem)
+    if not options["sem_gpu"]:
+        gpu = _servico_de_gpu()
+        if gpu is not None:
+            servicos.append(gpu)
 
     # O web vem por ultimo de proposito: assim a primeira linha que rola na tela
     # depois do banner e a dele, que e onde se olha.
@@ -235,65 +222,30 @@ def _servicos(options) -> list[tuple[str, list[str], dict[str, str] | None]]:
     return servicos
 
 
-def _servico_de_conversao() -> tuple[str, list[str], dict[str, str]] | None:
-    """O worker do Docling, se ele morar NESTA maquina."""
-    return _worker_de_gpu(
-        nome="conversao",
-        url=getattr(settings, "CONVERSAO_BASE_URL", ""),
-        modulo="docling_api:app",
-        porta_padrao=8100,
-    )
+def _servico_de_gpu() -> tuple[str, list[str], dict[str, str]] | None:
+    """O worker de GPU, se ele morar NESTA maquina e nao estiver de pe.
 
+    Ele vive em OUTRO repositorio, porque mais de um sistema o usa: este
+    projeto, o CRM, e o que vier. A placa e um recurso da maquina, nao deste
+    projeto — e enquanto o codigo dela morava aqui dentro, era so uma questao
+    de tempo ate um segundo consumidor precisar do mesmo e nao ter como.
 
-def _servico_de_imagem() -> tuple[str, list[str], dict[str, str]] | None:
-    """O worker de imagem de capa, se ele morar NESTA maquina.
+    O que o `dev` faz e conveniencia: subir o worker junto quando ele esta na
+    mesma maquina e a porta esta livre. Tres condicoes:
 
-    Mesmas condicoes da conversao, e mais uma: o `diffusers` precisa estar no
-    venv do worker. Ele nao vem com o Docling, e quem instalou o worker antes
-    deste servico existir tem o venv sem ele — tentar subir daria um
-    `ModuleNotFoundError` que derruba o `dev` inteiro, porque qualquer
-    processo que morre encerra todos.
-    """
-    servico = _worker_de_gpu(
-        nome="imagem",
-        url=getattr(settings, "IMAGEM_BASE_URL", ""),
-        modulo="imagem_api:app",
-        porta_padrao=8101,
-    )
-    if servico is None or not _tem_diffusers():
-        return None
-    return servico
-
-
-def _worker_de_gpu(
-    *, nome: str, url: str, modulo: str, porta_padrao: int
-) -> tuple[str, list[str], dict[str, str]] | None:
-    """Um servico de `worker-gpu/`, se ele morar NESTA maquina.
-
-    Em producao nao mora: roda onde esta a placa e e alcancado por Tailscale
-    (ADR-0007). Em desenvolvimento costuma ser a mesma maquina, e ai subir os
-    outros processos a mao e esquecer este e o erro de sempre.
-
-    Quatro condicoes, e cada uma existe por um motivo:
-
-    - a URL esta preenchida e aponta para c'a. Apontando para outra maquina,
-      subir uma copia local daria dois servicos e um receberia trabalho nenhum.
-    - o venv proprio existe. Estes servicos trazem torch (~3 GB) e NAO entram
-      no venv da nuvem; sem isso, o comando tentaria subir algo que nao esta
-      instalado.
-    - a porta da URL e a que passamos ao uvicorn, para os dois concordarem sem
-      ninguem editar duas coisas.
-    - a porta esta livre. Ocupada significa que o servico ja esta de pe —
-      tipicamente como unit do systemd, que e como se roda numa maquina que
-      serve o servidor. Subir o segundo daria "address already in use" e
-      derrubaria o `dev` inteiro. Nao e conflito: e o estado normal de quem
-      instalou a unit, e usa-se o que ja esta la.
-
-    Faltando qualquer uma, devolve None em silencio — e `_nota_sobre_...`
-    explica no banner por que o servico nao esta na lista.
+    - a URL de inferencia aponta para c'a. Apontando para outra maquina,
+      subir uma copia local daria dois arbitros — e dois arbitros sobre uma
+      placa nao arbitram nada;
+    - `WORKER_GPU_DIR` aponta para um checkout com venv. Sem palpite de
+      caminho: o repositorio e outro, e adivinhar acertaria so na maquina de
+      quem escreveu;
+    - a porta esta livre. Ocupada significa que ele ja esta de pe — e subir o
+      segundo daria "address already in use", derrubando o `dev` inteiro,
+      porque qualquer processo que morre encerra todos.
     """
     from urllib.parse import urlparse
 
+    url = getattr(settings, "INFERENCIA_BASE_URL", "")
     if not url:
         return None
 
@@ -302,28 +254,29 @@ def _worker_de_gpu(
         return None
 
     raiz = _raiz_do_worker()
+    if raiz is None:
+        return None
+
     python = _python_do_worker(raiz)
     if not python.exists():
         return None
 
-    porta = endereco.port or porta_padrao
+    porta = endereco.port or 8090
     if _porta_ocupada(endereco.hostname, porta):
         return None
 
     return (
-        nome,
+        "worker-gpu",
         [
             str(python),
             "-m",
             "uvicorn",
-            modulo,
+            "app:app",
             "--host",
             endereco.hostname,
             "--port",
             str(porta),
-            # Um so: dois processos significam dois modelos residentes, e a
-            # VRAM nao comporta. Cada servico ja recusa o segundo pedido com
-            # 503 pelo mesmo motivo.
+            # UM processo: dois seriam dois arbitros.
             "--workers",
             "1",
             "--app-dir",
@@ -333,8 +286,13 @@ def _worker_de_gpu(
     )
 
 
-def _raiz_do_worker() -> Path:
-    return Path(settings.BASE_DIR) / "worker-gpu"
+def _raiz_do_worker() -> Path | None:
+    """O checkout do worker, se `WORKER_GPU_DIR` disser onde ele esta."""
+    caminho = getattr(settings, "WORKER_GPU_DIR", "")
+    if not caminho:
+        return None
+    raiz = Path(caminho).expanduser()
+    return raiz if raiz.is_dir() else None
 
 
 def _python_do_worker(raiz: Path) -> Path:
@@ -343,94 +301,37 @@ def _python_do_worker(raiz: Path) -> Path:
     return raiz / "venv" / "bin" / "python"
 
 
-def _tem_diffusers() -> bool:
-    """Se o venv do worker consegue importar o `diffusers`.
+def _nota_sobre_a_gpu(options, servicos) -> str:
+    """Explica por que o worker de GPU nao esta na lista.
 
-    Pergunta ao interpretador dele, e nao a este: sao venvs diferentes, e o
-    `diffusers` nunca estara neste.
-    """
-    python = _python_do_worker(_raiz_do_worker())
-    try:
-        # Caminho derivado de `settings.BASE_DIR` e de constantes; nada vem de
-        # entrada externa.
-        return (
-            subprocess.run(  # noqa: S603
-                [str(python), "-c", "import diffusers"],
-                capture_output=True,
-                timeout=60,
-            ).returncode
-            == 0
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-
-def _nota_sobre_a_conversao(options, servicos) -> str:
-    """Explica por que o worker de conversao nao esta na lista.
-
-    O silencio aqui seria pior que o ruido. Quem instalou a unit do systemd ve
-    "Subindo: worker, beat, web" e conclui que a conversao nao vai acontecer —
-    quando ela vai, pelo servico que ja estava de pe. E quem NAO instalou nada
-    precisa saber que os PDFs vao sair pelo extrator local.
+    O silencio seria pior que o ruido: quem instalou a unit ve "Subindo:
+    worker, beat, web" e conclui que nada de GPU vai acontecer — quando vai,
+    pelo servico que ja estava de pe. E quem nao tem nada precisa saber que
+    texto, capa e conversao de PDF nao vao funcionar.
     """
     from urllib.parse import urlparse
 
-    if options["sem_conversao"] or any(nome == "conversao" for nome, _, _ in servicos):
+    if options["sem_gpu"] or any(nome == "worker-gpu" for nome, _, _ in servicos):
         return ""
 
-    url = getattr(settings, "CONVERSAO_BASE_URL", "")
+    url = getattr(settings, "INFERENCIA_BASE_URL", "")
     if not url:
-        return (
-            "Conversao:  nenhuma (CONVERSAO_BASE_URL vazia). "
-            "PDF sai pelo extrator local, sem analise de layout."
-        )
+        return "GPU:      nenhuma (INFERENCIA_BASE_URL vazia). Sem texto, capa ou conversao."
 
     endereco = urlparse(url)
     if endereco.hostname not in {"127.0.0.1", "localhost", "::1"}:
-        return f"Conversao:  em outra maquina ({endereco.hostname}); nada a subir aqui."
+        return f"GPU:      em outra maquina ({endereco.hostname}); nada a subir aqui."
 
-    if _porta_ocupada(endereco.hostname, endereco.port or 8100):
-        return f"Conversao:  ja de pe em {url} (servico proprio); nao subi outro."
+    if _porta_ocupada(endereco.hostname, endereco.port or 8090):
+        return f"GPU:      ja de pe em {url} (servico proprio); nao subi outro."
 
-    return (
-        f"Conversao:  {url} aponta para c'a, mas worker-gpu/venv nao existe. "
-        f"PDF sai pelo extrator local."
-    )
-
-
-def _nota_sobre_a_imagem(options, servicos) -> str:
-    """Explica por que o worker de imagem nao esta na lista.
-
-    Mesmo motivo da nota da conversao: o silencio faria quem instalou a unit
-    concluir que nao vai haver capa, e quem nao instalou nada nao saberia que
-    os artigos vao sair sem imagem.
-    """
-    from urllib.parse import urlparse
-
-    if options["sem_imagem"] or any(nome == "imagem" for nome, _, _ in servicos):
-        return ""
-
-    url = getattr(settings, "IMAGEM_BASE_URL", "")
-    if not url:
+    if _raiz_do_worker() is None:
         return (
-            "Imagem:     nenhuma (IMAGEM_BASE_URL vazia). "
-            "Os artigos saem sem capa; o texto nao e afetado."
+            f"GPU:      {url} aponta para c'a, mas WORKER_GPU_DIR nao aponta para "
+            f"um checkout do worker-gpu."
         )
 
-    endereco = urlparse(url)
-    if endereco.hostname not in {"127.0.0.1", "localhost", "::1"}:
-        return f"Imagem:     em outra maquina ({endereco.hostname}); nada a subir aqui."
-
-    if _porta_ocupada(endereco.hostname, endereco.port or 8101):
-        return f"Imagem:     ja de pe em {url} (servico proprio); nao subi outro."
-
-    if not _python_do_worker(_raiz_do_worker()).exists():
-        return f"Imagem:     {url} aponta para c'a, mas worker-gpu/venv nao existe."
-
-    return (
-        f"Imagem:     {url} aponta para c'a, mas o venv do worker nao tem o "
-        f"diffusers. Rode: worker-gpu/venv/bin/pip install -r worker-gpu/requirements.txt"
-    )
+    return f"GPU:      {url} aponta para c'a, mas o venv do worker nao existe."
 
 
 def _porta_ocupada(host: str, porta: int) -> bool:
@@ -449,19 +350,17 @@ def _porta_ocupada(host: str, porta: int) -> bool:
 
 
 def _ambiente_do_worker(raiz: Path) -> dict[str, str]:
-    """O ambiente do worker: o `.env` dele por cima do do terminal.
+    """O ambiente do worker: o `.env` DELE por cima do do terminal.
 
-    Ler o `worker-gpu/.env` aqui nao e conveniencia. Esse arquivo e o mesmo que
-    o systemd le por `EnvironmentFile` quando o servico roda de verdade; sem
-    le-lo, o worker subido pelo `dev` ignoraria `DOCLING_DEVICE` e
-    `DOCLING_THREADS` e se comportaria diferente do que voce configurou — a
-    diferenca apareceria so como "aqui esta mais lento", sem causa visivel.
+    Ler o `.env` do outro repositorio nao e conveniencia: e o mesmo arquivo
+    que o systemd le por `EnvironmentFile` quando o servico roda de verdade.
+    Sem ele, o worker subido pelo `dev` ignoraria o dispositivo, o modelo e os
+    limites configurados — e se comportaria diferente do que voce ajustou, com
+    a diferenca aparecendo so como "aqui esta mais lento".
 
-    O segredo tem uma ponte: no PubliBot ele se chama `CONVERSAO_SEGREDO`, no
-    worker `WORKER_SHARED_SECRET`. Sao dois nomes para o mesmo valor, cada um
-    com o nome que faz sentido do seu lado. Se o `.env` do worker nao o
-    definir, o do PubliBot vale — assim um arquivo so basta em
-    desenvolvimento.
+    O segredo tem uma ponte: neste projeto ele se chama `INFERENCIA_API_KEY`,
+    no worker `WORKER_SHARED_SECRET`. Sao dois nomes para o mesmo valor, cada
+    um com o nome que faz sentido do seu lado.
     """
     import os
 
@@ -477,7 +376,7 @@ def _ambiente_do_worker(raiz: Path) -> dict[str, str]:
             ambiente[chave.strip()] = valor.strip().strip('"').strip("'")
 
     if not ambiente.get("WORKER_SHARED_SECRET"):
-        ambiente["WORKER_SHARED_SECRET"] = getattr(settings, "CONVERSAO_SEGREDO", "")
+        ambiente["WORKER_SHARED_SECRET"] = getattr(settings, "INFERENCIA_API_KEY", "")
 
     return ambiente
 

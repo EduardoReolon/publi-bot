@@ -31,6 +31,9 @@ ignorar = [
   "**/__pycache__/**",
   "**/__init__.py",
   "**/*.pyc",
+  # Outro repositorio, convivendo nesta arvore ate ser movido. O que ele
+  # documenta esta no README e no INTEGRACAO.md dele.
+  "worker-gpu/**",
   "**/*.po",
   "**/*.mo",
   "locale/**",
@@ -75,21 +78,9 @@ padroes = [
   "apps/knowledge/tasks.py",
   "apps/knowledge/management/**",
   "docs/EXTRACAO.md",
-  # So os arquivos do Docling: `worker-gpu/` passou a abrigar dois servicos, e
-  # o de imagem pertence ao bloco `capas`.
-  "worker-gpu/docling_api.py",
-  "worker-gpu/medir.py",
-  "worker-gpu/requirements.txt",
-  "worker-gpu/README.md",
-  "worker-gpu/.env.example",
-  # A instalacao dos dois servicos e uma coisa so — um venv, um `.env`, um
-  # instalador —, entao ela fica junta aqui. O que o servico de imagem FAZ
-  # esta no bloco `capas`.
-  "worker-gpu/deploy/**",
   "tests/test_blocos.py",
   "tests/test_ingestao.py",
   "tests/test_conferencia.py",
-  "tests/test_servico_de_conversao.py",
 ]
 
 [[bloco]]
@@ -166,18 +157,13 @@ padroes = [
   "apps/content/capas.py",
   "apps/content/imagens.py",
   "apps/inference/management/commands/configurar_imagem.py",
-  # O servico que roda o modelo de difusao na placa. Fica no `worker-gpu/`, ao
-  # lado do Docling, mas o que ele faz pertence a este bloco — e o cabecalho
-  # dele guarda as cinco camadas que dividem a VRAM entre os tres servicos.
-  "worker-gpu/imagem_api.py",
-  "worker-gpu/baixar_modelo.py",
-  "worker-gpu/medir_imagem.py",
   "docs/adr/ADR-0019-tres-opcoes-de-capa.md",
   "tests/test_capas.py",
+  "tests/contrato_do_worker/**",
+  "tests/test_contrato_do_worker.py",
   "tests/test_imagens.py",
   "tests/test_capa_junto_do_artigo.py",
   "tests/test_configurar_imagem.py",
-  "tests/test_servico_de_imagem.py",
 ]
 
 [[bloco]]
