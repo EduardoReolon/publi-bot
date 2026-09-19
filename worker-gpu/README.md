@@ -64,9 +64,21 @@ cp .env.example .env   # defina WORKER_SHARED_SECRET e BIND_HOST
 ```
 
 O `instalar.sh` preenche os caminhos desta maquina no molde da unit, habilita,
-sobe e confere o `/health/`. Antes disso ele recusa tres coisas que so dariam
-erro depois: venv ausente, `WORKER_SHARED_SECRET` vazio (o servico sobe e
-responde 500 a toda conversao) e `BIND_HOST=0.0.0.0`.
+sobe e confere o `/health/`. Antes disso ele recusa o que so daria erro depois:
+
+| Recusa | Por que |
+|---|---|
+| venv ausente | nada a executar |
+| `WORKER_SHARED_SECRET` vazio | o servico sobe e responde 500 a toda chamada |
+| `BIND_HOST=0.0.0.0` | publica a placa na internet |
+| `BIND_HOST` em que nao da para escutar | o uvicorn morre no boot e o systemd reinicia a cada 10s |
+| `BIND_PORT` / `IMAGEM_BIND_PORT` ausente | o systemd passa string vazia, e o uvicorn recusa |
+
+A conferencia de endereco pega tres coisas de uma vez: um valor de exemplo
+nunca substituido, o endereco da Tailscale com o `tailscaled` parado, e um IP
+que mudou de lugar. Se o `/health/` mesmo assim nao responder, o instalador
+imprime o fim do journal da unit — a causa na tela, e nao um comando para
+rodar depois.
 
 Unit de **usuario** e o padrao, e e o que faz sentido num computador pessoal:
 nao pede sudo e sobe junto com a sua sessao. Para mante-la de pe com a maquina

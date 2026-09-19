@@ -63,6 +63,11 @@ if [[ ! -f "$RAIZ/.env" ]]; then
     exit 1
 fi
 
+# Lido aqui, e nao no fim: as conferencias abaixo precisam dos valores, e
+# conferir depois de instalar a unit ja e tarde.
+set -a; source <(grep -E '^[A-Z_]+=' "$RAIZ/.env"); set +a
+ENDERECO="${BIND_HOST:-127.0.0.1}"
+
 # Sem o segredo o servico sobe e responde 500 a TODA chamada, com uma mensagem
 # que fala de configuracao sem dizer qual arquivo preencher.
 if ! grep -qE '^WORKER_SHARED_SECRET=.+' "$RAIZ/.env"; then
@@ -79,6 +84,64 @@ if grep -qE '^BIND_HOST=(0\.0\.0\.0|::)\s*$' "$RAIZ/.env"; then
     echo "  Use 127.0.0.1 (so esta maquina) ou o endereco da Tailscale." >&2
     exit 1
 fi
+
+# O endereco precisa existir NESTA maquina. Este e o erro que o `manage.py dev`
+# nao revela: ele escuta no host da URL configurada no PubliBot e ignora o
+# `BIND_HOST` daqui, entao um valor impossivel sobrevive meses sem incomodar —
+# ate alguem instalar a unit. Ai o uvicorn morre no boot, o systemd o reinicia
+# a cada 10s, e a unica pista fica no journal.
+#
+# Tres coisas caem aqui: o endereco de exemplo nunca substituido, o da
+# Tailscale com o tailscaled parado, e um IP que mudou de lugar.
+PYTHON_DE_CONFERENCIA="$RAIZ/venv/bin/python"
+[[ -x "$PYTHON_DE_CONFERENCIA" ]] || PYTHON_DE_CONFERENCIA="$(command -v python3 || true)"
+
+if [[ -n "$PYTHON_DE_CONFERENCIA" ]]; then
+    if ! FALHA_AO_ESCUTAR="$("$PYTHON_DE_CONFERENCIA" -c '
+import socket, sys
+
+host = sys.argv[1]
+familia = socket.AF_INET6 if ":" in host else socket.AF_INET
+sonda = socket.socket(familia, socket.SOCK_STREAM)
+try:
+    sonda.bind((host, 0))
+except OSError as erro:
+    sys.exit(str(erro))
+finally:
+    sonda.close()
+' "$ENDERECO" 2>&1)"; then
+        echo "ERRO: esta maquina nao consegue escutar em BIND_HOST=$ENDERECO." >&2
+        echo "  $FALHA_AO_ESCUTAR" >&2
+        echo >&2
+        echo "  Edite BIND_HOST em $RAIZ/.env:" >&2
+        echo "    127.0.0.1                 atende so esta maquina (dev)" >&2
+        echo "    \$(tailscale ip -4)        atende a nuvem pela Tailscale" >&2
+        echo >&2
+        echo "  Se ja era o endereco da Tailscale, confira:  tailscale status" >&2
+        exit 1
+    fi
+fi
+
+# A unit passa `--port ${IMAGEM_BIND_PORT}` ao uvicorn, e o systemd troca uma
+# variavel AUSENTE por string vazia — sem reclamar. O uvicorn entao recebe
+# `--port ""` e morre com "Invalid value for '--port'", no boot, so no journal.
+#
+# Isto acontece exatamente em quem ja tinha o worker instalado: o `.env` dele e
+# anterior ao servico de imagem e nao tem a variavel. Um `.env.example` novo
+# nao conserta quem nao vai copia-lo de novo.
+exigir_variavel() {
+    local nome="$1" sugestao="$2"
+    if [[ -z "${!nome:-}" ]]; then
+        echo "ERRO: $nome nao esta definida em $RAIZ/.env." >&2
+        echo "  A unit passaria um valor vazio ao uvicorn, que morre no boot." >&2
+        echo "  Acrescente a linha:" >&2
+        echo "    $nome=$sugestao" >&2
+        exit 1
+    fi
+}
+
+[[ "$QUERO_DOCLING" == 1 ]] && exigir_variavel BIND_PORT 8100
+[[ "$QUERO_IMAGEM" == 1 ]] && exigir_variavel IMAGEM_BIND_PORT 8101
 
 if [[ "$QUERO_IMAGEM" == 1 ]] && ! "$RAIZ/venv/bin/python" -c "import diffusers" 2>/dev/null; then
     echo "ERRO: o venv nao tem o diffusers, e o servico de imagem depende dele." >&2
@@ -123,9 +186,19 @@ instalar_unit() {
     echo "  $destino"
 }
 
+# Imprime o fim do journal da unit, indentado.
+mostrar_journal() {
+    local nome="$1"
+    if [[ "$ESCOPO" == "sistema" ]]; then
+        sudo journalctl -u "$nome.service" -n 30 --no-pager 2>&1 | sed 's/^/    /' || true
+    else
+        journalctl --user -u "$nome.service" -n 30 --no-pager 2>&1 | sed 's/^/    /' || true
+    fi
+}
+
 conferir_saude() {
     local nome="$1" porta="$2"
-    local url="http://${BIND_HOST:-127.0.0.1}:${porta}/health/"
+    local url="http://${ENDERECO}:${porta}/health/"
 
     # Os dois servicos carregam o modelo de forma preguicosa, entao respondem
     # antes de ter peso nenhum na memoria — subir rapido aqui nao diz nada
@@ -135,12 +208,25 @@ conferir_saude() {
             echo "  $nome: $resposta"
             return 0
         fi
+        # Uma unit que ja morreu nao vai responder daqui a 28 segundos. Sair
+        # agora troca meia espera inutil por o motivo na tela.
+        if [[ "$("${SYSTEMCTL[@]}" is-active "$nome.service" 2>/dev/null)" == "failed" ]]; then
+            break
+        fi
         sleep 2
     done
 
     echo "ERRO: $nome nao respondeu em $url." >&2
-    echo "  ${SYSTEMCTL[*]} status $nome.service" >&2
-    echo "  journalctl --user -u $nome.service -n 50" >&2
+    echo >&2
+    # O motivo aqui, e nao um comando para a pessoa rodar depois. A conferencia
+    # existe justamente para pegar a falha; mandar buscar a causa em outro
+    # lugar desfaz metade do que ela serve.
+    echo "  Fim do journal de $nome.service:" >&2
+    mostrar_journal "$nome" >&2
+    echo >&2
+    echo "  A unit ficou habilitada e o systemd vai reinicia-la a cada 10s." >&2
+    echo "  Para parar enquanto voce investiga:" >&2
+    echo "    ${SYSTEMCTL[*]} disable --now $nome.service" >&2
     return 1
 }
 
@@ -160,8 +246,6 @@ for unit in "${UNITS[@]}"; do
 done
 
 echo "==> Conferindo /health/"
-set -a; source <(grep -E '^[A-Z_]+=' "$RAIZ/.env"); set +a
-
 FALHOU=0
 [[ "$QUERO_DOCLING" == 1 ]] && { conferir_saude docling-api "${BIND_PORT:-8100}" || FALHOU=1; }
 [[ "$QUERO_IMAGEM" == 1 ]] && { conferir_saude imagem-api "${IMAGEM_BIND_PORT:-8101}" || FALHOU=1; }
@@ -170,11 +254,11 @@ FALHOU=0
 echo
 echo "Pronto. No .env do PubliBot:"
 if [[ "$QUERO_DOCLING" == 1 ]]; then
-    echo "  CONVERSAO_BASE_URL=http://${BIND_HOST:-127.0.0.1}:${BIND_PORT:-8100}"
+    echo "  CONVERSAO_BASE_URL=http://${ENDERECO}:${BIND_PORT:-8100}"
     echo "  CONVERSAO_SEGREDO=<o mesmo WORKER_SHARED_SECRET daqui>"
 fi
 if [[ "$QUERO_IMAGEM" == 1 ]]; then
-    echo "  IMAGEM_BASE_URL=http://${BIND_HOST:-127.0.0.1}:${IMAGEM_BIND_PORT:-8101}"
+    echo "  IMAGEM_BASE_URL=http://${ENDERECO}:${IMAGEM_BIND_PORT:-8101}"
     echo "  IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET daqui>"
     echo "  IMAGEM_MODELO=${IMAGEM_MODELO:-stabilityai/stable-diffusion-xl-base-1.0}"
 fi

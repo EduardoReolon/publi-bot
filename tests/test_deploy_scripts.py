@@ -334,6 +334,13 @@ WORKER = RAIZ / "worker-gpu"
 INSTALAR = WORKER / "deploy" / "instalar.sh"
 
 
+# Um `.env` que passa por todas as conferencias, para os testes que querem
+# chegar ALEM delas.
+_ENV_COMPLETO = (
+    "BIND_HOST=127.0.0.1\nBIND_PORT=8100\nIMAGEM_BIND_PORT=8101\nWORKER_SHARED_SECRET=abc\n"
+)
+
+
 def _worker_falso(tmp_path: Path, env: str) -> Path:
     """Uma arvore que parece a do worker, sem os 3 GB de torch."""
     (tmp_path / "deploy").mkdir()
@@ -435,10 +442,92 @@ def test_o_requirements_do_worker_fixa_o_opencv():
     assert "\nopencv-python>" not in texto
 
 
+def test_o_instalador_recusa_um_endereco_que_nao_existe_nesta_maquina(tmp_path):
+    """O caso real: `BIND_HOST=100.x.y.z`, o exemplo nunca substituido.
+
+    Ele sobreviveu meses porque `manage.py dev` ignora o `BIND_HOST` — ele
+    escuta no host da URL configurada no PubliBot. So a unit do systemd usa
+    este valor, e ai o uvicorn morre no boot, o systemd o reinicia a cada 10s,
+    e a unica pista fica no journal.
+    """
+    raiz = _worker_falso(tmp_path, "BIND_HOST=100.x.y.z\nWORKER_SHARED_SECRET=abc\n")
+
+    resultado = _instalar(raiz)
+
+    assert resultado.returncode == 1
+    assert "BIND_HOST=100.x.y.z" in resultado.stderr
+    assert "tailscale" in resultado.stderr.lower()
+
+
+def test_o_instalador_recusa_um_ip_valido_que_nao_e_desta_maquina(tmp_path):
+    """A Tailscale parada, ou um IP que mudou de lugar: o endereco e valido e
+    mesmo assim nao da para escutar nele. Nao ha erro de digitacao a procurar,
+    e por isso a mensagem manda olhar o `tailscale status`.
+
+    `203.0.113.x` e a faixa reservada a documentacao (TEST-NET-3): nao existe
+    em maquina nenhuma, aqui ou no CI.
+    """
+    raiz = _worker_falso(tmp_path, "BIND_HOST=203.0.113.1\nWORKER_SHARED_SECRET=abc\n")
+
+    resultado = _instalar(raiz)
+
+    assert resultado.returncode == 1
+    assert "nao consegue escutar" in resultado.stderr
+
+
+def test_o_instalador_aceita_o_loopback(tmp_path):
+    """127.0.0.1 e o padrao do `.env.example` e precisa passar — senao o
+    caminho normal de quem esta comecando nao existe.
+
+    Para aqui, sem instalar unit nenhuma: `systemctl` no CI nao tem sessao de
+    usuario. O que se afirma e que a conferencia de endereco nao barrou.
+    """
+    raiz = _worker_falso(tmp_path, _ENV_COMPLETO)
+
+    resultado = _instalar(raiz)
+
+    assert "nao consegue escutar" not in resultado.stderr
+
+
+def test_o_exemplo_do_worker_traz_um_endereco_que_funciona(tmp_path):
+    """Um valor de exemplo que nao funciona em lugar nenhum e uma armadilha
+    plantada: quem copia o arquivo e segue o passo a passo cai nela."""
+    import re
+
+    texto = (WORKER / ".env.example").read_text(encoding="utf-8")
+    valor = re.search(r"^BIND_HOST=(.*)$", texto, re.MULTILINE).group(1).strip()
+
+    assert valor == "127.0.0.1"
+
+
+def test_o_instalador_recusa_env_antigo_sem_a_porta_da_imagem(tmp_path):
+    """O caminho de atualizacao: quem ja tinha o worker tem um `.env` anterior
+    ao servico de imagem, sem `IMAGEM_BIND_PORT`.
+
+    O systemd troca uma variavel ausente por string VAZIA, sem reclamar. O
+    uvicorn recebe `--port ""`, morre no boot, e um `.env.example` novo nao
+    conserta quem nao vai copia-lo de novo.
+    """
+    raiz = _worker_falso(tmp_path, "BIND_HOST=127.0.0.1\nBIND_PORT=8100\nWORKER_SHARED_SECRET=x\n")
+
+    resultado = _instalar(raiz, "--imagem")
+
+    assert resultado.returncode == 1
+    assert "IMAGEM_BIND_PORT=8101" in resultado.stderr
+
+
+def test_o_exemplo_do_worker_define_as_duas_portas(tmp_path):
+    """Uma copia nova do exemplo tem de passar pela conferencia acima."""
+    texto = (WORKER / ".env.example").read_text(encoding="utf-8")
+
+    assert "\nBIND_PORT=" in texto
+    assert "\nIMAGEM_BIND_PORT=" in texto
+
+
 def test_o_instalador_recusa_argumento_desconhecido(tmp_path):
     """Um `--imagen` com erro de digitacao instalaria o Docling calado, e a
     pessoa concluiria que o servico de imagem esta de pe."""
-    raiz = _worker_falso(tmp_path, "BIND_HOST=127.0.0.1\nWORKER_SHARED_SECRET=abc\n")
+    raiz = _worker_falso(tmp_path, _ENV_COMPLETO)
 
     resultado = _instalar(raiz, "--imagen")
 
@@ -450,7 +539,7 @@ def test_o_instalador_de_imagem_recusa_venv_sem_diffusers(tmp_path):
     """Quem instalou o worker antes deste servico existir tem o venv sem o
     `diffusers`. A unit subiria, morreria com ModuleNotFoundError e o systemd
     a reiniciaria a cada 10s — visivel so no journal."""
-    raiz = _worker_falso(tmp_path, "BIND_HOST=127.0.0.1\nWORKER_SHARED_SECRET=abc\n")
+    raiz = _worker_falso(tmp_path, _ENV_COMPLETO)
 
     resultado = _instalar(raiz, "--imagem")
 

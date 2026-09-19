@@ -152,7 +152,13 @@ class Command(BaseCommand):
                 f"nao foi possivel chegar a {url}: {erro}\n"
                 f"Confira se o servico esta de pe (uvicorn docling_api:app), se "
                 f"a porta confere e — em producao — se o Tailscale esta "
-                f"conectado."
+                f"conectado.\n"
+                f"\n"
+                f"Instalado como unit e mesmo assim recusando conexao? O suspeito "
+                f"e o BIND_HOST no .env do WORKER: a unit escuta naquele endereco, "
+                f"e nao neste. Veja:\n"
+                f"    systemctl --user status docling-api\n"
+                f"    journalctl --user -u docling-api -n 30"
             ) from erro
 
         if not resposta.is_success:

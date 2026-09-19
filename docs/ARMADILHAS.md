@@ -788,3 +788,32 @@ Foi o caso ao acrescentar o `diffusers`: quem ja tinha o `worker-gpu/venv`
 instalado antes tinha o venv sem ele. Por isso `_servico_de_imagem` pergunta
 ao interpretador do worker se o pacote existe antes de tentar subir, e o
 banner diz o que rodar para instalar.
+
+### `BIND_HOST` no worker sobrevive errado porque o `manage.py dev` o ignora
+
+O `.env.example` do worker trazia `BIND_HOST=100.x.y.z` — um exemplo, nao um
+endereco. Quem copiou o arquivo e nunca substituiu conviveu meses com isso sem
+nenhum sintoma, porque `manage.py dev` **nao le essa variavel**: ele escuta no
+host da URL configurada do lado do PubliBot (`CONVERSAO_BASE_URL`,
+`IMAGEM_BASE_URL`), que aponta para `127.0.0.1`.
+
+A unit do systemd e o unico lugar que usa `BIND_HOST`. Instalar uma revela o
+problema de uma vez: o uvicorn nao consegue escutar, morre no boot, e o
+`Restart=always` o reinicia a cada 10 segundos para sempre. A unica pista fica
+no journal — e o instalador, ate entao, mandava a pessoa ir busca-la.
+
+Tres correcoes: o exemplo passou a ser `127.0.0.1` (funciona e e seguro), o
+instalador tenta escutar no endereco antes de instalar a unit (o que tambem
+pega a Tailscale parada e um IP que mudou de lugar), e a conferencia de
+`/health/` imprime o journal em vez de mandar procura-lo.
+
+### Variavel ausente vira string vazia no `ExecStart` do systemd
+
+`ExecStart=... --port ${IMAGEM_BIND_PORT}` com a variavel ausente do
+`EnvironmentFile` nao da erro: o systemd substitui por vazio, e o uvicorn
+recebe `--port ""` e morre com "Invalid value".
+
+Isso atinge exatamente quem ja tinha o worker instalado, porque o `.env` dele
+e anterior a variavel — e atualizar o `.env.example` no repositorio nao
+conserta quem nao vai copia-lo de novo. O instalador passou a exigir as
+variaveis que as units interpolam, imprimindo a linha a acrescentar.

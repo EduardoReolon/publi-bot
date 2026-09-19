@@ -182,7 +182,13 @@ class Command(BaseCommand):
             raise CommandError(
                 f"nao foi possivel chegar a {url}: {erro}\n"
                 f"Confira se o servico esta de pe (uvicorn imagem_api:app), se a "
-                f"porta confere e — em producao — se o Tailscale esta conectado."
+                f"porta confere e — em producao — se o Tailscale esta conectado.\n"
+                f"\n"
+                f"Instalado como unit e mesmo assim recusando conexao? O suspeito "
+                f"e o BIND_HOST no .env do WORKER: a unit escuta naquele endereco, "
+                f"e nao neste. Veja:\n"
+                f"    systemctl --user status imagem-api\n"
+                f"    journalctl --user -u imagem-api -n 30"
             ) from erro
 
         if not resposta.is_success:
