@@ -192,3 +192,112 @@ def test_o_cliente_trata_503_como_transitorio():
     from apps.inference.providers.openai_compatible import STATUS_TERMINAIS
 
     assert 503 not in STATUS_TERMINAIS
+
+
+# ---------------------------------------------------------------------------
+# O `/health/` do worker tambem e contrato
+# ---------------------------------------------------------------------------
+# Ele nao estava aqui, e essa ausencia custou caro: quando o worker virou um
+# processo so, o estado de cada rota passou a vir ANINHADO (`imagem`,
+# `conversao`), e os dois comandos de configuracao continuaram lendo as chaves
+# na raiz. Nao deu erro nenhum — `dict.get` devolveu `None`, o comando imprimiu
+# "dispositivo=None" e os dois avisos que justificam o `--testar` (pesos nao
+# baixados, configurado para CPU) simplesmente pararam de aparecer.
+def _saude() -> dict:
+    return _exemplo("saude-resposta.json")
+
+
+def _health_falso(monkeypatch, corpo: dict, status: int = 200):
+    import httpx
+
+    def get(url, **kwargs):
+        return httpx.Response(status, json=corpo, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", get)
+
+
+@pytest.fixture
+def semente_de_imagem(settings):
+    settings.IMAGEM_NOME = "Geracao de imagem"
+    settings.IMAGEM_BASE_URL = "http://worker:8090"
+    settings.IMAGEM_MODELO = "stabilityai/stable-diffusion-xl-base-1.0"
+    settings.IMAGEM_SEGREDO = "segredo"
+    return settings
+
+
+@pytest.fixture
+def semente_de_conversao(settings):
+    settings.CONVERSAO_NOME = "Conversao de PDF"
+    settings.CONVERSAO_BASE_URL = "http://worker:8090"
+    settings.CONVERSAO_SEGREDO = "segredo"
+    return settings
+
+
+@pytest.mark.django_db
+def test_configurar_imagem_le_a_secao_aninhada(monkeypatch, semente_de_imagem, capsys):
+    from django.core.management import call_command
+
+    _health_falso(monkeypatch, _saude())
+    call_command("configurar_imagem", "--testar")
+
+    saida = capsys.readouterr().out
+    assert "modelo=stabilityai/stable-diffusion-xl-base-1.0" in saida
+    assert "dispositivo=auto" in saida
+    assert "None" not in saida, "leu as chaves na raiz e nao achou nada"
+
+
+@pytest.mark.django_db
+def test_o_aviso_de_pesos_nao_baixados_sobrevive(monkeypatch, semente_de_imagem, capsys):
+    """E o aviso mais util do comando: sem ele, a primeira geracao baixa 7 GB
+    dentro da requisicao e a tela parece travada ate esgotar o tempo."""
+    from django.core.management import call_command
+
+    corpo = _saude()
+    corpo["imagem"] = {**corpo["imagem"], "baixado": False}
+    _health_falso(monkeypatch, corpo)
+
+    call_command("configurar_imagem", "--testar")
+
+    assert "baixar_modelo.py" in capsys.readouterr().out
+
+
+@pytest.mark.django_db
+def test_rota_de_imagem_desligada_e_dito_com_todas_as_letras(monkeypatch, semente_de_imagem):
+    """`IMAGEM_ATIVA=nao` no worker some com a secao. Sem este ramo, o comando
+    diria "respondeu 200" e a pessoa procuraria o defeito aqui."""
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    corpo = _saude()
+    del corpo["imagem"]
+    corpo["rotas"] = {**corpo["rotas"], "imagem": False}
+    _health_falso(monkeypatch, corpo)
+
+    with pytest.raises(CommandError, match="IMAGEM_ATIVA"):
+        call_command("configurar_imagem", "--testar")
+
+
+@pytest.mark.django_db
+def test_configurar_conversao_le_a_secao_aninhada(monkeypatch, semente_de_conversao, capsys):
+    from django.core.management import call_command
+
+    _health_falso(monkeypatch, _saude())
+    call_command("configurar_conversao", "--testar")
+
+    saida = capsys.readouterr().out
+    assert "dispositivo=auto" in saida
+    assert "ocr=False" in saida
+
+
+@pytest.mark.django_db
+def test_rota_de_conversao_desligada_e_dito_com_todas_as_letras(monkeypatch, semente_de_conversao):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    corpo = _saude()
+    del corpo["conversao"]
+    corpo["rotas"] = {**corpo["rotas"], "conversao": False}
+    _health_falso(monkeypatch, corpo)
+
+    with pytest.raises(CommandError, match="CONVERSAO_ATIVA"):
+        call_command("configurar_conversao", "--testar")

@@ -1,0 +1,39 @@
+{
+  "_contrato_versao": "2.0",
+  "_rota": "GET /health/ — sem credencial",
+  "_nota": "Derivado do `app.py` do worker (health()). Ainda NAO existe em `contrato/` la: enquanto nao existir, este exemplo prende so este lado. Veja o README ao lado.",
+  "status": "ok",
+  "service": "worker-gpu",
+  "contrato_versao": "2.0",
+  "ocupada": false,
+  "ocupante": null,
+  "modelo": null,
+  "ha_segundos": 0,
+  "rotas": {
+    "texto": true,
+    "imagem": true,
+    "conversao": true
+  },
+  "ollama": {
+    "de_pe": true,
+    "carregados": [
+      "qwen3:30b-a3b-instruct-2507-q4_K_M"
+    ]
+  },
+  "imagem": {
+    "modelo": "stabilityai/stable-diffusion-xl-base-1.0",
+    "dispositivo": "auto",
+    "ultimo_dispositivo": "(nada gerado ainda)",
+    "baixado": true,
+    "carregado": false,
+    "passos": 25,
+    "permite_cpu": false,
+    "tempo_maximo": 600
+  },
+  "conversao": {
+    "dispositivo": "auto",
+    "ocr": false,
+    "threads": "auto",
+    "carregado": false
+  }
+}

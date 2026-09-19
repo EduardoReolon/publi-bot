@@ -181,14 +181,14 @@ class Command(BaseCommand):
         except httpx.HTTPError as erro:
             raise CommandError(
                 f"nao foi possivel chegar a {url}: {erro}\n"
-                f"Confira se o servico esta de pe (uvicorn imagem_api:app), se a "
-                f"porta confere e — em producao — se o Tailscale esta conectado.\n"
+                f"Confira se o worker de GPU esta de pe, se a porta confere e — "
+                f"em producao — se o Tailscale esta conectado.\n"
                 f"\n"
                 f"Instalado como unit e mesmo assim recusando conexao? O suspeito "
                 f"e o BIND_HOST no .env do WORKER: a unit escuta naquele endereco, "
                 f"e nao neste. Veja:\n"
-                f"    systemctl --user status imagem-api\n"
-                f"    journalctl --user -u imagem-api -n 30"
+                f"    systemctl --user status worker-gpu\n"
+                f"    journalctl --user -u worker-gpu -n 30"
             ) from erro
 
         if not resposta.is_success:
@@ -205,16 +205,36 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"{url} respondeu 200."))
             return
 
+        # O estado da imagem vem ANINHADO em `imagem`, porque o worker publica
+        # tres rotas no mesmo `/health/`. Ler as chaves na raiz — como este
+        # comando fazia enquanto o servico de imagem era um processo separado —
+        # devolve `None` em tudo, sem erro nenhum: some o aviso de "pesos nao
+        # baixados" e o de "configurado para CPU", que sao a razao de o
+        # `--testar` existir.
+        imagem = dados.get("imagem")
+
+        if imagem is None:
+            if dados.get("rotas", {}).get("imagem") is False:
+                raise CommandError(
+                    f"{url} respondeu, mas o worker esta com a rota de imagem "
+                    f"DESLIGADA. Ponha IMAGEM_ATIVA=sim no .env do worker e "
+                    f"reinicie-o."
+                )
+            # Nem worker nem erro: um provedor pago que respondeu 200 a um
+            # caminho que ele nao conhece.
+            self.stdout.write(self.style.SUCCESS(f"{url} respondeu 200."))
+            return
+
         self.stdout.write(
             self.style.SUCCESS(
-                f"Worker respondeu: modelo={dados.get('model')}, "
-                f"dispositivo={dados.get('device')}, "
-                f"ultimo={dados.get('ultimo_dispositivo')}, "
-                f"carregado={dados.get('carregado')}, ocupado={dados.get('busy')}."
+                f"Worker respondeu: modelo={imagem.get('modelo')}, "
+                f"dispositivo={imagem.get('dispositivo')}, "
+                f"ultimo={imagem.get('ultimo_dispositivo')}, "
+                f"carregado={imagem.get('carregado')}, ocupado={dados.get('ocupada')}."
             )
         )
 
-        if dados.get("baixado") is False:
+        if imagem.get("baixado") is False:
             self.stdout.write(
                 self.style.WARNING(
                     "Os pesos do modelo ainda NAO estao no disco do worker. A "
@@ -226,17 +246,19 @@ class Command(BaseCommand):
                 )
             )
 
-        if dados.get("device") == "cpu":
+        if imagem.get("dispositivo") == "cpu":
             self.stdout.write(
                 "Configurado para CPU: uma imagem leva MINUTOS. Para usar a "
                 "placa, ponha IMAGEM_DEVICE=cuda no .env do worker e reinicie-o."
             )
-        elif dados.get("ultimo_dispositivo") == "cpu":
+        elif imagem.get("ultimo_dispositivo") == "cpu":
             self.stdout.write(
                 self.style.WARNING(
                     "A ultima geracao caiu para CPU apesar de CUDA estar pedido: "
-                    "faltou VRAM. Costuma ser outro modelo ocupando a placa. "
-                    "Reduza IMAGEM_OCIOSO_SEGUNDOS, ou o tamanho da imagem."
+                    "faltou VRAM. Com IMAGEM_PERMITIR_CPU=nao (o padrao) isso "
+                    "nao deveria acontecer — o worker recusaria com 503 em vez "
+                    "de arar a CPU por dezenas de minutos. Confira essa "
+                    "variavel no .env do worker."
                 )
             )
 

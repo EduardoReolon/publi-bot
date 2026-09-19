@@ -150,15 +150,14 @@ class Command(BaseCommand):
         except httpx.HTTPError as erro:
             raise CommandError(
                 f"nao foi possivel chegar a {url}: {erro}\n"
-                f"Confira se o servico esta de pe (uvicorn docling_api:app), se "
-                f"a porta confere e — em producao — se o Tailscale esta "
-                f"conectado.\n"
+                f"Confira se o worker de GPU esta de pe, se a porta confere e "
+                f"— em producao — se o Tailscale esta conectado.\n"
                 f"\n"
                 f"Instalado como unit e mesmo assim recusando conexao? O suspeito "
                 f"e o BIND_HOST no .env do WORKER: a unit escuta naquele endereco, "
                 f"e nao neste. Veja:\n"
-                f"    systemctl --user status docling-api\n"
-                f"    journalctl --user -u docling-api -n 30"
+                f"    systemctl --user status worker-gpu\n"
+                f"    journalctl --user -u worker-gpu -n 30"
             ) from erro
 
         if not resposta.is_success:
@@ -168,11 +167,29 @@ class Command(BaseCommand):
             )
 
         dados = resposta.json()
-        dispositivo = dados.get("device", "?")
+
+        # Aninhado em `conversao`: o worker publica tres rotas no mesmo
+        # `/health/`. Ler na raiz devolve `None` sem erro, e a unica pista de
+        # que algo esta errado seria um "dispositivo=None" que ninguem le.
+        conversao = dados.get("conversao")
+
+        if conversao is None:
+            if dados.get("rotas", {}).get("conversao") is False:
+                raise CommandError(
+                    f"{url} respondeu, mas o worker esta com a rota de conversao "
+                    f"DESLIGADA. Ponha CONVERSAO_ATIVA=sim no .env do worker e "
+                    f"reinicie-o."
+                )
+            raise CommandError(
+                f"{url} respondeu 200, mas sem a secao `conversao`. O endereco "
+                f"nao parece ser o worker de GPU."
+            )
+
+        dispositivo = conversao.get("dispositivo", "?")
         self.stdout.write(
             self.style.SUCCESS(
                 f"Worker respondeu: dispositivo={dispositivo}, "
-                f"ocr={dados.get('ocr')}, ocupado={dados.get('busy')}."
+                f"ocr={conversao.get('ocr')}, ocupado={dados.get('ocupada')}."
             )
         )
         if dispositivo == "cpu":
