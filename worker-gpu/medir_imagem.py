@@ -80,7 +80,7 @@ def _montar(modelo: str, dispositivo: str):
     if dispositivo == "cuda":
         # O MESMO arranjo do servico. Medir com `.to("cuda")` daria um numero
         # melhor e errado: seria a medicao de uma configuracao que o
-        # `imagem_api` nao usa, porque ela nao cabe ao lado do Ollama.
+        # o servico nao usa, porque ela nao cabe ao lado do Ollama.
         pipe.enable_model_cpu_offload()
         pipe.enable_vae_slicing()
     else:
@@ -189,7 +189,7 @@ def main() -> int:
         "\nPara usar o que voce escolher:\n"
         "    IMAGEM_TAMANHO=<o que ganhou>   no .env do PUBLIBOT (viaja no pedido)\n"
         "    IMAGEM_MODELO=<idem>            no .env do WORKER (e local)\n"
-        "e reinicie:  systemctl --user restart imagem-api"
+        "e reinicie:  systemctl --user restart worker-gpu"
     )
     return 0
 

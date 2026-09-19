@@ -1,250 +1,158 @@
-# Worker de GPU
+# worker-gpu
 
-Esta maquina **nao roda Django, nem Celery, nem banco**. Ela expoe servicos
-HTTP e nada mais (ADR-0007).
+Um processo, uma placa, um árbitro.
 
-O motivo e que APIs hospedadas — Together, OpenAI, Anthropic — sao endpoints e
-nao podem virar worker de fila. Se a GPU local fosse um worker e as APIs fossem
-endpoints, existiriam dois caminhos de codigo para a mesma coisa, duas formas
-de contar concorrencia e dois lugares para o mesmo defeito.
+Esta máquina tem uma GPU e vários clientes. A placa é **indivisível**: um
+modelo de texto de 30B já ocupa quase toda a VRAM de 8 GB, e a difusão precisa
+de ~5,4 GB. Não cabem juntos — e o que acontece quando se tenta não é um erro,
+é o processo caindo para CPU em silêncio, dezenas de vezes mais lento, sem
+nada no log dizendo por quê.
 
-| Servico | Porta | O que faz |
-|---|---|---|
-| `ollama serve` | 11434 | Geracao de texto |
-| `docling-api` | 8100 | PDF para Markdown |
-| `imagem-api` | 8101 | Imagem de capa (difusao) |
+Por isso **tudo** entra por aqui, inclusive o texto:
 
-Os tres dividem a mesma placa. Como, e o assunto de
-[Dividir a placa](#dividir-a-placa) mais abaixo — e nao e um detalhe: uma placa
-de 8 GB nao comporta dois desses modelos ao mesmo tempo.
+| Rota | O que faz |
+|---|---|
+| `POST /v1/chat/completions` | texto — repassa ao Ollama |
+| `POST /v1/images/generations` | imagem — difusão |
+| `POST /parse/` | PDF para Markdown com análise de layout |
+| `GET /v1/models` | catálogo |
+| `GET /health/` | estado, sem credencial |
 
-## Regra que nao pode ser violada
+As três primeiras disputam **um lock só**. Quem não pega recebe `503` com
+`Retry-After` calculado.
 
-**Escute apenas no endereco da rede privada (Tailscale), nunca em `0.0.0.0`.**
+> Integrando um cliente? **[`INTEGRACAO.md`](INTEGRACAO.md)** tem o guia
+> completo. O resto deste arquivo é sobre operar a máquina.
 
-Um endpoint que aceita PDF e roda modelo, aberto na internet, e um problema
-serio: qualquer pessoa poderia consumir a GPU, e o Ollama nao tem autenticacao
-propria.
+## Por que um processo, e não três serviços
 
-## Instalacao
+Foi três, e não funcionava. Cada serviço tinha um lock e protegia a si mesmo;
+nenhum sabia dos outros. O Ollama, então, não participava de nada — ele decide
+sozinho quando carregar e descarregar modelo.
 
-### Ollama
+O resultado era o esperado em retrospecto: a difusão encontrava a placa cheia,
+caía para CPU, e um único lote consumia horas de processador e 17 GB de RAM.
+
+Um lock em memória só é correto porque **todo** pedido de GPU entra no mesmo
+processo. É também o que torna seguro mandar o Ollama soltar a VRAM: detendo o
+lock, ninguém está gerando texto.
+
+## Instalação
+
+```bash
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt
+
+cp .env.example .env          # defina WORKER_SHARED_SECRET e BIND_HOST
+./venv/bin/python baixar_modelo.py    # os ~7 GB do modelo de imagem, uma vez
+./deploy/instalar.sh
+```
+
+O `baixar_modelo.py` não é opcional na prática. O serviço carrega o modelo de
+forma preguiçosa, e o primeiro pedido de todos não carrega: **baixa**. Sem
+isso, o primeiro cliente a pedir uma imagem espera minutos e leva um tempo
+esgotado. O `/health/` informa `baixado`.
+
+### O Ollama
+
+Ele passa a ser **interno**: só o worker fala com ele. Tire-o da rede.
 
 ```bash
 sudo mkdir -p /etc/systemd/system/ollama.service.d
 sudo tee /etc/systemd/system/ollama.service.d/override.conf <<'CONF'
 [Service]
-# Substitua pelo IP da Tailscale desta maquina.
-Environment="OLLAMA_HOST=100.x.y.z:11434"
-
-# Um modelo por vez. Numa placa de 8 GB, dois modelos carregados estouram a
-# VRAM e a inferencia cai SILENCIOSAMENTE para CPU: de dezenas de tokens por
-# segundo para poucos, sem erro nenhum.
+# Loopback. Quem publica na rede privada e o worker, que arbitra a placa.
+# Deixar o Ollama exposto e deixar uma porta dos fundos sem arbitragem.
+Environment="OLLAMA_HOST=127.0.0.1:11434"
 Environment="OLLAMA_MAX_LOADED_MODELS=1"
 Environment="OLLAMA_NUM_PARALLEL=1"
-
-# Mantem o modelo carregado entre chamadas. Recarregar custa de 10 a 60
-# segundos, e a fila e agrupada por modelo justamente para nao pagar isso a
-# cada tarefa.
-Environment="OLLAMA_KEEP_ALIVE=30m"
 CONF
 
 sudo systemctl daemon-reload && sudo systemctl restart ollama
 ```
 
-### Serviço do Docling
+`OLLAMA_KEEP_ALIVE` deixa de ser crítico: o worker descarrega o modelo quando
+precisa da placa para imagem. Mantê-lo alto passa a ser vantagem — o texto não
+recarrega à toa.
 
-```bash
-python3.12 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+### O endereço de escuta
 
-cp .env.example .env   # defina WORKER_SHARED_SECRET e BIND_HOST
-./deploy/instalar.sh   # unit de usuario; --sistema para unit de sistema
-```
-
-O `instalar.sh` preenche os caminhos desta maquina no molde da unit, habilita,
-sobe e confere o `/health/`. Antes disso ele recusa o que so daria erro depois:
-
-| Recusa | Por que |
+| Valor | Quem alcança |
 |---|---|
-| venv ausente | nada a executar |
-| `WORKER_SHARED_SECRET` vazio | o servico sobe e responde 500 a toda chamada |
-| `BIND_HOST=0.0.0.0` | publica a placa na internet |
-| `BIND_HOST` em que nao da para escutar | o uvicorn morre no boot e o systemd reinicia a cada 10s |
-| `BIND_PORT` / `IMAGEM_BIND_PORT` ausente | o systemd passa string vazia, e o uvicorn recusa |
+| `127.0.0.1` | só esta máquina |
+| `$(tailscale ip -4)` | os outros clientes, pela rede privada |
+| `0.0.0.0` | a internet inteira. O instalador recusa |
 
-A conferencia de endereco pega tres coisas de uma vez: um valor de exemplo
-nunca substituido, o endereco da Tailscale com o `tailscaled` parado, e um IP
-que mudou de lugar. Se o `/health/` mesmo assim nao responder, o instalador
-imprime o fim do journal da unit — a causa na tela, e nao um comando para
-rodar depois.
+Trocar exige **reinstalar a unit** (`./deploy/instalar.sh`): o endereço entra
+na linha de comando do uvicorn.
 
-Unit de **usuario** e o padrao, e e o que faz sentido num computador pessoal:
-nao pede sudo e sobe junto com a sua sessao. Para mante-la de pe com a maquina
-ligada e ninguem logado:
+### Sobe sozinho no boot?
 
-```bash
-sudo loginctl enable-linger "$USER"
-```
-
-Use `--sistema` numa maquina dedicada, que precisa subir o servico no boot.
-
-### Servico de imagem de capa
-
-Mesmo venv e mesmo `.env` do Docling, porta 8101:
-
-```bash
-./venv/bin/pip install -r requirements.txt   # traz diffusers e accelerate
-./venv/bin/python baixar_modelo.py           # os ~7 GB do modelo, uma vez
-./deploy/instalar.sh --imagem                # ou --tudo, para os dois
-```
-
-O `baixar_modelo.py` nao e opcional na pratica. O servico carrega o modelo de
-forma preguicosa, e o primeiro pedido de todos nao carrega: **baixa**. Quem
-clica em "gerar tres opcoes de capa" fica olhando o navegador girar por
-minutos, sem nada no terminal (o log esta no journal), e no fim leva um erro
-de tempo esgotado. O `/health/` informa `baixado`, e o
-`configurar_imagem --testar` avisa quando for falso.
-
-O que o `.env` controla:
-
-```bash
-IMAGEM_MODELO=stabilityai/stable-diffusion-xl-base-1.0
-IMAGEM_DEVICE=auto          # cpu | cuda | auto
-IMAGEM_PASSOS=25            # 1 a 4 nos modelos "turbo", com GUIDANCE=0
-IMAGEM_OCIOSO_SEGUNDOS=300  # tempo sem pedido ate devolver a placa
-```
-
-Ele fala o dialeto de imagem da OpenAI (`POST /v1/images/generations`,
-resposta em `b64_json`), que e o unico que o PubliBot conhece. A consequencia
-util: trocar este servico por um provedor pago e mudar a URL e a chave da
-conexao, sem tocar em codigo nenhum.
-
-O `instalar.sh --imagem` recusa subir se o venv nao tiver o `diffusers` — o
-caso de quem instalou o worker antes deste servico existir, e cujo sintoma
-seria um `ModuleNotFoundError` no journal.
-
-### Python 3.14
-
-Duas dependencias do Docling tem marcador `python_version < "3.14"`, e nesse
-Python elas simplesmente nao entram:
-
-| Pacote | Consequencia |
+| Instalação | Sobe quando |
 |---|---|
-| `rapidocr` | sem OCR. O servico recusa subir com `DOCLING_OCR=true`. |
-| `opencv` (vinha junto do rapidocr) | quebraria a analise de TABELA |
+| `./deploy/instalar.sh` (padrão, unit de **usuário**) | você faz login |
+| o mesmo, **mais** `sudo loginctl enable-linger $USER` | no boot, sem login |
+| `./deploy/instalar.sh --sistema` | no boot, sempre |
 
-O segundo e o pior, porque `docling-ibm-models` declara o opencv apenas como
-extra opcional: sem o rapidocr, ninguem o instala, e a falha aparece so na
-primeira conversao, como `ModuleNotFoundError: No module named 'cv2'`. Por isso
-o `requirements.txt` daqui fixa `opencv-python-headless` explicitamente.
+Numa máquina pessoal que também atende outros, `enable-linger` é o que você
+quer.
 
-Se voce precisa de OCR, use Python 3.12 ou 3.13 no venv do worker.
-
-#### Sem placa, por enquanto
-
-**O Docling nao exige GPU.** A analise de layout — que e o que o distingue do
-extrator local — roda em CPU; a placa muda o tempo, nao o resultado. Da para
-subir este servico numa maquina comum, inclusive na mesma da aplicacao, e
-trocar depois.
+## Medir antes de decidir
 
 ```bash
-DOCLING_DEVICE=cpu     # cpu | cuda | auto
-DOCLING_THREADS=4      # so em CPU; 0 deixa o Docling decidir
-DOCLING_OCR=false      # OCR e a parte mais cara; artigo com texto nao precisa
+./venv/bin/python medir_imagem.py --tamanhos 512x288,768x432,1024x576
+./venv/bin/python medir.py um-artigo.pdf --cpu --threads 1
 ```
 
-Quando a placa existir:
+Os dois medem a **segunda** execução de cada combinação: a primeira inclui a
+montagem do pipeline, que se paga uma vez, e misturar as duas produz um número
+que não serve para decidir nada.
 
-```bash
-DOCLING_DEVICE=cuda
-sudo systemctl restart docling-api
-curl -s http://127.0.0.1:8100/health/    # {"device": "cuda", "ocr": false, ...}
-```
+### O que a medição já mostrou nesta placa
 
-**Nada muda no PubliBot**: ele fala HTTP e nao sabe onde o modelo roda. A fila do
-Celery, o adiamento quando o worker esta ocupado e a conferencia de `sha256`
-continuam iguais. E por isso que vale montar o caminho cedo, mesmo lento.
-
-O `/health/` devolve `device` e `ocr` de proposito: sem isso, um `.env` mal
-editado deixa o servico na CPU sem ninguem perceber, e o sintoma seria apenas
-"esta demorando muito".
-
-A primeira conversao baixa os modelos de layout do HuggingFace (algumas centenas
-de MB). Numa rede que bloqueie `huggingface.co` isso falha com `ProxyError` no
-meio da conversao — nao no boot.
-
-## Cadastro no PubliBot
-
-Pelo terminal da nuvem, com `CONVERSAO_BASE_URL` e `CONVERSAO_SEGREDO` no
-`.env` de la (esse segredo e o MESMO `WORKER_SHARED_SECRET` daqui):
-
-```bash
-python manage.py configurar_conversao --testar
-```
-
-O `--testar` chama `/health/` e imprime o dispositivo em uso. Vale o segundo
-que custa: o erro mais comum aqui nao e de configuracao e sim de rede — o
-servico escutando num endereco que a nuvem nao alcanca, ou o Tailscale fora do
-ar. Sem essa confirmacao isso so apareceria dentro de um job.
-
-Para medir antes de decidir entre CPU e placa, nesta maquina:
-
-```bash
-python medir.py um-artigo.pdf --cpu --threads 1   # pior caso, um nucleo
-python medir.py um-artigo.pdf --cuda
-```
-
-Ou, pelo painel, em Conexoes de inferencia:
-
-| Campo | Ollama | Docling | Imagem |
+| tamanho | área relativa | tempo | pico VRAM |
 |---|---|---|---|
-| Tipo | Compativel com OpenAI | Docling | Geracao de imagem |
-| URL base | `http://100.x.y.z:11434` | `http://100.x.y.z:8100` | `http://100.x.y.z:8101` |
-| Cargas | `["text"]` | `["vision_parse"]` | `["image"]` |
-| Concorrencia maxima | **1** | **1** | **1** |
+| 512×288 | 1× | 14,5 s | 5,3 GB |
+| 768×432 | 2,25× | 13,3 s | 5,4 GB |
+| 1024×576 | 4× | 17,8 s | 5,4 GB |
 
-Concorrencia 1 nos tres, e a mesma maquina: sao a mesma placa. Deixar 2 em
-qualquer um deles reintroduz exatamente o problema de VRAM descrito acima.
+Quatro vezes mais pixels por 23% mais tempo — e o menor foi *mais lento* que o
+do meio. O custo dominante é mover pesos entre RAM e VRAM, que é fixo por
+geração; a difusão em si é o troco.
 
-Ou pelo terminal, que e o caminho sem formulario:
+**Consequência prática:** reduzir o tamanho para "economizar" não economiza. O
+que muda o tempo é o modelo. E o pico de VRAM não cai com o tamanho — é por
+isso que o árbitro, e não uma imagem menor, é a resposta para dividir a placa.
+
+Em CPU, o mesmo 512×288 levou 160 s: 11 vezes mais, com qualidade pior.
+
+## Diagnóstico
 
 ```bash
-python manage.py configurar_imagem --testar
+curl -s http://<endereco>:8090/health/ | jq
+journalctl --user -u worker-gpu -f
 ```
 
-## Dividir a placa
+| Sintoma | Causa provável |
+|---|---|
+| `503 gpu_ocupada` | funcionando como projetado; o cliente deve voltar depois |
+| `503 sem_vram` | o Ollama não soltou a placa. Veja `ollama.carregados` no `/health/` |
+| `503 ollama_indisponivel` | o Ollama caiu, ou `OLLAMA_URL` está errado |
+| `/health/` dá `timed out` | um handler bloqueante no event loop — nenhum deveria ser `async def` |
+| `baixado: false` | rode `baixar_modelo.py` antes do primeiro uso |
+| `ultimo_dispositivo: cpu` | caiu para CPU. Com `IMAGEM_PERMITIR_CPU=nao` isso não deveria acontecer |
+| uvicorn morre no boot | `BIND_HOST` inexistente, ou `BIND_PORT` vazio |
 
-Numa RTX 3050 de 8 GB cabe **um** modelo grande de cada vez: um de texto de
-7-8B quantizado, **ou** um de imagem. Nunca os dois inteiros.
+## Testes
 
-Nao ha arranjo perfeito para isso, e o sistema nao finge que ha. Sao cinco
-camadas, cada uma cobrindo o que a anterior deixa passar:
+```bash
+./venv/bin/python -m pytest -q
+```
 
-1. **A reserva do PubliBot conta vagas por MAQUINA**, e nao por conexao
-   (`apps/inference/leases.py`). As tres conexoes apontam para o mesmo host,
-   entao gerar texto e gerar imagem se revezam. Cobre o caminho normal.
-2. **Um pedido por vez dentro de cada servico** (503 no segundo). Cobre quem
-   chamar por fora do PubliBot.
-3. **Os pesos do modelo de imagem ficam na RAM**, nao na VRAM
-   (`enable_model_cpu_offload`): o pico cai de ~7 GB para perto de 3,5 GB, e e
-   isso que permite o Ollama seguir carregado ao lado.
-4. **A placa e devolvida depois de `IMAGEM_OCIOSO_SEGUNDOS` sem pedido.**
-5. **Faltando VRAM, a imagem e refeita em CPU** — com WARNING no log e
-   `ultimo_dispositivo=cpu` no `/health/`. Leva minutos em vez de segundos,
-   mas nao falha.
+Os modelos pesados não entram: `gerar_imagens`, `obter_conversor` e o Ollama
+são substituídos. O que se exercita é o contrato HTTP, a arbitragem e as
+recusas — e é lá que os erros deste repositório doem, porque do outro lado há
+clientes que só veem JSON.
 
-O que nenhuma cobre: o Ollama decide sozinho quando carregar modelo e nao
-participa de reserva nenhuma. Quando ele carrega um modelo grande no meio de
-uma geracao de imagem, quem entra e a camada 5 — e e exatamente por isso que
-ela existe, em vez de o pedido simplesmente falhar.
-
-A camada 5 e a unica que produz um resultado pior sem falhar, entao ela grita:
-`configurar_imagem --testar` relatando `ultimo=cpu` significa que a placa esta
-apertada. Reduza `IMAGEM_OCIOSO_SEGUNDOS`, gere em 512x512, ou use um modelo
-menor.
-
-**Meça antes de confiar:** quanto o Docling leva num artigo de 20 paginas, e
-quanto leva gerar 2000 palavras. Todo limite de tempo depende desses dois
-numeros, e eles variam com a placa.
+`contrato/` guarda os exemplos de resposta que os clientes copiam. Os testes
+conferem que as respostas reais ainda têm aquela forma.

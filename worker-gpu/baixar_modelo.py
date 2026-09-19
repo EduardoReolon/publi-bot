@@ -1,6 +1,6 @@
 """Baixa os pesos do modelo de imagem ANTES do primeiro pedido.
 
-Existe por um defeito de experiencia, nao de codigo. O `imagem_api` carrega o
+Existe por um defeito de experiencia, nao de codigo. O worker carrega o
 modelo de forma preguicosa, no primeiro pedido — e o primeiro pedido de todos
 nao carrega: **baixa**, cerca de 7 GB. Quem clica em "gerar tres opcoes de
 capa" na tela de revisao fica olhando o navegador girar por varios minutos,

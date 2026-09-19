@@ -1,53 +1,32 @@
 #!/usr/bin/env bash
 #
-# Instala os servicos de GPU como units do systemd, nesta maquina.
+# Instala o worker como unit do systemd, nesta maquina.
 #
-#   ./deploy/instalar.sh                    conversao de PDF (Docling)
-#   ./deploy/instalar.sh --imagem           geracao de imagem de capa
-#   ./deploy/instalar.sh --tudo             os dois
-#   ./deploy/instalar.sh --tudo --sistema   os dois, como unit de sistema
+#   ./deploy/instalar.sh              unit de USUARIO (systemctl --user)
+#   ./deploy/instalar.sh --sistema    unit de SISTEMA (precisa de sudo)
 #
-# O padrao e unit de USUARIO, e a escolha e deliberada. Numa maquina pessoal
-# ela nao pede sudo, sobe junto com a sua sessao e usa o venv que ja esta na
-# sua pasta. Unit de sistema e para uma maquina dedicada, que precisa subir o
-# servico no boot sem ninguem entrar.
-#
-# Uma unit de usuario para quando voce sai da sessao. Para mante-la de pe com a
-# maquina ligada e ninguem logado:
+# Unit de usuario e o padrao, e e o que faz sentido num computador pessoal:
+# nao pede sudo e usa o venv que ja esta na sua pasta. Mas ela sobe no LOGIN,
+# nao no boot. Para mante-la de pe com a maquina ligada e ninguem logado:
 #
 #     sudo loginctl enable-linger "$USER"
 #
-# Os dois servicos dividem a mesma placa. Isso e tratado em quatro camadas, e o
-# cabecalho de `imagem_api.py` as explica — a curta e: cada um roda um pedido
-# por vez, a reserva do PubliBot conta vagas por MAQUINA, e o servico de imagem
-# devolve a VRAM depois de um tempo ocioso.
+# Use `--sistema` numa maquina dedicada, que precisa subir no boot sempre.
 #
-# Idempotente: rodar de novo reescreve as units e reinicia os servicos.
+# Idempotente: rodar de novo reescreve a unit e reinicia o servico.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 RAIZ="$(pwd)"
 
-# Sem argumento de servico, instala so o Docling: e o que ja existia, e uma
-# atualizacao do repositorio nao deve comecar a subir um servico novo sozinha.
 ESCOPO="usuario"
-QUERO_DOCLING=1
-QUERO_IMAGEM=0
-
-for argumento in "$@"; do
-    case "$argumento" in
-        --sistema) ESCOPO="sistema" ;;
-        --imagem)  QUERO_DOCLING=0; QUERO_IMAGEM=1 ;;
-        --docling) QUERO_DOCLING=1; QUERO_IMAGEM=0 ;;
-        --tudo)    QUERO_DOCLING=1; QUERO_IMAGEM=1 ;;
-        *)
-            echo "ERRO: argumento desconhecido '$argumento'." >&2
-            echo "  Use --imagem, --docling, --tudo e/ou --sistema." >&2
-            exit 1
-            ;;
-    esac
-done
+if [[ "${1:-}" == "--sistema" ]]; then
+    ESCOPO="sistema"
+elif [[ -n "${1:-}" ]]; then
+    echo "ERRO: argumento desconhecido '${1}'. Use --sistema ou nenhum." >&2
+    exit 1
+fi
 
 echo "==> Conferindo o que precisa existir"
 
@@ -73,31 +52,27 @@ ENDERECO="${BIND_HOST:-127.0.0.1}"
 if ! grep -qE '^WORKER_SHARED_SECRET=.+' "$RAIZ/.env"; then
     echo "ERRO: WORKER_SHARED_SECRET esta vazio em $RAIZ/.env." >&2
     echo "  Gere um com:  python3 -c \"import secrets; print(secrets.token_urlsafe(48))\"" >&2
-    echo "  O MESMO valor vai em CONVERSAO_SEGREDO e IMAGEM_SEGREDO, no .env do PubliBot." >&2
+    echo "  O MESMO valor vai na configuracao de cada cliente." >&2
     exit 1
 fi
 
-# `BIND_HOST=0.0.0.0` expoe na internet um endpoint que roda modelo na sua
+# `BIND_HOST=0.0.0.0` publica na internet um endpoint que roda modelo na sua
 # placa. Recusar aqui e mais barato que descobrir depois.
-if grep -qE '^BIND_HOST=(0\.0\.0\.0|::)\s*$' "$RAIZ/.env"; then
+if grep -qE '^BIND_HOST=(0\.0\.0\.0|::)[[:space:]]*$' "$RAIZ/.env"; then
     echo "ERRO: BIND_HOST=0.0.0.0 em $RAIZ/.env." >&2
     echo "  Use 127.0.0.1 (so esta maquina) ou o endereco da Tailscale." >&2
     exit 1
 fi
 
-# O endereco precisa existir NESTA maquina. Este e o erro que o `manage.py dev`
-# nao revela: ele escuta no host da URL configurada no PubliBot e ignora o
-# `BIND_HOST` daqui, entao um valor impossivel sobrevive meses sem incomodar —
-# ate alguem instalar a unit. Ai o uvicorn morre no boot, o systemd o reinicia
-# a cada 10s, e a unica pista fica no journal.
-#
-# Tres coisas caem aqui: o endereco de exemplo nunca substituido, o da
-# Tailscale com o tailscaled parado, e um IP que mudou de lugar.
+# O endereco precisa existir NESTA maquina. Tres coisas caem aqui: um valor de
+# exemplo nunca substituido, o endereco da Tailscale com o tailscaled parado,
+# e um IP que mudou de lugar. Sem esta conferencia, o uvicorn morre no boot, o
+# systemd o reinicia a cada 10s, e a unica pista fica no journal.
 PYTHON_DE_CONFERENCIA="$RAIZ/venv/bin/python"
 [[ -x "$PYTHON_DE_CONFERENCIA" ]] || PYTHON_DE_CONFERENCIA="$(command -v python3 || true)"
 
 if [[ -n "$PYTHON_DE_CONFERENCIA" ]]; then
-    if ! FALHA_AO_ESCUTAR="$("$PYTHON_DE_CONFERENCIA" -c '
+    if ! FALHA="$("$PYTHON_DE_CONFERENCIA" -c '
 import socket, sys
 
 host = sys.argv[1]
@@ -111,159 +86,98 @@ finally:
     sonda.close()
 ' "$ENDERECO" 2>&1)"; then
         echo "ERRO: esta maquina nao consegue escutar em BIND_HOST=$ENDERECO." >&2
-        echo "  $FALHA_AO_ESCUTAR" >&2
+        echo "  $FALHA" >&2
         echo >&2
         echo "  Edite BIND_HOST em $RAIZ/.env:" >&2
-        echo "    127.0.0.1                 atende so esta maquina (dev)" >&2
-        echo "    \$(tailscale ip -4)        atende a nuvem pela Tailscale" >&2
+        echo "    127.0.0.1                 atende so esta maquina" >&2
+        echo "    \$(tailscale ip -4)        atende os outros pela Tailscale" >&2
         echo >&2
-        echo "  Se ja era o endereco da Tailscale, confira:  tailscale status" >&2
+        echo "  Se ja era o endereco da Tailscale:  tailscale status" >&2
         exit 1
     fi
 fi
 
-# A unit passa `--port ${IMAGEM_BIND_PORT}` ao uvicorn, e o systemd troca uma
-# variavel AUSENTE por string vazia — sem reclamar. O uvicorn entao recebe
-# `--port ""` e morre com "Invalid value for '--port'", no boot, so no journal.
-#
-# Isto acontece exatamente em quem ja tinha o worker instalado: o `.env` dele e
-# anterior ao servico de imagem e nao tem a variavel. Um `.env.example` novo
-# nao conserta quem nao vai copia-lo de novo.
-exigir_variavel() {
-    local nome="$1" sugestao="$2"
-    if [[ -z "${!nome:-}" ]]; then
-        echo "ERRO: $nome nao esta definida em $RAIZ/.env." >&2
-        echo "  A unit passaria um valor vazio ao uvicorn, que morre no boot." >&2
-        echo "  Acrescente a linha:" >&2
-        echo "    $nome=$sugestao" >&2
-        exit 1
-    fi
-}
-
-[[ "$QUERO_DOCLING" == 1 ]] && exigir_variavel BIND_PORT 8100
-[[ "$QUERO_IMAGEM" == 1 ]] && exigir_variavel IMAGEM_BIND_PORT 8101
-
-if [[ "$QUERO_IMAGEM" == 1 ]] && ! "$RAIZ/venv/bin/python" -c "import diffusers" 2>/dev/null; then
-    echo "ERRO: o venv nao tem o diffusers, e o servico de imagem depende dele." >&2
-    echo "  ./venv/bin/pip install -r requirements.txt" >&2
+# A unit passa `--port ${BIND_PORT}` ao uvicorn, e o systemd troca uma
+# variavel AUSENTE por string vazia — sem reclamar. O uvicorn recebe
+# `--port ""` e morre no boot, so no journal.
+if [[ -z "${BIND_PORT:-}" ]]; then
+    echo "ERRO: BIND_PORT nao esta definida em $RAIZ/.env." >&2
+    echo "  A unit passaria um valor vazio ao uvicorn, que morre no boot." >&2
+    echo "  Acrescente:  BIND_PORT=8090" >&2
     exit 1
 fi
 
 if [[ "$ESCOPO" == "sistema" ]]; then
-    PASTA_DAS_UNITS="/etc/systemd/system"
+    DESTINO="/etc/systemd/system/worker-gpu.service"
     SYSTEMCTL=(sudo systemctl)
     INSTALAR=(sudo install -m 0644)
     LINHA_DE_USUARIO="User=$(id -un)"
     ALVO="multi-user.target"
 else
-    PASTA_DAS_UNITS="$HOME/.config/systemd/user"
+    DESTINO="$HOME/.config/systemd/user/worker-gpu.service"
     SYSTEMCTL=(systemctl --user)
     INSTALAR=(install -m 0644)
     # Unit de usuario ja roda como voce; `User=` ali e erro de carregamento.
     LINHA_DE_USUARIO="# (unit de usuario: roda como quem a iniciou)"
     ALVO="default.target"
-    mkdir -p "$PASTA_DAS_UNITS"
+    mkdir -p "$(dirname "$DESTINO")"
 fi
 
-instalar_unit() {
-    local nome="$1"
-    local molde="$RAIZ/deploy/$nome.service"
-    local destino="$PASTA_DAS_UNITS/$nome.service"
+echo "==> Gerando a unit ($ESCOPO)"
+TEMPORARIO="$(mktemp)"
+trap 'rm -f "$TEMPORARIO"' EXIT
 
-    echo "==> Gerando a unit $nome ($ESCOPO)"
-    local temporario
-    temporario="$(mktemp)"
+# `|` como separador: os valores sao caminhos, e com `/` cada um precisaria de
+# escape.
+sed -e "s|RAIZ|$RAIZ|g" \
+    -e "s|LINHA_DE_USUARIO|$LINHA_DE_USUARIO|" \
+    -e "s|ALVO_DE_INSTALACAO|$ALVO|" \
+    "$RAIZ/deploy/worker-gpu.service" > "$TEMPORARIO"
 
-    # `|` como separador: os valores sao caminhos, e com `/` cada um
-    # precisaria de escape.
-    sed -e "s|RAIZ|$RAIZ|g" \
-        -e "s|LINHA_DE_USUARIO|$LINHA_DE_USUARIO|" \
-        -e "s|ALVO_DE_INSTALACAO|$ALVO|" \
-        "$molde" > "$temporario"
-
-    "${INSTALAR[@]}" "$temporario" "$destino"
-    rm -f "$temporario"
-    echo "  $destino"
-}
-
-# Imprime o fim do journal da unit, indentado.
-mostrar_journal() {
-    local nome="$1"
-    if [[ "$ESCOPO" == "sistema" ]]; then
-        sudo journalctl -u "$nome.service" -n 30 --no-pager 2>&1 | sed 's/^/    /' || true
-    else
-        journalctl --user -u "$nome.service" -n 30 --no-pager 2>&1 | sed 's/^/    /' || true
-    fi
-}
-
-conferir_saude() {
-    local nome="$1" porta="$2"
-    local url="http://${ENDERECO}:${porta}/health/"
-
-    # Os dois servicos carregam o modelo de forma preguicosa, entao respondem
-    # antes de ter peso nenhum na memoria — subir rapido aqui nao diz nada
-    # sobre o primeiro pedido, que ainda vai baixar alguns GB.
-    for _ in $(seq 1 15); do
-        if resposta="$(curl -sf "$url" 2>/dev/null)"; then
-            echo "  $nome: $resposta"
-            return 0
-        fi
-        # Uma unit que ja morreu nao vai responder daqui a 28 segundos. Sair
-        # agora troca meia espera inutil por o motivo na tela.
-        if [[ "$("${SYSTEMCTL[@]}" is-active "$nome.service" 2>/dev/null)" == "failed" ]]; then
-            break
-        fi
-        sleep 2
-    done
-
-    echo "ERRO: $nome nao respondeu em $url." >&2
-    echo >&2
-    # O motivo aqui, e nao um comando para a pessoa rodar depois. A conferencia
-    # existe justamente para pegar a falha; mandar buscar a causa em outro
-    # lugar desfaz metade do que ela serve.
-    echo "  Fim do journal de $nome.service:" >&2
-    mostrar_journal "$nome" >&2
-    echo >&2
-    echo "  A unit ficou habilitada e o systemd vai reinicia-la a cada 10s." >&2
-    echo "  Para parar enquanto voce investiga:" >&2
-    echo "    ${SYSTEMCTL[*]} disable --now $nome.service" >&2
-    return 1
-}
-
-UNITS=()
-[[ "$QUERO_DOCLING" == 1 ]] && UNITS+=("docling-api")
-[[ "$QUERO_IMAGEM" == 1 ]] && UNITS+=("imagem-api")
-
-for unit in "${UNITS[@]}"; do
-    instalar_unit "$unit"
-done
+"${INSTALAR[@]}" "$TEMPORARIO" "$DESTINO"
+echo "  $DESTINO"
 
 echo "==> Habilitando e subindo"
 "${SYSTEMCTL[@]}" daemon-reload
-for unit in "${UNITS[@]}"; do
-    "${SYSTEMCTL[@]}" enable "$unit.service" >/dev/null
-    "${SYSTEMCTL[@]}" restart "$unit.service"
-done
+"${SYSTEMCTL[@]}" enable worker-gpu.service >/dev/null
+"${SYSTEMCTL[@]}" restart worker-gpu.service
 
 echo "==> Conferindo /health/"
-FALHOU=0
-[[ "$QUERO_DOCLING" == 1 ]] && { conferir_saude docling-api "${BIND_PORT:-8100}" || FALHOU=1; }
-[[ "$QUERO_IMAGEM" == 1 ]] && { conferir_saude imagem-api "${IMAGEM_BIND_PORT:-8101}" || FALHOU=1; }
-[[ "$FALHOU" == 1 ]] && exit 1
+URL="http://${ENDERECO}:${BIND_PORT}/health/"
 
-echo
-echo "Pronto. No .env do PubliBot:"
-if [[ "$QUERO_DOCLING" == 1 ]]; then
-    echo "  CONVERSAO_BASE_URL=http://${ENDERECO}:${BIND_PORT:-8100}"
-    echo "  CONVERSAO_SEGREDO=<o mesmo WORKER_SHARED_SECRET daqui>"
+# O worker carrega os modelos de forma preguicosa, entao ele responde antes de
+# ter peso nenhum na memoria — subir rapido aqui nao diz nada sobre o primeiro
+# pedido, que ainda pode baixar alguns GB.
+for _ in $(seq 1 15); do
+    if RESPOSTA="$(curl -sf "$URL" 2>/dev/null)"; then
+        echo "  $RESPOSTA"
+        echo
+        echo "Pronto. Nos clientes:"
+        echo "  URL base : http://${ENDERECO}:${BIND_PORT}"
+        echo "  Segredo  : o mesmo WORKER_SHARED_SECRET daqui"
+        echo
+        echo "Veja INTEGRACAO.md para adaptar um cliente."
+        exit 0
+    fi
+    # Uma unit que ja morreu nao vai responder daqui a 28 segundos.
+    if [[ "$("${SYSTEMCTL[@]}" is-active worker-gpu.service 2>/dev/null)" == "failed" ]]; then
+        break
+    fi
+    sleep 2
+done
+
+echo "ERRO: o worker nao respondeu em $URL." >&2
+echo >&2
+# O motivo aqui, e nao um comando para rodar depois: a conferencia existe
+# justamente para pegar a falha.
+echo "  Fim do journal:" >&2
+if [[ "$ESCOPO" == "sistema" ]]; then
+    sudo journalctl -u worker-gpu.service -n 30 --no-pager 2>&1 | sed 's/^/    /' || true
+else
+    journalctl --user -u worker-gpu.service -n 30 --no-pager 2>&1 | sed 's/^/    /' || true
 fi
-if [[ "$QUERO_IMAGEM" == 1 ]]; then
-    echo "  IMAGEM_BASE_URL=http://${ENDERECO}:${IMAGEM_BIND_PORT:-8101}"
-    echo "  IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET daqui>"
-    echo "  IMAGEM_MODELO=${IMAGEM_MODELO:-stabilityai/stable-diffusion-xl-base-1.0}"
-fi
-echo
-echo "E depois, uma vez:"
-[[ "$QUERO_DOCLING" == 1 ]] && echo "  python manage.py configurar_conversao --testar"
-[[ "$QUERO_IMAGEM" == 1 ]] && echo "  python manage.py configurar_imagem --testar"
-exit 0
+echo >&2
+echo "  A unit ficou habilitada e o systemd vai reinicia-la a cada 10s." >&2
+echo "  Para parar enquanto investiga:" >&2
+echo "    ${SYSTEMCTL[*]} disable --now worker-gpu.service" >&2
+exit 1
