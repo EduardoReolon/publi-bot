@@ -129,17 +129,35 @@ class Command(BaseCommand):
         """
         import httpx
 
+        from apps.inference.security import decifrar_chave
+
         url = f"{conexao.base_url.rstrip('/')}/v1/models"
         self.stdout.write(f"Testando {url} ...")
 
+        # Com a chave, quando ha uma. O Ollama cru ignora o cabecalho; o worker
+        # de GPU exige. Sem isto, apontar para o worker dava 401 e a mensagem
+        # mandava procurar um erro de endereco que nao existia.
+        chave = decifrar_chave(conexao) or ""
+        cabecalhos = {"Authorization": f"Bearer {chave}"} if chave else {}
+
         try:
-            resposta = httpx.get(url, timeout=10.0)
+            resposta = httpx.get(url, headers=cabecalhos, timeout=10.0)
         except httpx.HTTPError as erro:
             raise CommandError(
                 f"nao foi possivel chegar a {url}: {erro}\n"
                 f"Confira se o servico esta de pe, se a porta confere e — em "
                 f"producao — se o Tailscale esta conectado."
             ) from erro
+
+        if resposta.status_code in (401, 403):
+            # Separado dos demais: aqui o endereco esta certo e o servico e o
+            # esperado. Mandar conferir a URL levaria para o lado errado.
+            raise CommandError(
+                f"{url} respondeu HTTP {resposta.status_code}: credencial recusada.\n"
+                f"INFERENCIA_API_KEY precisa ser o MESMO valor do "
+                f"WORKER_SHARED_SECRET do worker de GPU.\n"
+                f"Depois de corrigir o .env:  manage.py configurar_inferencia --atualizar"
+            )
 
         if not resposta.is_success:
             raise CommandError(

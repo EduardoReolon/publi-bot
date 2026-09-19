@@ -129,3 +129,68 @@ def test_endpoint_inacessivel_aponta_para_rede(semente):
 
     with pytest.raises(CommandError, match="nao foi possivel chegar"):
         call_command("configurar_inferencia", "--testar")
+
+
+# ---------------------------------------------------------------------------
+# O teste tem de falar com o worker de GPU, que pede credencial
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_o_teste_manda_a_chave_quando_existe(semente, monkeypatch):
+    """O Ollama cru ignora o cabecalho; o worker de GPU exige.
+
+    Sem a chave, apontar a conexao para o worker dava 401 — e a mensagem
+    mandava conferir o endereco, que estava certo.
+    """
+    import httpx
+
+    semente.INFERENCIA_BASE_URL = "http://127.0.0.1:8090"
+    semente.INFERENCIA_API_KEY = "segredo-do-worker"
+
+    vistos = {}
+
+    def get(url, headers=None, **kwargs):
+        vistos["headers"] = headers or {}
+        return httpx.Response(200, json={"data": []}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", get)
+
+    call_command("configurar_inferencia", "--testar")
+
+    assert vistos["headers"].get("Authorization") == "Bearer segredo-do-worker"
+
+
+@pytest.mark.django_db
+def test_sem_chave_nao_manda_cabecalho_vazio(semente, monkeypatch):
+    """`Authorization: Bearer ` num Ollama sem credencial nao ajuda ninguem, e
+    num servico que confere credencial vira um 401 mais confuso que a
+    ausencia."""
+    import httpx
+
+    vistos = {}
+
+    def get(url, headers=None, **kwargs):
+        vistos["headers"] = headers or {}
+        return httpx.Response(200, json={"data": []}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", get)
+
+    call_command("configurar_inferencia", "--testar")
+
+    assert "Authorization" not in vistos["headers"]
+
+
+@pytest.mark.django_db
+def test_credencial_recusada_nao_manda_conferir_o_endereco(semente, monkeypatch):
+    """401 e o unico caso em que o endereco esta certo e o servico e o
+    esperado. Mandar procurar erro de URL aqui custa a tarde de quem le."""
+    import httpx
+
+    semente.INFERENCIA_API_KEY = "errada"
+
+    def get(url, headers=None, **kwargs):
+        return httpx.Response(401, json={}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", get)
+
+    with pytest.raises(CommandError, match="WORKER_SHARED_SECRET"):
+        call_command("configurar_inferencia", "--testar")
