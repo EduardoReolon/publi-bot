@@ -874,3 +874,43 @@ Os testes que guardam isso (`test_servico_de_imagem.py`,
 — so dentro do `with` o cliente usa UM event loop para todas as requisicoes,
 como o uvicorn. Sem o `with`, cada chamada ganha um loop proprio e o defeito
 desaparece do teste sem ter sumido do servico.
+
+### O "fallback para CPU" virou o caminho normal, e custou 8 horas
+
+A quinta camada da divisao de placa — faltando VRAM, refaz em CPU — foi escrita
+supondo que faltar VRAM e excecao. Numa maquina de 8 GB com um modelo de texto
+de 30B carregado, e o estado permanente: o modelo ja transborda para a RAM
+sozinho, e nao sobra VRAM para difusao nenhuma.
+
+Entao todo pedido caia para CPU. Medido em uso, num unico lote:
+
+    Memory: 11.1G (peak: 16.8G, swap: 2.2G)
+    CPU: 8h 23min
+
+Com a maquina inutilizavel enquanto isso, e sem forma de interromper: o laco
+de difusao nao olha para sinal, entao o `systemctl restart` ficou em
+`deactivating (stop-sigterm)` ate o `TimeoutStopSec` de 900s.
+
+Tres correcoes, e nenhuma delas e "avisar melhor":
+
+- **recusar por padrao** (`IMAGEM_PERMITIR_CPU=false`). 503 e uma resposta
+  util: o trabalho volta para a fila e sai quando a placa vagar. Horas de CPU
+  nao sao;
+- **teto de tempo** (`IMAGEM_TEMPO_MAXIMO`), imposto pelo `callback_on_step_end`
+  do diffusers — o unico ponto em que da para desistir de uma difusao;
+- **`TimeoutStopSec` de 90s** na unit, agora que a geracao se auto-limita.
+
+A licao geral: um caminho de degradacao precisa de um ORCAMENTO, nao so de um
+aviso. "Mais lento" sem teto nao e degradacao graciosa — e uma maquina parada
+com um log dizendo que estava tudo bem.
+
+### `a or 0 >= N` nao e `(a or 0) >= N`
+
+Escrito num teto de lotes de capa:
+
+    if artigo.images...first() or 0 >= MAXIMO_DE_LOTES:
+
+O `or` tem precedencia MENOR que o `>=`, entao isto e `a or (0 >= 5)` — ou
+seja, `a or False`. Qualquer lote existente ja bloqueava, e um teto de cinco
+valia um. Nao levanta erro, nao aparece em revisao rapida, e o sintoma ("nao
+deixa gerar mais capas") parece regra de produto.

@@ -583,6 +583,111 @@ def test_com_capa_gerada_a_tela_nao_repete_um_motivo_velho(ambiente, artigo_para
 
 
 # ---------------------------------------------------------------------------
+# Gerar capas pela tela
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_gerar_capas_vira_trabalho_de_fila(
+    ambiente, artigo_para_revisar, gerador_de_imagem_cadastrado
+):
+    """Era sincrono, com a justificativa de que "sao segundos". A medicao
+    desmentiu: numa placa dividida, um lote passa de minutos, e o navegador
+    ficava girando ate o tempo esgotar enquanto o worker seguia desenhando."""
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+
+    resposta = client.post(
+        reverse("content:gerar_capas", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
+        follow=True,
+    )
+
+    job = GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_COVER).first()
+    assert job is not None
+    # `target_object_id` e UUIDField: devolve UUID, nao string.
+    assert str(job.target_object_id) == str(artigo_para_revisar.pk)
+    assert "alguns minutos" in resposta.content.decode()
+
+
+@pytest.mark.django_db
+def test_o_segundo_clique_nao_cria_um_segundo_lote(
+    ambiente, artigo_para_revisar, gerador_de_imagem_cadastrado
+):
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    url = reverse("content:gerar_capas", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+
+    client.post(url)
+    resposta = client.post(url, follow=True)
+
+    assert GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_COVER).count() == 1
+    assert "Aguarde" in resposta.content.decode()
+
+
+@pytest.mark.django_db
+def test_com_lote_em_curso_a_tela_avisa_e_desabilita_o_botao(
+    ambiente, artigo_para_revisar, gerador_de_imagem_cadastrado
+):
+    _, _, client = ambiente
+    client.post(
+        reverse("content:gerar_capas", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    )
+
+    corpo = client.get(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+
+    assert "Gerando as opcoes de capa" in corpo
+    assert "disabled" in corpo
+
+
+@pytest.mark.django_db
+def test_um_lote_pronto_nao_bloqueia_o_proximo(
+    ambiente, artigo_para_revisar, gerador_de_imagem_cadastrado
+):
+    """O teto sao cinco lotes, nao um. Escrito `a or 0 >= MAXIMO`, o `or`
+    ganhava do `>=` e QUALQUER lote existente ja bloqueava — um teto de cinco
+    que valia um."""
+    from apps.content.capas import MAXIMO_DE_LOTES
+    from apps.ops.models import GenerationJob
+
+    artigo_para_revisar.images.create(
+        batch=1, order=1, prompt="x", image=ContentFile(b"webp", name="capa.webp")
+    )
+
+    client = ambiente[2]
+    client.post(
+        reverse("content:gerar_capas", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    )
+
+    assert MAXIMO_DE_LOTES > 1
+    assert GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_COVER).exists()
+
+
+@pytest.mark.django_db
+def test_no_teto_de_lotes_o_clique_e_recusado(
+    ambiente, artigo_para_revisar, gerador_de_imagem_cadastrado
+):
+    """Sem limite, "gerar mais" vira caca-niquel e o proximo lote nunca e o
+    ultimo — cada um custando minutos de placa."""
+    from apps.content.capas import MAXIMO_DE_LOTES
+    from apps.ops.models import GenerationJob
+
+    artigo_para_revisar.images.create(
+        batch=MAXIMO_DE_LOTES, order=1, prompt="x", image=ContentFile(b"w", name="c.webp")
+    )
+
+    client = ambiente[2]
+    resposta = client.post(
+        reverse("content:gerar_capas", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
+        follow=True,
+    )
+
+    assert not GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_COVER).exists()
+    assert "lotes de imagem" in resposta.content.decode()
+
+
+# ---------------------------------------------------------------------------
 # Perguntas
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db
@@ -1240,7 +1345,14 @@ def test_nao_da_para_escolher_a_capa_de_outro_artigo(ambiente, artigo_para_revis
 
 @pytest.mark.django_db
 def test_sem_conexao_de_imagem_a_tela_explica(ambiente, artigo_para_revisar):
-    """Erro de configuracao vira mensagem na tela, nao 500."""
+    """Erro de configuracao vira mensagem na tela, nao 500 — e nao um trabalho.
+
+    Desde que o botao virou fila, este e o caso que precisa de conferencia
+    ANTES de enfileirar: sem gerador cadastrado, mandar para a fila so adiaria
+    a mesma mensagem, e a tela diria "gerando" sobre um lote que nunca vem.
+    """
+    from apps.ops.models import GenerationJob
+
     _, _, client = ambiente
 
     resposta = client.post(
@@ -1250,6 +1362,24 @@ def test_sem_conexao_de_imagem_a_tela_explica(ambiente, artigo_para_revisar):
 
     assert resposta.status_code == 200
     assert "Inferencia" in resposta.content.decode()
+    assert not GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_COVER).exists()
+
+
+@pytest.fixture
+def gerador_de_imagem_cadastrado(db):
+    """Uma conexao de imagem ativa, para os testes que precisam passar da
+    conferencia da tela. Ela nunca e chamada: o trabalho fica na fila."""
+    from apps.inference.models import InferenceConnection
+
+    return InferenceConnection.objects.create(
+        name="Geracao de imagem",
+        kind=InferenceConnection.Kind.IMAGE,
+        base_url="http://127.0.0.1:8101",
+        workloads=[InferenceConnection.Workload.IMAGE],
+        default_model="sdxl",
+        max_concurrency=1,
+        is_active=True,
+    )
 
 
 # ---------------------------------------------------------------------------

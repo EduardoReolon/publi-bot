@@ -217,25 +217,57 @@ def test_a_vaga_e_devolvida_mesmo_quando_a_geracao_falha(servico, monkeypatch):
     assert servico._uma_por_vez._value == 1
 
 
-def test_falta_de_vram_refaz_em_cpu_em_vez_de_falhar(servico, monkeypatch, caplog):
-    """O caso que o usuario aceita correr: a placa nao coube, entao vai em CPU.
+def test_sem_vram_recusa_em_vez_de_gastar_horas_de_cpu(servico, monkeypatch, caplog):
+    """A licao mais cara desta feature, medida em uso: 8h23min de CPU, 11 GB
+    de RAM e 2 GB de swap para gerar UMA leva de capas.
 
-    O que NAO se aceita e isso acontecer calado. Cair para CPU sem rastro
-    produz o diagnostico impossivel — a imagem sai, so que em minutos, e nao
-    ha nada no log ligando uma coisa a outra.
+    Numa placa de 8 GB com um modelo de texto grande carregado, a VRAM esta
+    sempre cheia — o "fallback para CPU" deixa de ser excecao e vira o caminho
+    normal. Recusar e melhor: o PubliBot entende 503 como "tente depois", o
+    trabalho volta para a fila, e a capa sai quando a placa vagar.
     """
     import logging
 
     tentativas = []
 
-    def primeiro_em_cuda_depois_cpu(dispositivo, pedido, quantas, largura, altura):
+    def sem_vram(dispositivo, pedido, quantas, largura, altura):
         tentativas.append(dispositivo)
         if dispositivo == "cuda":
             raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
         return [b"png-da-cpu"]
 
-    monkeypatch.setattr(servico, "_gerar_imagens", primeiro_em_cuda_depois_cpu)
+    monkeypatch.setattr(servico, "_gerar_imagens", sem_vram)
     monkeypatch.setattr(servico, "_resolver_dispositivo", lambda: "cuda")
+    monkeypatch.setattr(servico, "PERMITIR_CPU", False)
+
+    with caplog.at_level(logging.WARNING, logger="imagem-api"):
+        resposta = TestClient(servico.app).post(
+            "/v1/images/generations", json={"prompt": "x"}, headers=_cabecalhos()
+        )
+
+    assert resposta.status_code == 503
+    # Tentou na placa e parou ali. Nao foi para a CPU.
+    assert tentativas == ["cuda"]
+    # E a mensagem diz o que fazer, nao so o que houve.
+    assert "IMAGEM_PERMITIR_CPU" in resposta.json()["error"]["message"]
+
+
+def test_com_permissao_explicita_a_cpu_e_usada(servico, monkeypatch, caplog):
+    """Quem tem tempo de sobra pode ligar. O que nao pode e isso acontecer
+    sozinho — e, quando acontece, precisa deixar rastro."""
+    import logging
+
+    tentativas = []
+
+    def sem_vram(dispositivo, pedido, quantas, largura, altura):
+        tentativas.append(dispositivo)
+        if dispositivo == "cuda":
+            raise RuntimeError("CUDA out of memory")
+        return [b"png-da-cpu"]
+
+    monkeypatch.setattr(servico, "_gerar_imagens", sem_vram)
+    monkeypatch.setattr(servico, "_resolver_dispositivo", lambda: "cuda")
+    monkeypatch.setattr(servico, "PERMITIR_CPU", True)
 
     with caplog.at_level(logging.WARNING, logger="imagem-api"):
         resposta = TestClient(servico.app).post(
@@ -244,7 +276,61 @@ def test_falta_de_vram_refaz_em_cpu_em_vez_de_falhar(servico, monkeypatch, caplo
 
     assert resposta.status_code == 200
     assert tentativas == ["cuda", "cpu"]
-    assert any("VRAM insuficiente" in registro.message for registro in caplog.records)
+    assert any("IMAGEM_PERMITIR_CPU" in r.message for r in caplog.records)
+
+
+def test_tempo_esgotado_vira_503_com_o_que_ajustar(servico, monkeypatch):
+    """Nao e erro do pedido: e esta maquina nao dando conta deste tamanho."""
+
+    def demorou_demais(dispositivo, pedido, quantas, largura, altura):
+        raise servico.TempoEsgotado("a geracao passou de 600s em cpu no passo 3 de 25")
+
+    monkeypatch.setattr(servico, "_gerar_imagens", demorou_demais)
+
+    resposta = TestClient(servico.app).post(
+        "/v1/images/generations", json={"prompt": "x"}, headers=_cabecalhos()
+    )
+
+    assert resposta.status_code == 503
+    assert resposta.headers["Retry-After"] == "300"
+    assert "passou de 600s" in resposta.json()["error"]["message"]
+
+
+def test_o_vigia_interrompe_a_difusao_quando_estoura_o_orcamento(servico, monkeypatch):
+    """O `callback_on_step_end` e o unico ponto em que da para desistir: o laco
+    de difusao nao olha para sinal nem para timeout.
+
+    Sem ele, um `systemctl restart` fica preso em `deactivating (stop-sigterm)`
+    ate o `TimeoutStopSec` — foi o que aconteceu na geracao de 8 horas.
+    """
+    monkeypatch.setattr(servico, "TEMPO_MAXIMO", 0.0001)
+    vigia = servico._vigia_do_relogio("cpu", 1024, 576)
+
+    import time
+
+    time.sleep(0.01)
+
+    with pytest.raises(servico.TempoEsgotado) as erro:
+        vigia(None, 3, None, {})
+
+    assert "1024x576" in str(erro.value)
+    assert "passo 3" in str(erro.value)
+
+
+def test_sem_orcamento_o_vigia_nem_existe(servico, monkeypatch):
+    """`IMAGEM_TEMPO_MAXIMO=0` desliga. O diffusers recebe `None` e nao chama
+    nada — nao ha custo por passo."""
+    monkeypatch.setattr(servico, "TEMPO_MAXIMO", 0)
+
+    assert servico._vigia_do_relogio("cuda", 512, 512) is None
+
+
+def test_o_vigia_deixa_passar_dentro_do_orcamento(servico, monkeypatch):
+    monkeypatch.setattr(servico, "TEMPO_MAXIMO", 600)
+    vigia = servico._vigia_do_relogio("cuda", 512, 512)
+
+    # Devolve os argumentos intactos: o diffusers usa o retorno.
+    assert vigia(None, 1, None, {"latents": "x"}) == {"latents": "x"}
 
 
 def test_a_queda_para_cpu_aparece_no_health(servico, monkeypatch):

@@ -250,10 +250,25 @@
       {% endif %}
     {% endfor %}
 
+    {% if capas_em_curso %}
+      {% comment %}
+        Sem este aviso a tela fica igual a de antes do clique — e o clique
+        seguinte cria um segundo lote, ou bate num servico ocupado. Foi o que
+        aconteceu quando a geracao era sincrona e o navegador so girava.
+      {% endcomment %}
+      <div class="aviso">
+        <strong>{% translate "Gerando as opcoes de capa." %}</strong>
+        {% blocktranslate trimmed %}
+          Pode levar alguns minutos: a placa e dividida com a geracao de texto.
+          Atualize a pagina para ver, ou acompanhe em Operacao.
+        {% endblocktranslate %}
+      </div>
+    {% endif %}
+
     <form method="post" action="{% url 'content:gerar_capas' artigo.pk %}">
       {% csrf_token %}
       <div class="acoes">
-        <button type="submit" class="botao secundario">
+        <button type="submit" class="botao secundario" {% if capas_em_curso %}disabled{% endif %}>
           {% if lotes_de_capa %}
             {% translate "Gerar mais tres exemplos" %}
           {% else %}

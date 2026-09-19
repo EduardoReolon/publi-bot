@@ -7,7 +7,7 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -28,9 +28,7 @@ from apps.content.services import (
     aprovar_resposta_e_agendar,
 )
 from apps.content.tasks import gerar_artigo, responder_pergunta
-from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
 from apps.ops.models import GenerationJob
-from apps.ops.orchestrator import PassoAdiado
 
 logger = logging.getLogger("publibot.content")
 
@@ -232,6 +230,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "posicoes_de_link": Article.LinkPlacement.choices,
         "lotes_de_capa": _lotes_de_capa(artigo),
         "motivo_sem_capa": _motivo_sem_capa(artigo),
+        "capas_em_curso": _capas_em_curso(artigo),
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "proximo_horario": _proximo_horario(),
     }
@@ -263,17 +262,22 @@ def _motivo_sem_capa(artigo) -> str:
     """
     from apps.ops.models import GenerationJob
 
-    if artigo.images.exists() or not artigo.topic_id:
+    if artigo.images.exists():
         return ""
 
-    job = (
-        GenerationJob.objects.filter(
-            kind=GenerationJob.Kind.PILLAR_ARTICLE,
-            target_object_id=str(artigo.topic_id),
-        )
-        .order_by("-created_at")
-        .first()
-    )
+    # Os dois caminhos que geram capa: o passo do fluxo do artigo (que aponta
+    # para a PAUTA) e o botao da tela (que aponta para o ARTIGO). O mais
+    # recente dos dois e o que explica a ausencia — olhar so o primeiro deixava
+    # a falha do botao invisivel, agora que ele tambem e trabalho de fila.
+    #
+    # O ramo da pauta so entra quando ela existe: `target_object_id` e UUID, e
+    # um artigo sem pauta produziria a string "None", que o banco recusa ao
+    # converter.
+    alvos = Q(kind=GenerationJob.Kind.ARTICLE_COVER, target_object_id=str(artigo.pk))
+    if artigo.topic_id:
+        alvos |= Q(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(artigo.topic_id))
+
+    job = GenerationJob.objects.filter(alvos).order_by("-created_at").first()
     if job is None:
         return ""
 
@@ -283,6 +287,31 @@ def _motivo_sem_capa(artigo) -> str:
         if isinstance(payload, dict) and "capas" in payload and payload.get("motivo"):
             return str(payload["motivo"])
     return ""
+
+
+def _capas_em_curso(artigo):
+    """Um lote de capas ainda rodando para este artigo.
+
+    Separado de `_trabalho_em_curso` de proposito: refazer secoes reescreve o
+    TEXTO na tela, e por isso bloqueia a edicao; gerar capa nao toca no texto,
+    entao quem revisa pode continuar trabalhando enquanto o lote sai. Juntar os
+    dois faria o botao "refazer" sumir porque uma imagem esta sendo desenhada.
+    """
+    from apps.ops.models import GenerationJob
+
+    return (
+        GenerationJob.objects.filter(
+            kind=GenerationJob.Kind.ARTICLE_COVER,
+            target_object_id=str(artigo.pk),
+            status__in=[
+                GenerationJob.Status.PENDING,
+                GenerationJob.Status.RUNNING,
+                GenerationJob.Status.WAITING_CAPACITY,
+            ],
+        )
+        .order_by("-created_at")
+        .first()
+    )
 
 
 def _trabalho_em_curso(artigo):
@@ -556,69 +585,62 @@ def _guardar_parametros(request: HttpRequest, artigo: Article) -> None:
 @login_required
 @require_POST
 def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
-    """Pede um lote novo de opcoes de imagem.
+    """Pede um lote novo de opcoes de imagem, pela fila.
 
-    Sincrono de proposito, ao contrario da redacao: sao segundos, a pessoa esta
-    olhando a tela, e mandar para a fila sem nada mudar na tela faria ela pedir
-    de novo.
+    Era sincrono, com a justificativa de que "sao segundos, a pessoa esta
+    olhando a tela". A medicao desmentiu: numa placa dividida com um modelo de
+    texto, um lote de tres passa de minutos — e a primeira geracao de todas
+    baixa alguns GB antes. O navegador ficava girando ate o tempo esgotar, o
+    worker seguia desenhando, e o clique seguinte batia num servico ocupado.
+
+    Agora e um trabalho como os outros: entra na fila, aparece em Operacao, e
+    a tela diz que esta em curso. O passo executado e o MESMO do fluxo do
+    artigo (`passo_gerar_capas`), entao as duas portas nao podem divergir.
     """
-    from apps.content.capas import (
-        GeradorDeImagemOcupado,
-        LimiteDeLotes,
-        SemConexaoDeImagem,
-        gerar_opcoes,
-    )
-    from apps.inference.leases import SemCapacidade
+    from apps.content.capas import MAXIMO_DE_LOTES, ha_conexao_de_imagem
+    from apps.ops.models import GenerationJob
+    from apps.ops.orchestrator import criar_job
+    from apps.ops.tasks import advance_generation_job
 
     artigo = get_object_or_404(Article, pk=pk)
 
-    try:
-        criadas = gerar_opcoes(artigo, site=_site())
-    except (SemConexaoDeImagem, LimiteDeLotes) as exc:
-        messages.error(request, str(exc))
-        return redirect("content:revisar", pk=artigo.pk)
-    except GeradorDeImagemOcupado as exc:
-        # A mensagem ja nomeia quem segura a reserva e ha quanto tempo. A frase
-        # generica de "ocupado" abaixo serve para o caso sem detalhe.
-        messages.error(request, str(exc))
-        return redirect("content:revisar", pk=artigo.pk)
-    # `SemCapacidade` junto com `PassoAdiado` porque as duas chegam aqui pelo
-    # mesmo caminho e significam a mesma coisa para quem clicou: a descricao da
-    # capa passa por `executar_prompt`, que adia, e a geracao da imagem passa
-    # por `reserva`, que levanta `SemCapacidade` crua. Sem esta segunda, uma
-    # maquina ocupada respondia 500 numa tela em que a pessoa so precisava
-    # tentar de novo mais tarde.
-    except (PassoAdiado, SemCapacidade):
-        messages.error(
-            request,
-            _("As conexoes de inferencia estao ocupadas agora. Tente em alguns minutos."),
-        )
-        return redirect("content:revisar", pk=artigo.pk)
-    except ProviderTransientError as exc:
-        # Tempo esgotado e o caso comum aqui, e ele NAO significa que a geracao
-        # parou: o worker continua desenhando e segurando a vaga dele. Dizer
-        # "recusou o pedido" mandaria a pessoa clicar de novo, e o clique
-        # seguinte bate num servico ocupado.
-        logger.warning("Artigo %s: geracao de capa nao respondeu a tempo: %s", artigo.pk, exc)
+    # Conferido ANTES de enfileirar. Sem gerador cadastrado, mandar para a fila
+    # so adiaria a mesma mensagem — e quem clicou ficaria esperando um lote que
+    # nunca vem, com a tela dizendo "gerando".
+    if not ha_conexao_de_imagem():
         messages.error(
             request,
             _(
-                "O gerador de imagem nao respondeu a tempo. Ele pode ainda estar "
-                "trabalhando: espere um minuto e atualize a pagina antes de pedir "
-                "de novo. Detalhe: %s"
-            )
-            % exc,
+                "Nenhuma conexao de geracao de imagem disponivel. Cadastre uma "
+                "em Configuracao > Inferencia, do tipo 'image'."
+            ),
         )
         return redirect("content:revisar", pk=artigo.pk)
-    except ProviderPermanentError as exc:
-        logger.warning("Artigo %s: falha ao gerar capas: %s", artigo.pk, exc)
-        messages.error(request, _("O gerador de imagem recusou o pedido: %s") % exc)
+
+    if _capas_em_curso(artigo):
+        messages.error(request, _("Ja ha um lote de capas sendo gerado. Aguarde."))
         return redirect("content:revisar", pk=artigo.pk)
+
+    # O teto e conferido aqui e tambem dentro de `gerar_opcoes`. Aqui para a
+    # pessoa saber na hora do clique; la porque o fluxo do artigo tambem chama.
+    ultimo_lote = artigo.images.order_by("-batch").values_list("batch", flat=True).first() or 0
+    if ultimo_lote >= MAXIMO_DE_LOTES:
+        messages.error(
+            request,
+            _("Este artigo ja tem %(total)s lotes de imagem. Escolha uma das opcoes existentes.")
+            % {"total": MAXIMO_DE_LOTES},
+        )
+        return redirect("content:revisar", pk=artigo.pk)
+
+    job = criar_job(kind=GenerationJob.Kind.ARTICLE_COVER, target_object_id=str(artigo.pk))
+    transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
 
     messages.success(
         request,
-        _("%(total)s opcao(oes) de capa geradas. Escolha uma, ou peca mais exemplos.")
-        % {"total": len(criadas)},
+        _(
+            "Gerando tres opcoes de capa. Pode levar alguns minutos — a placa e "
+            "dividida com a geracao de texto. Atualize a pagina para ver."
+        ),
     )
     return redirect("content:revisar", pk=artigo.pk)
 

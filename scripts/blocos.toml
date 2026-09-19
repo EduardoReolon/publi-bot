@@ -171,6 +171,7 @@ padroes = [
   # dele guarda as cinco camadas que dividem a VRAM entre os tres servicos.
   "worker-gpu/imagem_api.py",
   "worker-gpu/baixar_modelo.py",
+  "worker-gpu/medir_imagem.py",
   "docs/adr/ADR-0019-tres-opcoes-de-capa.md",
   "tests/test_capas.py",
   "tests/test_imagens.py",

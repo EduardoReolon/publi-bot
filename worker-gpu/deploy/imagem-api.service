@@ -31,10 +31,14 @@ ExecStart=RAIZ/venv/bin/uvicorn imagem_api:app \
 Restart=always
 RestartSec=10
 
-# Uma geracao de tres imagens em CPU passa de cinco minutos com folga, e e
-# exatamente o caso em que nao se quer o servico morto no meio: a placa faltou
-# uma vez, e reiniciar faria o pedido seguinte cair de novo.
-TimeoutStopSec=900
+# Curto de proposito. O laco de difusao nao olha para sinal nenhum, entao um
+# `systemctl restart` fica em `deactivating (stop-sigterm)` ate este prazo —
+# com 900s, um restart parecia travado por quinze minutos.
+#
+# Quem limita a duracao de uma geracao agora e o `IMAGEM_TEMPO_MAXIMO` do
+# servico, que desiste sozinho pelo callback do diffusers. Aqui basta o tempo
+# de terminar um passo e soltar a placa.
+TimeoutStopSec=90
 
 NoNewPrivileges=true
 PrivateTmp=true

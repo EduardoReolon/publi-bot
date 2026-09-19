@@ -673,6 +673,16 @@ registrar_fluxo(
     )
 )
 
+# Pedir mais capas, da tela de revisao. Um passo so, e o MESMO passo do fluxo
+# do artigo: se fossem dois codigos, um deles envelheceria. A diferenca esta no
+# alvo — aqui o trabalho ja nasce apontando para o artigo.
+registrar_fluxo(
+    Fluxo(
+        kind=GenerationJob.Kind.ARTICLE_COVER,
+        passos=[Passo(numero=0, nome="gerar capas", executar=passo_gerar_capas)],
+    )
+)
+
 registrar_fluxo(
     Fluxo(
         kind=GenerationJob.Kind.QA_ANSWER,

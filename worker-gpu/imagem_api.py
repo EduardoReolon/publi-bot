@@ -103,6 +103,32 @@ MAXIMO_POR_CHAMADA = int(os.environ.get("IMAGEM_MAXIMO", 4))
 # o problema.
 LADO_MAXIMO = int(os.environ.get("IMAGEM_LADO_MAXIMO", 1024))
 
+# Gerar em CPU quando a placa nao cabe.
+#
+# DESLIGADO por padrao, e a razao veio de uso. Numa maquina com 8 GB de VRAM e
+# um modelo de texto grande carregado, a placa esta SEMPRE cheia: o "fallback"
+# deixa de ser excecao e vira o caminho normal. Um SDXL a 1024x1024 em CPU
+# passa de HORAS — medido num caso real: 8h23min de CPU, 11 GB de RAM, 2 GB de
+# swap, com a maquina inteira inutilizavel enquanto isso.
+#
+# Recusar e melhor: o PubliBot entende 503 como "tente depois", o trabalho
+# volta para a fila e a capa sai quando a placa vagar. Ligue isto so numa
+# maquina que pode gastar o tempo — e meca antes com `medir_imagem.py`.
+PERMITIR_CPU = os.environ.get("IMAGEM_PERMITIR_CPU", "false").lower() in {"1", "true", "yes", "sim"}
+
+# Teto de tempo para uma geracao, em segundos. Zero desliga.
+#
+# Nao e paciencia: e o que impede uma geracao mal dimensionada de segurar a
+# maquina por horas. Sem ele nao ha como interromper — um `systemctl restart`
+# fica em `deactivating (stop-sigterm)` ate o `TimeoutStopSec`, porque o laco
+# de difusao nao olha para sinal nenhum. Com ele, o laco desiste sozinho.
+TEMPO_MAXIMO = int(os.environ.get("IMAGEM_TEMPO_MAXIMO", 600))
+
+
+class TempoEsgotado(RuntimeError):
+    """A geracao passou de `TEMPO_MAXIMO`."""
+
+
 app = FastAPI(title="PubliBot — servico de imagem", version="1.0.0")
 
 # Uma geracao por vez. Mesmo motivo do Docling: duas ao mesmo tempo estouram a
@@ -379,6 +405,8 @@ def health():
         "ultimo_dispositivo": _ultimo_dispositivo or "(nada gerado ainda)",
         "carregado": _pipeline is not None,
         "steps": PASSOS,
+        "permite_cpu": PERMITIR_CPU,
+        "tempo_maximo": TEMPO_MAXIMO,
     }
 
 
@@ -418,16 +446,51 @@ def gerar(
         dispositivo = _resolver_dispositivo()
         try:
             imagens = _gerar_imagens(dispositivo, pedido, quantas, largura, altura)
+        except TempoEsgotado as exc:
+            # Nao e erro do pedido: e esta maquina nao dando conta deste
+            # tamanho. 503 para o PubliBot tentar depois, e a mensagem diz o
+            # que ajustar em vez de mandar tentar de novo igual.
+            logger.warning("%s", exc)
+            return JSONResponse(
+                {"error": {"code": "timeout", "message": str(exc)}},
+                status_code=503,
+                headers={"Retry-After": "300"},
+            )
         except Exception as exc:
             if not _e_falta_de_vram(exc) or dispositivo == "cpu":
                 raise
-            # A quinta camada descrita no cabecalho. Em WARNING e nao em
-            # DEBUG: uma geracao que passou a levar minutos precisa ter deixado
-            # rastro, ou o sintoma vira "hoje esta lento" sem causa.
+
+            if not PERMITIR_CPU:
+                # Recusar, e nao cair para CPU. Numa placa que vive cheia — um
+                # modelo de texto grande ao lado — o fallback deixaria de ser
+                # excecao e viraria o caminho normal, de horas cada.
+                logger.warning(
+                    "VRAM insuficiente para gerar em CUDA (%s), e IMAGEM_PERMITIR_CPU "
+                    "esta desligado. Recusando em vez de gastar horas de CPU.",
+                    exc,
+                )
+                with _trava:
+                    _descarregar_sem_trava()
+                return JSONResponse(
+                    {
+                        "error": {
+                            "code": "sem_vram",
+                            "message": (
+                                "sem VRAM para gerar agora — provavelmente outro "
+                                "modelo esta ocupando a placa. O trabalho volta "
+                                "para a fila. Para gerar em CPU assim mesmo, "
+                                "IMAGEM_PERMITIR_CPU=true (meca antes com "
+                                "medir_imagem.py: pode levar horas)."
+                            ),
+                        }
+                    },
+                    status_code=503,
+                    headers={"Retry-After": "600"},
+                )
+
             logger.warning(
-                "VRAM insuficiente para gerar em CUDA (%s). Refazendo em CPU — "
-                "vai levar minutos. Provavel causa: outro modelo ocupando a "
-                "placa (Ollama, Docling).",
+                "VRAM insuficiente para gerar em CUDA (%s). Refazendo em CPU, por "
+                "IMAGEM_PERMITIR_CPU — vai levar MUITO mais tempo.",
                 exc,
             )
             with _trava:
@@ -482,6 +545,7 @@ def _gerar_imagens(
         width=largura,
         height=altura,
         generator=gerador,
+        callback_on_step_end=_vigia_do_relogio(dispositivo, largura, altura),
     )
 
     bytes_das_imagens = []
@@ -490,6 +554,33 @@ def _gerar_imagens(
         imagem.save(memoria, format="PNG")
         bytes_das_imagens.append(memoria.getvalue())
     return bytes_das_imagens
+
+
+def _vigia_do_relogio(dispositivo: str, largura: int, altura: int):
+    """Interrompe a difusao quando ela passa do orcamento de tempo.
+
+    O `callback_on_step_end` do diffusers e o unico ponto em que da para
+    desistir: o laco nao olha para sinal nem para timeout, e por isso um
+    `systemctl restart` fica preso em `deactivating (stop-sigterm)` ate o
+    `TimeoutStopSec` — foi o que aconteceu numa geracao que levou horas.
+
+    Devolve `None` quando nao ha orcamento, e ai o diffusers nao chama nada.
+    """
+    if TEMPO_MAXIMO <= 0:
+        return None
+
+    limite = time.perf_counter() + TEMPO_MAXIMO
+
+    def conferir(pipe, passo, timestep, argumentos):
+        if time.perf_counter() > limite:
+            raise TempoEsgotado(
+                f"a geracao passou de {TEMPO_MAXIMO}s em {dispositivo} no passo "
+                f"{passo} de {PASSOS} ({largura}x{altura}). Reduza o tamanho ou "
+                f"os passos, use um modelo menor, ou aumente IMAGEM_TEMPO_MAXIMO."
+            )
+        return argumentos
+
+    return conferir
 
 
 def _e_falta_de_vram(exc: Exception) -> bool:

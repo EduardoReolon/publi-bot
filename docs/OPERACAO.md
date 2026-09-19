@@ -120,6 +120,50 @@ mudar:
 | `IMAGEM_DEVICE` | `auto` usa a placa se houver; `cpu` para so conferir o caminho |
 | `IMAGEM_PASSOS` | 25 no SDXL; 1 a 4 nos modelos "turbo" (com `IMAGEM_GUIDANCE=0`) |
 | `IMAGEM_OCIOSO_SEGUNDOS` | quanto tempo sem pedido ate devolver a placa |
+| `IMAGEM_PERMITIR_CPU` | gerar em CPU quando a VRAM nao cabe. **Desligado** |
+| `IMAGEM_TEMPO_MAXIMO` | teto por geracao, em segundos |
+
+O tamanho da capa **nao** fica aqui: ele viaja no pedido, entao mora no
+`IMAGEM_TAMANHO` do `.env` do PubliBot. Trocar no lugar errado nao da erro —
+so nao muda nada.
+
+#### Meca antes de escolher
+
+```bash
+./venv/bin/python medir_imagem.py --tamanhos 512x288,768x432,1024x576
+./venv/bin/python medir_imagem.py --cpu --tamanhos 512x288
+```
+
+Ele mede a SEGUNDA geracao de cada combinacao (a primeira inclui a montagem do
+pipeline, que se paga uma vez) e grava as imagens em `medicoes/` — numero sem
+imagem ao lado nao ajuda a escolher.
+
+O tamanho e o segundo maior fator; o primeiro e o modelo. Um SDXL a 1024x576
+tem 44% menos area que 1024x1024, e isso aparece inteiro no relogio.
+
+#### Quando a placa nao cabe
+
+Este e o caso de quem roda um modelo de texto grande na mesma placa. Um modelo
+de 30B em 8 GB de VRAM ja transborda para a RAM sozinho; nao sobra VRAM para
+difusao nenhuma.
+
+O servico **recusa** em vez de cair para CPU, e a recusa e deliberada. Medido
+num caso real, um lote em CPU custou **8h23min de CPU, 11 GB de RAM e 2 GB de
+swap**, com a maquina inutilizavel enquanto isso. Recusando, o PubliBot recebe
+503, o trabalho volta para a fila e a capa sai quando a placa vagar.
+
+Se ainda assim quiser: `IMAGEM_PERMITIR_CPU=true` — depois de medir. E deixe o
+`IMAGEM_TEMPO_MAXIMO` ligado: sem ele nao ha como interromper o laco de
+difusao, e ate um `systemctl restart` fica preso esperando.
+
+Com 8 GB divididos com um modelo grande, as saidas reais sao:
+
+| Caminho | Custo |
+|---|---|
+| Modelo de imagem menor (SD 1.5 a 512) | qualidade menor, cabe com folga |
+| Descarregar o modelo de texto antes | `OLLAMA_KEEP_ALIVE=0`, texto mais lento |
+| Um provedor pago de imagem | some o problema de VRAM, entra custo por imagem |
+| Nao gerar capa | o artigo sai igual; e o padrao |
 
 No `.env` do PubliBot:
 
@@ -855,6 +899,8 @@ python manage.py reservas          # quem esta segurando a capacidade
 | `nenhuma versao ativa para o prompt ...` | tenant sem prompts; `manage.py semear_prompts --todos` |
 | `nenhuma conexao de geracao de imagem disponivel` | faltou `configurar_imagem`; o artigo sai sem capa e o texto nao e afetado (secao 4a) |
 | Gerar capa fica girando e depois da erro | a primeira geracao BAIXA o modelo (~7 GB). Rode `baixar_modelo.py` na maquina da placa |
+| `sem_vram` ao gerar capa | a placa esta ocupada pelo modelo de texto. Ver "Quando a placa nao cabe" (secao 4a) |
+| Uma geracao consumindo horas de CPU | `IMAGEM_PERMITIR_CPU=true` sem medir antes |
 | `/health/` do worker da `timed out` (nao "refused") | ele esta ocupado gerando. Se persistir sem nada em curso, confira o journal da unit |
 | `could not open extension control file` no bootstrap | falta `postgresql-<versao>-pgvector` |
 | Unit de usuario nao sobe no boot | falta `sudo loginctl enable-linger $USER` |

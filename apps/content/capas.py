@@ -41,7 +41,17 @@ OPCOES_POR_LOTE = 3
 # vira um caca-niquel, e o proximo lote nunca e o ultimo.
 MAXIMO_DE_LOTES = 5
 
-TAMANHO = "1024x1024"
+
+def _tamanho() -> str:
+    """O tamanho pedido ao gerador, lido no momento da chamada.
+
+    Funcao e nao constante de modulo: assim `override_settings` alcanca, e
+    trocar o tamanho no `.env` nao exige entender que o valor foi congelado na
+    importacao.
+    """
+    from django.conf import settings
+
+    return getattr(settings, "IMAGEM_TAMANHO", "1024x576")
 
 
 class SemConexaoDeImagem(RuntimeError):
@@ -106,7 +116,7 @@ def gerar_opcoes(
     cliente = get_image_provider(conexao)
     with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
         geradas = cliente.generate(
-            model=modelo, prompt=descricao, quantidade=quantidade, tamanho=TAMANHO
+            model=modelo, prompt=descricao, quantidade=quantidade, tamanho=_tamanho()
         )
 
     _registrar_uso(conexao, modelo, len(geradas))
@@ -139,11 +149,7 @@ def _conexao_de_imagem():
     if conexao is not None:
         return conexao
 
-    existe_alguma = any(
-        candidata.atende(InferenceConnection.Workload.IMAGE)
-        for candidata in InferenceConnection.objects.filter(is_active=True)
-    )
-    if not existe_alguma:
+    if not ha_conexao_de_imagem():
         raise SemConexaoDeImagem(
             "nenhuma conexao de geracao de imagem disponivel. Cadastre uma em "
             "Configuracao > Inferencia, do tipo 'image'."
@@ -152,6 +158,21 @@ def _conexao_de_imagem():
     # `descrever_ocupacao` nomeia quem segura a reserva e ha quanto tempo, ou
     # explica o disjuntor. E a diferenca entre esperar e agir.
     raise GeradorDeImagemOcupado(descrever_ocupacao())
+
+
+def ha_conexao_de_imagem() -> bool:
+    """Se existe alguma conexao de imagem ativa — sem olhar se tem vaga.
+
+    Publica porque a tela precisa dela ANTES de enfileirar: sem gerador
+    cadastrado, mandar o trabalho para a fila so adia a mesma mensagem, e quem
+    clicou fica esperando um lote que nunca vem.
+    """
+    from apps.inference.models import InferenceConnection
+
+    return any(
+        candidata.atende(InferenceConnection.Workload.IMAGE)
+        for candidata in InferenceConnection.objects.filter(is_active=True)
+    )
 
 
 def _registrar_uso(conexao, modelo: str, quantas: int) -> None:

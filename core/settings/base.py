@@ -531,6 +531,20 @@ IMAGEM_MODELO = env.get("IMAGEM_MODELO", "stabilityai/stable-diffusion-xl-base-1
 # como `Authorization: Bearer`, que e o que o dialeto de imagem da OpenAI usa.
 IMAGEM_SEGREDO = env.get("IMAGEM_SEGREDO", "")
 
+# Tamanho da capa, em pixels, no formato do dialeto da OpenAI.
+#
+# Viaja no pedido, entao mora AQUI e nao no `.env` do worker — trocar no lugar
+# errado nao da erro, so nao muda nada.
+#
+# O padrao e paisagem e nao quadrado: uma capa de artigo aparece como
+# `og:image` nas redes e no topo da pagina, onde o corte util e largo. E cada
+# pixel custa tempo de placa — 1024x576 tem 44% menos area que 1024x1024, e a
+# diferenca aparece inteira no relogio.
+#
+# Meca antes de mudar: `worker-gpu/medir_imagem.py` compara tamanhos na sua
+# maquina e grava as imagens lado a lado.
+IMAGEM_TAMANHO = env.get("IMAGEM_TAMANHO", "1024x576")
+
 EMBEDDING_MODEL = env.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)
 

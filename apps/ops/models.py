@@ -39,6 +39,11 @@ class GenerationJob(models.Model):
         # faria alguem perder cinco secoes boas querendo consertar uma.
         ARTICLE_REDRAFT = "article_redraft", _("Refazer secoes do artigo")
         ARTICLE_REPLAN = "article_replan", _("Replanejar o artigo")
+        # Pedir mais um lote de capas, pela tela de revisao. Virou trabalho de
+        # fila quando ficou claro quanto custa: numa placa dividida com um
+        # modelo de texto, um lote passa de minutos — tempo demais para uma
+        # requisicao HTTP segurar, e tempo demais para a pessoa olhar a tela.
+        ARTICLE_COVER = "article_cover", _("Gerar opcoes de capa")
         QA_ANSWER = "qa_answer", _("Resposta a pergunta")
         PDF_INGESTION = "pdf_ingestion", _("Conversao de PDF")
 

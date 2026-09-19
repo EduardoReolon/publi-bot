@@ -177,3 +177,40 @@ def test_replanejar_nao_gera_lote_novo():
     passos = [p.nome for p in obter_fluxo(GenerationJob.Kind.ARTICLE_REPLAN).passos]
 
     assert "gerar capas" not in passos
+
+
+# ---------------------------------------------------------------------------
+# O botao da tela de revisao tambem e um trabalho de fila
+# ---------------------------------------------------------------------------
+def test_o_botao_e_o_fluxo_do_artigo_executam_o_mesmo_passo():
+    """Duas portas para a mesma coisa. Se fossem dois codigos, um deles
+    envelheceria — e a divergencia apareceria como "pelo botao sai diferente"."""
+    do_artigo = obter_fluxo(GenerationJob.Kind.PILLAR_ARTICLE).passos[-1]
+    do_botao = obter_fluxo(GenerationJob.Kind.ARTICLE_COVER).passos[0]
+
+    assert do_botao.executar is do_artigo.executar
+
+
+def test_o_fluxo_do_botao_tem_um_passo_so():
+    """Ele nao replaneja nem remonta: o artigo ja esta pronto."""
+    assert obter_fluxo(GenerationJob.Kind.ARTICLE_COVER).total == 1
+
+
+@pytest.mark.django_db
+def test_o_passo_acha_o_artigo_pelo_alvo_do_trabalho(tenant_com_acervo, imagem_falsa):
+    """No fluxo do artigo o id vem do payload do consenso; aqui o trabalho ja
+    nasce apontando para o artigo. `_artigo_do_job` cobre os dois, e este teste
+    e o que garante que o segundo caminho continua existindo."""
+    from apps.content.flows import passo_gerar_capas
+
+    artigo = Article.objects.create(title="Pronto", body_markdown="Texto.")
+    job = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.ARTICLE_COVER,
+        target_object_id=str(artigo.pk),
+        total_steps=1,
+    )
+
+    resultado = passo_gerar_capas(job)
+
+    assert resultado["capas"] == 3
+    assert artigo.images.count() == 3
