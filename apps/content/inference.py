@@ -153,7 +153,14 @@ def executar_prompt(
         )
         if isinstance(exc, ProviderTransientError):
             # Fora do ar agora nao significa fora do ar sempre.
-            raise PassoAdiado(f"provedor indisponivel: {exc}", tentar_em_segundos=300) from exc
+            #
+            # O `Retry-After` do worker e calculado a partir do que esta
+            # rodando na placa, entao ele sabe mais que os 300s daqui: voltar
+            # antes garante outra recusa, voltar depois deixa a placa parada.
+            # Sem cabecalho — um provedor pago, ou o worker no codigo
+            # `timeout` — os 300s continuam valendo.
+            espera = getattr(exc, "retry_after", None) or 300
+            raise PassoAdiado(f"provedor indisponivel: {exc}", tentar_em_segundos=espera) from exc
         raise
 
     registrar_sucesso(conexao)

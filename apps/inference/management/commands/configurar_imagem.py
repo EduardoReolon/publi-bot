@@ -213,6 +213,19 @@ class Command(BaseCommand):
         # `--testar` existir.
         imagem = dados.get("imagem")
 
+        # O `/health/` do worker nunca devolve 500: um bloco que falha ao ser
+        # coletado vira `{"erro": "..."}` no lugar do conteudo, com HTTP 200.
+        # Sem este ramo, `imagem.get("baixado")` devolveria `None` e o comando
+        # concluiria "esta tudo bem" sobre uma rota que explodiu — o mesmo
+        # silencio de quando ele lia as chaves na raiz.
+        if isinstance(imagem, dict) and "erro" in imagem:
+            raise CommandError(
+                f"o worker respondeu, mas a rota de imagem esta com defeito: "
+                f"{imagem['erro']}\n"
+                f"O processo esta de pe (por isso 200); e a parte de imagem que "
+                f"nao consegue reportar estado. Veja o journal do worker."
+            )
+
         if imagem is None:
             if dados.get("rotas", {}).get("imagem") is False:
                 raise CommandError(

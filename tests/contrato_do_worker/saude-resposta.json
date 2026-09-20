@@ -1,10 +1,12 @@
 {
-  "_contrato_versao": "2.0",
-  "_rota": "GET /health/ — sem credencial",
-  "_nota": "Derivado do `app.py` do worker (health()). Ainda NAO existe em `contrato/` la: enquanto nao existir, este exemplo prende so este lado. Veja o README ao lado.",
+  "_contrato_versao": "2.2",
+  "_rota": "GET /health/ (sem credencial, de proposito)",
+  "_nota": "Este endpoint NUNCA devolve 500. Um bloco que falha ao ser coletado vira {\"erro\": \"<tipo>: <mensagem>\"} no lugar do bloco, com HTTP 200 — o processo esta de pe, e e isso que o 200 afirma. Os blocos `imagem` e `conversao` so aparecem quando a rota correspondente esta ligada (veja `rotas`).",
+  "_nota_baixando": "Downloads de modelo em curso, normalmente lista vazia. Um download NAO aparece em `ocupada` porque nao usa a placa: ele e rede e disco, e a imagem e a conversao seguem funcionando enquanto ele acontece. Enquanto um modelo esta aqui, os pedidos dele levam 503 `baixando_modelo`.",
+  "_nota_carregados": "`carregados` e a lista de NOMES e continua sendo `list[str]`. `carregados_detalhe` e o registro do `/api/ps` do Ollama repassado; o worker garante que cada item tem `name`, e o RESTO das chaves e do Ollama e varia com a versao dele. `context_length` e a janela com que o modelo foi carregado — e uma dica de MAQUINA, nao confirmacao de que um pedido especifico rodou com ela.",
   "status": "ok",
   "service": "worker-gpu",
-  "contrato_versao": "2.0",
+  "contrato_versao": "2.2",
   "ocupada": false,
   "ocupante": null,
   "modelo": null,
@@ -16,14 +18,25 @@
   },
   "ollama": {
     "de_pe": true,
-    "carregados": [
-      "qwen3:30b-a3b-instruct-2507-q4_K_M"
+    "carregados": ["qwen2.5:7b-instruct"],
+    "carregados_detalhe": [
+      {
+        "name": "qwen2.5:7b-instruct",
+        "context_length": 4096
+      }
+    ],
+    "baixando": [
+      {
+        "modelo": "llama3.1:8b",
+        "porcento": 37.4,
+        "ha_segundos": 95
+      }
     ]
   },
   "imagem": {
     "modelo": "stabilityai/stable-diffusion-xl-base-1.0",
     "dispositivo": "auto",
-    "ultimo_dispositivo": "(nada gerado ainda)",
+    "ultimo_dispositivo": "cuda",
     "baixado": true,
     "carregado": false,
     "passos": 25,
@@ -34,6 +47,6 @@
     "dispositivo": "auto",
     "ocr": false,
     "threads": "auto",
-    "carregado": false
+    "carregado": true
   }
 }

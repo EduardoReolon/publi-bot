@@ -15,7 +15,21 @@ class ProviderTransientError(ProviderError):
     """Vale a pena tentar de novo: timeout, 5xx, 429, conexao recusada.
 
     A GPU local desligada cai aqui — o trabalho nao se perde, so espera.
+
+    `retry_after` e o que o provedor pediu, em segundos, quando pediu. O worker
+    de GPU o CALCULA a partir do que esta rodando: uma imagem que comecou ha
+    20s de 60 devolve 40. Ignora-lo e voltar cedo demais (outro 503 garantido)
+    ou tarde demais (placa parada).
+
+    `code` e o `error.code` do corpo, quando ha. Serve para o chamador
+    distinguir "a placa esta ocupada" de "o modelo esta sendo baixado" sem
+    reler o texto da mensagem.
     """
+
+    def __init__(self, mensagem: str, *, retry_after: int | None = None, code: str = ""):
+        super().__init__(mensagem)
+        self.retry_after = retry_after
+        self.code = code
 
 
 class ProviderPermanentError(ProviderError):
@@ -25,6 +39,10 @@ class ProviderPermanentError(ProviderError):
     A distincao existe porque tratar tudo como transitorio faz uma chave
     rotacionada gerar tentativas infinitas em vez de um alerta.
     """
+
+    def __init__(self, mensagem: str, *, code: str = ""):
+        super().__init__(mensagem)
+        self.code = code
 
 
 @dataclass

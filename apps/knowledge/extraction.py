@@ -44,11 +44,19 @@ class ExtracaoIndisponivel(RuntimeError):
 
 
 class ConversorOcupado(RuntimeError):
-    """O worker de conversao ja esta convertendo outra coisa.
+    """A placa esta com outro trabalho — que pode nem ser uma conversao.
 
-    Nao e erro: a maquina processa um documento por vez de proposito (uma placa
-    de 8 GB nao comporta duas). Quem chama deve adiar, nao falhar.
+    Nao e erro: o worker arbitra texto, imagem e conversao com um lock so, e
+    devolve 503 a quem nao pegou a vez. Quem chama deve adiar, nao falhar.
+
+    `retry_after` e o que o worker calculou a partir do que esta rodando.
+    Ignora-lo seria voltar cedo (outra recusa) ou tarde (placa parada).
     """
+
+    def __init__(self, mensagem: str, *, retry_after: int | None = None, code: str = ""):
+        super().__init__(mensagem)
+        self.retry_after = retry_after
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -108,17 +116,45 @@ def _extrair_com_docling(document, conexao, *, timeout: float) -> ResultadoDaExt
     um erro de troca de arquivo produziria Markdown de um documento que ninguem
     pediu, e o texto seguiria para o acervo como se fosse do artigo certo.
     """
+    document.original_file.open("rb")
+    try:
+        conteudo = document.original_file.read()
+    finally:
+        document.original_file.close()
+
+    return converter_no_worker(
+        conexao,
+        nome=document.nome_do_arquivo,
+        conteudo=conteudo,
+        sha256=document.file_sha256,
+        chave_da_reserva=f"conversao:{document.pk}",
+        timeout=timeout,
+    )
+
+
+def converter_no_worker(
+    conexao,
+    *,
+    nome: str,
+    conteudo: bytes,
+    sha256: str,
+    chave_da_reserva: str,
+    timeout: float,
+) -> ResultadoDaExtracao:
+    """O POST em si, separado do documento que o originou.
+
+    Existe separado por um motivo so: `manage.py conferir_worker` precisa
+    exercitar ESTE caminho — a reserva, os cabecalhos, a leitura de cada
+    status — e nao uma copia dele. Uma conferencia que roda um codigo
+    parecido confere o codigo parecido.
+    """
     segredo = decifrar_chave(conexao) or ""
     if not segredo:
         raise ExtracaoIndisponivel(
             f"a conexao de conversao {conexao.name!r} nao tem segredo cadastrado."
         )
 
-    document.original_file.open("rb")
-    try:
-        arquivos = {"file": (document.nome_do_arquivo, document.original_file.read())}
-    finally:
-        document.original_file.close()
+    arquivos = {"file": (nome, conteudo)}
 
     # A conversao reserva capacidade, como a geracao de texto.
     #
@@ -131,13 +167,13 @@ def _extrair_com_docling(document, conexao, *, timeout: float) -> ResultadoDaExt
     # A reserva e por maquina (`leases.vizinhas_de_hardware`), entao ela cobre
     # exatamente essa combinacao.
     try:
-        with reserva(conexao, owner_key=f"conversao:{document.pk}"):
+        with reserva(conexao, owner_key=chave_da_reserva):
             resposta = httpx.post(
                 f"{conexao.base_url.rstrip('/')}/parse/",
                 files=arquivos,
                 headers={
                     "X-Worker-Secret": segredo,
-                    "X-Expected-Sha256": document.file_sha256,
+                    "X-Expected-Sha256": sha256,
                 },
                 timeout=timeout,
             )
@@ -149,7 +185,28 @@ def _extrair_com_docling(document, conexao, *, timeout: float) -> ResultadoDaExt
         raise ConversorOcupado(f"worker de conversao inalcancavel: {exc}") from exc
 
     if resposta.status_code == 503:
-        raise ConversorOcupado("ja ha uma conversao em curso no worker.")
+        # Nao necessariamente outra conversao: o lock do worker e um so, e o
+        # ocupante costuma ser a geracao de texto ou de imagem. Dizer
+        # "ja ha uma conversao em curso" mandava procurar no lugar errado.
+        from apps.inference.providers.openai_compatible import (
+            CODIGOS_SEM_VOLTA,
+            _codigo_do_erro,
+            _retry_after,
+        )
+
+        codigo = _codigo_do_erro(resposta)
+
+        if codigo in CODIGOS_SEM_VOLTA:
+            raise ExtracaoIndisponivel(
+                "o worker desistiu de converter por tempo. Repetir o mesmo "
+                "arquivo daria o mesmo resultado — ele e grande demais para o "
+                "orcamento da maquina."
+            )
+
+        detalhe = _mensagem_do_erro(resposta) or "a placa esta com outro trabalho"
+        raise ConversorOcupado(
+            f"worker ocupado: {detalhe}", retry_after=_retry_after(resposta), code=codigo
+        )
 
     if resposta.status_code == 422:
         # O worker conferiu o sha256 e nao bateu. Repetir nao adianta.
@@ -227,3 +284,14 @@ def _pdf_para_texto(bruto: bytes) -> tuple[str, dict]:
             "A conversao exige o worker com Docling, que faz OCR."
         )
     return texto, metadados
+
+
+def _mensagem_do_erro(resposta) -> str:
+    """O `error.message` do corpo, quando ha um. Nunca levanta."""
+    try:
+        corpo = resposta.json()
+    except ValueError:
+        return ""
+    erro = corpo.get("error") if isinstance(corpo, dict) else None
+    mensagem = erro.get("message") if isinstance(erro, dict) else None
+    return mensagem if isinstance(mensagem, str) else ""

@@ -85,7 +85,10 @@ def passo_converter(job: GenerationJob) -> dict:
         # Adiar devolve o documento a fila; deixa-lo em PARSING faria a lista
         # mostrar "convertendo" para algo que nao esta sendo convertido.
         Document.objects.filter(pk=document.pk).update(status=Document.Status.QUEUED)
-        raise PassoAdiado(str(exc), tentar_em_segundos=180) from exc
+        # O worker calcula quanto falta do trabalho em curso; 180s e so o
+        # palpite de quando ele nao diz nada.
+        espera = getattr(exc, "retry_after", None) or 180
+        raise PassoAdiado(str(exc), tentar_em_segundos=espera) from exc
     except Exception as exc:
         # O motivo vai para o proprio documento: e la que quem enviou o arquivo
         # vai procurar, e nao no registro do trabalho.

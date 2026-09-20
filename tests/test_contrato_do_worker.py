@@ -23,7 +23,7 @@ import httpx
 import pytest
 
 CONTRATO = Path(__file__).resolve().parent / "contrato_do_worker"
-VERSAO_ESPERADA = "2.0"
+VERSAO_ESPERADA = "2.2"
 
 
 def _exemplo(nome: str) -> dict:
@@ -301,3 +301,118 @@ def test_rota_de_conversao_desligada_e_dito_com_todas_as_letras(monkeypatch, sem
 
     with pytest.raises(CommandError, match="CONVERSAO_ATIVA"):
         call_command("configurar_conversao", "--testar")
+
+
+# ---------------------------------------------------------------------------
+# O 503 do worker tem codigo, e cada codigo pede uma coisa diferente
+# ---------------------------------------------------------------------------
+def _recusa(codigo: str, *, retry_after: int | None = 40):
+    """Um 503 como o worker manda: corpo com `error.code`, cabecalho quando ha."""
+    cabecalhos = {} if retry_after is None else {"Retry-After": str(retry_after)}
+    return httpx.Response(
+        503,
+        json={"error": {"code": codigo, "message": f"a GPU esta em uso ({codigo})"}},
+        headers=cabecalhos,
+        request=httpx.Request("POST", "http://worker/v1/chat/completions"),
+    )
+
+
+def _levantar(resposta):
+    from apps.inference.providers.openai_compatible import OpenAICompatibleClient
+
+    OpenAICompatibleClient._levantar_se_erro(resposta)
+
+
+def test_o_retry_after_do_worker_chega_ao_adiamento():
+    """Ele e CALCULADO a partir do que esta rodando. Descartar e voltar cedo
+    (outra recusa garantida) ou tarde (placa parada)."""
+    from apps.inference.providers.base import ProviderTransientError
+
+    with pytest.raises(ProviderTransientError) as erro:
+        _levantar(_recusa("gpu_ocupada", retry_after=40))
+
+    assert erro.value.retry_after == 40
+    assert erro.value.code == "gpu_ocupada"
+
+
+def test_o_codigo_timeout_nao_e_para_repetir_igual():
+    """O worker OMITE o `Retry-After` neste codigo de proposito. Como adiar
+    nao gasta tentativa, trata-lo como transitorio reagendaria o mesmo pedido
+    para sempre."""
+    from apps.inference.providers.base import ProviderPermanentError
+
+    with pytest.raises(ProviderPermanentError) as erro:
+        _levantar(_recusa("timeout", retry_after=None))
+
+    assert "Reduza o trabalho" in str(erro.value)
+
+
+def test_codigo_desconhecido_e_adiavel():
+    """Regra publicada do worker. Sem ela, a lista de codigos nunca mais
+    poderia crescer: qualquer codigo novo quebraria todo cliente existente."""
+    from apps.inference.providers.base import ProviderTransientError
+
+    with pytest.raises(ProviderTransientError) as erro:
+        _levantar(_recusa("codigo_que_ainda_nao_existe"))
+
+    assert erro.value.code == "codigo_que_ainda_nao_existe"
+
+
+def test_baixando_modelo_e_adiavel_com_a_espera_do_download():
+    from apps.inference.providers.base import ProviderTransientError
+
+    with pytest.raises(ProviderTransientError) as erro:
+        _levantar(_recusa("baixando_modelo", retry_after=95))
+
+    assert erro.value.retry_after == 95
+
+
+def test_o_404_de_download_falho_faz_desistir():
+    """Depois de um download que falhou, o worker devolve 404 em vez de 503,
+    justamente para o cliente parar de reagendar."""
+    from apps.inference.providers.base import ProviderPermanentError
+
+    resposta = httpx.Response(
+        404,
+        json={"error": {"code": "modelo_indisponivel", "message": "o download falhou"}},
+        request=httpx.Request("POST", "http://worker/v1/chat/completions"),
+    )
+
+    with pytest.raises(ProviderPermanentError):
+        _levantar(resposta)
+
+
+def test_um_provedor_que_nao_fala_esse_dialeto_nao_quebra_a_leitura():
+    """Um 502 de proxy devolve HTML. Descobrir isso nao pode transformar um
+    erro ja identificado noutro erro, dentro do tratamento de erro."""
+    from apps.inference.providers.base import ProviderTransientError
+
+    resposta = httpx.Response(
+        502,
+        text="<html><body>Bad Gateway</body></html>",
+        request=httpx.Request("POST", "http://worker/v1/chat/completions"),
+    )
+
+    with pytest.raises(ProviderTransientError) as erro:
+        _levantar(resposta)
+
+    assert erro.value.code == ""
+    assert erro.value.retry_after is None
+
+
+def test_retry_after_em_formato_de_data_nao_vira_espera_absurda():
+    """O HTTP permite data em vez de segundos. Nenhum provedor daqui a usa, e
+    `int("Wed, 21 Oct 2026...")` levantaria dentro do tratamento de erro."""
+    from apps.inference.providers.base import ProviderTransientError
+
+    resposta = httpx.Response(
+        503,
+        json={"error": {"code": "gpu_ocupada", "message": "x"}},
+        headers={"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"},
+        request=httpx.Request("POST", "http://worker/v1/chat/completions"),
+    )
+
+    with pytest.raises(ProviderTransientError) as erro:
+        _levantar(resposta)
+
+    assert erro.value.retry_after is None

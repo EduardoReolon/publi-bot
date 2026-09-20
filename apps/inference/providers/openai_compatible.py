@@ -23,6 +23,17 @@ from apps.inference.providers.base import (
 # 4xx que nao adianta repetir. O 429 fica de fora de proposito: e transitorio.
 STATUS_TERMINAIS = frozenset({400, 401, 403, 404, 405, 413, 422})
 
+# `error.code` que o worker de GPU manda num 503 e que NAO adianta repetir
+# igual: o trabalho estourou o orcamento de tempo da maquina. Repetir o mesmo
+# pedido daria o mesmo resultado, e como adiamento nao gasta tentativa, ele
+# seria reagendado para sempre. O worker sublinha isso omitindo o
+# `Retry-After` justamente neste codigo.
+#
+# Qualquer OUTRO codigo — inclusive um que este projeto ainda nao conheca — e
+# adiavel. E regra publicada do worker, e existe para que a lista de codigos
+# possa crescer sem quebrar cliente nenhum.
+CODIGOS_SEM_VOLTA = frozenset({"timeout"})
+
 
 class OpenAICompatibleClient(LLMClient):
     def _headers(self) -> dict[str, str]:
@@ -103,10 +114,26 @@ class OpenAICompatibleClient(LLMClient):
     def _levantar_se_erro(resposta: httpx.Response) -> None:
         if resposta.is_success:
             return
+
         detalhe = resposta.text[:500]
+        codigo = _codigo_do_erro(resposta)
+
         if resposta.status_code in STATUS_TERMINAIS:
-            raise ProviderPermanentError(f"HTTP {resposta.status_code}: {detalhe}")
-        raise ProviderTransientError(f"HTTP {resposta.status_code}: {detalhe}")
+            raise ProviderPermanentError(f"HTTP {resposta.status_code}: {detalhe}", code=codigo)
+
+        if codigo in CODIGOS_SEM_VOLTA:
+            raise ProviderPermanentError(
+                f"o worker desistiu por tempo: {detalhe}\n"
+                f"Repetir o mesmo pedido daria o mesmo resultado. Reduza o "
+                f"trabalho — prompt menor, `max_tokens` menor, imagem menor.",
+                code=codigo,
+            )
+
+        raise ProviderTransientError(
+            f"HTTP {resposta.status_code}: {detalhe}",
+            retry_after=_retry_after(resposta),
+            code=codigo,
+        )
 
     def health(self) -> bool:
         try:
@@ -218,3 +245,42 @@ class OpenAICompatibleImageClient(ImageClient):
                 return cliente.get(f"{self.base_url}/v1/models", headers=self._headers()).is_success
         except httpx.HTTPError:
             return False
+
+
+def _codigo_do_erro(resposta: httpx.Response) -> str:
+    """O `error.code` do corpo, ou string vazia.
+
+    Nunca levanta. Um provedor que nao seja o worker devolve HTML, texto puro
+    ou um JSON de outra forma — e descobrir isso nao pode transformar um erro
+    ja identificado noutro erro, dentro do tratamento de erro.
+    """
+    try:
+        corpo = resposta.json()
+    except ValueError:
+        return ""
+    if not isinstance(corpo, dict):
+        return ""
+    erro = corpo.get("error")
+    if not isinstance(erro, dict):
+        return ""
+    codigo = erro.get("code")
+    return codigo if isinstance(codigo, str) else ""
+
+
+def _retry_after(resposta: httpx.Response) -> int | None:
+    """O `Retry-After` em segundos, quando o provedor manda um.
+
+    `.get` e nao acesso direto: o worker OMITE o cabecalho no codigo
+    `timeout`, e um `KeyError` aqui trocaria um erro legivel por um estouro
+    dentro do tratamento de erro. A forma de data do HTTP nao e aceita —
+    nenhum provedor daqui a usa, e adivinhar fuso para calcular uma espera
+    erraria mais do que acertaria.
+    """
+    bruto = resposta.headers.get("Retry-After")
+    if not bruto:
+        return None
+    try:
+        segundos = int(bruto)
+    except ValueError:
+        return None
+    return segundos if segundos > 0 else None

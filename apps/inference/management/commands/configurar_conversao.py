@@ -173,6 +173,17 @@ class Command(BaseCommand):
         # que algo esta errado seria um "dispositivo=None" que ninguem le.
         conversao = dados.get("conversao")
 
+        # Mesmo motivo do comando de imagem: um bloco doente vira
+        # `{"erro": "..."}` com HTTP 200. Ler `.get("ocr")` ali devolveria
+        # `None`, e o comando imprimiria "ocr=None" como se fosse configuracao.
+        if isinstance(conversao, dict) and "erro" in conversao:
+            raise CommandError(
+                f"o worker respondeu, mas a rota de conversao esta com defeito: "
+                f"{conversao['erro']}\n"
+                f"O processo esta de pe (por isso 200); e a parte de conversao "
+                f"que nao consegue reportar estado. Veja o journal do worker."
+            )
+
         if conversao is None:
             if dados.get("rotas", {}).get("conversao") is False:
                 raise CommandError(

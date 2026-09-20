@@ -110,9 +110,23 @@ python manage.py configurar_conversao --testar
 python manage.py configurar_imagem --testar
 ```
 
-**Conferir:** os tres `--testar` sao a conferencia. Leia a resposta, nao so o
-codigo de saida — `dispositivo=cpu` quando voce esperava `cuda` significa que
-o trabalho vai levar minutos em vez de segundos, sem erro nenhum.
+E, para saber se funciona de verdade:
+
+```bash
+python manage.py conferir_worker
+```
+
+**Conferir:** os `--testar` conferem o ENDERECO; o `conferir_worker` confere o
+CAMINHO. A diferenca importa: os tres `--testar` chamam `/health/` e
+`/v1/models`, que nao tocam a placa, e passam com o modelo ausente no disco,
+com os pesos da difusao faltando ou com o Docling explodindo na primeira
+pagina. O `conferir_worker` gera texto, gera uma imagem e converte um PDF,
+pelos mesmos adaptadores que os fluxos usam, e sai com codigo 1 se algum
+falhar.
+
+Leia a resposta dos `--testar` mesmo assim: `dispositivo=cpu` onde voce
+esperava `cuda` nao e erro — e o trabalho levando minutos em vez de segundos,
+em silencio.
 
 #### As tres coisas que este projeto precisa saber
 
@@ -439,8 +453,20 @@ Os tres sao idempotentes e **preservam** o que ja estiver no banco: a conexao
 vive numa linha, e nao num arquivo, para trocar de modelo sem implantar
 (ADR-0012).
 
-**Conferir:** o `--testar` ja e a conferencia. Leia a resposta, nao so o
-codigo de saida:
+Depois dos tres, a conferencia de verdade:
+
+```bash
+venv/bin/python manage.py conferir_worker
+```
+
+Ele chama as tres rotas para valer — uma geracao de texto curta, uma imagem
+512x288, um PDF de uma pagina — pelos mesmos adaptadores dos fluxos. Leva
+menos de um minuto numa maquina com placa (varios, na primeira vez, se o
+Docling ainda for carregar os modelos dele). Sai com codigo 1 se algo falhar,
+entao pode entrar no script de implantacao.
+
+**Conferir:** os `--testar` conferem so o endereco. Leia a resposta deles
+tambem, nao so o codigo de saida:
 
 - `configurar_conversao` deve dizer `dispositivo=cuda`. Se disser `cpu`, o
   worker esta sem placa e a conversao vai levar minutos;
@@ -672,6 +698,8 @@ por mais 15 minutos, e concluiria que o comando nao funcionou.
 ```bash
 python manage.py check_db          # banco, extensoes, schemas dos tenants
 python manage.py broker_status     # qual broker esta valendo, e se responde
+python manage.py conferir_worker   # chama as tres rotas do worker de verdade
+python manage.py conferir_worker --rapido   # so o texto, em segundos
 python manage.py configurar_inferencia --testar
 python manage.py configurar_conversao --testar
 python manage.py configurar_imagem --testar
