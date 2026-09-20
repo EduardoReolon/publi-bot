@@ -15,6 +15,9 @@ name: CI
 
 on:
   push:
+    # Esta lista e de TESTES, nao de implantacao. Quem implanta e a condicao
+    # do job `deploy`, mais abaixo: so `refs/heads/main`. Acrescentar uma
+    # branch aqui faz a suite rodar nela e nada mais.
     branches: [main, claude-cli]
   pull_request:
 
@@ -154,6 +157,9 @@ jobs:
   deploy:
     name: Implantar
     needs: testes
+    # SO a main, e so em push. As duas metades importam: sem a primeira,
+    # qualquer branch de trabalho iria para o servidor; sem a segunda, um pull
+    # request aberto CONTRA a main tambem iria, com codigo que ninguem revisou.
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 

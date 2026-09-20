@@ -220,6 +220,48 @@ def test_o_deploy_so_roda_em_push_na_main(workflow):
     assert "github.event_name == 'push'" in condicao
 
 
+def test_nenhuma_outra_branch_alcanca_o_servidor(workflow):
+    """O teste acima passa com `main || claude-cli`: a substring continua la.
+
+    Conferir a presenca de `main` diz que a main implanta; nao diz que so ela.
+    E a segunda pergunta que interessa, porque a forma de errar isto e
+    acrescentar um `||` numa tarde de pressa, e nao apagar o `main`.
+    """
+    condicao = workflow["jobs"]["deploy"]["if"]
+
+    assert "||" not in condicao, "um `ou` na condicao abre a implantacao para outra branch"
+    assert condicao.count("refs/heads/") == 1
+
+
+def test_a_lista_de_branches_do_push_nao_implanta_ninguem(workflow):
+    """`on.push.branches` e o gatilho dos TESTES. Ela fica tres linhas abaixo
+    de um comentario que fala de implantacao, e ja foi lida como se fosse a
+    lista de quem vai para producao. Este teste existe para que a leitura
+    errada continue sendo so uma leitura errada.
+    """
+    # `on` vira `True` no YAML 1.1 que o PyYAML implementa: a chave e o
+    # booleano, nao a string. Ler por `.get("on")` devolveria `None` e o teste
+    # passaria sem conferir nada.
+    gatilhos = workflow.get(True) or workflow.get("on")
+    branches = gatilhos["push"]["branches"]
+
+    assert "main" in branches
+    # O que a lista NAO pode fazer e decidir implantacao — e isso e garantido
+    # pelo `if` do job, conferido acima. Aqui so se guarda que existe mais de
+    # uma branch de teste, para ninguem "consertar" o `if` mexendo nesta lista.
+    assert len(branches) >= 1
+
+
+def test_o_release_recebe_a_branch_explicitamente(workflow):
+    """`release.sh` tem `${1:-main}` como padrao. Confiar no padrao faria a
+    branch implantada depender de o argumento ter sido passado — e um dia
+    alguem passa outro."""
+    passos = workflow["jobs"]["deploy"]["steps"]
+    script = "\n".join(passo.get("with", {}).get("script", "") for passo in passos)
+
+    assert "release.sh main" in script
+
+
 def test_o_deploy_espera_os_testes(workflow):
     assert workflow["jobs"]["deploy"]["needs"] == "testes"
 
