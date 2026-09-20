@@ -226,11 +226,24 @@ def _pdf_de_uma_pagina() -> bytes:
 # ---------------------------------------------------------------------------
 # --testar, contra um worker de mentira que responde como o de verdade
 # ---------------------------------------------------------------------------
+# O estado da conversao vem ANINHADO em `conversao`: o worker publica tres
+# rotas no mesmo `/health/`. A forma canonica esta em
+# `tests/contrato_do_worker/saude-resposta.json`.
+def _saude(**conversao) -> dict:
+    return {
+        "status": "ok",
+        "service": "worker-gpu",
+        "ocupada": False,
+        "rotas": {"texto": True, "imagem": True, "conversao": True},
+        "conversao": {"dispositivo": "cuda", "ocr": False, **conversao},
+    }
+
+
 def test_testar_relata_o_dispositivo(capsys, monkeypatch):
     """O dispositivo na resposta nao e enfeite: trocar `DOCLING_DEVICE` e
     esquecer de reiniciar o worker nao gera erro nenhum — so deixa a conversao
     lenta, e a conclusao natural e "o Docling e lento mesmo"."""
-    _fingir_health(monkeypatch, {"status": "ok", "device": "cuda", "ocr": False, "busy": False})
+    _fingir_health(monkeypatch, _saude(dispositivo="cuda"))
 
     with override_settings(**CONFIG):
         call_command("configurar_conversao", testar=True)
@@ -239,7 +252,7 @@ def test_testar_relata_o_dispositivo(capsys, monkeypatch):
 
 
 def test_testar_em_cpu_explica_como_trocar(capsys, monkeypatch):
-    _fingir_health(monkeypatch, {"status": "ok", "device": "cpu", "ocr": False, "busy": False})
+    _fingir_health(monkeypatch, _saude(dispositivo="cpu"))
 
     with override_settings(**CONFIG):
         call_command("configurar_conversao", testar=True)

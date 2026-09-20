@@ -198,11 +198,24 @@ def test_a_reserva_de_imagem_e_a_de_texto_disputam_a_mesma_placa():
 # ---------------------------------------------------------------------------
 # --testar, contra um worker de mentira que responde como o de verdade
 # ---------------------------------------------------------------------------
+# "Como o de verdade" e a parte que da trabalho manter. O worker publica tres
+# rotas no mesmo `/health/`, entao o estado da imagem vem ANINHADO em
+# `imagem`. Estes testes ja fingiram a forma antiga, plana, e por isso
+# continuaram verdes enquanto o comando lia `None` em tudo contra o worker
+# real. A forma canonica esta em `tests/contrato_do_worker/saude-resposta.json`.
+def _saude(**imagem) -> dict:
+    """Uma resposta do `/health/` com a secao de imagem que o teste quiser."""
+    return {
+        "status": "ok",
+        "service": "worker-gpu",
+        "ocupada": False,
+        "rotas": {"texto": True, "imagem": True, "conversao": True},
+        "imagem": {"modelo": "sdxl", "dispositivo": "cuda", **imagem},
+    }
+
+
 def test_testar_relata_modelo_e_dispositivo(capsys, monkeypatch):
-    _fingir_health(
-        monkeypatch,
-        {"status": "ok", "model": "sdxl", "device": "cuda", "ultimo_dispositivo": "cuda"},
-    )
+    _fingir_health(monkeypatch, _saude(ultimo_dispositivo="cuda"))
 
     with override_settings(**CONFIG):
         call_command("configurar_imagem", testar=True)
@@ -213,7 +226,7 @@ def test_testar_relata_modelo_e_dispositivo(capsys, monkeypatch):
 
 
 def test_testar_em_cpu_avisa_que_leva_minutos(capsys, monkeypatch):
-    _fingir_health(monkeypatch, {"status": "ok", "model": "sdxl", "device": "cpu"})
+    _fingir_health(monkeypatch, _saude(dispositivo="cpu"))
 
     with override_settings(**CONFIG):
         call_command("configurar_imagem", testar=True)
@@ -226,11 +239,13 @@ def test_testar_em_cpu_avisa_que_leva_minutos(capsys, monkeypatch):
 def test_queda_para_cpu_apesar_de_cuda_e_relatada(capsys, monkeypatch):
     """O caso silencioso que motivou o campo. O worker pediu a placa, a VRAM
     faltou — porque o Ollama carregou um modelo no meio — e ele refez em CPU.
-    A imagem sai, e o unico sintoma seria demora."""
-    _fingir_health(
-        monkeypatch,
-        {"status": "ok", "model": "sdxl", "device": "cuda", "ultimo_dispositivo": "cpu"},
-    )
+    A imagem sai, e o unico sintoma seria demora.
+
+    Hoje o worker recusa com 503 em vez de cair para CPU, a menos que alguem
+    ligue `IMAGEM_PERMITIR_CPU`. O campo continua valendo justamente para
+    denunciar quem ligou.
+    """
+    _fingir_health(monkeypatch, _saude(ultimo_dispositivo="cpu"))
 
     with override_settings(**CONFIG):
         call_command("configurar_imagem", testar=True)
