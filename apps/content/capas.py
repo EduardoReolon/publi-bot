@@ -51,7 +51,7 @@ def _tamanho() -> str:
     """
     from django.conf import settings
 
-    return getattr(settings, "IMAGEM_TAMANHO", "1024x1024")
+    return getattr(settings, "IMAGEM_TAMANHO", "1344x704")
 
 
 class SemConexaoDeImagem(RuntimeError):

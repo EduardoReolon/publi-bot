@@ -106,11 +106,35 @@ def test_proibe_pessoas_inteiras_e_nao_so_rostos():
     assert "no hands" in sistema or "hands" in sistema
 
 
-def test_proibe_texto_na_cena():
+def test_proibe_texto_legivel_em_qualquer_forma():
+    """A bancada do worker foi categorica: nenhuma variante acertou letreiro.
+    Nao e questao de amostrador nem de passo — o modelo aprendeu material e
+    luz, nao aprendeu a escrever. Palavra na capa se compoe por cima depois."""
     sistema = SEMENTE["sistema"].lower()
 
-    assert "no text" in sistema
-    assert "letters" in sistema or "signage" in sistema
+    assert "no readable text" in sistema
+    for proibido in ("signage", "book cover", "label", "interface"):
+        assert proibido in sistema, proibido
+
+
+def test_proibe_aparelho_com_tela_como_assunto():
+    """Mesma bancada: um notebook em cena saiu visivelmente errado em TODAS as
+    variantes. Coisas com partes contaveis e legiveis sao o ponto cego deste
+    modelo."""
+    sistema = SEMENTE["sistema"].lower()
+
+    assert "no manufactured device with a screen" in sistema
+    assert "laptop" in sistema
+
+
+def test_orienta_para_o_que_o_modelo_sabe_fazer():
+    """Proibir nao basta: sem um "prefira isto", o modelo de texto escolhe o
+    assunto obvio, que num artigo cientifico costuma ser gente de jaleco ou um
+    aparelho com tela."""
+    sistema = SEMENTE["sistema"].lower()
+
+    for bom in ("material", "texture", "light", "architecture", "nature"):
+        assert bom in sistema, bom
 
 
 def test_pede_um_assunto_so():
@@ -128,36 +152,78 @@ def test_a_temperatura_continua_alta():
 # ---------------------------------------------------------------------------
 # O tamanho
 # ---------------------------------------------------------------------------
-PROPORCOES_TREINADAS = {
-    (1024, 1024),
-    (1152, 896),
-    (896, 1152),
-    (1216, 832),
-    (832, 1216),
-    (1344, 768),
-    (768, 1344),
-    (1536, 640),
-    (640, 1536),
-}
+# A grade nao mora aqui — ela vem do worker, em `/health/` -> `imagem.grade`.
+# O exemplo do contrato traz uma amostra dela; o teste do tamanho padrao usa a
+# grade REAL, buscada do exemplo de saude, para nao recriar a copia que o
+# `tamanhos.py` existe para evitar.
+def _grade_do_contrato() -> list[str]:
+    import json
+    from pathlib import Path
+
+    caminho = Path(__file__).resolve().parent / "contrato_do_worker" / "saude-resposta.json"
+    return json.loads(caminho.read_text(encoding="utf-8"))["imagem"]["grade"]
 
 
-def test_o_tamanho_padrao_e_uma_proporcao_treinada(settings):
-    """O padrao foi `1024x576` por um tempo: 16:9, escolhido para "economizar
-    placa". Esta fora da grade e abaixo do megapixel, e o SDXL responde a isso
-    duplicando o assunto e torcendo a geometria — sem erro nenhum. A medicao
-    ja tinha mostrado que nao havia economia: 4x mais pixels custaram 23% mais
-    tempo."""
+def test_o_tamanho_padrao_passa_nos_tres_limites_do_worker(settings):
+    """Sao tres limites independentes, e cada um pede correcao diferente:
+    multiplo de 8 (o latente e 8x menor), lado maximo (o que a placa comporta)
+    e area maxima (o que o custo comporta). Um padrao que nao passe deixaria a
+    instalacao nova com 422 na primeira capa."""
+    from apps.inference.tamanhos import conferir
+
+    # Os tetos do worker de hoje. A grade vai separada no teste seguinte.
+    limites = {"lado_maximo": 1536, "area_maxima_mp": 1.2}
+
+    assert conferir(settings.IMAGEM_TAMANHO, limites) == []
+
+
+def test_a_grade_do_exemplo_e_amostra_e_nao_a_lista_inteira():
+    """O `saude-resposta.json` traz tres formatos; o worker publica ~40.
+
+    Este teste existe para que ninguem valide contra o exemplo achando que
+    ele e a grade — e para que a ausencia do `1344x704` ali, que e o formato
+    que este projeto pede, nao seja lida como "esta fora da grade".
+    """
+    grade = _grade_do_contrato()
+
+    assert len(grade) < 10, "se o exemplo crescer, revise este teste e o comentario"
+
+
+def test_a_conferencia_acusa_o_que_esta_fora_da_grade():
+    """O caso que motivou tudo: `1024x576` passa nos tres limites — multiplo
+    de 8, lado e area — e mesmo assim entrega imagem pior, porque a grade e de
+    proporcoes e ele nao esta nela. Sem esta conferencia, nada acusa."""
+    from apps.inference.tamanhos import conferir
+
+    estado = {"lado_maximo": 1536, "area_maxima_mp": 1.2, "grade": ["1024x1024", "1344x704"]}
+
+    assert conferir("1024x1024", estado) == []
+
+    avisos = conferir("1024x576", estado)
+    assert len(avisos) == 1
+    assert "grade de treino" in avisos[0]
+    # A sugestao vem por PROPORCAO: quem pede 16:9 quer um formato largo, e
+    # devolver o quadrado primeiro seria trocar o problema.
+    assert "1344x704" in avisos[0]
+
+
+def test_o_padrao_e_o_formato_que_as_redes_pedem(settings):
+    """1200x630 = 1.905:1 e o alvo do `og:image`. Publicar noutra proporcao
+    entrega o enquadramento ao corte automatico da rede."""
     largura, altura = (int(p) for p in settings.IMAGEM_TAMANHO.split("x"))
 
-    assert (largura, altura) in PROPORCOES_TREINADAS
+    assert abs(largura / altura - 1200 / 630) < 0.02
 
 
-def test_o_tamanho_padrao_cabe_no_limite_do_worker(settings):
-    """O worker recusa lado acima de `IMAGEM_LADO_MAXIMO`, que vem 1024. Um
-    padrao maior deixaria a instalacao nova com 422 na primeira capa."""
-    largura, altura = (int(p) for p in settings.IMAGEM_TAMANHO.split("x"))
+def test_o_alvo_literal_das_redes_nao_serve(settings):
+    """`1200x630` parece a escolha obvia e nao passa — 630 nao e multiplo de
+    8. Nao e a grade que recusa, e o latente, e por isso a mensagem precisa
+    ser outra."""
+    from apps.inference.tamanhos import conferir
 
-    assert max(largura, altura) <= 1024
+    avisos = conferir("1200x630", {"lado_maximo": 1536, "area_maxima_mp": 1.2})
+
+    assert any("multiplo de 8" in aviso for aviso in avisos)
 
 
 @pytest.mark.django_db
@@ -178,6 +244,9 @@ def test_o_testar_avisa_quando_o_tamanho_esta_fora_da_grade(monkeypatch, setting
             "modelo": "stabilityai/stable-diffusion-xl-base-1.0",
             "dispositivo": "cuda",
             "baixado": True,
+            "lado_maximo": 1536,
+            "area_maxima_mp": 1.2,
+            "grade": ["1024x1024", "1344x704", "1344x768", "1536x640"],
         },
     }
     monkeypatch.setattr(
@@ -189,8 +258,8 @@ def test_o_testar_avisa_quando_o_tamanho_esta_fora_da_grade(monkeypatch, setting
     call_command("configurar_imagem", "--testar")
 
     saida = capsys.readouterr().out
-    assert "nao e uma das proporcoes em que o SDXL foi treinado" in saida
-    assert "1344x768" in saida
+    assert "nao esta na grade de treino publicada pelo worker" in saida
+    assert "1344x704" in saida
 
 
 @pytest.mark.django_db
@@ -211,6 +280,9 @@ def test_o_testar_cala_quando_o_tamanho_esta_certo(monkeypatch, settings, capsys
             "modelo": "stabilityai/stable-diffusion-xl-base-1.0",
             "dispositivo": "cuda",
             "baixado": True,
+            "lado_maximo": 1536,
+            "area_maxima_mp": 1.2,
+            "grade": ["1024x1024", "1344x704", "1344x768", "1536x640"],
         },
     }
     monkeypatch.setattr(
@@ -221,7 +293,7 @@ def test_o_testar_cala_quando_o_tamanho_esta_certo(monkeypatch, settings, capsys
 
     call_command("configurar_imagem", "--testar")
 
-    assert "proporcoes em que o SDXL" not in capsys.readouterr().out
+    assert "grade de treino" not in capsys.readouterr().out
 
 
 @pytest.mark.django_db
@@ -250,7 +322,7 @@ def test_um_provedor_pago_nao_leva_o_aviso_do_sdxl(monkeypatch, settings, capsys
 
     call_command("configurar_imagem", "--testar")
 
-    assert "proporcoes em que o SDXL" not in capsys.readouterr().out
+    assert "grade de treino" not in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
