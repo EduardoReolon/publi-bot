@@ -8,7 +8,7 @@ import random
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -361,6 +361,73 @@ def garantir_prompts_padrao() -> None:
                 temperature=dados.get("temperatura", 0.2),
                 is_active=True,
             )
+
+
+def atualizar_prompts_padrao(chaves: set[str] | None = None) -> list[str]:
+    """Publica a semente atual como uma VERSAO NOVA, onde ela mudou.
+
+    Existe por uma lacuna que so aparece com o tempo. `garantir_prompts_padrao`
+    cria o que falta e nunca toca no que existe — de proposito, porque quem
+    ajustou um prompt pela tela nao pode perde-lo numa implantacao (ADR-0012).
+    A consequencia e que melhorar uma semente no codigo nao alcanca NINGUEM que
+    ja esteja rodando: o conserto sai, a suite fica verde, e todo tenant antigo
+    continua com o texto velho.
+
+    Aqui a semente vira uma versao nova, ativa, e a anterior e desativada — nao
+    apagada. Assim a melhoria chega e o ajuste de quem mexeu na tela continua
+    no historico, a um clique de voltar.
+
+    So mexe no que DIVERGE: rodar duas vezes nao cria duas versoes iguais.
+
+    Devolve as chaves atualizadas.
+    """
+    from apps.content.prompts_iniciais import PROMPTS_INICIAIS
+
+    atualizadas = []
+
+    for chave, dados in PROMPTS_INICIAIS.items():
+        if chaves is not None and chave not in chaves:
+            continue
+
+        template = PromptTemplate.objects.filter(key=chave).first()
+        if template is None:
+            continue  # Nao existe ainda: e trabalho do `garantir_prompts_padrao`.
+
+        # A variante "A" e a que a semente cria. Uma variante "B" de teste A/B
+        # e experimento de alguem, e sobrescreve-la destruiria a comparacao em
+        # curso — que e justamente o que o teste A/B existe para produzir.
+        atual = template.versions.filter(variant="A", is_active=True).first()
+        if atual is None:
+            continue
+
+        mesma = (
+            atual.system_prompt == dados["sistema"]
+            and atual.user_prompt_template == dados["usuario"]
+        )
+        if mesma:
+            continue
+
+        proxima = (template.versions.aggregate(models.Max("version"))["version__max"] or 0) + 1
+
+        with transaction.atomic():
+            # Desativar ANTES de criar: a restricao aceita uma variante ativa
+            # por template, e a ordem inversa falharia com erro de unicidade.
+            template.versions.filter(variant="A", is_active=True).update(is_active=False)
+            PromptVersion.objects.create(
+                template=template,
+                version=proxima,
+                variant="A",
+                system_prompt=dados["sistema"],
+                user_prompt_template=dados["usuario"],
+                variables=dados.get("variaveis", []),
+                model_name=dados.get("modelo", ""),
+                temperature=dados.get("temperatura", 0.2),
+                is_active=True,
+            )
+
+        atualizadas.append(chave)
+
+    return atualizadas
 
 
 def semear_prompts_no_schema(schema_name: str, *, logger=None) -> None:

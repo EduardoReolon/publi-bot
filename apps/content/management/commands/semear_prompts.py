@@ -19,6 +19,19 @@ ja existem. Este comando alcanca.
 Idempotente: cria o que falta e nao toca no que ja esta la — inclusive nas
 versoes que alguem ajustou pela tela, que e o motivo de os prompts viverem no
 banco (ADR-0012).
+
+Essa preservacao tem um custo que so aparece com o tempo: **melhorar uma
+semente no codigo nao alcanca ninguem que ja esteja rodando.** O conserto
+sai, a suite fica verde, e todo tenant antigo continua com o texto velho. Foi
+o que aconteceu com o `image_prompt`: o prompt reescrito para o SDXL nao
+chegaria a nenhum tenant existente.
+
+    manage.py semear_prompts --atualizar
+    manage.py semear_prompts --todos --atualizar --so image_prompt
+
+`--atualizar` publica a semente como uma VERSAO NOVA, ativa, e desativa a
+anterior — sem apagar. A melhoria chega, e o ajuste de quem mexeu na tela
+continua no historico, a um clique de voltar. So mexe no que diverge.
 """
 
 from __future__ import annotations
@@ -40,20 +53,43 @@ class Command(BaseCommand):
                 "consertar quem ficou sem prompts."
             ),
         )
+        parser.add_argument(
+            "--atualizar",
+            action="store_true",
+            help=(
+                "Publica a semente como versao nova onde ela divergir da ativa. "
+                "A anterior e desativada, nao apagada. NAO entra na implantacao "
+                "automatica: sobrescrever o ajuste de um cliente tem de ser uma "
+                "decisao de alguem."
+            ),
+        )
+        parser.add_argument(
+            "--so",
+            metavar="CHAVE",
+            action="append",
+            default=[],
+            help=(
+                "Limita a estas chaves (repetivel). Sem isto, `--atualizar` "
+                "alcanca todos os prompts que divergirem."
+            ),
+        )
 
     def handle(self, *args, **options):
+        self.atualizar = options["atualizar"]
+        self.chaves = set(options["so"]) or None
+
         if options["todos"]:
             from apps.accounts.varredura import para_cada_tenant
 
             total = para_cada_tenant(self._semear_um, "semear_prompts")
-            self.stdout.write(self.style.SUCCESS(f"{total} prompt(s) criado(s) no total."))
+            self.stdout.write(self.style.SUCCESS(f"{total} prompt(s) escrito(s) no total."))
             return
 
-        criados = self._semear_um()
+        escritos = self._semear_um()
         self.stdout.write(
-            self.style.SUCCESS(f"{criados} prompt(s) criado(s) em {connection.schema_name!r}.")
-            if criados
-            else f"Nada a fazer em {connection.schema_name!r}: os prompts ja existem."
+            self.style.SUCCESS(f"{escritos} prompt(s) escrito(s) em {connection.schema_name!r}.")
+            if escritos
+            else f"Nada a fazer em {connection.schema_name!r}."
         )
 
     def _semear_um(self) -> int:
@@ -66,7 +102,7 @@ class Command(BaseCommand):
         distinguiveis na saida de um deploy.
         """
         from apps.content.models import PromptVersion
-        from apps.content.services import garantir_prompts_padrao
+        from apps.content.services import atualizar_prompts_padrao, garantir_prompts_padrao
 
         antes = PromptVersion.objects.count()
         garantir_prompts_padrao()
@@ -75,4 +111,15 @@ class Command(BaseCommand):
         if criados:
             self.stdout.write(f"  {connection.schema_name}: {criados} prompt(s) criado(s)")
 
-        return criados
+        if not getattr(self, "atualizar", False):
+            return criados
+
+        # Depois do `garantir`, e nao antes: num tenant novo os dois rodariam,
+        # e atualizar o que acabou de ser criado geraria uma v2 identica a v1.
+        atualizados = atualizar_prompts_padrao(getattr(self, "chaves", None))
+        if atualizados:
+            self.stdout.write(
+                f"  {connection.schema_name}: versao nova de {', '.join(sorted(atualizados))}"
+            )
+
+        return criados + len(atualizados)

@@ -51,7 +51,7 @@ def _tamanho() -> str:
     """
     from django.conf import settings
 
-    return getattr(settings, "IMAGEM_TAMANHO", "1024x576")
+    return getattr(settings, "IMAGEM_TAMANHO", "1024x1024")
 
 
 class SemConexaoDeImagem(RuntimeError):
@@ -72,6 +72,49 @@ class LimiteDeLotes(RuntimeError):
     """O artigo ja tem lotes demais."""
 
 
+# Palavras curtas que praticamente so existem em portugues. Nao e deteccao de
+# idioma — e um detector de UM caso: a descricao que voltou em portugues.
+#
+# Criterio de escolha: cada uma tem de ser improvavel num texto ingles. Por
+# isso `de`, `no` e `a` ficaram de fora (existem em ingles ou em nomes
+# proprios), e `com` tambem (`.com`).
+_PISTAS_DE_PORTUGUES = frozenset(
+    {
+        "uma",
+        "um",
+        "sobre",
+        "para",
+        "que",
+        "mesa",
+        "luz",
+        "fundo",
+        "sem",
+        "dos",
+        "das",
+        "numa",
+        "imagem",
+        "foto",
+        "ambiente",
+    }
+)
+
+
+def parece_portugues(texto: str) -> bool:
+    """Se a descricao saiu no idioma errado.
+
+    O SDXL codifica o prompt com o CLIP, treinado so em ingles. Um prompt em
+    portugues nao da erro: ele e ignorado quase inteiro, e o modelo desenha a
+    partir das poucas palavras que reconheceu. A imagem sai — generica,
+    desconexa, com aquela cara de IA — e nao ha nada no log dizendo por que.
+
+    Por isso isto e um aviso e nao uma recusa: o lote continua saindo, e quem
+    revisa continua escolhendo. O que muda e haver uma linha de log apontando
+    para a causa, em vez de uma tarde procurando defeito no modelo de imagem.
+    """
+    palavras = {palavra.strip(".,;:()[]\"'").lower() for palavra in texto.split()}
+    return len(palavras & _PISTAS_DE_PORTUGUES) >= 2
+
+
 def descrever_capa(article: Article, *, site=None) -> tuple[str, object]:
     """Pede ao modelo de texto uma descricao concreta para a imagem.
 
@@ -89,7 +132,18 @@ def descrever_capa(article: Article, *, site=None) -> tuple[str, object]:
         },
         site=site,
     )
-    return resultado.texto.strip(), resultado.prompt_run
+    descricao = resultado.texto.strip()
+
+    if parece_portugues(descricao):
+        logger.warning(
+            "Artigo %s: a descricao da capa parece estar em portugues, e o SDXL "
+            "so entende ingles — a imagem vai sair generica. Revise o prompt "
+            "'image_prompt' em Configuracao > Prompts. Descricao: %r",
+            article.pk,
+            descricao[:200],
+        )
+
+    return descricao, resultado.prompt_run
 
 
 def gerar_opcoes(

@@ -259,6 +259,8 @@ class Command(BaseCommand):
                 )
             )
 
+        self._conferir_o_tamanho(imagem.get("modelo") or "")
+
         if imagem.get("dispositivo") == "cpu":
             self.stdout.write(
                 "Configurado para CPU: uma imagem leva MINUTOS. Para usar a "
@@ -280,3 +282,55 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING("base_url em 0.0.0.0 nao e um endereco para se chamar.")
             )
+
+    # As proporcoes em que o SDXL foi treinado. Fora delas ele nao falha: ele
+    # duplica o assunto, deforma a geometria e perde a composicao — sem erro
+    # nenhum, so com "cara de IA". E o defeito mais caro de diagnosticar,
+    # porque o sintoma aparece na imagem e a causa esta numa variavel.
+    PROPORCOES_DO_SDXL = {
+        (1024, 1024),
+        (1152, 896),
+        (896, 1152),
+        (1216, 832),
+        (832, 1216),
+        (1344, 768),
+        (768, 1344),
+        (1536, 640),
+        (640, 1536),
+    }
+
+    def _conferir_o_tamanho(self, modelo: str) -> None:
+        """Avisa quando `IMAGEM_TAMANHO` esta fora do que o modelo conhece.
+
+        Aviso e nao erro, e por dois motivos: um provedor pago tem outra lista
+        (o dall-e-3 aceita tres tamanhos, nenhum deles destes), e um SDXL
+        afinado pode ter sido retreinado noutra grade. Quem sabe disso e quem
+        configurou; o comando so garante que ninguem descubra pela imagem.
+        """
+        from django.conf import settings
+
+        bruto = getattr(settings, "IMAGEM_TAMANHO", "")
+        if "sd" not in modelo.lower() and "diffusion" not in modelo.lower():
+            return  # Nao e um SDXL; a lista abaixo nao se aplica.
+
+        try:
+            largura, altura = (int(parte) for parte in bruto.lower().split("x", 1))
+        except ValueError:
+            self.stdout.write(
+                self.style.WARNING(f"IMAGEM_TAMANHO={bruto!r} nao tem a forma LARGURAxALTURA.")
+            )
+            return
+
+        if (largura, altura) in self.PROPORCOES_DO_SDXL:
+            return
+
+        self.stdout.write(
+            self.style.WARNING(
+                f"IMAGEM_TAMANHO={largura}x{altura} nao e uma das proporcoes em "
+                f"que o SDXL foi treinado. Ele nao vai recusar — vai entregar "
+                f"imagens piores, com assunto duplicado e geometria torta, sem "
+                f"nada no log.\n"
+                f"  Use 1024x1024, ou 1344x768 para capa larga (esta exige "
+                f"IMAGEM_LADO_MAXIMO maior que 1024 no .env do worker)."
+            )
+        )

@@ -361,21 +361,46 @@ PROMPTS_INICIAIS: dict[str, dict] = {
         # para pedir mais exemplos, e uma descricao identica em toda rodada
         # devolveria variacoes da mesma imagem.
         "temperatura": 0.8,
+        # O sistema esta EM INGLES de proposito, e nao por gosto: pedir em
+        # portugues "responda em ingles" e uma instrucao que o modelo cumpre
+        # quase sempre — e o "quase" custa caro. O texto que sair em portugues
+        # vai INTEIRO para o SDXL, cujo codificador (CLIP) foi treinado so em
+        # ingles: ele nao erra, ele ignora o que nao entende, e o resultado e
+        # uma imagem construida a partir de meia duzia de palavras soltas. E
+        # assim que nasce a capa "com cara de IA" sem nenhum erro no log.
         "sistema": (
-            "Voce escreve descricoes para geracao de imagem de capa.\n\n"
-            "Responda com UMA unica frase em ingles, sem aspas e sem "
-            "explicacao antes ou depois.\n\n"
-            "Regras:\n"
-            "- Concreta: diga o que se ve (objeto, ambiente, luz, enquadramento), "
-            "nao o conceito. 'Conceito de saude' nao e imagem; 'a blood "
-            "pressure monitor on a wooden table by a window' e.\n"
-            "- Sem texto embutido na imagem: modelos de imagem escrevem "
-            "palavras deformadas, e uma capa com texto errado e pior que uma "
-            "capa sem texto.\n"
-            "- Sem pessoas identificaveis, sem rostos em primeiro plano.\n"
-            "- Nada que sugira diagnostico, procedimento ou resultado clinico.\n"
-            "- Sem logotipo, marca ou embalagem de produto."
+            "You write prompts for an image model (Stable Diffusion XL) that "
+            "illustrate a science article. Answer in ENGLISH only.\n\n"
+            "Answer with the prompt and nothing else: no quotes, no preamble, "
+            "no explanation, no translation.\n\n"
+            "Format: comma-separated visual phrases, not a sentence. "
+            "Subject first, then setting, then light, then framing, then "
+            "photographic style. 25 to 45 words.\n\n"
+            "Example: `a blood pressure monitor on a worn wooden table, "
+            "morning light through a kitchen window, shallow depth of field, "
+            "close-up, documentary photography, natural colors, 50mm lens`\n\n"
+            "Rules:\n"
+            "- Concrete only. Name what is VISIBLE — object, material, "
+            "surface, light, angle. An abstract idea is not an image: "
+            "'healthcare concept' produces nothing, a stethoscope on a desk "
+            "does.\n"
+            "- NO people, no hands, no faces, not even in the background. "
+            "Hands and faces are where this model fails most visibly, and one "
+            "deformed hand ruins an otherwise good cover.\n"
+            "- No text, letters, numbers, charts, labels or signage in the "
+            "scene. The model writes deformed words, and a cover with broken "
+            "text is worse than a cover with none.\n"
+            "- One clear subject. A crowded scene gives the model room to "
+            "invent, and what it invents is what looks wrong.\n"
+            "- No logos, brands or product packaging.\n"
+            "- Nothing depicting a diagnosis, a procedure or a clinical "
+            "result.\n"
+            "- Do not name the article, the journal or the study."
         ),
-        "usuario": "Titulo: {titulo}\nResumo: {resumo}",
+        # O titulo e o resumo chegam em portugues, e isso e proposital: o
+        # modelo de texto entende, e traduzir antes acrescentaria uma
+        # inferencia para perder nuance. O que nao pode e a RESPOSTA sair em
+        # portugues — por isso o lembrete no fim, onde ele pesa mais.
+        "usuario": ("Titulo: {titulo}\nResumo: {resumo}\n\nWrite the English image prompt:"),
     },
 }

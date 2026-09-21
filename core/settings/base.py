@@ -552,14 +552,33 @@ IMAGEM_SEGREDO = env.get("IMAGEM_SEGREDO", "")
 # Viaja no pedido, entao mora AQUI e nao no `.env` do worker — trocar no lugar
 # errado nao da erro, so nao muda nada.
 #
-# O padrao e paisagem e nao quadrado: uma capa de artigo aparece como
-# `og:image` nas redes e no topo da pagina, onde o corte util e largo. E cada
-# pixel custa tempo de placa — 1024x576 tem 44% menos area que 1024x1024, e a
-# diferenca aparece inteira no relogio.
+# **Este valor decide qualidade, nao so formato.** O SDXL foi treinado numa
+# lista curta de proporcoes, sempre perto de um megapixel, e sai dessa lista
+# custa caro: em resolucao menor ele duplica o assunto, deforma a geometria e
+# perde a composicao. Nao da erro nenhum — a imagem sai, com cara de IA.
+#
+# As proporcoes treinadas (largura x altura):
+#
+#     1024x1024   1:1     quadrado
+#     1152x896    1.29:1
+#     1216x832    1.46:1
+#     1344x768    1.75:1  o mais proximo de 16:9
+#     1536x640    2.4:1   panoramico
+#
+# O padrao foi `1024x576` por um tempo, escolhido por ser 16:9 e por "custar
+# menos placa". As duas razoes estavam erradas: 576 de altura esta fora da
+# lista e bem abaixo do megapixel, e a medicao mostrou que tamanho quase nao
+# muda o tempo (quatro vezes mais pixels custaram 23% mais relogio, porque o
+# custo dominante e mover pesos entre RAM e VRAM).
+#
+# `1024x1024` e o padrao porque e a unica proporcao treinada que cabe no
+# `IMAGEM_LADO_MAXIMO=1024` do worker. Para uma capa larga — que e o formato
+# util no `og:image` — use `1344x768` DEPOIS de subir aquele limite no worker;
+# antes disso o pedido volta 422.
 #
 # Meca antes de mudar: o `medir_imagem.py` do repositorio do worker compara
 # tamanhos na sua maquina e grava as imagens lado a lado.
-IMAGEM_TAMANHO = env.get("IMAGEM_TAMANHO", "1024x576")
+IMAGEM_TAMANHO = env.get("IMAGEM_TAMANHO", "1024x1024")
 
 # ---------------------------------------------------------------------------
 # Onde mora o worker de GPU, quando ele esta nesta maquina
