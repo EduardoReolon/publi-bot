@@ -86,11 +86,23 @@ class Command(BaseCommand):
             return
 
         escritos = self._semear_um()
-        self.stdout.write(
-            self.style.SUCCESS(f"{escritos} prompt(s) escrito(s) em {connection.schema_name!r}.")
-            if escritos
-            else f"Nada a fazer em {connection.schema_name!r}."
+        if escritos:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"{escritos} prompt(s) escrito(s) em {connection.schema_name!r}."
+                )
+            )
+            return
+
+        # O MOTIVO, e nao so "nada a fazer": sem ele, um tenant saudavel e um
+        # `--atualizar` que nao alcancou nada dizem a mesma coisa, e so a
+        # segunda pede investigacao.
+        motivo = (
+            "os prompts ja existem e nenhum diverge da semente"
+            if self.atualizar
+            else "os prompts ja existem"
         )
+        self.stdout.write(f"Nada a fazer em {connection.schema_name!r}: {motivo}.")
 
     def _semear_um(self) -> int:
         """Semeia o schema atual e devolve quantos prompts passaram a existir.

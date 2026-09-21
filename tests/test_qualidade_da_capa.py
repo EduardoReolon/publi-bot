@@ -382,3 +382,18 @@ def test_sem_atualizar_o_comando_continua_conservador(tenant_com_acervo):
         PromptVersion.objects.get(template__key="image_prompt", is_active=True).system_prompt
         == "ajustado"
     )
+
+
+@pytest.mark.django_db
+def test_o_nada_a_fazer_diz_o_motivo(tenant_com_acervo, capsys):
+    """Um tenant saudavel e um `--atualizar` que nao alcancou nada terminam
+    iguais. Sem o motivo na saida, so a segunda situacao pede investigacao e
+    nada na tela distingue as duas."""
+    from django.core.management import call_command
+
+    call_command("semear_prompts")
+    capsys.readouterr()
+
+    call_command("semear_prompts", "--atualizar")
+
+    assert "nenhum diverge da semente" in capsys.readouterr().out
