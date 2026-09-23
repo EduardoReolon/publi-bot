@@ -187,3 +187,52 @@ def conexao(db):
         max_concurrency=1,
         is_active=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Um gerador de imagem que responde como o worker, sem placa nenhuma
+# ---------------------------------------------------------------------------
+# Mora aqui, e nao num arquivo de teste, porque dois arquivos ja precisam
+# dele. Duas copias do mesmo duble divergem no dia em que so uma e ajustada —
+# e um duble desatualizado passa sem reclamar, que e o pior jeito de um teste
+# falhar.
+def _png_de_teste() -> bytes:
+    import io
+
+    from PIL import Image
+
+    memoria = io.BytesIO()
+    Image.new("RGB", (64, 64), (20, 90, 160)).save(memoria, format="PNG")
+    return memoria.getvalue()
+
+
+class GeradorDeImagemFalso:
+    """Devolve `revised_prompt` igual ao prompt recebido, como o worker faz."""
+
+    def generate(self, *, model, prompt, quantidade=3, tamanho="1344x704"):
+        from apps.inference.providers.base import ImagemGerada
+
+        return [
+            ImagemGerada(conteudo=_png_de_teste(), prompt_revisado=prompt)
+            for _ in range(quantidade)
+        ]
+
+
+@pytest.fixture
+def imagem_falsa(monkeypatch):
+    """Uma conexao de imagem que funciona, sem chamar ninguem de verdade."""
+    import contextlib
+    from types import SimpleNamespace
+
+    conexao_de_imagem = SimpleNamespace(name="Imagem", default_model="modelo-de-imagem", pk=1)
+    monkeypatch.setattr("apps.content.capas._conexao_de_imagem", lambda: conexao_de_imagem)
+    monkeypatch.setattr("apps.content.capas._registrar_uso", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "apps.content.capas.descrever_capa",
+        lambda article, site=None: ("a monitor on a wooden table", None),
+    )
+    monkeypatch.setattr(
+        "apps.inference.providers.base.get_image_provider",
+        lambda *a, **k: GeradorDeImagemFalso(),
+    )
+    monkeypatch.setattr("apps.inference.leases.reserva", lambda *a, **k: contextlib.nullcontext())

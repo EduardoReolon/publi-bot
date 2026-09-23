@@ -211,6 +211,35 @@
 
     {% for lote in lotes_de_capa %}
       <h3>{% blocktranslate with n=lote.numero %}Lote {{ n }}{% endblocktranslate %}</h3>
+
+      {% comment %}
+        O prompt inteiro, e num campo de onde da para copiar. Truncado, ele so
+        servia para reconhecer o lote; inteiro, serve para o trabalho que de
+        fato se faz com ele — colar num modelo maior e comparar, ou entender
+        por que um tema abstrato virou uma imagem ruim.
+
+        Fica no LOTE porque e ali que ele existe: uma descricao por rodada,
+        tres imagens a partir dela.
+      {% endcomment %}
+      {% if lote.prompt %}
+        <details class="pre-visualizacao">
+          <summary>{% translate "Prompt que gerou este lote" %}</summary>
+          <textarea readonly rows="4" style="width:100%"
+                    aria-label="{% translate 'Prompt que gerou este lote' %}">{{ lote.prompt }}</textarea>
+          <p>
+            {% blocktranslate trimmed %}
+              Escrito pelo modelo de texto a partir do titulo e do resumo. Se
+              as tres opcoes sairem ruins, leia isto antes de culpar o gerador
+              de imagem: tema abstrato costuma virar prompt vago.
+            {% endblocktranslate %}
+          </p>
+        </details>
+      {% elif lote.divergentes %}
+        <p class="pre-visualizacao">
+          {% translate "Cada opcao deste lote teve o proprio prompt; veja abaixo de cada uma." %}
+        </p>
+      {% endif %}
+
       <form method="post" action="{% url 'content:escolher_capa' artigo.pk %}">
         {% csrf_token %}
         <div class="cartoes">
@@ -226,7 +255,9 @@
                   {% translate "Usar esta" %}
                 </button>
               {% endif %}
-              <div class="pre-visualizacao">{{ opcao.prompt|truncatechars:120 }}</div>
+              {% if lote.divergentes %}
+                <div class="pre-visualizacao">{{ opcao.prompt }}</div>
+              {% endif %}
             </div>
           {% endfor %}
         </div>

@@ -469,3 +469,124 @@ def test_o_nada_a_fazer_diz_o_motivo(tenant_com_acervo, capsys):
     call_command("semear_prompts", "--atualizar")
 
     assert "nenhum diverge da semente" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# O prompt precisa ser LEGIVEL por quem revisa
+# ---------------------------------------------------------------------------
+# Quando as tres opcoes saem ruins, a pergunta e "a culpa e do gerador ou do
+# prompt?". Sem o texto inteiro na tela nao da para responder — e tema
+# abstrato costuma virar prompt vago, que e um defeito do lado de ca.
+@pytest.mark.django_db
+def test_o_prompt_sai_no_lote_e_nao_repetido_em_cada_opcao(tenant_com_acervo):
+    """O worker devolve `revised_prompt` igual ao que recebeu, entao as tres
+    opcoes de um lote tem o mesmo texto. Repeti-lo tres vezes seria repetir a
+    mesma coisa tres vezes."""
+    from apps.content.models import Article, ArticleImage
+    from apps.content.views import _lotes_de_capa
+
+    artigo = Article.objects.create(title="RFM", body_markdown="Texto.")
+    for posicao in (1, 2, 3):
+        ArticleImage.objects.create(
+            article=artigo, batch=1, order=posicao, prompt="a ceramic cup on oak, 50mm"
+        )
+
+    (lote,) = _lotes_de_capa(artigo)
+
+    assert lote["prompt"] == "a ceramic cup on oak, 50mm"
+    assert lote["divergentes"] is False
+
+
+@pytest.mark.django_db
+def test_quando_cada_opcao_tem_prompt_proprio_o_lote_nao_elege_um(tenant_com_acervo):
+    """O caso do provedor pago: o dall-e-3 reescreve o prompt POR IMAGEM, e o
+    que ele desenhou passa a ser diferente do que se pediu. Mostrar o da
+    primeira como se fosse o do lote seria mentir sobre as outras duas."""
+    from apps.content.models import Article, ArticleImage
+    from apps.content.views import _lotes_de_capa
+
+    artigo = Article.objects.create(title="RFM", body_markdown="Texto.")
+    for posicao, texto in enumerate(("cup on oak", "cup on marble", "cup on steel"), start=1):
+        ArticleImage.objects.create(article=artigo, batch=1, order=posicao, prompt=texto)
+
+    (lote,) = _lotes_de_capa(artigo)
+
+    assert lote["prompt"] == ""
+    assert lote["divergentes"] is True
+
+
+@pytest.mark.django_db
+def test_lotes_diferentes_mostram_prompts_diferentes(tenant_com_acervo):
+    """Pedir mais exemplos escreve uma descricao NOVA. Comparar os dois textos
+    e o que explica por que o segundo lote ficou melhor ou pior."""
+    from apps.content.models import Article, ArticleImage
+    from apps.content.views import _lotes_de_capa
+
+    artigo = Article.objects.create(title="RFM", body_markdown="Texto.")
+    ArticleImage.objects.create(article=artigo, batch=1, order=1, prompt="primeira descricao")
+    ArticleImage.objects.create(article=artigo, batch=2, order=1, prompt="segunda descricao")
+
+    primeiro, segundo = _lotes_de_capa(artigo)
+
+    assert primeiro["prompt"] == "primeira descricao"
+    assert segundo["prompt"] == "segunda descricao"
+
+
+@pytest.mark.django_db
+def test_o_prompt_entra_no_payload_do_trabalho(tenant_com_acervo, imagem_falsa, monkeypatch):
+    """Quem olha a fila esta investigando por que a capa saiu ruim, e ali o
+    artigo pode nem ter sido aberto. O payload e onde a resposta cabe."""
+    from apps.content.flows import passo_gerar_capas
+    from apps.content.models import Article
+    from apps.ops.models import GenerationJob
+
+    artigo = Article.objects.create(title="RFM", body_markdown="Texto.")
+    job = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.ARTICLE_COVER,
+        target_object_id=str(artigo.pk),
+        total_steps=1,
+    )
+
+    payload = passo_gerar_capas(job)
+
+    assert payload["capas"] == 3
+    assert payload["prompt"], "sem o prompt, o payload diz quantas e nao diz o quê"
+
+
+@pytest.mark.django_db
+def test_o_payload_sem_capa_nao_inventa_prompt(tenant_com_acervo, monkeypatch):
+    """Sem conexao de imagem nao houve descricao nenhuma. Um campo vazio ali
+    seria lido como "o prompt era vazio", que e outra coisa."""
+    from apps.content.flows import passo_gerar_capas
+    from apps.content.models import Article
+    from apps.ops.models import GenerationJob
+
+    artigo = Article.objects.create(title="RFM", body_markdown="Texto.")
+    job = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.ARTICLE_COVER,
+        target_object_id=str(artigo.pk),
+        total_steps=1,
+    )
+
+    payload = passo_gerar_capas(job)
+
+    assert payload["capas"] == 0
+    assert "prompt" not in payload
+
+
+def test_o_prompt_tem_saida_para_tema_abstrato():
+    """O caso concreto que motivou isto: um artigo sobre RFM — recencia,
+    frequencia, valor — nao tem objeto nenhum. Sem uma regra para isso, o
+    modelo tenta desenhar a IDEIA, e desenhar ideia e exatamente o que produz
+    a capa vaga com cara de IA.
+
+    A saida nao e proibir: e mandar procurar um objeto concreto no MUNDO de
+    que o artigo trata, e nao no conceito.
+    """
+    sistema = SEMENTE["sistema"]
+
+    assert "ABSTRACT" in sistema
+    assert "do not try to draw the idea" in sistema
+    # Um exemplo concreto junto: a regra sozinha e abstrata, e pedir a um
+    # modelo que evite abstracao com uma frase abstrata costuma nao pegar.
+    assert "cardboard box on a doorstep" in sistema

@@ -237,16 +237,40 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
 
 
 def _lotes_de_capa(artigo) -> list[dict]:
-    """As opcoes agrupadas por rodada de geracao.
+    """As opcoes agrupadas por rodada de geracao, com o prompt de cada rodada.
 
     Agrupadas, e nao numa lista unica, para que se veja o que mudou quando a
     pessoa pediu mais exemplos — comparar dentro do lote e entre lotes sao duas
     leituras diferentes.
+
+    O prompt sai no LOTE e nao em cada opcao porque e ali que ele existe: uma
+    descricao e escrita por rodada e as tres imagens saem dela. O worker de GPU
+    devolve `revised_prompt` igual ao que recebeu, entao repetir o texto tres
+    vezes seria repetir a mesma coisa tres vezes.
+
+    `divergentes` cobre o caso oposto, que ja existe em provedor pago: o
+    dall-e-3 reescreve o prompt POR IMAGEM, e o que ele desenhou passa a ser
+    diferente do que se pediu. Quando isso acontece, cada opcao mostra o seu.
     """
     lotes: dict[int, list] = {}
     for imagem in artigo.images.all():
         lotes.setdefault(imagem.batch, []).append(imagem)
-    return [{"numero": n, "opcoes": v} for n, v in sorted(lotes.items())]
+
+    resultado = []
+    for numero, opcoes in sorted(lotes.items()):
+        prompts = {(opcao.prompt or "").strip() for opcao in opcoes}
+        # Um so quando todas concordam; vazio quando divergem, para a tela nao
+        # eleger arbitrariamente o prompt da primeira opcao.
+        unico = next(iter(prompts)) if len(prompts) == 1 else ""
+        resultado.append(
+            {
+                "numero": numero,
+                "opcoes": opcoes,
+                "prompt": unico,
+                "divergentes": len(prompts) > 1,
+            }
+        )
+    return resultado
 
 
 def _motivo_sem_capa(artigo) -> str:

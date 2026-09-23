@@ -479,7 +479,15 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
         return {"article_id": str(article.pk), "capas": 0, "motivo": str(exc)}
 
     logger.info("Artigo %s: %s opcao(oes) de capa geradas junto.", article.pk, len(criadas))
-    return {"article_id": str(article.pk), "capas": len(criadas)}
+    return {
+        "article_id": str(article.pk),
+        "capas": len(criadas),
+        # O prompt no payload do trabalho, e nao so na tela de revisao. Quem
+        # olha a fila esta investigando POR QUE a capa saiu ruim, e ali o
+        # artigo pode nem ter sido aberto ainda. Um por lote: as tres opcoes
+        # saem da mesma descricao.
+        "prompt": criadas[0].prompt if criadas else "",
+    }
 
 
 def _chunks_por_id(ids: list[str]) -> list[SuperChunk]:

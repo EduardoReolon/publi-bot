@@ -13,34 +13,15 @@ que ainda nao tem gerador — o artigo tem de sair igual.
 
 from __future__ import annotations
 
-import contextlib
-import io
-
 import pytest
-from PIL import Image
 
 from apps.content.models import Article, Topic
-from apps.inference.providers.base import ImagemGerada
 from apps.ops.models import GenerationJob
 from apps.ops.orchestrator import criar_job, obter_fluxo
 
 # `tenant_com_acervo` e `conexao` vem do conftest. Daqui vem so o roteiro do
 # modelo falso, que e o mesmo do fluxo e nao deve divergir em duas copias.
 from tests.test_flows import ROTEIRO_DO_ARTIGO, ModeloFalso, _rodar_ate_o_fim
-
-
-def _png() -> bytes:
-    memoria = io.BytesIO()
-    Image.new("RGB", (64, 64), (20, 90, 160)).save(memoria, format="PNG")
-    return memoria.getvalue()
-
-
-class GeradorFalso:
-    def generate(self, *, model, prompt, quantidade=3, tamanho="1024x1024"):
-        return [
-            ImagemGerada(conteudo=_png(), prompt_revisado=f"{prompt} #{i}")
-            for i in range(1, quantidade + 1)
-        ]
 
 
 @pytest.fixture(autouse=True)
@@ -53,24 +34,6 @@ def modelo_de_texto(monkeypatch):
     modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
     return modelo
-
-
-@pytest.fixture
-def imagem_falsa(monkeypatch):
-    """Uma conexao de imagem que funciona, sem chamar ninguem de verdade."""
-    from types import SimpleNamespace
-
-    conexao_de_imagem = SimpleNamespace(name="Imagem", default_model="modelo-de-imagem", pk=1)
-    monkeypatch.setattr("apps.content.capas._conexao_de_imagem", lambda: conexao_de_imagem)
-    monkeypatch.setattr("apps.content.capas._registrar_uso", lambda *a, **k: None)
-    monkeypatch.setattr(
-        "apps.content.capas.descrever_capa",
-        lambda article, site=None: ("a monitor on a wooden table", None),
-    )
-    monkeypatch.setattr(
-        "apps.inference.providers.base.get_image_provider", lambda *a, **k: GeradorFalso()
-    )
-    monkeypatch.setattr("apps.inference.leases.reserva", lambda *a, **k: contextlib.nullcontext())
 
 
 def _gerar(titulo="Efeito no metabolismo"):
