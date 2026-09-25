@@ -120,56 +120,48 @@ def _faq(artigo, pergunta, resposta, *, marcada=True, ordem=1):
 
 
 @pytest.mark.django_db
-def test_so_as_marcadas_saem_e_depois_do_corpo(site):  # noqa: F811
+def test_o_faq_viaja_separado_do_corpo_so_com_as_marcadas(site):  # noqa: F811
+    """O site decide onde e como exibir. Dentro do `html_content`, a decisao
+    — e o titulo do bloco, num idioma so — ficaria presa deste lado."""
     from apps.integrations.publishing import montar_payload_de_artigo
 
     artigo = Article.objects.create(title="T", body_html="<p>Corpo.</p>")
-    _faq(artigo, "Sai?", "Sai sim.", ordem=1)
+    _faq(artigo, "Sai?", "Sai **sim**.", ordem=1)
     _faq(artigo, "Fica de fora?", "Fica.", marcada=False, ordem=2)
 
-    html = montar_payload_de_artigo(artigo, site)["html_content"]
+    payload = montar_payload_de_artigo(artigo, site)
 
-    assert html.startswith("<p>Corpo.</p>")
-    assert "<h2>Perguntas frequentes</h2>" in html
-    assert "<h3>Sai?</h3>" in html
-    assert "Fica de fora?" not in html
+    assert payload["html_content"] == "<p>Corpo.</p>"
+    assert payload["faq"] == [
+        {"question": "Sai?", "answer_html": "<p>Sai <strong>sim</strong>.</p>"}
+    ]
 
 
 @pytest.mark.django_db
-def test_sem_nenhuma_marcada_o_corpo_sai_intacto(site):  # noqa: F811
+def test_sem_nenhuma_marcada_o_campo_nao_vai(site):  # noqa: F811
+    """Como a capa: ausencia quer dizer "sem FAQ", e nao uma lista vazia."""
     from apps.integrations.publishing import montar_payload_de_artigo
 
     artigo = Article.objects.create(title="T", body_html="<p>Corpo.</p>")
     _faq(artigo, "Desmarcada?", "Sim.", marcada=False)
 
-    assert montar_payload_de_artigo(artigo, site)["html_content"] == "<p>Corpo.</p>"
+    assert "faq" not in montar_payload_de_artigo(artigo, site)
 
 
 @pytest.mark.django_db
-def test_o_faq_nao_leva_link_nem_script(site):  # noqa: F811
+def test_a_resposta_nao_leva_link_nem_script(site):  # noqa: F811
     """Uma resposta editada a mao passa pela mesma sanitizacao do corpo, e
     ainda perde todo link: no FAQ nao ha fonte que o justifique."""
-    from apps.content.faq import montar_html
+    from apps.content.faq import itens_para_publicar
 
     artigo = Article.objects.create(title="T", body_html="<p>x</p>")
-    _faq(artigo, "<b>Negrito?</b>", "Veja [aqui](https://spam.exemplo.com). <script>x()</script>")
+    _faq(artigo, "Pergunta?", "Veja [aqui](https://spam.exemplo.com). <script>x()</script>")
 
-    html = montar_html(artigo, "pt-BR")
+    resposta = itens_para_publicar(artigo)[0]["answer_html"]
 
-    assert "&lt;b&gt;Negrito?&lt;/b&gt;" in html
-    assert "spam.exemplo.com" not in html
-    assert "<script" not in html
-    assert "aqui" in html
-
-
-@pytest.mark.django_db
-def test_o_titulo_do_bloco_segue_o_idioma_do_site(site):  # noqa: F811
-    from apps.content.faq import montar_html
-
-    artigo = Article.objects.create(title="T", body_html="<p>x</p>")
-    _faq(artigo, "Why?", "Because.")
-
-    assert "<h2>Frequently asked questions</h2>" in montar_html(artigo, "en-US")
+    assert "spam.exemplo.com" not in resposta
+    assert "<script" not in resposta
+    assert "aqui" in resposta
 
 
 # ---------------------------------------------------------------------------
@@ -225,13 +217,32 @@ def test_desmarcar_vale_sem_mexer_no_texto(ambiente, artigo_para_revisar):  # no
 
 
 @pytest.mark.django_db
-def test_a_tela_mostra_o_faq_e_a_previa(ambiente, artigo_para_revisar):  # noqa: F811
+def test_a_tela_mostra_o_faq(ambiente, artigo_para_revisar):  # noqa: F811
     _, _, client = ambiente
-    _faq(artigo_para_revisar, "Aparece na previa?", "Aparece.")
+    _faq(artigo_para_revisar, "Aparece na tela?", "Aparece.")
 
     pagina = client.get(
         reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
     ).content.decode()
 
     assert "Salvar perguntas frequentes" in pagina
-    assert "<h3>Aparece na previa?</h3>" in pagina
+    assert 'value="Aparece na tela?"' in pagina
+
+
+@pytest.mark.django_db
+def test_a_tela_avisa_quando_o_site_nao_exibe_faq(ambiente, artigo_para_revisar):  # noqa: F811
+    """Sem o aviso, a pessoa revisaria perguntas que ninguem vai ver."""
+    from apps.integrations.models import Site
+
+    _, _, client = ambiente
+    url = reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    do_cliente = Site.objects.create(
+        name="S", slug="s", base_url="https://s.exemplo.org", capabilities=["qa"]
+    )
+
+    assert "nao declara o recurso" in client.get(url).content.decode()
+
+    do_cliente.capabilities = ["qa", "faq"]
+    do_cliente.save(update_fields=["capabilities"])
+
+    assert "nao declara o recurso" not in client.get(url).content.decode()

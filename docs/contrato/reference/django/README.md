@@ -38,6 +38,7 @@ python manage.py migrate publibot_node
 | Mesma resposta para todo erro de credencial | `auth.py::RESPOSTA_DE_NEGACAO` |
 | Idempotencia com indice unico | `models.py::ReceivedPublication` |
 | Sanitizacao antes de gravar | `sanitize.py` |
+| Perguntas frequentes separadas do corpo, sanitizadas item a item | `views.py::_faq_sanitizado` |
 | Limite de requisicoes | `throttle.py` |
 | Pedir a foto do autor so quando falta | `views.py::_precisa_da_foto` |
 | Receber arquivo por multipart, com assinatura | `views.py::author_photos` |

@@ -274,6 +274,65 @@ def test_titulo_tambem_e_sanitizado(no_receptor):
 
 
 # ---------------------------------------------------------------------------
+# Perguntas frequentes: separadas do corpo, sanitizadas do mesmo jeito
+# ---------------------------------------------------------------------------
+FAQ = [
+    {
+        "question": "Medir em casa substitui a consulta?",
+        "answer_html": "<p>Nao. <strong>Complementa</strong> o acompanhamento.</p>",
+    },
+    {"question": "Qual horario?", "answer_html": "<p>Sempre o mesmo.</p>"},
+]
+
+
+def test_faq_chega_separado_do_corpo_e_na_ordem(no_receptor):
+    from publibot_node.models import ReceivedPublication
+
+    resposta, chave = _publicar(no_receptor, {**PAYLOAD, "faq": FAQ})
+
+    assert resposta.status_code == 201
+    gravado = ReceivedPublication.objects.get(idempotency_key=chave)
+    assert gravado.faq == FAQ
+    assert "Medir em casa" not in gravado.html_content
+
+
+def test_artigo_sem_faq_e_normal(no_receptor):
+    from publibot_node.models import ReceivedPublication
+
+    resposta, chave = _publicar(no_receptor, PAYLOAD)
+
+    assert resposta.status_code == 201
+    assert ReceivedPublication.objects.get(idempotency_key=chave).faq == []
+
+
+def test_faq_nao_e_caminho_alternativo_para_script(no_receptor):
+    """O que o corpo recusaria, a resposta do FAQ tambem recusa."""
+    malicioso = [{"question": "Q?", "answer_html": "<p>ok</p><script>roubar()</script>"}]
+    resposta, _ = _publicar(no_receptor, {**PAYLOAD, "faq": malicioso})
+
+    assert resposta.status_code == 422
+    assert resposta.json()["error"]["code"] == "content_rejected"
+
+
+def test_pergunta_do_faq_e_texto_puro(no_receptor):
+    from publibot_node.models import ReceivedPublication
+
+    com_marcacao = [{"question": "<b>Negrito</b>?", "answer_html": "<p onclick='x()'>R.</p>"}]
+    _, chave = _publicar(no_receptor, {**PAYLOAD, "faq": com_marcacao})
+
+    item = ReceivedPublication.objects.get(idempotency_key=chave).faq[0]
+    assert item["question"] == "Negrito?"
+    assert "onclick" not in item["answer_html"]
+
+
+def test_faq_malformado_e_recusado_com_400(no_receptor):
+    resposta, _ = _publicar(no_receptor, {**PAYLOAD, "faq": "nao e lista"})
+
+    assert resposta.status_code == 400
+    assert resposta.json()["error"]["code"] == "invalid_payload"
+
+
+# ---------------------------------------------------------------------------
 # Demais rotas
 # ---------------------------------------------------------------------------
 

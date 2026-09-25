@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Contrato de Integracao PubliBot
-  version: "1.0.0"
+  version: "1.1.0"
   description: |
     Rotas que um site implementa para receber conteudo do PubliBot.
 
@@ -138,11 +138,37 @@ components:
           description: Renderize visivelmente junto ao conteudo.
         canonical_source: { type: string, format: uri }
         cover_image: { $ref: "#/components/schemas/ImagemPorReferencia" }
+        faq:
+          type: array
+          maxItems: 20
+          description: |
+            Recurso `faq`. Perguntas frequentes revisadas por uma pessoa, na
+            ordem em que devem aparecer. Viajam SEPARADAS do `html_content`:
+            onde e como exibir (bloco no fim, sanfona, JSON-LD) e decisao do
+            site. Ausente quando nao ha nenhuma — nunca uma lista vazia.
+            Ver a secao "Perguntas frequentes" no README.
+          items: { $ref: "#/components/schemas/PerguntaFrequente" }
         status: { type: string, enum: [draft, published, scheduled] }
         publish_at:
           type: string
           format: date-time
           description: Obrigatorio quando status = scheduled.
+
+    PerguntaFrequente:
+      type: object
+      required: [question, answer_html]
+      properties:
+        question:
+          type: string
+          maxLength: 300
+          description: Texto puro. Sanitize como `title`.
+          example: "Medir a pressao em casa substitui a consulta?"
+        answer_html:
+          type: string
+          description: |
+            HTML curto, ja sanitizado pelo PubliBot com a mesma lista de tags
+            do `html_content` e SEM links. Sanitize de novo antes de gravar.
+          example: "<p>Nao. A medida em casa complementa o acompanhamento.</p>"
 
     PublicacaoDeResposta:
       type: object
@@ -213,7 +239,7 @@ paths:
                       type: string
                       enum: [idempotency, hmac_signature, cursor_pagination,
                              image_by_url, author_photo, qa, reconciliation,
-                             update, unpublish]
+                             faq, update, unpublish]
                   server_time: { type: string, format: date-time }
 
   /seo-context/:

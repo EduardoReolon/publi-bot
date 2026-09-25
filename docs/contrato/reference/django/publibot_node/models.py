@@ -50,6 +50,10 @@ class ReceivedPublication(models.Model):
     cover_image_url = models.URLField(max_length=500, blank=True)
     cover_image_alt = models.CharField(max_length=300, blank=True)
 
+    # Perguntas frequentes, SEPARADAS do corpo: onde e como exibir e decisao
+    # do template do site. Lista de {"question", "answer_html"}, ja sanitizada.
+    faq = models.JSONField(default=list, blank=True)
+
     question_id = models.CharField(max_length=120, blank=True, db_index=True)
 
     post_status = models.CharField(max_length=20, default="published")

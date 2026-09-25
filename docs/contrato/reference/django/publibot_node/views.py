@@ -179,8 +179,11 @@ def publish(request):
 
     try:
         html = sanitizar(dados.get("html_content", ""))
+        faq = _faq_sanitizado(dados.get("faq"))
     except ConteudoRecusado as exc:
         return _erro("content_rejected", str(exc), 422)
+    except ValueError as exc:
+        return _erro("invalid_payload", str(exc), 400)
 
     tipo = dados.get("type", "article")
     if tipo not in {"article", "qa"}:
@@ -209,6 +212,7 @@ def publish(request):
                 cover_image_alt=sanitizar_texto(
                     (dados.get("cover_image") or {}).get("alt_text", "")
                 ),
+                faq=faq,
                 question_id=str(dados.get("question_id", ""))[:120],
                 post_status=dados.get("status", "published")[:20],
                 publish_at=dados.get("publish_at") or None,
@@ -227,6 +231,32 @@ def publish(request):
         VisitorQuestion.objects.filter(id=publicacao.question_id).update(answered_at=timezone.now())
 
     return JsonResponse(_resposta(publicacao, quer_foto=quer_foto), status=201)
+
+
+MAXIMO_DE_PERGUNTAS = 20
+
+
+def _faq_sanitizado(bruto) -> list[dict]:
+    """O campo `faq`, sanitizado item a item. Ausente vira lista vazia.
+
+    A pergunta e texto puro, como o titulo. A resposta passa pela MESMA
+    sanitizacao do `html_content` — inclusive a recusa com 422 de `<script>`:
+    um FAQ nao e caminho alternativo para o que o corpo recusaria.
+    """
+    if bruto is None:
+        return []
+    if not isinstance(bruto, list) or len(bruto) > MAXIMO_DE_PERGUNTAS:
+        raise ValueError(f"faq deve ser uma lista de ate {MAXIMO_DE_PERGUNTAS} itens.")
+
+    itens = []
+    for item in bruto:
+        if not isinstance(item, dict):
+            raise ValueError("cada item de faq deve ser um objeto {question, answer_html}.")
+        pergunta = sanitizar_texto(item.get("question", ""), limite=300)
+        resposta = sanitizar(item.get("answer_html", ""))
+        if pergunta and resposta:
+            itens.append({"question": pergunta, "answer_html": resposta})
+    return itens
 
 
 def _uuid_ou_nada(valor):

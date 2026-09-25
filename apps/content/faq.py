@@ -1,19 +1,18 @@
-"""Perguntas frequentes do artigo: gerar, revisar e montar no HTML publicado.
+"""Perguntas frequentes do artigo: gerar, revisar e entregar ao site.
 
 Por que isto existe, e por que e pequeno:
 
 * **Nao e pelo resultado rico.** O Google restringiu o FAQ enriquecido a
   sites de governo e saude em 2023 e o removeu de vez em 2026. Tambem diz que
-  nao ha marcacao especial para aparecer nos recursos de IA. Por isso nao ha
-  JSON-LD aqui: seria codigo para um efeito que nao existe mais.
+  nao ha marcacao especial para aparecer nos recursos de IA.
 * **E pelo conteudo.** Um bloco curto de perguntas diretas, com resposta na
   primeira frase, cobre as duvidas vizinhas que o leitor procura em seguida —
   e e o formato que buscadores que extraem respostas aproveitam melhor.
-* **Visivel, e nao sanfona.** O FAQ vai como `<h2>`, `<h3>` e `<p>` no
-  `html_content`, que todo site ja renderiza. Conteudo recolhido so e
-  indexado se estiver no HTML, e nem todo leitor automatico executa o script
-  que o expande. Se o site quiser recolher as respostas, e estilo do lado
-  dele; o texto continua no HTML.
+* **Vai SEPARADO do corpo**, no campo `faq` do payload (contrato, secao
+  "Perguntas frequentes"). Quem decide onde e como exibir — bloco no fim,
+  sanfona, JSON-LD — e o site, que conhece o proprio layout. Dentro do
+  `html_content` essa decisao ficaria presa aqui, junto com o titulo do bloco
+  num idioma escolhido por este lado.
 
 A pessoa que revisa decide o que entra: o modelo gera mais do que o
 necessario e ja marca as mais relevantes. Nao ha "refazer esta resposta" pela
@@ -23,7 +22,6 @@ estrutura inteira para uma resposta de tres frases.
 
 from __future__ import annotations
 
-import html
 import json
 import logging
 
@@ -41,12 +39,6 @@ SUGERIDAS = 6
 MARCADAS = 3
 
 MAXIMO_DA_PERGUNTA = 300
-
-TITULO_DO_BLOCO = {
-    "pt": "Perguntas frequentes",
-    "en": "Frequently asked questions",
-    "es": "Preguntas frecuentes",
-}
 
 
 def interpretar(texto: str) -> list[tuple[str, str]]:
@@ -185,24 +177,23 @@ def salvar_revisao(article: Article, dados) -> int:
     return mudancas
 
 
-def montar_html(article: Article, idioma: str = "pt-BR") -> str:
-    """O bloco publicado: so as selecionadas, depois do corpo do artigo.
+def itens_para_publicar(article: Article) -> list[dict]:
+    """O campo `faq` do payload: so as selecionadas, na ordem da revisao.
 
-    A pergunta e escapada; a resposta passa pelo Markdown e pela mesma
-    sanitizacao do corpo, com TODO link removido — no FAQ nao ha citacao, entao
-    nao ha destino legitimo.
+    A pergunta vai como texto puro. A resposta vai em HTML, passada pelo
+    Markdown e pela mesma sanitizacao do corpo, com TODO link removido — no
+    FAQ nao ha citacao, entao nao ha destino legitimo. O site sanitiza de novo
+    ao gravar, como faz com o `html_content`.
     """
     from apps.content.rendering import markdown_para_html, sanitizar_html
 
-    selecionadas = [item for item in article.faq.all() if item.is_selected]
-    if not selecionadas:
-        return ""
-
-    lingua = (idioma or "pt").lower().split("-")[0]
-    titulo = TITULO_DO_BLOCO.get(lingua, TITULO_DO_BLOCO["pt"])
-
-    partes = [f"<h2>{html.escape(titulo)}</h2>"]
-    for item in selecionadas:
-        resposta = sanitizar_html(markdown_para_html(item.answer), dominios_permitidos=set())
-        partes.append(f"<h3>{html.escape(item.question)}</h3>\n{resposta}")
-    return "\n".join(partes)
+    return [
+        {
+            "question": item.question,
+            "answer_html": sanitizar_html(
+                markdown_para_html(item.answer), dominios_permitidos=set()
+            ),
+        }
+        for item in article.faq.all()
+        if item.is_selected
+    ]

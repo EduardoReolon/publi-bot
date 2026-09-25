@@ -233,7 +233,9 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "capas_em_curso": _capas_em_curso(artigo),
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "faq": artigo.faq.all(),
-        "faq_html": _faq_html(artigo, site),
+        # O FAQ vai num campo proprio, e o site so o exibe se implementou.
+        # Sem este aviso, a pessoa revisaria perguntas que ninguem vai ver.
+        "site_sem_faq": site is not None and not site.suporta("faq"),
         "proximo_horario": _proximo_horario(),
     }
 
@@ -488,12 +490,6 @@ def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
         messages.info(request, _("Nada mudou."))
 
     return redirect("content:revisar", pk=artigo.pk)
-
-
-def _faq_html(artigo, site) -> str:
-    from apps.content.faq import montar_html
-
-    return montar_html(artigo, getattr(site, "content_language", "") or "pt-BR")
 
 
 @login_required

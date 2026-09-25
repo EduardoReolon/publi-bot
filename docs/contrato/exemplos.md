@@ -25,13 +25,15 @@ X-API-KEY: ...
 {
   "contract_versions": ["v1"],
   "implementation": "publibot-django 1.0.0",
-  "capabilities": ["idempotency", "hmac_signature", "author_photo", "qa", "reconciliation"],
+  "capabilities": ["idempotency", "hmac_signature", "author_photo", "qa", "reconciliation", "faq"],
   "server_time": "2026-08-29T14:02:11Z"
 }
 ```
 
 Um site que nao declara `qa` nunca recebe resposta de pergunta. Um que nao
-declara `author_photo` recebe os dados textuais do autor e nada mais.
+declara `author_photo` recebe os dados textuais do autor e nada mais. Um que
+nao declara `faq` recebe o campo `faq` do mesmo jeito, e pode ignora-lo — mas
+quem revisa o artigo e avisado de que as perguntas nao vao aparecer.
 
 ---
 
@@ -68,6 +70,16 @@ Idempotency-Key: 5f3c1a90-4e2b-4b3a-9f1e-7d2c8a6b4e10
   "reviewed_at": "2026-08-29T13:40:02Z",
   "content_disclosure": "Conteudo produzido com apoio de inteligencia artificial a partir de literatura tecnica e revisado por Joana Ribeiro (Nutricionista, CRN-3 45678). Nao substitui orientacao profissional.",
   "canonical_source": "https://revista.exemplo.org/estudo",
+  "faq": [
+    {
+      "question": "Medir a pressao em casa substitui a consulta?",
+      "answer_html": "<p>Nao. A medida em casa complementa o acompanhamento, e os valores devem ser levados a consulta.</p>"
+    },
+    {
+      "question": "Qual o melhor horario para medir?",
+      "answer_html": "<p>Sempre no mesmo horario, depois de alguns minutos sentada e em repouso.</p>"
+    }
+  ],
   "status": "published",
   "publish_at": null
 }

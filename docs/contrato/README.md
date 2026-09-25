@@ -163,6 +163,47 @@ alcancaveis por URL.
 ninguem escolheu, o artigo chega sem `cover_image`, e nao com um objeto vazio.
 Trate a ausencia como normal.
 
+## Perguntas frequentes
+
+Recurso `faq`. O artigo pode trazer `faq`: uma lista de
+`{question, answer_html}`, na ordem em que as perguntas devem aparecer.
+
+```json
+"faq": [
+  {"question": "Medir a pressao em casa substitui a consulta?",
+   "answer_html": "<p>Nao. A medida em casa complementa o acompanhamento.</p>"}
+]
+```
+
+**Chegam separadas do `html_content` de proposito.** Onde e como exibir e
+decisao sua, porque depende do seu layout: um bloco no fim do artigo, uma
+sanfona, uma barra lateral. O PubliBot nao escolhe por voce, e o titulo do
+bloco ("Perguntas frequentes", "FAQ") tambem e seu.
+
+Tres orientacoes, nenhuma delas obrigatoria:
+
+- **Exiba no mesmo endereco do artigo.** As perguntas foram escritas para
+  complementar aquele texto. Uma pagina propria para cada uma competiria com o
+  artigo na busca.
+- **Se usar sanfona, deixe o texto no HTML.** Resposta recolhida e indexada
+  normalmente, desde que esteja na pagina; carregada por script so ao clicar,
+  ela some para buscadores e leitores automaticos.
+- **JSON-LD `FAQPage` e opcional.** O Google deixou de exibir o resultado
+  enriquecido de FAQ em 2026, e diz que nao exige marcacao especial para os
+  recursos de IA. Nao atrapalha, mas nao espere efeito na busca.
+
+Regras:
+
+- **O campo pode nao vir.** Sem nenhuma pergunta selecionada, o artigo chega
+  sem `faq`, e nao com lista vazia.
+- **`question` e texto puro**: sanitize como o `title`.
+- **`answer_html` e HTML curto, sem links**: sanitize com a mesma lista do
+  `html_content` (ver [Sanitizacao](#sanitizacao-do-html-recebido)).
+- **Declare `faq` em `capabilities` so se exibir as perguntas.** O PubliBot
+  envia o campo de qualquer forma — um site que nao o conhece simplesmente o
+  ignora —, mas usa a declaracao para avisar a quem revisa quando as perguntas
+  nao vao aparecer.
+
 ## Imagens: sempre WebP
 
 **Toda imagem que trafega neste contrato e WebP**, seja por referencia
@@ -223,7 +264,9 @@ a img table thead tbody tr th td figure figcaption span div`
 - `href` e `src`: apenas `http`, `https` e `mailto`.
 - `script`, `iframe`, `object`, `embed`, `style`: recuse com `422`.
 
-Aplique tambem em `title`, `author.name` e no texto das perguntas.
+Aplique tambem em `title`, `author.name`, no texto das perguntas dos
+visitantes e em cada item de `faq` (`question` como texto puro, `answer_html`
+com a mesma lista acima).
 
 | Linguagem | Ferramenta |
 |---|---|
@@ -310,6 +353,14 @@ funcionar.
 
 - [ ] `GET /publications/?idempotency_key=` devolve a publicacao existente, ou
       lista vazia.
+
+**Se voce declarar `faq`**
+
+- [ ] `faq` pode nao vir. Ausencia e normal, nao erro.
+- [ ] `question` e sanitizado como texto puro, e `answer_html` com a lista de
+      permissao do `html_content`.
+- [ ] As perguntas sao exibidas no mesmo endereco do artigo, com o texto das
+      respostas presente no HTML (mesmo que recolhido).
 
 **Imagem de capa**
 

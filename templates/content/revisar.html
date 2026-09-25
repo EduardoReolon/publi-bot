@@ -332,12 +332,20 @@
     <h2>{% translate "Perguntas frequentes" %}</h2>
     <p class="pre-visualizacao">
       {% blocktranslate trimmed %}
-        Saem no fim do artigo, visiveis, so as marcadas. O modelo sugere
-        algumas e ja marca as mais relevantes; edite, desmarque, apague ou
-        escreva a sua. Menos perguntas boas valem mais que muitas que so
-        repetem o texto.
+        Vao para o site separadas do texto, so as marcadas, e o site decide
+        onde e como exibi-las. O modelo sugere algumas e ja marca as mais
+        relevantes; edite, desmarque, apague ou escreva a sua. Menos perguntas
+        boas valem mais que muitas que so repetem o texto.
       {% endblocktranslate %}
     </p>
+    {% if site_sem_faq %}
+      <p class="aviso">
+        {% blocktranslate trimmed %}
+          O site conectado nao declara o recurso <code>faq</code>: as perguntas
+          serao enviadas, mas ele provavelmente nao vai exibi-las.
+        {% endblocktranslate %}
+      </p>
+    {% endif %}
 
     <form method="post" action="{% url 'content:salvar_faq' artigo.pk %}">
       {% csrf_token %}
@@ -441,7 +449,7 @@
             atualizar esta previa.
           {% endblocktranslate %}
         </p>
-        <div class="renderizado">{{ artigo.body_html|safe }}{{ faq_html|safe }}</div>
+        <div class="renderizado">{{ artigo.body_html|safe }}</div>
       </div>
 
       <div>

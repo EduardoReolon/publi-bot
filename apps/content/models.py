@@ -729,8 +729,8 @@ class ArticleFaq(models.Model):
     nenhuma.
 
     Fica fora do `body_markdown` de proposito: refazer ou replanejar o texto
-    nao apaga o FAQ revisado, e o FAQ entra no HTML so na publicacao
-    (`apps/integrations/publishing.py`).
+    nao apaga o FAQ revisado. E viaja num campo proprio do payload (`faq`),
+    para o site decidir onde e como exibir (`apps/integrations/publishing.py`).
     """
 
     class Origin(models.TextChoices):
