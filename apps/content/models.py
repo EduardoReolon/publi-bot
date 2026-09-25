@@ -713,6 +713,51 @@ class ArticleImage(models.Model):
         return f"Capa {self.batch}.{self.order} de {self.article}"
 
 
+class ArticleFaq(models.Model):
+    """Uma pergunta frequente do artigo, com a resposta curta.
+
+    Nao e truque de schema. O resultado rico de FAQ no Google acabou (restrito
+    a governo e saude em 2023, removido de vez em 2026), e o Google diz que
+    nao ha marcacao especial para os recursos de IA. O que sobra e conteudo:
+    responder de forma direta as duvidas VIZINHAS do tema, as que o texto nao
+    cobre de frente e que o leitor — ou um buscador que extrai respostas —
+    procura em seguida.
+
+    Por isso o modelo gera mais do que entra: as mais relevantes ja vem
+    marcadas, as outras ficam para quem revisa escolher, editar ou apagar.
+    Pergunta de enchimento, que so repete um titulo do artigo, e pior que
+    nenhuma.
+
+    Fica fora do `body_markdown` de proposito: refazer ou replanejar o texto
+    nao apaga o FAQ revisado, e o FAQ entra no HTML so na publicacao
+    (`apps/integrations/publishing.py`).
+    """
+
+    class Origin(models.TextChoices):
+        LLM = "llm", _("Gerada")
+        HUMAN = "human", _("Escrita por humano")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    article = models.ForeignKey(
+        Article, on_delete=models.CASCADE, related_name="faq", verbose_name=_("artigo")
+    )
+    order = models.PositiveSmallIntegerField(_("ordem"), default=0)
+    question = models.CharField(_("pergunta"), max_length=300)
+    answer = models.TextField(_("resposta"))
+    # So as selecionadas vao ao site. Gerada nao e publicada: e sugestao.
+    is_selected = models.BooleanField(_("incluir no artigo"), default=False)
+    origin = models.CharField(_("origem"), max_length=8, choices=Origin.choices, default=Origin.LLM)
+    updated_at = models.DateTimeField(_("atualizada em"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("pergunta frequente")
+        verbose_name_plural = _("perguntas frequentes")
+        ordering = ["article", "order", "question"]
+
+    def __str__(self) -> str:
+        return self.question
+
+
 class Question(models.Model):
     """Duvida deixada por um visitante do site.
 

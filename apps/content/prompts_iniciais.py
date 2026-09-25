@@ -293,6 +293,41 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Produza o JSON."
         ),
     },
+    "article_faq": {
+        "descricao": "Perguntas frequentes do artigo, para a revisao escolher.",
+        "variaveis": ["titulo", "palavra_chave", "esqueleto", "fontes", "idioma"],
+        "temperatura": 0.3,
+        "sistema": (
+            "Voce escreve o bloco de perguntas frequentes que fecha um artigo.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "perguntas": lista de ate 6 objetos {"pergunta", "resposta"}, da '
+            "MAIS para a MENOS relevante para quem leu o artigo.\n\n"
+            "O que e uma boa pergunta aqui:\n"
+            "- uma duvida VIZINHA que o leitor teria em seguida, escrita como ele "
+            "digitaria numa busca;\n"
+            "- NAO repita o titulo de uma secao do artigo em forma de pergunta: "
+            "isso so duplica o texto;\n"
+            "- menos perguntas boas valem mais que seis fracas. Se so houver "
+            "tres, devolva tres.\n\n"
+            "A resposta:\n"
+            "- 2 a 4 frases. A PRIMEIRA ja responde a pergunta, sem rodeio;\n"
+            '- informativa sobre o tema, nunca orientacao pessoal ("no seu '
+            'caso", "voce deve");\n'
+            "- NUNCA escreva endereco da web nem marcador de fonte;\n"
+            "- NUNCA invente numero, percentual, dose, data ou resultado de "
+            "estudo: dado especifico so se estiver nas fontes. Na duvida, "
+            "escreva a frase mais geral."
+        ),
+        "usuario": (
+            "Titulo: {titulo}\n"
+            "Palavra-chave: {palavra_chave}\n"
+            "Idioma: {idioma}\n\n"
+            "Secoes que o artigo ja cobre:\n{esqueleto}\n\n"
+            "Fontes do artigo:\n{fontes}\n\n"
+            "Produza o JSON."
+        ),
+    },
     "topic_ideation": {
         "descricao": "Sugere pautas evitando repetir o que o site ja publicou.",
         "variaveis": ["nicho", "publicados", "temas_do_corpus"],

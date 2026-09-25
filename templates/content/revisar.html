@@ -329,6 +329,59 @@
       </div>
     </form>
 
+    <h2>{% translate "Perguntas frequentes" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Saem no fim do artigo, visiveis, so as marcadas. O modelo sugere
+        algumas e ja marca as mais relevantes; edite, desmarque, apague ou
+        escreva a sua. Menos perguntas boas valem mais que muitas que so
+        repetem o texto.
+      {% endblocktranslate %}
+    </p>
+
+    <form method="post" action="{% url 'content:salvar_faq' artigo.pk %}">
+      {% csrf_token %}
+      <ul class="lista">
+        {% for item in faq %}
+          <li>
+            <label style="display:flex; gap:.5rem; align-items:center; font-weight:400">
+              <input type="checkbox" name="faq_{{ item.pk }}_incluir" value="1"
+                     {% if item.is_selected %}checked{% endif %} style="width:auto">
+              <span>{% translate "incluir no artigo" %}</span>
+              {% if item.origin == 'human' %}
+                <span class="selo ok">{% translate "escrita por voce" %}</span>
+              {% endif %}
+            </label>
+            <div class="campo">
+              <input type="text" name="faq_{{ item.pk }}_pergunta" value="{{ item.question }}"
+                     maxlength="300" aria-label="{% translate 'Pergunta' %}">
+            </div>
+            <textarea name="faq_{{ item.pk }}_resposta" class="curto" rows="3"
+                      aria-label="{% translate 'Resposta' %}">{{ item.answer }}</textarea>
+            <label style="display:flex; gap:.5rem; align-items:center; font-weight:400; margin-top:.4rem">
+              <input type="checkbox" name="faq_{{ item.pk }}_apagar" value="1" style="width:auto">
+              <span>{% translate "apagar" %}</span>
+            </label>
+          </li>
+        {% empty %}
+          <li class="vazio">{% translate "Nenhuma pergunta ainda." %}</li>
+        {% endfor %}
+        <li>
+          <div class="campo">
+            <label for="faq_nova_pergunta">{% translate "Nova pergunta" %}</label>
+            <input type="text" name="faq_nova_pergunta" id="faq_nova_pergunta" maxlength="300">
+          </div>
+          <textarea name="faq_nova_resposta" class="curto" rows="3"
+                    aria-label="{% translate 'Resposta da nova pergunta' %}"></textarea>
+        </li>
+      </ul>
+      <div class="acoes">
+        <button type="submit" class="botao secundario">
+          {% translate "Salvar perguntas frequentes" %}
+        </button>
+      </div>
+    </form>
+
   {% if titulos_sugeridos %}
     <h2>{% translate "Titulos sugeridos" %}</h2>
     <p class="pre-visualizacao">
@@ -388,7 +441,7 @@
             atualizar esta previa.
           {% endblocktranslate %}
         </p>
-        <div class="renderizado">{{ artigo.body_html|safe }}</div>
+        <div class="renderizado">{{ artigo.body_html|safe }}{{ faq_html|safe }}</div>
       </div>
 
       <div>

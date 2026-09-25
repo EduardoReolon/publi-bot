@@ -123,8 +123,16 @@ METADADOS = json.dumps(
     }
 )
 
+FAQ = json.dumps(
+    {
+        "perguntas": [
+            {"pergunta": f"Pergunta {n}?", "resposta": f"Resposta direta {n}."} for n in range(1, 6)
+        ]
+    }
+)
+
 # O roteiro completo do fluxo do artigo, na ordem em que o modelo e chamado.
-ROTEIRO_DO_ARTIGO = [TESE, PLANO, SECAO_A, SECAO_B, MOLDURA, METADADOS]
+ROTEIRO_DO_ARTIGO = [TESE, PLANO, SECAO_A, SECAO_B, MOLDURA, METADADOS, FAQ]
 
 
 def _rodar_ate_o_fim(job_id: str, maximo: int = 30) -> str:
@@ -363,8 +371,8 @@ def test_cada_secao_e_uma_chamada_com_contexto_proprio(tenant_com_acervo, conexa
     artigo = Article.objects.get(topic=topic)
     assert artigo.sections.count() == 2
 
-    # Seis chamadas: tese, plano, duas secoes, moldura, metadados.
-    assert len(modelo.chamadas) == 6
+    # Sete chamadas: tese, plano, duas secoes, moldura, metadados, FAQ.
+    assert len(modelo.chamadas) == 7
 
     primeira, segunda = modelo.chamadas[2], modelo.chamadas[3]
     assert "O que a literatura mostra" in primeira["user"]
@@ -400,8 +408,9 @@ def test_o_trabalho_retoma_na_secao_seguinte(tenant_com_acervo, conexao, monkeyp
     _rodar_ate_o_fim(str(job.pk))
     artigo.refresh_from_db()
     assert all(s.escrita for s in artigo.sections.all())
-    # A primeira secao nao foi reescrita: o modelo foi chamado uma vez por secao.
-    assert len(modelo.chamadas) == 6
+    # A primeira secao nao foi reescrita: o modelo foi chamado uma vez por secao
+    # (tese, plano, duas secoes, moldura, metadados, FAQ).
+    assert len(modelo.chamadas) == 7
 
 
 @pytest.mark.django_db

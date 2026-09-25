@@ -41,7 +41,7 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
         "idempotency_key": str(article.idempotency_key),
         "title": article.title,
         "slug": article.slug,
-        "html_content": article.body_html,
+        "html_content": _corpo_com_faq(article, site),
         "excerpt": article.excerpt,
         "meta_description": article.meta_description[:160],
         "focus_keyword": article.focus_keyword,
@@ -64,6 +64,20 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
         payload["cover_image"] = capa
 
     return payload
+
+
+def _corpo_com_faq(article: Article, site: Site) -> str:
+    """O corpo, seguido das perguntas frequentes SELECIONADAS.
+
+    Anexado aqui, e nao gravado no `body_html`: editar ou refazer o texto nao
+    pode apagar o FAQ revisado, e desmarcar uma pergunta tem de valer no
+    proximo envio sem remontar nada. Vai dentro do `html_content` para que
+    nenhum site precise mudar para exibi-lo.
+    """
+    from apps.content.faq import montar_html
+
+    faq = montar_html(article, site.content_language)
+    return f"{article.body_html}\n{faq}" if faq else article.body_html
 
 
 def _capa_do_artigo(article: Article) -> dict | None:

@@ -232,6 +232,8 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "motivo_sem_capa": _motivo_sem_capa(artigo),
         "capas_em_curso": _capas_em_curso(artigo),
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
+        "faq": artigo.faq.all(),
+        "faq_html": _faq_html(artigo, site),
         "proximo_horario": _proximo_horario(),
     }
 
@@ -485,6 +487,26 @@ def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
     else:
         messages.info(request, _("Nada mudou."))
 
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+def _faq_html(artigo, site) -> str:
+    from apps.content.faq import montar_html
+
+    return montar_html(artigo, getattr(site, "content_language", "") or "pt-BR")
+
+
+@login_required
+@require_POST
+def salvar_faq(request: HttpRequest, pk) -> HttpResponse:
+    """Marca, edita, apaga e acrescenta perguntas frequentes, num formulario so."""
+    from apps.content.faq import salvar_revisao
+
+    artigo = get_object_or_404(Article, pk=pk)
+    if salvar_revisao(artigo, request.POST):
+        messages.success(request, _("Perguntas frequentes salvas."))
+    else:
+        messages.info(request, _("Nada mudou."))
     return redirect("content:revisar", pk=artigo.pk)
 
 

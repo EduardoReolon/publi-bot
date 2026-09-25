@@ -431,6 +431,33 @@ def passo_montar(job: GenerationJob) -> dict:
     return {"article_id": str(article.pk), "palavras": article.word_count}
 
 
+def passo_perguntas_frequentes(job: GenerationJob) -> dict:
+    """Sugere o FAQ do artigo, com as mais relevantes ja marcadas.
+
+    Como a capa, vem depois de montar e nao derruba o trabalho: o artigo ja
+    esta gravado, e um JSON ruim aqui custa so o FAQ. Quem revisa pode
+    escrever as perguntas a mao. Maquina ocupada, por outro lado, continua
+    sendo adiamento — `executar_prompt` levanta `PassoAdiado`, que nao e
+    capturado aqui.
+    """
+    from apps.content.faq import gerar
+    from apps.inference.providers.base import ProviderPermanentError
+
+    article = _artigo_do_job(job)
+
+    try:
+        criadas = gerar(article, site=_site_do_tenant(), job=job)
+    except (ValueError, LookupError, ProviderPermanentError) as exc:
+        logger.warning("Artigo %s saiu sem perguntas frequentes: %s", article.pk, exc)
+        return {"article_id": str(article.pk), "faq": 0, "motivo": str(exc)}
+
+    return {
+        "article_id": str(article.pk),
+        "faq": len(criadas),
+        "marcadas": sum(1 for item in criadas if item.is_selected),
+    }
+
+
 # Teto de adiamentos da imagem por motivo passageiro: worker fora do ar
 # (conexao recusada, nada rodou) ou um 503 dele ("nao e a hora"). Adiar nao
 # gasta tentativa no orquestrador, entao sem teto um worker que nunca volta
@@ -694,6 +721,10 @@ def passo_responder(job: GenerationJob) -> dict:
 #
 # "redigir secoes" se repete: uma chamada por secao, com `Continuar`.
 #
+# "perguntas frequentes" vem depois de montar pelo mesmo motivo da capa: usa o
+# artigo pronto (o esqueleto, para nao repetir secao) e, se falhar, custa so o
+# FAQ.
+#
 # "gerar capas" fecha a fila porque a ilustracao acompanha o texto: quem revisa
 # encontra as opcoes ja prontas na tela em vez de pedir e esperar. Fica por
 # ultimo, e nao derruba o trabalho se falhar, porque a essa altura o artigo ja
@@ -709,7 +740,8 @@ registrar_fluxo(
             Passo(numero=4, nome="abertura e fecho", executar=passo_abertura_e_fecho),
             Passo(numero=5, nome="metadados de busca", executar=passo_metadados_de_busca),
             Passo(numero=6, nome="montar", executar=passo_montar),
-            Passo(numero=7, nome="gerar capas", executar=passo_gerar_capas),
+            Passo(numero=7, nome="perguntas frequentes", executar=passo_perguntas_frequentes),
+            Passo(numero=8, nome="gerar capas", executar=passo_gerar_capas),
         ],
     )
 )
