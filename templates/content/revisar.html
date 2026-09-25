@@ -281,6 +281,21 @@
       {% endif %}
     {% endfor %}
 
+    {% if motivo_sem_capa and lotes_de_capa %}
+      {% comment %}
+        O ultimo pedido falhou, mas ha lotes anteriores na tela. Sem este aviso
+        a pagina ficaria igual a antes do clique, e a falha passaria por
+        "ainda nao terminou".
+      {% endcomment %}
+      <div class="aviso ruim">
+        <strong>{% translate "O ultimo lote de capas nao foi gerado:" %}</strong>
+        {{ motivo_sem_capa }}
+        <div class="pre-visualizacao" style="margin-top:.4rem">
+          {% translate "As opcoes anteriores continuam disponiveis. Resolvido isso, o botao abaixo tenta de novo." %}
+        </div>
+      </div>
+    {% endif %}
+
     {% if capas_em_curso %}
       {% comment %}
         Sem este aviso a tela fica igual a de antes do clique — e o clique
@@ -293,6 +308,11 @@
           Pode levar alguns minutos: a placa e dividida com a geracao de texto.
           Atualize a pagina para ver, ou acompanhe em Operacao.
         {% endblocktranslate %}
+        {% if capas_em_curso.last_error %}
+          <div class="pre-visualizacao" style="margin-top:.4rem">
+            {% translate "Tentando de novo depois de:" %} {{ capas_em_curso.last_error }}
+          </div>
+        {% endif %}
       </div>
     {% endif %}
 

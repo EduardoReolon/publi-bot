@@ -71,7 +71,7 @@ def geracao_falsa(monkeypatch):
     monkeypatch.setattr("apps.content.capas._registrar_uso", lambda *a, **k: None)
     monkeypatch.setattr(
         "apps.content.capas.descrever_capa",
-        lambda article, site=None: ("a monitor on a wooden table", None),
+        lambda article, site=None, job=None: ("a monitor on a wooden table", None),
     )
     monkeypatch.setattr("apps.inference.providers.base.get_image_provider", lambda *a, **k: gerador)
 
@@ -173,7 +173,7 @@ def test_provedor_que_so_devolve_uma_por_vez_ainda_entrega_tres(artigo, monkeypa
     )
     monkeypatch.setattr("apps.content.capas._registrar_uso", lambda *a, **k: None)
     monkeypatch.setattr(
-        "apps.content.capas.descrever_capa", lambda article, site=None: ("uma cena", None)
+        "apps.content.capas.descrever_capa", lambda article, site=None, job=None: ("uma cena", None)
     )
     monkeypatch.setattr("apps.inference.providers.base.get_image_provider", lambda *a, **k: gerador)
     monkeypatch.setattr("apps.inference.leases.reserva", lambda *a, **k: contextlib.nullcontext())

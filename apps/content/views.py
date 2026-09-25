@@ -274,25 +274,21 @@ def _lotes_de_capa(artigo) -> list[dict]:
 
 
 def _motivo_sem_capa(artigo) -> str:
-    """Por que a geracao automatica de capa nao produziu nada.
+    """Por que o pedido de capa mais recente nao produziu nada.
 
-    O passo de capa nao derruba o trabalho: ele grava o motivo e segue, porque
-    a essa altura o artigo ja esta pronto (apps/content/flows.py). O preco
-    disso e que a falha fica escondida num payload — a tela mostraria apenas
-    "nenhuma opcao gerada ainda", que e o mesmo texto de quem nunca pediu.
+    O passo de capa do fluxo do artigo nao derruba o trabalho: ele grava o
+    motivo e segue, porque a essa altura o artigo ja esta pronto
+    (apps/content/flows.py). O botao "gerar mais", ao contrario, termina FALHO.
+    Nos dois casos, sem trazer o motivo para ca a tela ficaria igual a de quem
+    nunca pediu — ou, com lotes anteriores na tela, igual a antes do clique.
 
-    Trazer o motivo para ca e o que separa "ainda nao pedi" de "falta cadastrar
-    a conexao de imagem".
+    Olha so o trabalho MAIS RECENTE: um lote que saiu depois de uma falha
+    responde por ela.
     """
     from apps.ops.models import GenerationJob
 
-    if artigo.images.exists():
-        return ""
-
     # Os dois caminhos que geram capa: o passo do fluxo do artigo (que aponta
-    # para a PAUTA) e o botao da tela (que aponta para o ARTIGO). O mais
-    # recente dos dois e o que explica a ausencia — olhar so o primeiro deixava
-    # a falha do botao invisivel, agora que ele tambem e trabalho de fila.
+    # para a PAUTA) e o botao da tela (que aponta para o ARTIGO).
     #
     # O ramo da pauta so entra quando ela existe: `target_object_id` e UUID, e
     # um artigo sem pauta produziria a string "None", que o banco recusa ao
@@ -304,6 +300,9 @@ def _motivo_sem_capa(artigo) -> str:
     job = GenerationJob.objects.filter(alvos).order_by("-created_at").first()
     if job is None:
         return ""
+
+    if job.kind == GenerationJob.Kind.ARTICLE_COVER and job.status == GenerationJob.Status.FAILED:
+        return job.last_error
 
     for payload in (job.step_payloads or {}).values():
         # `capas` no payload identifica o passo da capa sem depender do numero

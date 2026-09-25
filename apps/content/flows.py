@@ -431,6 +431,13 @@ def passo_montar(job: GenerationJob) -> dict:
     return {"article_id": str(article.pk), "palavras": article.word_count}
 
 
+# Quantas vezes a imagem pode falhar por motivo passageiro (tempo esgotado,
+# conexao recusada, 5xx) antes de o passo desistir. Adiar nao gasta tentativa
+# no orquestrador, entao sem este teto um worker travado — vivo, segurando a
+# placa, sem nunca responder — deixaria o trabalho esperando para sempre.
+TENTATIVAS_DE_IMAGEM = 3
+
+
 def passo_gerar_capas(job: GenerationJob) -> dict:
     """Gera as opcoes de capa junto com o artigo, sem esperar um clique.
 
@@ -439,12 +446,20 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
     artigo ja esta gravado e aguardando revisao: se a ilustracao falhar, o que
     se perde e a ilustracao, nao o texto.
 
-    E por isso este passo nao derruba o trabalho. Sem conexao de imagem
-    cadastrada, ou com o gerador fora do ar, ele registra o motivo no payload
-    e termina. A tela de revisao continua oferecendo "gerar opcoes de capa"
-    para o momento em que a conexao existir — o contrario (marcar o trabalho
-    inteiro como falho depois do artigo pronto) mandaria alguem investigar uma
-    geracao que deu certo.
+    O que acontece numa falha depende de quem pediu:
+
+    * **No fluxo do artigo**, a falha nao derruba o trabalho. O motivo fica no
+      payload e a tela de revisao o mostra — marcar o trabalho inteiro como
+      falho depois do artigo pronto mandaria alguem investigar uma geracao que
+      deu certo.
+    * **No botao "gerar mais"**, a capa E o trabalho. Terminar como concluido
+      sem imagem nenhuma e mentir para quem clicou: a tela voltava igual, sem
+      aviso, e o trabalho aparecia como sucesso em Operacao. Ali a falha sobe e
+      o trabalho termina FALHO, com o motivo.
+
+    Nos dois casos, uma falha passageira do gerador (tempo esgotado, worker
+    fora do ar) e adiada e tentada de novo, ate `TENTATIVAS_DE_IMAGEM`. So
+    depois disso vale a regra acima.
 
     Gerar nao e escolher: nenhuma das opcoes entra no artigo sozinha. A capa
     continua sendo escolha de quem revisa (apps/content/capas.py).
@@ -453,15 +468,17 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
         GeradorDeImagemOcupado,
         LimiteDeLotes,
         SemConexaoDeImagem,
+        falhas_de_imagem_do_job,
         gerar_opcoes,
     )
     from apps.inference.leases import SemCapacidade
     from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
 
     article = _artigo_do_job(job)
+    gravado = None if job._state.adding else job
 
     try:
-        criadas = gerar_opcoes(article, site=_site_do_tenant())
+        criadas = gerar_opcoes(article, site=_site_do_tenant(), job=gravado)
     except (SemCapacidade, GeradorDeImagemOcupado) as exc:
         # Maquina ocupada nao e falha: a capa espera a vez como qualquer outra
         # inferencia. `PassoAdiado` nao gasta tentativa.
@@ -469,14 +486,26 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
         # As duas excecoes sao o mesmo fato em camadas diferentes: a escolha da
         # conexao nao achou vaga, ou achou e a reserva a perdeu no caminho.
         raise PassoAdiado(str(exc), tentar_em_segundos=180) from exc
-    except (
-        SemConexaoDeImagem,
-        LimiteDeLotes,
-        ProviderTransientError,
-        ProviderPermanentError,
-    ) as exc:
-        logger.warning("Artigo %s saiu sem opcoes de capa: %s", article.pk, exc)
-        return {"article_id": str(article.pk), "capas": 0, "motivo": str(exc)}
+    except ProviderTransientError as exc:
+        falhas = falhas_de_imagem_do_job(gravado)
+        if falhas < TENTATIVAS_DE_IMAGEM:
+            espera = getattr(exc, "retry_after", None) or 300
+            raise PassoAdiado(
+                f"gerador de imagem sem resposta (tentativa {falhas} de "
+                f"{TENTATIVAS_DE_IMAGEM}): {exc}",
+                tentar_em_segundos=espera,
+            ) from exc
+        motivo = (
+            f"o gerador de imagem falhou {falhas} vezes seguidas e o lote foi "
+            f"abandonado. Ultimo erro: {exc}"
+        )
+        return _sem_capa(job, article, motivo)
+    except (SemConexaoDeImagem, LimiteDeLotes, ProviderPermanentError) as exc:
+        return _sem_capa(job, article, str(exc))
+
+    if not criadas:
+        # O provedor respondeu, mas nenhuma opcao abriu. Tambem nao e sucesso.
+        return _sem_capa(job, article, "o gerador respondeu, mas nenhuma imagem pode ser lida.")
 
     logger.info("Artigo %s: %s opcao(oes) de capa geradas junto.", article.pk, len(criadas))
     return {
@@ -486,8 +515,20 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
         # olha a fila esta investigando POR QUE a capa saiu ruim, e ali o
         # artigo pode nem ter sido aberto ainda. Um por lote: as tres opcoes
         # saem da mesma descricao.
-        "prompt": criadas[0].prompt if criadas else "",
+        "prompt": criadas[0].prompt,
     }
+
+
+class CapaNaoGerada(RuntimeError):
+    """O lote pedido pelo botao nao saiu. Sobe ate o orquestrador, que marca o
+    trabalho como FALHO com esta mensagem."""
+
+
+def _sem_capa(job: GenerationJob, article: Article, motivo: str) -> dict:
+    logger.warning("Artigo %s saiu sem opcoes de capa: %s", article.pk, motivo)
+    if job.kind == GenerationJob.Kind.ARTICLE_COVER:
+        raise CapaNaoGerada(motivo)
+    return {"article_id": str(article.pk), "capas": 0, "motivo": motivo}
 
 
 def _chunks_por_id(ids: list[str]) -> list[SuperChunk]:

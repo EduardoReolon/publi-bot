@@ -556,16 +556,19 @@ def test_o_prompt_entra_no_payload_do_trabalho(tenant_com_acervo, imagem_falsa, 
 @pytest.mark.django_db
 def test_o_payload_sem_capa_nao_inventa_prompt(tenant_com_acervo, monkeypatch):
     """Sem conexao de imagem nao houve descricao nenhuma. Um campo vazio ali
-    seria lido como "o prompt era vazio", que e outra coisa."""
+    seria lido como "o prompt era vazio", que e outra coisa.
+
+    No fluxo do artigo: e ali que a falta de capa vira payload. O botao
+    "gerar mais" termina FALHO em vez disso."""
     from apps.content.flows import passo_gerar_capas
     from apps.content.models import Article
     from apps.ops.models import GenerationJob
 
     artigo = Article.objects.create(title="RFM", body_markdown="Texto.")
     job = GenerationJob.objects.create(
-        kind=GenerationJob.Kind.ARTICLE_COVER,
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
         target_object_id=str(artigo.pk),
-        total_steps=1,
+        total_steps=8,
     )
 
     payload = passo_gerar_capas(job)

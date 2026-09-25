@@ -115,7 +115,7 @@ def parece_portugues(texto: str) -> bool:
     return len(palavras & _PISTAS_DE_PORTUGUES) >= 2
 
 
-def descrever_capa(article: Article, *, site=None) -> tuple[str, object]:
+def descrever_capa(article: Article, *, site=None, job=None) -> tuple[str, object]:
     """Pede ao modelo de texto uma descricao concreta para a imagem.
 
     Duas etapas — descrever, depois gerar — e nao uma so: modelos de imagem
@@ -131,6 +131,7 @@ def descrever_capa(article: Article, *, site=None) -> tuple[str, object]:
             "resumo": article.excerpt or article.meta_description or article.title,
         },
         site=site,
+        job=job,
     )
     descricao = resultado.texto.strip()
 
@@ -147,11 +148,21 @@ def descrever_capa(article: Article, *, site=None) -> tuple[str, object]:
 
 
 def gerar_opcoes(
-    article: Article, *, quantidade: int = OPCOES_POR_LOTE, site=None
+    article: Article, *, quantidade: int = OPCOES_POR_LOTE, site=None, job=None
 ) -> list[ArticleImage]:
-    """Gera um lote novo de opcoes, sem tocar nos lotes anteriores."""
-    from apps.inference.leases import gerar_owner_key, reserva
-    from apps.inference.providers.base import get_image_provider
+    """Gera um lote novo de opcoes, sem tocar nos lotes anteriores.
+
+    Uma falha do provedor e registrada (disjuntor e `InferenceLog` com o
+    `job`) antes de subir. O log com o trabalho e o que permite ao passo contar
+    quantas vezes a imagem ja falhou e parar de tentar
+    (`falhas_de_imagem_do_job`).
+    """
+    from apps.inference.leases import gerar_owner_key, registrar_falha, reserva
+    from apps.inference.providers.base import (
+        ProviderPermanentError,
+        ProviderTransientError,
+        get_image_provider,
+    )
 
     lote = _proximo_lote(article)
     if lote > MAXIMO_DE_LOTES:
@@ -161,17 +172,22 @@ def gerar_opcoes(
         )
 
     conexao = _conexao_de_imagem()
-    descricao, prompt_run = descrever_capa(article, site=site)
+    descricao, prompt_run = descrever_capa(article, site=site, job=job)
 
     modelo = conexao.default_model
     if not modelo:
         raise SemConexaoDeImagem(f"a conexao {conexao.name!r} nao tem modelo padrao configurado.")
 
     cliente = get_image_provider(conexao)
-    with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
-        geradas = cliente.generate(
-            model=modelo, prompt=descricao, quantidade=quantidade, tamanho=_tamanho()
-        )
+    try:
+        with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
+            geradas = cliente.generate(
+                model=modelo, prompt=descricao, quantidade=quantidade, tamanho=_tamanho()
+            )
+    except (ProviderTransientError, ProviderPermanentError) as exc:
+        _registrar_falha_de_imagem(conexao, modelo, exc, job=job)
+        registrar_falha(conexao)
+        raise
 
     _registrar_uso(conexao, modelo, len(geradas))
     criadas = _gravar(article, geradas, lote=lote, descricao=descricao, prompt_run=prompt_run)
@@ -244,6 +260,36 @@ def _registrar_uso(conexao, modelo: str, quantas: int) -> None:
         # e e o que decide o custo neste provedor.
         output_tokens=quantas,
     )
+
+
+def _registrar_falha_de_imagem(conexao, modelo: str, exc: Exception, *, job=None) -> None:
+    from apps.inference.models import InferenceConnection
+    from apps.ops.models import InferenceLog
+
+    InferenceLog.objects.create(
+        connection=conexao,
+        job=job,
+        model_name=modelo,
+        workload=InferenceConnection.Workload.IMAGE,
+        succeeded=False,
+        error=str(exc)[:2000],
+    )
+
+
+def falhas_de_imagem_do_job(job) -> int:
+    """Quantas chamadas de imagem deste trabalho ja falharam.
+
+    Contado no `InferenceLog`, e nao num campo do trabalho: o adiamento nao
+    grava payload, e o log ja existe e ja diz o que aconteceu em cada vez.
+    """
+    from apps.inference.models import InferenceConnection
+    from apps.ops.models import InferenceLog
+
+    if job is None or job._state.adding:
+        return 0
+    return InferenceLog.objects.filter(
+        job=job, workload=InferenceConnection.Workload.IMAGE, succeeded=False
+    ).count()
 
 
 def _proximo_lote(article: Article) -> int:

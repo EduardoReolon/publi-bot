@@ -229,7 +229,7 @@ def imagem_falsa(monkeypatch):
     monkeypatch.setattr("apps.content.capas._registrar_uso", lambda *a, **k: None)
     monkeypatch.setattr(
         "apps.content.capas.descrever_capa",
-        lambda article, site=None: ("a monitor on a wooden table", None),
+        lambda article, site=None, job=None: ("a monitor on a wooden table", None),
     )
     monkeypatch.setattr(
         "apps.inference.providers.base.get_image_provider",

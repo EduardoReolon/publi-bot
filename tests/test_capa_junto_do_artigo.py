@@ -177,3 +177,126 @@ def test_o_passo_acha_o_artigo_pelo_alvo_do_trabalho(tenant_com_acervo, imagem_f
 
     assert resultado["capas"] == 3
     assert artigo.images.count() == 3
+
+
+# ---------------------------------------------------------------------------
+# O gerador que nao responde
+# ---------------------------------------------------------------------------
+# O caso real: o worker trocou de modelo de imagem, a carga passou do limite de
+# memoria e o kernel freou o processo ate ele quase parar. Vivo, sem responder,
+# segurando a placa. O cliente esgotou o tempo — e o botao "gerar mais" terminou
+# como CONCLUIDO, sem imagem e sem aviso nenhum na tela.
+class GeradorQueNaoResponde:
+    def __init__(self):
+        self.chamadas = 0
+
+    def generate(self, **kwargs):
+        from apps.inference.providers.base import ProviderTransientError
+
+        self.chamadas += 1
+        raise ProviderTransientError("nao foi possivel falar com o worker: timed out")
+
+
+@pytest.fixture
+def gerador_travado(monkeypatch, imagem_falsa):
+    from apps.inference.models import InferenceConnection
+
+    conexao_de_imagem = InferenceConnection.objects.create(
+        name="Imagem",
+        kind=InferenceConnection.Kind.IMAGE,
+        base_url="http://127.0.0.1:8090",
+        workloads=[InferenceConnection.Workload.IMAGE],
+        default_model="modelo-de-imagem",
+        max_concurrency=1,
+        is_active=True,
+    )
+    gerador = GeradorQueNaoResponde()
+    monkeypatch.setattr("apps.content.capas._conexao_de_imagem", lambda: conexao_de_imagem)
+    monkeypatch.setattr("apps.inference.providers.base.get_image_provider", lambda *a, **k: gerador)
+    return gerador
+
+
+def _pedir_mais_capas(artigo):
+    return GenerationJob.objects.create(
+        kind=GenerationJob.Kind.ARTICLE_COVER,
+        target_object_id=str(artigo.pk),
+        total_steps=1,
+    )
+
+
+@pytest.mark.django_db
+def test_gerador_sem_resposta_adia_em_vez_de_concluir(tenant_com_acervo, gerador_travado):
+    from apps.ops.orchestrator import avancar
+
+    artigo = Article.objects.create(title="Pronto", body_markdown="Texto.")
+    job = _pedir_mais_capas(artigo)
+
+    situacao = avancar(str(job.pk))
+
+    job.refresh_from_db()
+    assert situacao == GenerationJob.Status.WAITING_CAPACITY
+    assert job.next_attempt_at is not None
+    assert "timed out" in job.last_error
+
+
+@pytest.mark.django_db
+def test_botao_termina_falho_quando_as_tentativas_acabam(tenant_com_acervo, gerador_travado):
+    """Concluido sem imagem e mentira para quem clicou. FALHO, com o motivo,
+    e o que manda uma pessoa olhar o gerador — ou clicar de novo."""
+    from apps.content.flows import TENTATIVAS_DE_IMAGEM
+    from apps.ops.orchestrator import avancar
+
+    artigo = Article.objects.create(title="Pronto", body_markdown="Texto.")
+    job = _pedir_mais_capas(artigo)
+
+    for _ in range(TENTATIVAS_DE_IMAGEM):
+        GenerationJob.objects.filter(pk=job.pk).update(next_attempt_at=None)
+        situacao = avancar(str(job.pk))
+
+    job.refresh_from_db()
+    assert situacao == GenerationJob.Status.FAILED
+    assert job.status == GenerationJob.Status.FAILED
+    assert "timed out" in job.last_error
+    assert gerador_travado.chamadas == TENTATIVAS_DE_IMAGEM
+    assert artigo.images.count() == 0
+
+
+@pytest.mark.django_db
+def test_no_fluxo_do_artigo_a_desistencia_nao_derruba_o_artigo(tenant_com_acervo, gerador_travado):
+    """Esgotadas as tentativas, o artigo pronto continua pronto: o motivo vai
+    para o payload, como ja ia na falta de conexao."""
+    from apps.content.flows import TENTATIVAS_DE_IMAGEM, passo_gerar_capas
+    from apps.ops.orchestrator import PassoAdiado
+
+    artigo = Article.objects.create(title="Pronto", body_markdown="Texto.")
+    job = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(artigo.pk),
+        total_steps=8,
+    )
+
+    for _ in range(TENTATIVAS_DE_IMAGEM - 1):
+        with pytest.raises(PassoAdiado):
+            passo_gerar_capas(job)
+    resultado = passo_gerar_capas(job)
+
+    assert resultado["capas"] == 0
+    assert "timed out" in resultado["motivo"]
+
+
+@pytest.mark.django_db
+def test_a_tela_mostra_a_falha_mesmo_com_lotes_anteriores(tenant_com_acervo, imagem_falsa):
+    """Com opcoes antigas na tela, o motivo sumia: a pagina ficava igual a de
+    antes do clique."""
+    from apps.content.capas import gerar_opcoes
+    from apps.content.views import _motivo_sem_capa
+
+    artigo = Article.objects.create(title="Pronto", body_markdown="Texto.")
+    gerar_opcoes(artigo)
+    job = _pedir_mais_capas(artigo)
+    GenerationJob.objects.filter(pk=job.pk).update(
+        status=GenerationJob.Status.FAILED, last_error="passo 0 (gerar capas): sem resposta"
+    )
+
+    assert artigo.images.exists()
+    assert "sem resposta" in _motivo_sem_capa(artigo)
