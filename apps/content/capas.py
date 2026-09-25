@@ -54,6 +54,13 @@ def _tamanho() -> str:
     return getattr(settings, "IMAGEM_TAMANHO", "1344x704")
 
 
+def _negativo() -> str:
+    """O prompt negativo, lido no momento da chamada (mesmo motivo de `_tamanho`)."""
+    from django.conf import settings
+
+    return getattr(settings, "IMAGEM_NEGATIVO", "")
+
+
 class SemConexaoDeImagem(RuntimeError):
     """Nenhuma conexao de geracao de imagem cadastrada e ativa."""
 
@@ -182,11 +189,20 @@ def gerar_opcoes(
     try:
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
             geradas = cliente.generate(
-                model=modelo, prompt=descricao, quantidade=quantidade, tamanho=_tamanho()
+                model=modelo,
+                prompt=descricao,
+                quantidade=quantidade,
+                tamanho=_tamanho(),
+                negativo=_negativo(),
             )
     except (ProviderTransientError, ProviderPermanentError) as exc:
         _registrar_falha_de_imagem(conexao, modelo, exc, job=job)
-        registrar_falha(conexao)
+        # Um 503 com `error.code` e o worker respondendo "nao e a hora" — ele
+        # esta de pe e decidindo. Pelo contrato dele, isso nao abre disjuntor:
+        # alguns minutos de disputa pela placa tirariam a conexao do ar para
+        # todos os trabalhos da fila.
+        if not (isinstance(exc, ProviderTransientError) and exc.code):
+            registrar_falha(conexao)
         raise
 
     _registrar_uso(conexao, modelo, len(geradas))

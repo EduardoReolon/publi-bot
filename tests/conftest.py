@@ -209,7 +209,7 @@ def _png_de_teste() -> bytes:
 class GeradorDeImagemFalso:
     """Devolve `revised_prompt` igual ao prompt recebido, como o worker faz."""
 
-    def generate(self, *, model, prompt, quantidade=3, tamanho="1344x704"):
+    def generate(self, *, model, prompt, quantidade=3, tamanho="1344x704", negativo=""):
         from apps.inference.providers.base import ImagemGerada
 
         return [

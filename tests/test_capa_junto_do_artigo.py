@@ -300,3 +300,73 @@ def test_a_tela_mostra_a_falha_mesmo_com_lotes_anteriores(tenant_com_acervo, ima
 
     assert artigo.images.exists()
     assert "sem resposta" in _motivo_sem_capa(artigo)
+
+
+class GeradorQueQuebra:
+    """O worker respondeu 500 `worker_travado` e se encerrou."""
+
+    def __init__(self):
+        self.chamadas = 0
+
+    def generate(self, **kwargs):
+        from apps.inference.providers.base import ProviderPermanentError
+
+        self.chamadas += 1
+        raise ProviderPermanentError(
+            "o worker quebrou (worker_travado): passou de 900s", code="worker_travado"
+        )
+
+
+@pytest.mark.django_db
+def test_worker_quebrado_falha_na_hora_sem_repetir(tenant_com_acervo, gerador_travado, monkeypatch):
+    """Repetir sozinho so repete a falha e prende a placa de novo."""
+    from apps.ops.orchestrator import avancar
+
+    quebrado = GeradorQueQuebra()
+    monkeypatch.setattr(
+        "apps.inference.providers.base.get_image_provider", lambda *a, **k: quebrado
+    )
+    artigo = Article.objects.create(title="Pronto", body_markdown="Texto.")
+    job = _pedir_mais_capas(artigo)
+
+    situacao = avancar(str(job.pk))
+
+    job.refresh_from_db()
+    assert situacao == GenerationJob.Status.FAILED
+    assert "worker_travado" in job.last_error
+    assert quebrado.chamadas == 1
+
+
+@pytest.mark.django_db
+def test_503_do_worker_nao_abre_o_disjuntor(tenant_com_acervo, gerador_travado, monkeypatch):
+    """Um 503 com codigo e o worker de pe dizendo "nao e a hora". Contado no
+    disjuntor, minutos de disputa tirariam a conexao do ar para a fila toda."""
+    from apps.content.capas import _conexao_de_imagem, gerar_opcoes
+    from apps.inference.providers.base import ProviderTransientError
+
+    class Ocupado:
+        def generate(self, **kwargs):
+            raise ProviderTransientError("HTTP 503", retry_after=40, code="gpu_ocupada")
+
+    monkeypatch.setattr(
+        "apps.inference.providers.base.get_image_provider", lambda *a, **k: Ocupado()
+    )
+    artigo = Article.objects.create(title="Pronto", body_markdown="Texto.")
+
+    for _ in range(6):
+        with pytest.raises(ProviderTransientError):
+            gerar_opcoes(artigo)
+
+    conexao = _conexao_de_imagem()
+    conexao.refresh_from_db()
+    assert conexao.consecutive_failures == 0
+    assert conexao.circuit_open_until is None
+
+
+def test_o_recuo_respeita_o_retry_after_como_piso():
+    from apps.content.flows import RECUO_MAXIMO_SEGUNDOS, _espera_da_imagem
+
+    assert _espera_da_imagem(1, 5) == 60
+    assert _espera_da_imagem(1, 300) == 300
+    assert _espera_da_imagem(3, None) == 240
+    assert _espera_da_imagem(20, None) == RECUO_MAXIMO_SEGUNDOS

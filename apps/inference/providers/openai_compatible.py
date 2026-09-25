@@ -168,7 +168,13 @@ class OpenAICompatibleImageClient(ImageClient):
         return cabecalhos
 
     def generate(
-        self, *, model: str, prompt: str, quantidade: int = 3, tamanho: str = "1024x1024"
+        self,
+        *,
+        model: str,
+        prompt: str,
+        quantidade: int = 3,
+        tamanho: str = "1024x1024",
+        negativo: str = "",
     ) -> list[ImagemGerada]:
         imagens: list[ImagemGerada] = []
 
@@ -180,7 +186,9 @@ class OpenAICompatibleImageClient(ImageClient):
             faltam = quantidade - len(imagens)
             if faltam <= 0:
                 break
-            lote = self._chamar(model=model, prompt=prompt, n=faltam, tamanho=tamanho)
+            lote = self._chamar(
+                model=model, prompt=prompt, n=faltam, tamanho=tamanho, negativo=negativo
+            )
             if not lote:
                 break
             imagens.extend(lote[:faltam])
@@ -191,7 +199,9 @@ class OpenAICompatibleImageClient(ImageClient):
             )
         return imagens
 
-    def _chamar(self, *, model: str, prompt: str, n: int, tamanho: str) -> list[ImagemGerada]:
+    def _chamar(
+        self, *, model: str, prompt: str, n: int, tamanho: str, negativo: str = ""
+    ) -> list[ImagemGerada]:
         import base64
 
         corpo = {
@@ -201,6 +211,11 @@ class OpenAICompatibleImageClient(ImageClient):
             "size": tamanho,
             "response_format": "b64_json",
         }
+        # O worker nao tem negativo proprio desde o contrato 2.6: o que for
+        # mandado aqui e o que vale. Vazio nao viaja — um campo vazio seria
+        # lido como "sem negativo" por uns provedores e recusado por outros.
+        if negativo:
+            corpo["negative_prompt"] = negativo
 
         try:
             with httpx.Client(timeout=self.timeout, verify=True) as cliente:
@@ -209,19 +224,40 @@ class OpenAICompatibleImageClient(ImageClient):
                     json=corpo,
                     headers=self._headers(),
                 )
-        except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+            # Recusada ANTES de enviar: o worker estava fora do ar ou
+            # reiniciando, e nada rodou. Adiavel, com teto.
             raise ProviderTransientError(
-                f"nao foi possivel falar com {self.base_url}: {exc}"
+                f"nao foi possivel conectar a {self.base_url}: {exc}"
+            ) from exc
+        except httpx.TransportError as exc:
+            # Cortada DEPOIS de aceita — conexao derrubada, resposta vazia, ou
+            # nenhuma resposta dentro do timeout (que e maior que o prazo duro
+            # do worker). O processo morreu no meio do trabalho, quase sempre
+            # por memoria, e o mesmo pedido tende a mata-lo de novo. Falha, e
+            # nao adiamento (contrato 2.6 do worker).
+            raise ProviderPermanentError(
+                f"a conexao com {self.base_url} caiu no meio da geracao "
+                f"({type(exc).__name__}: {exc}). O worker provavelmente morreu "
+                f"durante o trabalho — veja o journal da maquina da placa."
             ) from exc
         except httpx.HTTPError as exc:
             raise ProviderTransientError(str(exc)) from exc
 
         self._levantar_se_erro(resposta)
-        dados = resposta.json()
+
+        try:
+            dados = resposta.json()
+        except ValueError as exc:
+            raise ProviderPermanentError(
+                f"{self.base_url} respondeu {resposta.status_code} sem um JSON legivel."
+            ) from exc
+        if not isinstance(dados, dict):
+            raise ProviderPermanentError(f"{self.base_url} respondeu num formato inesperado.")
 
         geradas = []
         for item in dados.get("data") or []:
-            bruto = item.get("b64_json")
+            bruto = item.get("b64_json") if isinstance(item, dict) else None
             if not bruto:
                 continue
             try:
@@ -237,6 +273,19 @@ class OpenAICompatibleImageClient(ImageClient):
 
     @staticmethod
     def _levantar_se_erro(resposta: httpx.Response) -> None:
+        # 500 COM `error.code` e o worker dizendo que quebrou (hoje,
+        # `worker_travado`: passou do prazo duro e se encerrou). E o oposto do
+        # 503 — esperar nao resolve, e repetir so prende a placa de novo. Um
+        # 500 sem codigo continua no caminho geral: pode ser um provedor pago
+        # com um soluco.
+        if resposta.status_code == 500:
+            codigo = _codigo_do_erro(resposta)
+            if codigo:
+                raise ProviderPermanentError(
+                    f"o worker quebrou ({codigo}): {_mensagem_do_erro(resposta)}\n"
+                    f"Nao e repetido sozinho: alguem precisa olhar a maquina da placa.",
+                    code=codigo,
+                )
         OpenAICompatibleClient._levantar_se_erro(resposta)
 
     def health(self) -> bool:
@@ -265,6 +314,17 @@ def _codigo_do_erro(resposta: httpx.Response) -> str:
         return ""
     codigo = erro.get("code")
     return codigo if isinstance(codigo, str) else ""
+
+
+def _mensagem_do_erro(resposta: httpx.Response) -> str:
+    """O `error.message` do corpo, ou o texto cru. Nunca levanta."""
+    try:
+        corpo = resposta.json()
+    except ValueError:
+        return resposta.text[:500]
+    erro = corpo.get("error") if isinstance(corpo, dict) else None
+    mensagem = erro.get("message") if isinstance(erro, dict) else None
+    return mensagem if isinstance(mensagem, str) else resposta.text[:500]
 
 
 def _retry_after(resposta: httpx.Response) -> int | None:

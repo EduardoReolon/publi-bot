@@ -83,7 +83,13 @@ class ImageClient(ABC):
 
     @abstractmethod
     def generate(
-        self, *, model: str, prompt: str, quantidade: int = 3, tamanho: str = "1024x1024"
+        self,
+        *,
+        model: str,
+        prompt: str,
+        quantidade: int = 3,
+        tamanho: str = "1024x1024",
+        negativo: str = "",
     ) -> list[ImagemGerada]:
         """Gera `quantidade` opcoes DIFERENTES para o mesmo texto.
 
@@ -174,8 +180,10 @@ def get_image_provider(connection, *, timeout: float | None = None) -> ImageClie
             f"gera imagem. Cadastre uma conexao do tipo 'image'."
         )
 
+    from django.conf import settings
+
     return OpenAICompatibleImageClient(
         base_url=connection.base_url,
         api_key=decifrar_chave(connection),
-        timeout=timeout if timeout is not None else 300.0,
+        timeout=timeout if timeout is not None else float(settings.IMAGEM_TIMEOUT),
     )

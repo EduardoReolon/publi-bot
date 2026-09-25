@@ -431,11 +431,22 @@ def passo_montar(job: GenerationJob) -> dict:
     return {"article_id": str(article.pk), "palavras": article.word_count}
 
 
-# Quantas vezes a imagem pode falhar por motivo passageiro (tempo esgotado,
-# conexao recusada, 5xx) antes de o passo desistir. Adiar nao gasta tentativa
-# no orquestrador, entao sem este teto um worker travado — vivo, segurando a
-# placa, sem nunca responder — deixaria o trabalho esperando para sempre.
-TENTATIVAS_DE_IMAGEM = 3
+# Teto de adiamentos da imagem por motivo passageiro: worker fora do ar
+# (conexao recusada, nada rodou) ou um 503 dele ("nao e a hora"). Adiar nao
+# gasta tentativa no orquestrador, entao sem teto um worker que nunca volta
+# deixaria o trabalho esperando para sempre. O contrato do worker pede o teto
+# tambem para os codigos conhecidos.
+TENTATIVAS_DE_IMAGEM = 6
+
+# Recuo proprio por cima do `Retry-After`, que vale como PISO: ele chega a
+# ser 5s, e uma geracao longa de outro cliente produziria dezenas de voltas.
+RECUO_INICIAL_SEGUNDOS = 60
+RECUO_MAXIMO_SEGUNDOS = 900
+
+
+def _espera_da_imagem(falhas: int, retry_after: int | None) -> int:
+    recuo = min(RECUO_INICIAL_SEGUNDOS * 2 ** max(falhas - 1, 0), RECUO_MAXIMO_SEGUNDOS)
+    return max(retry_after or 0, recuo)
 
 
 def passo_gerar_capas(job: GenerationJob) -> dict:
@@ -457,9 +468,14 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
       aviso, e o trabalho aparecia como sucesso em Operacao. Ali a falha sobe e
       o trabalho termina FALHO, com o motivo.
 
-    Nos dois casos, uma falha passageira do gerador (tempo esgotado, worker
-    fora do ar) e adiada e tentada de novo, ate `TENTATIVAS_DE_IMAGEM`. So
-    depois disso vale a regra acima.
+    O que conta como falha segue o contrato do worker (2.6):
+
+    * **adiavel, com teto** (`TENTATIVAS_DE_IMAGEM`): conexao recusada — o
+      worker estava fora do ar e nada rodou — e qualquer 503, que e ele
+      dizendo "nao e a hora";
+    * **falha na hora, sem repetir**: 500 com `error.code` (`worker_travado`),
+      conexao cortada depois de aceita, resposta sem imagem nenhuma e 4xx. O
+      mesmo pedido tende a quebrar o worker de novo; alguem precisa olhar.
 
     Gerar nao e escolher: nenhuma das opcoes entra no artigo sozinha. A capa
     continua sendo escolha de quem revisa (apps/content/capas.py).
@@ -489,23 +505,26 @@ def passo_gerar_capas(job: GenerationJob) -> dict:
     except ProviderTransientError as exc:
         falhas = falhas_de_imagem_do_job(gravado)
         if falhas < TENTATIVAS_DE_IMAGEM:
-            espera = getattr(exc, "retry_after", None) or 300
             raise PassoAdiado(
-                f"gerador de imagem sem resposta (tentativa {falhas} de "
+                f"gerador de imagem indisponivel (tentativa {falhas} de "
                 f"{TENTATIVAS_DE_IMAGEM}): {exc}",
-                tentar_em_segundos=espera,
+                tentar_em_segundos=_espera_da_imagem(falhas, exc.retry_after),
             ) from exc
         motivo = (
-            f"o gerador de imagem falhou {falhas} vezes seguidas e o lote foi "
-            f"abandonado. Ultimo erro: {exc}"
+            f"o gerador de imagem ficou indisponivel em {falhas} tentativas e o "
+            f"lote foi abandonado. Ultimo erro: {exc}"
         )
-        return _sem_capa(job, article, motivo)
-    except (SemConexaoDeImagem, LimiteDeLotes, ProviderPermanentError) as exc:
+        return _sem_capa(job, article, motivo, grave=True)
+    except ProviderPermanentError as exc:
+        return _sem_capa(job, article, str(exc), grave=True)
+    except (SemConexaoDeImagem, LimiteDeLotes) as exc:
         return _sem_capa(job, article, str(exc))
 
     if not criadas:
         # O provedor respondeu, mas nenhuma opcao abriu. Tambem nao e sucesso.
-        return _sem_capa(job, article, "o gerador respondeu, mas nenhuma imagem pode ser lida.")
+        return _sem_capa(
+            job, article, "o gerador respondeu, mas nenhuma imagem pode ser lida.", grave=True
+        )
 
     logger.info("Artigo %s: %s opcao(oes) de capa geradas junto.", article.pk, len(criadas))
     return {
@@ -524,8 +543,14 @@ class CapaNaoGerada(RuntimeError):
     trabalho como FALHO com esta mensagem."""
 
 
-def _sem_capa(job: GenerationJob, article: Article, motivo: str) -> dict:
-    logger.warning("Artigo %s saiu sem opcoes de capa: %s", article.pk, motivo)
+def _sem_capa(job: GenerationJob, article: Article, motivo: str, *, grave: bool = False) -> dict:
+    """Encerra o passo sem capa: FALHO no botao, motivo no payload no fluxo.
+
+    `grave` separa o gerador que quebrou (log de erro, alguem precisa olhar a
+    maquina) de um estado legitimo, como nao haver gerador cadastrado.
+    """
+    nivel = logging.ERROR if grave else logging.WARNING
+    logger.log(nivel, "Artigo %s saiu sem opcoes de capa: %s", article.pk, motivo)
     if job.kind == GenerationJob.Kind.ARTICLE_COVER:
         raise CapaNaoGerada(motivo)
     return {"article_id": str(article.pk), "capas": 0, "motivo": motivo}

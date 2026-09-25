@@ -3,9 +3,10 @@
 Tres limites independentes, e a distincao importa porque cada um pede uma
 correcao diferente:
 
-- **multiplo de 8** — o espaco latente da difusao e 8x menor que a imagem. Um
-  lado que nao e multiplo de 8 seria arredondado por dentro, e a imagem
-  voltaria de tamanho diferente do pedido sem aviso;
+- **multiplo de 16** — o espaco latente da difusao e 8x menor que a imagem, e
+  os modelos de transformer ainda o agrupam em blocos de 2x2. Um lado fora
+  disso seria arredondado por dentro, e a imagem voltaria de tamanho diferente
+  do pedido sem aviso (contrato 2.6 do worker; ate a 2.5 era multiplo de 8);
 - **lado maximo** — o que a placa daquela maquina comporta;
 - **area maxima** — o que o custo daquela maquina comporta. Precisa existir
   separado: um teto so de lado deixaria passar 1536x1536, que e o dobro da
@@ -51,11 +52,11 @@ def conferir(tamanho: str, estado_da_imagem: dict) -> list[str]:
     avisos = []
 
     for nome, medida in (("largura", largura), ("altura", altura)):
-        if medida % 8:
+        if medida % 16:
             avisos.append(
-                f"{largura}x{altura}: a {nome} nao e multiplo de 8. O worker recusa com "
+                f"{largura}x{altura}: a {nome} nao e multiplo de 16. O worker recusa com "
                 f"422 — o modelo arredondaria por dentro e devolveria outro tamanho sem "
-                f"avisar. (1200x630, o alvo das redes, cai aqui: 630 nao e multiplo de 8.)"
+                f"avisar. (1200x630, o alvo das redes, cai aqui: 630 nao e multiplo de 16.)"
             )
 
     lado_maximo = estado_da_imagem.get("lado_maximo")

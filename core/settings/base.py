@@ -563,8 +563,8 @@ IMAGEM_SEGREDO = env.get("IMAGEM_SEGREDO", "")
 # que as redes pedem no `og:image`: 1200x630, ou 1.905:1. Publicar nessa
 # proporcao evita que o corte automatico decida o enquadramento por voce.
 #
-# `1200x630` em si NAO passa, e nao e pela grade: 630 nao e multiplo de 8, e o
-# worker recusa com 422 — o modelo arredondaria por dentro e devolveria outro
+# `1200x630` em si NAO passa, e nao e pela grade: 630 nao e multiplo de 16, e
+# o worker recusa com 422 — o modelo arredondaria por dentro e devolveria outro
 # tamanho sem avisar.
 #
 # Outros formatos uteis da grade: `1024x1024` (quadrado), `1344x768` (1.75:1),
@@ -574,6 +574,22 @@ IMAGEM_SEGREDO = env.get("IMAGEM_SEGREDO", "")
 # relogio, porque o custo dominante e mover pesos entre RAM e VRAM. Nao ha
 # economia em pedir pequeno — so perda de qualidade.
 IMAGEM_TAMANHO = env.get("IMAGEM_TAMANHO", "1344x704")
+
+# Quanto o cliente espera por um lote, em segundos.
+#
+# Precisa ser MAIOR que o prazo duro do worker (`imagem.tempo_travado` no
+# `/health/`, 900s), e nao igual. Passado esse prazo o worker responde 500
+# `worker_travado` e se encerra — mas so se o cliente ainda estiver ouvindo.
+# Com os 300s de antes, quem desistia primeiro era este lado, e um worker
+# travado virava um timeout indistinguivel de "demorou um pouco".
+IMAGEM_TIMEOUT = env.integer("IMAGEM_TIMEOUT", 960)
+
+# Prompt negativo, em ingles. Vazio nao viaja.
+#
+# Desde o contrato 2.6 o worker nao tem negativo proprio: o que for mandado
+# aqui e o unico que vale. Modelos destilados (Z-Image-Turbo, FLUX schnell)
+# rodam com guidance 0 e o ignoram — veja `imagem.guidance` no `/health/`.
+IMAGEM_NEGATIVO = env.get("IMAGEM_NEGATIVO", "")
 
 # ---------------------------------------------------------------------------
 # Onde mora o worker de GPU, quando ele esta nesta maquina

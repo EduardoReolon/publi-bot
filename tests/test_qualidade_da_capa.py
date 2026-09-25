@@ -166,7 +166,7 @@ def _grade_do_contrato() -> list[str]:
 
 def test_o_tamanho_padrao_passa_nos_tres_limites_do_worker(settings):
     """Sao tres limites independentes, e cada um pede correcao diferente:
-    multiplo de 8 (o latente e 8x menor), lado maximo (o que a placa comporta)
+    multiplo de 16 (o latente e 8x menor, em blocos 2x2), lado maximo (o que a placa comporta)
     e area maxima (o que o custo comporta). Um padrao que nao passe deixaria a
     instalacao nova com 422 na primeira capa."""
     from apps.inference.tamanhos import conferir
@@ -217,13 +217,13 @@ def test_o_padrao_e_o_formato_que_as_redes_pedem(settings):
 
 def test_o_alvo_literal_das_redes_nao_serve(settings):
     """`1200x630` parece a escolha obvia e nao passa — 630 nao e multiplo de
-    8. Nao e a grade que recusa, e o latente, e por isso a mensagem precisa
+    16. Nao e a grade que recusa, e o latente, e por isso a mensagem precisa
     ser outra."""
     from apps.inference.tamanhos import conferir
 
     avisos = conferir("1200x630", {"lado_maximo": 1536, "area_maxima_mp": 1.2})
 
-    assert any("multiplo de 8" in aviso for aviso in avisos)
+    assert any("multiplo de 16" in aviso for aviso in avisos)
 
 
 @pytest.mark.django_db

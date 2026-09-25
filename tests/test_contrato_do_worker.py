@@ -23,7 +23,7 @@ import httpx
 import pytest
 
 CONTRATO = Path(__file__).resolve().parent / "contrato_do_worker"
-VERSAO_ESPERADA = "2.4"
+VERSAO_ESPERADA = "2.6"
 
 
 def _exemplo(nome: str) -> dict:
@@ -416,3 +416,134 @@ def test_retry_after_em_formato_de_data_nao_vira_espera_absurda():
         _levantar(resposta)
 
     assert erro.value.retry_after is None
+
+
+# ---------------------------------------------------------------------------
+# Contrato 2.6: o worker que quebra, e o que nao responde
+# ---------------------------------------------------------------------------
+# O caso que motivou: o worker travou carregando um modelo de imagem maior,
+# ficou vivo sem responder, e o cliente — com 300s de timeout — tratou o
+# silencio como passageiro. O botao "gerar mais" terminou CONCLUIDO sem imagem.
+def _cliente_que_levanta(monkeypatch, excecao):
+    class ClienteFalso:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, **kwargs):
+            raise excecao
+
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: ClienteFalso())
+
+
+def _gerar_uma(**kwargs):
+    from apps.inference.providers.openai_compatible import OpenAICompatibleImageClient
+
+    return OpenAICompatibleImageClient(base_url="http://worker", api_key="x").generate(
+        model="sdxl", prompt="a cat", quantidade=1, **kwargs
+    )
+
+
+def test_o_500_worker_travado_e_falha_e_nao_adiamento(monkeypatch):
+    from apps.inference.providers.base import ProviderPermanentError
+
+    exemplo = _exemplo("falha-resposta.json")
+    _cliente_falso(monkeypatch, exemplo, status=500)
+
+    with pytest.raises(ProviderPermanentError) as erro:
+        _gerar_uma()
+
+    assert erro.value.code == "worker_travado"
+    assert exemplo["error"]["message"] in str(erro.value)
+
+
+@pytest.mark.parametrize(
+    "excecao",
+    [
+        httpx.RemoteProtocolError("Server disconnected without sending a response."),
+        httpx.ReadError("Connection reset by peer"),
+        httpx.ReadTimeout("timed out"),
+    ],
+    ids=["desconectado", "resetado", "sem-resposta-no-prazo"],
+)
+def test_conexao_cortada_depois_de_aceita_e_falha(monkeypatch, excecao):
+    """O worker morreu no meio do trabalho, quase sempre por memoria. O mesmo
+    pedido tende a mata-lo de novo."""
+    from apps.inference.providers.base import ProviderPermanentError
+
+    _cliente_que_levanta(monkeypatch, excecao)
+
+    with pytest.raises(ProviderPermanentError):
+        _gerar_uma()
+
+
+@pytest.mark.parametrize(
+    "excecao",
+    [httpx.ConnectError("Connection refused"), httpx.ConnectTimeout("timed out")],
+    ids=["recusada", "sem-conectar"],
+)
+def test_conexao_recusada_continua_adiavel(monkeypatch, excecao):
+    """Recusada antes de enviar: o worker estava reiniciando, e nada rodou."""
+    from apps.inference.providers.base import ProviderTransientError
+
+    _cliente_que_levanta(monkeypatch, excecao)
+
+    with pytest.raises(ProviderTransientError):
+        _gerar_uma()
+
+
+def test_resposta_sem_imagem_e_falha(monkeypatch):
+    from apps.inference.providers.base import ProviderPermanentError
+
+    _cliente_falso(monkeypatch, {"created": 0, "data": []})
+
+    with pytest.raises(ProviderPermanentError):
+        _gerar_uma()
+
+
+def test_o_timeout_de_imagem_passa_do_prazo_duro_do_worker(settings, monkeypatch):
+    """Igual ou menor, quem desiste primeiro e o cliente — e o 500 legivel do
+    worker nunca chega."""
+    from types import SimpleNamespace
+
+    from apps.inference.models import InferenceConnection
+    from apps.inference.providers.base import get_image_provider
+
+    monkeypatch.setattr("apps.inference.security.decifrar_chave", lambda *a, **k: "x")
+    conexao = SimpleNamespace(
+        name="Imagem", kind=InferenceConnection.Kind.IMAGE, base_url="http://worker:8090"
+    )
+
+    cliente = get_image_provider(conexao)
+
+    prazo_do_worker = _exemplo("saude-resposta.json")["imagem"]["tempo_travado"]
+    assert settings.IMAGEM_TIMEOUT > prazo_do_worker
+    assert cliente.timeout == settings.IMAGEM_TIMEOUT
+
+
+def test_o_negativo_viaja_so_quando_existe(monkeypatch):
+    """O worker nao tem negativo proprio desde a 2.6: o que vai aqui e o que
+    vale. Vazio nao viaja."""
+    exemplo = _exemplo("imagem-resposta.json")
+    corpos = []
+
+    class ClienteFalso:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, **kwargs):
+            corpos.append(json)
+            return httpx.Response(200, json=exemplo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: ClienteFalso())
+
+    _gerar_uma(negativo="blurry, watermark")
+    _gerar_uma()
+
+    assert corpos[0]["negative_prompt"] == "blurry, watermark"
+    assert "negative_prompt" not in corpos[1]

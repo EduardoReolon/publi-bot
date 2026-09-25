@@ -38,7 +38,7 @@ class GeradorFalso:
         self.por_chamada = por_chamada
         self.chamadas: list[dict] = []
 
-    def generate(self, *, model, prompt, quantidade=3, tamanho="1024x1024"):
+    def generate(self, *, model, prompt, quantidade=3, tamanho="1024x1024", negativo=""):
         self.chamadas.append({"model": model, "prompt": prompt, "quantidade": quantidade})
         quantas = quantidade if self.por_chamada is None else min(self.por_chamada, quantidade)
         return [
