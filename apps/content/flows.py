@@ -129,6 +129,7 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
         title=topic.title,
         slug=slugify(topic.title)[:300],
         focus_keyword=topic.target_keyword,
+        content_type=topic.content_type,
         thesis_json=tese.bruto,
         consensus=MAPA_DE_CONCORDANCIA[tese.concordancia],
         single_source=len(trechos) == 1,
@@ -212,6 +213,7 @@ def passo_planejar(job: GenerationJob) -> dict:
         },
         site=site,
         job=job,
+        tipo_de_conteudo=article.content_type,
     )
 
     plano = interpretar_plano(resultado.texto, total_de_fontes=len(trechos))

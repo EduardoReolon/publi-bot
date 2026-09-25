@@ -1,0 +1,123 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Guia editorial" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Guia editorial" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Como o site fala. Entra em toda geracao de texto — planejamento, secoes,
+      abertura, metadados, perguntas frequentes e respostas — e vale a partir da
+      proxima geracao, sem precisar mexer nos prompts.
+    {% endblocktranslate %}
+  </p>
+
+  <h2>{% translate "Ponto de partida" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed with modo=perfil.get_mode_display %}
+      Modo atual: <strong>{{ modo }}</strong>. Aplicar um modo troca voz, termos
+      proibidos e regra de ouro pelos valores tipicos daquele tipo de negocio.
+      Estruturas e exemplos ficam como estao.
+    {% endblocktranslate %}
+  </p>
+  <form method="post" action="{% url 'editorial:aplicar_modo' %}"
+        onsubmit="return confirm('{% translate "Substituir voz, termos e regra de ouro pelos do modo escolhido?" %}')">
+    {% csrf_token %}
+    <div class="acoes">
+      <select name="modo" style="width:auto">
+        {% for valor, rotulo in modos %}
+          <option value="{{ valor }}" {% if valor == perfil.mode %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="botao secundario">{% translate "Aplicar modo" %}</button>
+    </div>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="aviso ruim">{{ form.non_field_errors }}</div>{% endif %}
+
+    <h2>{% translate "Voz" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        As quatro dimensoes de tom da Nielsen Norman Group, de 1 a 5. O meio da
+        escala e equilibrio, nao indiferenca.
+      {% endblocktranslate %}
+    </p>
+    <div class="duas-colunas">
+      {% for campo in form %}
+        {% if campo.name == "tom_humor" or campo.name == "tom_formalidade" or campo.name == "tom_respeito" or campo.name == "tom_entusiasmo" or campo.name == "pessoa" or campo.name == "regra_de_ouro" %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="campo">
+      <label for="{{ form.somos_texto.id_for_label }}">{{ form.somos_texto.label }}</label>
+      {{ form.somos_texto }}
+      <div class="ajuda">{{ form.somos_texto.help_text }}</div>
+    </div>
+
+    <h2>{% translate "Vocabulario" %}</h2>
+    <div class="campo">
+      <label for="{{ form.termos_texto.id_for_label }}">{{ form.termos_texto.label }}</label>
+      {{ form.termos_texto }}
+      <div class="ajuda">{{ form.termos_texto.help_text }}</div>
+    </div>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Alem destes, a revisao sempre avisa sobre marcas de texto de maquina
+        ("vale ressaltar", "no cenario atual", "proporcionar", excesso de
+        travessao). Esses sao so avisos: nao bloqueiam.
+      {% endblocktranslate %}
+    </p>
+
+    <h2>{% translate "Estruturas por tipo de conteudo" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Uma linha por secao, com o OBJETIVO dela — o planejamento escreve os
+        titulos. A pauta escolhe o tipo; sem escolha, vale o padrao abaixo.
+      {% endblocktranslate %}
+    </p>
+    <div class="campo">
+      <label for="{{ form.tipo_padrao.id_for_label }}">{{ form.tipo_padrao.label }}</label>
+      {{ form.tipo_padrao }}
+    </div>
+    <div class="duas-colunas">
+      {% for campo in form.campos_de_estrutura %}
+        <div class="campo">
+          <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+          {{ campo }}
+        </div>
+      {% endfor %}
+    </div>
+
+    <h2>{% translate "Convite e exemplos" %}</h2>
+    <div class="campo">
+      <label for="{{ form.convite.id_for_label }}">{{ form.convite.label }}</label>
+      {{ form.convite }}
+      <div class="ajuda">{{ form.convite.help_text }}</div>
+    </div>
+    <div class="campo">
+      <label for="{{ form.exemplos.id_for_label }}">{{ form.exemplos.label }}</label>
+      {{ form.exemplos }}
+      <div class="ajuda">{{ form.exemplos.help_text }}</div>
+    </div>
+
+    <h2>{% translate "Fundamentacao" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        A ideia central de cada texto precisa de fonte do acervo — um artigo,
+        um documento da empresa ou uma nota do especialista. Gerar sem fonte
+        nenhuma esta desenhado, mas desligado nesta versao.
+      {% endblocktranslate %}
+    </p>
+
+    <div class="acoes">
+      <button type="submit">{% translate "Salvar guia" %}</button>
+    </div>
+  </form>
+{% endblock %}

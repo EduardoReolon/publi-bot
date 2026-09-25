@@ -514,13 +514,42 @@
             {% translate "Este site trata de tema sensivel: so um revisor com credencial tecnica registrada pode aprovar." %}
           </div>
         {% endif %}
+        {% if not conferencia.vazia %}
+          {% comment %}
+            Termos proibidos bloqueiam a aprovacao ate o revisor confirmar;
+            marcas de texto de maquina e excesso de travessao so avisam.
+          {% endcomment %}
+          <div class="aviso {% if conferencia.bloqueia %}ruim{% endif %}">
+            {% if conferencia.proibidos %}
+              <strong>{% translate "Termos proibidos pelo guia editorial:" %}</strong>
+              <ul>
+                {% for achado in conferencia.proibidos %}
+                  <li>"{{ achado.expressao }}" ({{ achado.vezes }}x){% if achado.sugestao %} — {% translate "use" %} "{{ achado.sugestao }}"{% endif %}{% if achado.motivo %} · {{ achado.motivo }}{% endif %}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            {% if conferencia.marcas %}
+              <strong>{% translate "Marcas de texto de maquina:" %}</strong>
+              <ul>
+                {% for achado in conferencia.marcas %}
+                  <li>"{{ achado.expressao }}" ({{ achado.vezes }}x) — {{ achado.sugestao }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            {% if conferencia.travessoes %}
+              <div>{% blocktranslate trimmed with n=conferencia.travessoes %}{{ n }} travessoes no texto: acima de tres, vira tique.{% endblocktranslate %}</div>
+            {% endif %}
+          </div>
+        {% endif %}
         {% for campo in agendamento %}
           {% comment %}
             A confirmacao de divergencia so aparece quando ha divergencia. Pedir
             sempre transformaria a pergunta em ruido, e ruido e como uma
             confirmacao que importa acaba marcada sem ser lida.
           {% endcomment %}
-          {% if campo.name != 'confirmar_divergencia' or artigo.exige_confirmacao_de_divergencia %}
+          {% if campo.name == 'confirmar_divergencia' and not artigo.exige_confirmacao_de_divergencia %}
+          {% elif campo.name == 'confirmar_termos' and not conferencia.bloqueia %}
+          {% else %}
             <div class="campo">
               <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
               {{ campo }}

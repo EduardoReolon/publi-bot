@@ -62,6 +62,23 @@ def _tenant_atual():
     return Tenant.objects.filter(schema_name=schema).first()
 
 
+def _sistema_com_guia(sistema: str, chave: str, tipo_de_conteudo: str) -> str:
+    """O prompt de sistema, com o guia editorial do site anexado quando cabe.
+
+    Anexado na chamada, e nao gravado no prompt: o guia muda pela tela de
+    configuracao e tem de valer na proxima chamada, sem versao nova de prompt.
+    O perfil vem do schema em uso; fora de um tenant nao ha guia.
+    """
+    from apps.editorial.services import perfil_atual, texto_do_guia
+
+    perfil = perfil_atual()
+    if perfil is None:
+        return sistema
+    tipo = tipo_de_conteudo or perfil.tipo_padrao
+    guia = texto_do_guia(perfil, chave=chave, tipo_de_conteudo=tipo)
+    return f"{sistema}\n\n{guia}" if guia else sistema
+
+
 @dataclass(frozen=True)
 class ResultadoDoPrompt:
     texto: str
@@ -86,6 +103,7 @@ def executar_prompt(
     job=None,
     json_schema: dict | None = None,
     workload: str = InferenceConnection.Workload.TEXT,
+    tipo_de_conteudo: str = "",
 ) -> ResultadoDoPrompt:
     """Roda um prompt e devolve o texto cru do modelo.
 
@@ -127,12 +145,13 @@ def executar_prompt(
 
     cliente = get_provider(conexao)
     corpo = versao.user_prompt_template.format(**variaveis)
+    sistema = _sistema_com_guia(versao.system_prompt, key, tipo_de_conteudo)
 
     try:
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
             resposta = cliente.chat(
                 model=modelo,
-                system=versao.system_prompt,
+                system=sistema,
                 user=corpo,
                 temperature=versao.temperature,
                 max_tokens=versao.max_tokens,

@@ -233,6 +233,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "capas_em_curso": _capas_em_curso(artigo),
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "faq": artigo.faq.all(),
+        "conferencia": _conferencia_editorial(artigo),
         # O FAQ vai num campo proprio, e o site so o exibe se implementou.
         # Sem este aviso, a pessoa revisaria perguntas que ninguem vai ver.
         "site_sem_faq": site is not None and not site.suporta("faq"),
@@ -438,6 +439,7 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
             revisor=request.user,
             quando=agendamento.cleaned_data["quando"] or _proximo_horario(),
             exige_revisor_tecnico=bool(site and site.is_sensitive),
+            termos_confirmados=agendamento.cleaned_data["confirmar_termos"],
         )
     except RevisaoInsuficiente as exc:
         # Nao e validacao de formulario: e uma condicao do produto, e a
@@ -490,6 +492,15 @@ def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
         messages.info(request, _("Nada mudou."))
 
     return redirect("content:revisar", pk=artigo.pk)
+
+
+def _conferencia_editorial(artigo):
+    """Termos proibidos e marcas de maquina no texto atual, para a tela."""
+    from apps.editorial.services import conferir_texto, perfil_atual
+
+    perfil = perfil_atual()
+    texto = "\n".join([artigo.title, artigo.meta_description, artigo.body_markdown])
+    return conferir_texto(texto, perfil)
 
 
 @login_required

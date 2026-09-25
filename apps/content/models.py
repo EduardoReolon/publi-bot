@@ -22,6 +22,8 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from apps.editorial.presets import TIPOS_DE_CONTEUDO
+
 
 class PromptTemplate(models.Model):
     """Um ponto do fluxo onde o sistema fala com o modelo."""
@@ -267,6 +269,12 @@ class Topic(models.Model):
     title = models.CharField(_("titulo"), max_length=300)
     briefing = models.TextField(_("orientacao"), blank=True)
     target_keyword = models.CharField(_("palavra-chave alvo"), max_length=120, blank=True)
+    # Tipo de conteudo: decide a estrutura-modelo que o planejamento recebe
+    # (guia, passo a passo, comparativo...). Vazio usa o padrao do perfil
+    # editorial.
+    content_type = models.CharField(
+        _("tipo de conteudo"), max_length=20, choices=TIPOS_DE_CONTEUDO, blank=True
+    )
     status = models.CharField(
         _("situacao"), max_length=12, choices=Status.choices, default=Status.SUGGESTED
     )
@@ -327,6 +335,9 @@ class Article(models.Model):
 
     title = models.CharField(_("titulo"), max_length=300)
     slug = models.SlugField(_("slug"), max_length=300, blank=True)
+    content_type = models.CharField(
+        _("tipo de conteudo"), max_length=20, choices=TIPOS_DE_CONTEUDO, blank=True
+    )
 
     # Fonte da verdade editavel. Modelos produzem Markdown de forma muito mais
     # confiavel que HTML, e o HTML vai direto para o site de um terceiro.

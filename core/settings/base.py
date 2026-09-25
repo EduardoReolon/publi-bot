@@ -80,6 +80,7 @@ TENANT_APPS = [
     "apps.ops",
     "apps.content",
     "apps.integrations",
+    "apps.editorial",
     #   "apps.integrations",
     #   "apps.ops",
 ]

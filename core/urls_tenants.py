@@ -20,6 +20,7 @@ urlpatterns = [
     path("documentos/", include("apps.knowledge.urls", namespace="knowledge")),
     path("", include("apps.content.urls", namespace="content")),
     path("site/", include("apps.integrations.urls", namespace="integrations")),
+    path("editorial/", include("apps.editorial.urls", namespace="editorial")),
     path("operacao/", include("apps.ops.urls_painel", namespace="operacao")),
 ]
 

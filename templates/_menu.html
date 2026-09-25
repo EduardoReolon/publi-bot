@@ -27,6 +27,9 @@
       {% translate "Perguntas" %}
       {% if pendencias.perguntas %}<span class="contagem">{{ pendencias.perguntas }}</span>{% endif %}
     </a>
+    <a href="{% url 'editorial:guia' %}" class="{% if aba == 'editorial' %}ativo{% endif %}">
+      {% translate "Guia editorial" %}
+    </a>
     <a href="{% url 'integrations:site' %}" class="{% if aba == 'site' %}ativo{% endif %}">
       {% translate "Site e cadencia" %}
     </a>

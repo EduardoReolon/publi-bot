@@ -12,8 +12,9 @@ from apps.content.models import Article, Author, Topic
 class PautaForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ["title", "target_keyword", "briefing"]
+        fields = ["title", "target_keyword", "content_type", "briefing"]
         labels = {
+            "content_type": _("Tipo de conteudo"),
             "title": _("Titulo da pauta"),
             "target_keyword": _("Palavra-chave principal"),
             "briefing": _("Orientacao"),
@@ -89,6 +90,10 @@ class AgendamentoForm(forms.Form):
     )
     confirmar_divergencia = forms.BooleanField(
         label=_("Confirmo que o texto apresenta a divergencia entre as fontes"),
+        required=False,
+    )
+    confirmar_termos = forms.BooleanField(
+        label=_("Revisei os termos proibidos apontados e mantenho o texto assim"),
         required=False,
     )
 

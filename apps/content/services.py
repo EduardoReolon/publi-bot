@@ -306,7 +306,14 @@ class RevisaoInsuficiente(PermissionError):
     """Falta uma condicao para aprovar o artigo."""
 
 
-def aprovar_e_agendar(article: Article, *, revisor, quando, exige_revisor_tecnico: bool = False):
+def aprovar_e_agendar(
+    article: Article,
+    *,
+    revisor,
+    quando,
+    exige_revisor_tecnico: bool = False,
+    termos_confirmados: bool = False,
+):
     """Aprova o artigo e o coloca na fila de publicacao.
 
     As travas aqui nao sao burocracia. Cada uma corresponde a uma forma
@@ -327,6 +334,9 @@ def aprovar_e_agendar(article: Article, *, revisor, quando, exige_revisor_tecnic
     if not article.author_name:
         raise RevisaoInsuficiente("o artigo precisa de autor identificado antes de ser publicado.")
 
+    if not termos_confirmados:
+        _exigir_vocabulario(article)
+
     article.status = Article.Status.APPROVED_SCHEDULED
     article.reviewed_by = revisor
     article.reviewed_at = timezone.now()
@@ -335,6 +345,28 @@ def aprovar_e_agendar(article: Article, *, revisor, quando, exige_revisor_tecnic
         article.slug = slugify(article.title)[:300]
     article.save()
     return article
+
+
+def _exigir_vocabulario(article: Article) -> None:
+    """Termo proibido pelo guia editorial nao sai sem o revisor confirmar.
+
+    Confirmar, e nao so avisar: "trata hernia de disco" num site de saude e
+    exatamente o tipo de frase que passa por uma leitura rapida. O revisor
+    pode manter o termo — ha contextos legitimos —, mas precisa dizer isso.
+    """
+    from apps.editorial.services import conferir_texto, perfil_atual
+
+    perfil = perfil_atual()
+    if perfil is None:
+        return
+    texto = "\n".join([article.title, article.meta_description, article.body_markdown])
+    conferencia = conferir_texto(texto, perfil)
+    if conferencia.bloqueia:
+        lista = ", ".join(f'"{a.expressao}"' for a in conferencia.proibidos)
+        raise RevisaoInsuficiente(
+            f"o texto usa termos proibidos pelo guia editorial: {lista}. Troque-os, "
+            f"ou marque que revisou e mantem o texto assim."
+        )
 
 
 def garantir_prompts_padrao() -> None:
