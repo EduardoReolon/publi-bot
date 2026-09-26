@@ -708,3 +708,30 @@ def test_virar_pauta_na_tela_vale_para_grupo_so_de_sementes(ambiente, settings):
 
     assert Topic.objects.filter(origin=Topic.Origin.RADAR, title="Up-sell").exists()
     get_embedding_client.cache_clear()
+
+
+@pytest.mark.django_db
+def test_tarefas_recusadas_uma_a_uma_aparecem_como_erro_da_rodada(radar, monkeypatch):  # noqa: F811
+    """A requisicao passa (200/20000) e cada tarefa volta recusada. Antes, a
+    rodada terminava "concluida", sem erro, sem custo e sem nada na fila."""
+    from apps.radar.coleta import executar_rodada
+
+    _config_com_fila(sementes="bdi\nchurn", usar_volume=False)
+
+    def post(url, json=None, auth=None, timeout=None):
+        tarefas = [
+            {"id": None, "status_code": 40200, "status_message": "Payment Required.", "data": c}
+            for c in json
+        ]
+        corpo = {"status_code": 20000, "cost": 0, "tasks": tarefas}
+        return httpx.Response(200, json=corpo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+
+    rodada = executar_rodada()
+
+    assert rodada.situacao == RodadaDoRadar.Situacao.CONCLUIDA
+    assert rodada.resumo["erros"] == [
+        "busca: DataForSEO recusou as tarefas: 40200 Payment Required."
+    ]
+    assert not TarefaNaFila.objects.exists()

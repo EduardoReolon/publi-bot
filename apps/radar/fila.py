@@ -118,7 +118,7 @@ def postar(
                 raise
             raise ProvedorIndisponivel(f"DataForSEO nao respondeu: {exc}") from exc
 
-        recusadas = []
+        recusadas: list[str] = []
         for indice, tarefa in enumerate(dados.get("tasks") or []):
             etiqueta = (tarefa.get("data") or {}).get("tag")
             posicao = int(etiqueta) if str(etiqueta or "").isdigit() else indice
@@ -144,6 +144,13 @@ def postar(
             sucesso=not recusadas,
             erro="; ".join(recusadas),
         )
+        if recusadas and len(recusadas) == len(lote):
+            # A requisicao passou (HTTP 200, status 20000), mas cada tarefa foi
+            # recusada: saldo, conta restrita, campo invalido. Sem levantar, a
+            # rodada terminava "concluida", sem erro e sem nada na fila.
+            raise ProvedorIndisponivel(
+                "DataForSEO recusou as tarefas: " + "; ".join(dict.fromkeys(recusadas))
+            )
     return criadas
 
 
