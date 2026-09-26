@@ -361,13 +361,16 @@ def _fingir_provedores(monkeypatch, *, perguntas, volumes=None):
         )
         return ResultadoDeBusca(provedor="dataforseo", perguntas=list(perguntas))
 
-    def volume(palavras, **kwargs):
+    def metricas(palavras, **kwargs):
         from apps.radar.provedores import palavra_para_volume
 
-        return {palavra_para_volume(p): v for p, v in (volumes or {}).items()}
+        return {
+            palavra_para_volume(p): {"volume": v, "cpc": 1.5, "competicao": 40, "meses": []}
+            for p, v in (volumes or {}).items()
+        }
 
     monkeypatch.setattr(coleta, "buscar", buscar)
-    monkeypatch.setattr(coleta, "volume_dataforseo", volume)
+    monkeypatch.setattr(coleta, "metricas_dataforseo", metricas)
 
 
 @pytest.mark.django_db

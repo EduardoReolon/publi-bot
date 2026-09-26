@@ -113,7 +113,7 @@ def test_rodada_pela_fila_do_post_ate_a_pauta(radar, monkeypatch):  # noqa: F811
     chamada = ChamadaExterna.objects.get()
     assert chamada.custo_usd == Decimal("0.0006")
     tarefa = TarefaNaFila.objects.get()
-    assert tarefa.contexto == {"semente": "calcular bdi obra"}
+    assert tarefa.contexto == {"semente": "calcular bdi obra", "local": 2076}
 
     # Ainda na fila: o batimento nao faz nada.
     assert colher_fila() == 0

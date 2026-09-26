@@ -125,14 +125,22 @@ def _post_dataforseo(caminho: str, corpo: list[dict], contas: ContasExternas) ->
 
 
 def buscar_dataforseo(
-    consulta: str, *, config: ConfiguracaoDoRadar, contas: ContasExternas, finalidade: str
+    consulta: str,
+    *,
+    config: ConfiguracaoDoRadar,
+    contas: ContasExternas,
+    finalidade: str,
+    local: int | None = None,
 ) -> ResultadoDeBusca:
-    """Pagina de resultados do Google: organicos, perguntas e relacionadas."""
+    """Pagina de resultados do Google: organicos, perguntas e relacionadas.
+
+    `local` e a regiao; sem ele, a primeira das escolhidas (ou o pais).
+    """
     custos.conferir_teto(custos.ESTIMATIVAS[("dataforseo", "serp")])
     corpo = [
         {
             "keyword": consulta,
-            "location_code": config.codigo_de_local,
+            "location_code": local or config.local_principal,
             "language_code": config.codigo_de_idioma,
             "device": "desktop",
             "depth": 10,
@@ -206,18 +214,60 @@ def palavra_para_volume(texto: str) -> str | None:
     return limpa
 
 
-def ler_volumes(tarefa: dict) -> dict[str, int]:
-    volumes = {}
+def ler_metricas(tarefa: dict) -> dict[str, dict]:
+    """Volume, historico mensal e custo por clique de cada palavra.
+
+    O historico e o custo por clique vem na MESMA resposta do volume, sem
+    custo a mais: o historico mede crescimento, e o custo por clique mostra
+    onde empresas ja pagam para alcancar quem busca.
+    """
+    metricas = {}
     for item in tarefa.get("result") or []:
-        if item.get("keyword") is not None and item.get("search_volume") is not None:
-            volumes[item["keyword"].lower()] = int(item["search_volume"])
-    return volumes
+        if item.get("keyword") is None:
+            continue
+        meses = [
+            [int(m["year"]), int(m["month"]), int(m.get("search_volume") or 0)]
+            for m in item.get("monthly_searches") or []
+            if m.get("year") and m.get("month")
+        ]
+        metricas[item["keyword"].lower()] = {
+            "volume": (
+                int(item["search_volume"]) if item.get("search_volume") is not None else None
+            ),
+            "cpc": float(item["cpc"]) if item.get("cpc") is not None else None,
+            "competicao": item.get("competition_index"),
+            "meses": sorted(meses),
+        }
+    return metricas
 
 
-def volume_dataforseo(
-    palavras: list[str], *, config: ConfiguracaoDoRadar, contas: ContasExternas, finalidade: str
-) -> dict[str, int]:
-    """Volume mensal de busca, o mesmo do Planejador do Google Ads.
+def corpo_de_volume(palavras: list[str], *, config: ConfiguracaoDoRadar, local: int) -> dict:
+    """A tarefa de volume, com dois anos de historico mensal.
+
+    Dois anos, e nao o padrao de doze meses: crescimento se mede comparando um
+    mes com o MESMO mes do ano anterior, senao todo tema sazonal parece
+    novidade no seu pico.
+    """
+    import datetime
+
+    hoje = datetime.date.today()
+    return {
+        "keywords": palavras[:1000],
+        "location_code": local,
+        "language_code": config.codigo_de_idioma,
+        "date_from": hoje.replace(year=hoje.year - 2, day=1).isoformat(),
+    }
+
+
+def metricas_dataforseo(
+    palavras: list[str],
+    *,
+    config: ConfiguracaoDoRadar,
+    contas: ContasExternas,
+    finalidade: str,
+    local: int | None = None,
+) -> dict[str, dict]:
+    """Volume mensal de busca (o do Planejador do Google Ads), com historico.
 
     Ate 1000 palavras numa tarefa, e o custo e por tarefa: por isso quem chama
     junta tudo numa chamada so. As chaves do retorno estao na forma de
@@ -227,13 +277,7 @@ def volume_dataforseo(
     if not palavras:
         return {}
     custos.conferir_teto(custos.ESTIMATIVAS[("dataforseo", "volume")])
-    corpo = [
-        {
-            "keywords": palavras,
-            "location_code": config.codigo_de_local,
-            "language_code": config.codigo_de_idioma,
-        }
-    ]
+    corpo = [corpo_de_volume(palavras, config=config, local=local or config.local_principal)]
     try:
         dados = _post_dataforseo("/keywords_data/google_ads/search_volume/live", corpo, contas)
     except ProvedorIndisponivel as exc:
@@ -247,7 +291,7 @@ def volume_dataforseo(
         )
         raise
 
-    volumes = ler_volumes(dados["tasks"][0])
+    metricas = ler_metricas(dados["tasks"][0])
 
     custos.registrar(
         provedor=ChamadaExterna.Provedor.DATAFORSEO,
@@ -255,9 +299,18 @@ def volume_dataforseo(
         finalidade=finalidade,
         consulta=f"{len(palavras)} palavras",
         custo=dados.get("cost") or 0,
-        itens=len(volumes),
+        itens=len(metricas),
     )
-    return volumes
+    return metricas
+
+
+def volume_dataforseo(palavras: list[str], **kwargs) -> dict[str, int]:
+    """So o volume de cada palavra. Ver `metricas_dataforseo`."""
+    return {
+        p: m["volume"]
+        for p, m in metricas_dataforseo(palavras, **kwargs).items()
+        if m["volume"] is not None
+    }
 
 
 # ---------------------------------------------------------------------------

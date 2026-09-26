@@ -369,7 +369,8 @@ def postar_avaliacoes(
         (
             {
                 "keyword": c["nome"],
-                "location_code": config.codigo_de_local,
+                # Avaliacao e de negocio local: a regiao principal, e nao o pais.
+                "location_code": config.local_principal,
                 "language_code": config.codigo_de_idioma,
                 "depth": profundidade,
                 "sort_by": "lowest_rating",

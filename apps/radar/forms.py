@@ -28,15 +28,60 @@ class ConfiguracaoForm(forms.ModelForm):
             "modo_dataforseo",
             "buscador",
             "taxa_de_comparacao",
+            "regioes",
             "codigo_de_local",
             "codigo_de_idioma",
             "teto_mensal_usd",
             "propriedade_search_console",
         ]
         widgets = {
+            "regioes": forms.HiddenInput(),
             "sementes": forms.Textarea(attrs={"rows": 5}),
             "concorrentes": forms.Textarea(attrs={"rows": 4}),
         }
+
+    MAXIMO_DE_REGIOES = 10
+
+    def clean_regioes(self):
+        """Lista de {codigo, nome, tipo}, sem repeticao e sem sobreposicao.
+
+        Sobreposicao e erro, e nao aviso: o volume das regioes e SOMADO, e
+        Curitiba dentro de Parana contaria a mesma busca duas vezes.
+        """
+        from apps.radar.locais import sobrepostas
+
+        bruto = self.cleaned_data.get("regioes") or []
+        if not isinstance(bruto, list):
+            raise forms.ValidationError(_("Formato de regioes invalido."))
+        regioes, vistos = [], set()
+        for item in bruto:
+            codigo = str((item or {}).get("codigo", "")).strip()
+            if not codigo.isdigit() or codigo in vistos:
+                continue
+            vistos.add(codigo)
+            regioes.append(
+                {
+                    "codigo": int(codigo),
+                    "nome": str(item.get("nome") or codigo)[:200],
+                    "tipo": str(item.get("tipo") or "")[:40],
+                }
+            )
+        if len(regioes) > self.MAXIMO_DE_REGIOES:
+            raise forms.ValidationError(
+                _("No maximo %(n)s regioes: cada uma multiplica o custo das buscas.")
+                % {"n": self.MAXIMO_DE_REGIOES}
+            )
+        pares = sobrepostas(regioes)
+        if pares:
+            dentro, fora = pares[0]
+            raise forms.ValidationError(
+                _(
+                    "%(dentro)s fica dentro de %(fora)s: o volume seria contado duas "
+                    "vezes. Escolha uma das duas."
+                )
+                % {"dentro": dentro, "fora": fora}
+            )
+        return regioes
 
     def clean_teto_mensal_usd(self):
         from decimal import Decimal

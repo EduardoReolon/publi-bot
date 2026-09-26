@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Avg, Count, Q
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
@@ -20,6 +20,7 @@ from apps.radar.models import (
     ConfiguracaoDoRadar,
     ContasExternas,
     GrupoDeDemanda,
+    LocalDisponivel,
     RodadaDoRadar,
     SinalDeDemanda,
     TarefaNaFila,
@@ -40,6 +41,7 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         "contas": contas or ContasForm(instance=contas_obj),
         "contas_obj": contas_obj,
         "config_obj": config_obj,
+        "tem_lista_de_locais": LocalDisponivel.objects.exists(),
         "buscador_efetivo": ConfiguracaoDoRadar.Buscador(
             buscador_efetivo(config_obj, contas_obj)
         ).label,
@@ -190,6 +192,30 @@ def descartar_grupo(request: HttpRequest, pk) -> HttpResponse:
     grupo.save(update_fields=["situacao", "atualizado_em"])
     grupo.sinais.update(situacao=SinalDeDemanda.Situacao.DESCARTADO)
     messages.success(request, _("Grupo descartado."))
+    return redirect("radar:radar")
+
+
+@login_required
+def procurar_locais(request: HttpRequest) -> JsonResponse:
+    """O seletor de regioes procura aqui, a cada tecla."""
+    from apps.radar.locais import procurar
+
+    return JsonResponse({"locais": procurar(request.GET.get("q", ""))})
+
+
+@login_required
+@require_POST
+def atualizar_locais(request: HttpRequest) -> HttpResponse:
+    """Baixa a lista de locais da DataForSEO (rota gratuita)."""
+    from apps.radar.locais import atualizar_lista
+    from apps.radar.provedores import ProvedorIndisponivel
+
+    try:
+        total = atualizar_lista(ContasExternas.carregar())
+    except ProvedorIndisponivel as exc:
+        messages.error(request, _("Nao foi possivel baixar a lista de locais: %(e)s") % {"e": exc})
+    else:
+        messages.success(request, _("%(n)s locais disponiveis para escolher.") % {"n": total})
     return redirect("radar:radar")
 
 

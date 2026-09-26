@@ -274,15 +274,18 @@
       <form method="post" action="{% url 'radar:salvar_configuracao' %}">
         {% csrf_token %}
         {% for campo in config %}
+          {% if campo.name == "regioes" %}{% include "radar/_regioes.html" %}{% else %}
           <div class="campo">
             <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
             {{ campo }}
             {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
             {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
           </div>
+          {% endif %}
         {% endfor %}
         <div class="acoes"><button type="submit">{% translate "Salvar configuracao" %}</button></div>
       </form>
+      <form id="form-locais" method="post" action="{% url 'radar:atualizar_locais' %}">{% csrf_token %}</form>
     </div>
     <div>
       <h2>{% translate "Contas externas" %}</h2>

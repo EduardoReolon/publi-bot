@@ -177,9 +177,26 @@ class ConfiguracaoDoRadar(models.Model):
     )
 
     # --- Onde e em que lingua ---------------------------------------------
-    # 2076 = Brasil na DataForSEO. Uma cidade tem codigo proprio.
-    codigo_de_local = models.PositiveIntegerField(_("codigo de local"), default=2076)
+    # 2076 = Brasil na DataForSEO. E o PAIS: vale para o que so existe por
+    # pais (as buscas dos concorrentes no Labs) e para as buscas quando nenhuma
+    # regiao foi escolhida.
+    codigo_de_local = models.PositiveIntegerField(
+        _("pais (codigo)"),
+        default=2076,
+        help_text=_("2076 = Brasil. As regioes abaixo refinam as buscas e o volume."),
+    )
     codigo_de_idioma = models.CharField(_("idioma"), max_length=8, default="pt")
+    # [{"codigo": 1001773, "nome": "Curitiba, Parana", "tipo": "City"}, ...]
+    regioes = models.JSONField(
+        _("regioes"),
+        default=list,
+        blank=True,
+        help_text=_(
+            "Cidades ou estados em que o site quer ser achado. Cada busca e feita "
+            "em cada regiao (o custo multiplica pelo numero de regioes), e o volume "
+            "e somado. Vazio = o pais inteiro."
+        ),
+    )
 
     sementes = models.TextField(
         _("palavras-semente"),
@@ -228,6 +245,20 @@ class ConfiguracaoDoRadar(models.Model):
     @property
     def lista_de_sementes(self) -> list[str]:
         return [s.strip() for s in self.sementes.splitlines() if s.strip()]
+
+    def locais(self) -> list[tuple[int, str]]:
+        """(codigo, nome) de onde buscar: as regioes, ou o pais inteiro."""
+        escolhidas = [
+            (int(r["codigo"]), str(r.get("nome") or r["codigo"]))
+            for r in (self.regioes or [])
+            if str(r.get("codigo", "")).isdigit()
+        ]
+        return escolhidas or [(self.codigo_de_local, "")]
+
+    @property
+    def local_principal(self) -> int:
+        """A primeira regiao: a da busca manual e das avaliacoes."""
+        return self.locais()[0][0]
 
     @property
     def lista_de_concorrentes(self) -> list[dict]:
@@ -630,3 +661,28 @@ class ConcorrenteSugerido(models.Model):
     @property
     def melhor_posicao(self) -> int | None:
         return min(self.consultas.values()) if self.consultas else None
+
+
+class LocalDisponivel(models.Model):
+    """Um local que a DataForSEO aceita, para o seletor de regioes.
+
+    A lista vem de uma rota gratuita deles e fica guardada: o seletor procura
+    aqui, sem chamada externa a cada tecla.
+    """
+
+    codigo = models.PositiveIntegerField(_("codigo"), primary_key=True)
+    nome = models.CharField(_("nome"), max_length=200)
+    tipo = models.CharField(_("tipo"), max_length=40, blank=True)
+    pai = models.PositiveIntegerField(_("local acima"), null=True, blank=True)
+    pais = models.CharField(_("pais"), max_length=2, blank=True)
+    # O nome sem acento e em minusculas, para "curitiba" achar "Curitiba" e
+    # "parana" achar "Paraná".
+    busca = models.CharField(_("busca"), max_length=200, db_index=True, blank=True)
+
+    class Meta:
+        verbose_name = _("local disponivel")
+        verbose_name_plural = _("locais disponiveis")
+        ordering = ["nome"]
+
+    def __str__(self) -> str:
+        return self.nome

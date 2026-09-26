@@ -51,8 +51,9 @@ from apps.radar.provedores import (
     ProvedorIndisponivel,
     buscador_efetivo,
     buscar,
+    corpo_de_volume,
+    metricas_dataforseo,
     palavra_para_volume,
-    volume_dataforseo,
 )
 
 logger = logging.getLogger("publibot.radar")
@@ -190,17 +191,22 @@ def _perguntas_do_site(rodada, limite: int = 50) -> list[SinalDeDemanda]:
 
 
 def _preencher_volumes(sinais: list[SinalDeDemanda], *, finalidade: str) -> None:
-    """Volume ao vivo, numa chamada so. Usado pela busca manual e pela rodada
-    com a DataForSEO no modo ao vivo."""
+    """Volume ao vivo, uma chamada por regiao. Usado pela busca manual e pela
+    rodada com a DataForSEO no modo ao vivo."""
     config = ConfiguracaoDoRadar.carregar()
     contas = ContasExternas.carregar()
     candidatos = _precisam_de_volume(sinais)
     if not candidatos or not contas.tem_dataforseo:
         return
-    volumes = volume_dataforseo(
-        [s.texto for s in candidatos], config=config, contas=contas, finalidade=finalidade
-    )
-    _aplicar_volumes(candidatos, volumes)
+    for local, _nome in config.locais():
+        metricas = metricas_dataforseo(
+            [s.texto for s in candidatos],
+            config=config,
+            contas=contas,
+            finalidade=finalidade,
+            local=local,
+        )
+        _aplicar_metricas(candidatos, metricas, local=local)
 
 
 def _precisam_de_volume(sinais) -> list[SinalDeDemanda]:
@@ -213,12 +219,23 @@ def _precisam_de_volume(sinais) -> list[SinalDeDemanda]:
     ]
 
 
-def _aplicar_volumes(sinais, volumes: dict[str, int]) -> None:
+def _aplicar_metricas(sinais, metricas: dict[str, dict], *, local: int | None) -> None:
+    """Guarda as metricas da regiao no sinal e SOMA o volume das regioes.
+
+    Por regiao, em `extra["metricas"]`, porque a oportunidade precisa do
+    historico mensal e do custo por clique, e a tela pode mostrar de onde veio
+    cada parte do volume.
+    """
+    chave = str(local or "")
     for sinal in sinais:
-        volume = volumes.get(palavra_para_volume(sinal.texto) or "")
-        if volume is not None:
-            sinal.volume = volume
-            sinal.save(update_fields=["volume"])
+        metrica = metricas.get(palavra_para_volume(sinal.texto) or "")
+        if metrica is None:
+            continue
+        por_local = sinal.extra.setdefault("metricas", {})
+        por_local[chave] = metrica
+        volumes = [m["volume"] for m in por_local.values() if m.get("volume") is not None]
+        sinal.volume = sum(volumes) if volumes else None
+        sinal.save(update_fields=["volume", "extra"])
 
 
 def _usa_fila(config: ConfiguracaoDoRadar, contas: ContasExternas) -> bool:
@@ -227,10 +244,10 @@ def _usa_fila(config: ConfiguracaoDoRadar, contas: ContasExternas) -> bool:
     )
 
 
-def _corpo_serp(config: ConfiguracaoDoRadar, consulta: str) -> dict:
+def _corpo_serp(config: ConfiguracaoDoRadar, consulta: str, local: int) -> dict:
     return {
         "keyword": consulta,
-        "location_code": config.codigo_de_local,
+        "location_code": local,
         "language_code": config.codigo_de_idioma,
         "device": "desktop",
         "depth": 10,
@@ -296,7 +313,11 @@ def executar_rodada(origem: str = RodadaDoRadar.Origem.AGENDADA) -> RodadaDoRada
                     resumo["tarefas"] += len(
                         postar(
                             TarefaNaFila.Tipo.SERP,
-                            [(_corpo_serp(config, s), {"semente": s}) for s in sementes],
+                            [
+                                (_corpo_serp(config, s, local), {"semente": s, "local": local})
+                                for s in sementes
+                                for local, _nome in config.locais()
+                            ],
                             contas=contas,
                             finalidade=finalidade,
                             rodada=rodada,
@@ -352,15 +373,20 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
                     from apps.radar.fila import postar
 
                     palavras = list(dict.fromkeys(palavra_para_volume(s.texto) for s in candidatos))
-                    corpo = {
-                        "keywords": palavras[:1000],
-                        "location_code": config.codigo_de_local,
-                        "language_code": config.codigo_de_idioma,
-                    }
+                    palavras = palavras[:1000]
+                    # Uma tarefa por regiao. As palavras vao no contexto: e a
+                    # elas, e so a elas, que o resultado sera aplicado.
+                    tarefas = [
+                        (
+                            corpo_de_volume(palavras, config=config, local=local),
+                            {"local": local, "palavras": palavras},
+                        )
+                        for local, _nome in config.locais()
+                    ]
                     try:
                         postar(
                             TarefaNaFila.Tipo.VOLUME,
-                            [(corpo, {})],
+                            tarefas,
                             contas=contas,
                             finalidade=finalidade,
                             rodada=rodada,
@@ -371,7 +397,7 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
                         # recusou a fila (login, saldo, IP) recusa o ao vivo.
                         resumo.setdefault("erros", []).append(f"volume: {exc}")
                     else:
-                        resumo["tarefas"] = resumo.get("tarefas", 0) + 1
+                        resumo["tarefas"] = resumo.get("tarefas", 0) + len(tarefas)
                         rodada.situacao = RodadaDoRadar.Situacao.AGUARDANDO
                         rodada.save(update_fields=["fase", "situacao", "resumo"])
                         return rodada
@@ -457,14 +483,21 @@ def colher_fila() -> int:
 
 
 def _processar(tarefa: TarefaNaFila, resultado: dict) -> None:
-    from apps.radar.provedores import ler_serp, ler_volumes
+    from apps.radar.provedores import ler_metricas, ler_serp
 
     if tarefa.tipo == TarefaNaFila.Tipo.SERP:
         _sinais_da_serp(
             ler_serp(resultado), tarefa.contexto.get("semente", ""), rodada=tarefa.rodada
         )
     elif tarefa.tipo == TarefaNaFila.Tipo.VOLUME:
-        _aplicar_volumes(_precisam_de_volume(_sem_grupo()), ler_volumes(resultado))
+        pedidas = set(tarefa.contexto.get("palavras") or [])
+        alvos = [
+            s
+            for s in _sem_grupo()
+            if s.fonte not in SEM_PEDIDO_DE_VOLUME
+            and (palavra_para_volume(s.texto) in pedidas if pedidas else s.volume is None)
+        ]
+        _aplicar_metricas(alvos, ler_metricas(resultado), local=tarefa.contexto.get("local"))
     elif tarefa.tipo == TarefaNaFila.Tipo.AVALIACOES:
         from apps.radar.concorrentes import ler_avaliacoes
 

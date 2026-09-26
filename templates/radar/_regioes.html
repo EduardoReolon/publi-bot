@@ -1,0 +1,84 @@
+{% load i18n %}
+{# Seletor de regioes. O valor vai num campo escondido, em JSON; os botoes so o editam. #}
+<div class="campo" id="seletor-regioes">
+  <label for="busca-regiao">{% translate "Regioes" %}</label>
+  {{ campo }}
+  <div class="chips" data-chips></div>
+  <input type="text" id="busca-regiao" autocomplete="off"
+         placeholder="{% translate 'Digite uma cidade ou estado (ex.: Curitiba)' %}">
+  <div class="resultados" data-resultados></div>
+  {% if not tem_lista_de_locais %}
+    <div class="ajuda">
+      {% translate "A lista de cidades e estados ainda nao foi baixada da DataForSEO (e gratuito)." %}
+      <button type="submit" form="form-locais" class="botao secundario pequeno">{% translate "Baixar lista de locais" %}</button>
+      {% translate "Enquanto isso, da para digitar o codigo numerico do local e apertar Enter." %}
+    </div>
+  {% endif %}
+  {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+  {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+</div>
+<script>
+(function () {
+  const raiz = document.getElementById("seletor-regioes");
+  const escondido = raiz.querySelector("input[type=hidden]");
+  const chips = raiz.querySelector("[data-chips]");
+  const resultados = raiz.querySelector("[data-resultados]");
+  const busca = document.getElementById("busca-regiao");
+  let regioes = [];
+  try { regioes = JSON.parse(escondido.value || "[]") || []; } catch (e) { regioes = []; }
+
+  function gravar() { escondido.value = JSON.stringify(regioes); desenhar(); }
+  function desenhar() {
+    chips.textContent = "";
+    if (!regioes.length) {
+      const vazio = document.createElement("span");
+      vazio.className = "ajuda";
+      vazio.textContent = "{% translate 'Nenhuma: o pais inteiro.' %}";
+      chips.appendChild(vazio);
+    }
+    regioes.forEach(function (r, i) {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = r.nome + (r.tipo ? " · " + r.tipo : "");
+      const x = document.createElement("button");
+      x.type = "button"; x.textContent = "×"; x.title = "{% translate 'Remover' %}";
+      x.addEventListener("click", function () { regioes.splice(i, 1); gravar(); });
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+  }
+  function adicionar(r) {
+    if (!regioes.some(function (x) { return String(x.codigo) === String(r.codigo); })) {
+      regioes.push(r);
+    }
+    busca.value = ""; resultados.textContent = ""; gravar();
+  }
+  let espera;
+  busca.addEventListener("input", function () {
+    clearTimeout(espera);
+    const q = busca.value.trim();
+    if (q.length < 2) { resultados.textContent = ""; return; }
+    espera = setTimeout(function () {
+      fetch("{% url 'radar:procurar_locais' %}?q=" + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (dados) {
+          resultados.textContent = "";
+          dados.locais.forEach(function (l) {
+            const b = document.createElement("button");
+            b.type = "button"; b.className = "botao secundario pequeno";
+            b.textContent = l.nome + " · " + l.tipo;
+            b.addEventListener("click", function () { adicionar(l); });
+            resultados.appendChild(b);
+          });
+        });
+    }, 250);
+  });
+  busca.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const q = busca.value.trim();
+    if (/^\d+$/.test(q)) { adicionar({codigo: Number(q), nome: q, tipo: ""}); }
+  });
+  desenhar();
+})();
+</script>

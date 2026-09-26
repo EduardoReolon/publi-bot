@@ -22,5 +22,7 @@ urlpatterns = [
         views.decidir_concorrente,
         name="decidir_concorrente",
     ),
+    path("locais/", views.procurar_locais, name="procurar_locais"),
+    path("locais/atualizar/", views.atualizar_locais, name="atualizar_locais"),
     path("search-console/", views.coletar_console, name="coletar_console"),
 ]
