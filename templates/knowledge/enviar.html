@@ -26,4 +26,28 @@
       <a class="botao secundario" href="{% url 'knowledge:documentos' %}">{% translate "Cancelar" %}</a>
     </div>
   </form>
+
+  <h2>{% translate "Ou uma pagina da web" %}</h2>
+  <form method="post" action="{% url 'knowledge:enviar_url' %}">
+    {% csrf_token %}
+    {% for campo in form_url %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    <div class="acoes">
+      <button type="submit" class="botao secundario">{% translate "Buscar pagina" %}</button>
+    </div>
+  </form>
+
+  <h2>{% translate "Ou o que voce sabe" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Uma nota do especialista vira fonte atribuida a quem a escreveu — para o
+      tema que nao tem artigo, mas tem a experiencia de alguem.
+    {% endblocktranslate %}
+    <a href="{% url 'knowledge:nota' %}">{% translate "Escrever nota do especialista" %}</a>
+  </p>
 {% endblock %}

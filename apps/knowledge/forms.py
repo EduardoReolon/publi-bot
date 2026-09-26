@@ -9,13 +9,26 @@ from apps.knowledge.models import Document, DocumentCategory, RetrievalSettings
 
 # O que a extracao sem GPU consegue ler. Recusar aqui e melhor que aceitar e
 # falhar minutos depois, dentro do worker, com o arquivo ja gravado.
-EXTENSOES_ACEITAS = (".pdf", ".txt", ".md", ".markdown")
+EXTENSOES_ACEITAS = (
+    ".pdf",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".docx",
+    ".pptx",
+    ".xlsx",
+    ".html",
+    ".htm",
+)
 
 
 class EnvioDeDocumento(forms.Form):
     arquivo = forms.FileField(
         label=_("Arquivo"),
-        help_text=_("PDF, ou .txt/.md ja convertidos."),
+        help_text=_(
+            "PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), pagina salva "
+            "(.html) ou texto (.txt/.md)."
+        ),
     )
     category = forms.ModelChoiceField(
         queryset=DocumentCategory.objects.all(),
@@ -47,6 +60,45 @@ class EnvioDeDocumento(forms.Form):
         return arquivo
 
 
+class EnvioPorUrl(forms.Form):
+    url = forms.URLField(
+        label=_("Endereco da pagina"),
+        assume_scheme="https",
+        help_text=_(
+            "A pagina e buscada agora e guardada como copia. O texto principal "
+            "vai para a curadoria, como um arquivo enviado."
+        ),
+    )
+    category = forms.ModelChoiceField(
+        queryset=DocumentCategory.objects.all(), label=_("Categoria"), empty_label=None
+    )
+
+
+class NotaDoEspecialista(forms.Form):
+    """O que a pessoa sabe, escrito por ela, para servir de fonte.
+
+    Pode ser em topicos. O que importa e que seja dela: o texto publicado vai
+    atribuir a afirmacao a quem escreveu.
+    """
+
+    titulo = forms.CharField(label=_("Assunto"), max_length=300)
+    autor = forms.CharField(label=_("Quem escreve"), max_length=150)
+    credencial = forms.CharField(
+        label=_("Credencial"),
+        max_length=150,
+        required=False,
+        help_text=_("Ex.: 'fisioterapeuta, CREFITO 12345' ou 'engenheiro civil'."),
+    )
+    texto = forms.CharField(
+        label=_("O que voce sabe sobre isso"),
+        widget=forms.Textarea(attrs={"rows": 12}),
+        help_text=_(
+            "Use titulos com '#' para separar assuntos: cada parte vira um bloco "
+            "de busca. Nao invente numero que voce nao conferiu."
+        ),
+    )
+
+
 class CuradoriaDeDocumento(forms.ModelForm):
     """Os campos que viram a citacao publicada.
 
@@ -63,6 +115,8 @@ class CuradoriaDeDocumento(forms.ModelForm):
             "year",
             "doi",
             "source_url",
+            "source_label",
+            "published_on",
             "language",
             "license",
             "authority_score",
@@ -70,10 +124,18 @@ class CuradoriaDeDocumento(forms.ModelForm):
         labels = {
             "authority_score": _("Autoridade (0-100)"),
         }
+        widgets = {"published_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")}
         help_texts = {
             "authority_score": _(
                 "Entre as fontes recuperadas, a de maior autoridade e a que "
                 "recebe o link de saida do artigo."
+            ),
+            "source_label": _(
+                "Como a fonte aparece no texto quando nao ha autores e ano: "
+                "'Manual de uso da planilha, v3', 'SINAPI PR, set/2026'."
+            ),
+            "published_on": _(
+                "A validade da fonte conta daqui. Sem data, conta de quando foi buscada."
             ),
             "license": _(
                 "Registro do que a fonte permite. Nao apaga nada por conta "
@@ -85,19 +147,53 @@ class CuradoriaDeDocumento(forms.ModelForm):
 
     def clean(self):
         dados = super().clean()
-        # A URL nao e obrigatoria no model, mas sem ela o documento nao serve
-        # para o que o produto faz: citar com link.
-        if not dados.get("source_url"):
+        categoria = self.instance.category
+        modo = categoria.modo_de_citacao_efetivo
+
+        # A URL so e obrigatoria quando a categoria cita com link: e ela que
+        # vira o destino publicado. Manual interno e nota do especialista nao
+        # tem URL, e exigi-la empurrava as pessoas a inventar uma.
+        if modo == DocumentCategory.CitationMode.LINK and not dados.get("source_url"):
             self.add_error(
                 "source_url",
                 _(
-                    "Informe a URL de origem. E ela que vira o link publicado; "
-                    "sem ela o documento nunca sera escolhido como fonte primaria."
+                    "Informe a URL de origem. Esta categoria cita com link; sem "
+                    "URL o documento nunca sera a fonte do link de saida."
                 ),
             )
-        if not dados.get("authors"):
-            self.add_error("authors", _("Os autores formam o texto-ancora do link."))
+
+        # Artigo cientifico se cita por autores e ano. O resto precisa de ALGUM
+        # nome: autores, ou o rotulo.
+        if categoria.source_class == DocumentCategory.SourceClass.SCIENTIFIC:
+            if not dados.get("authors"):
+                self.add_error("authors", _("Os autores formam o texto-ancora do link."))
+        elif (
+            modo != DocumentCategory.CitationMode.INTERNAL
+            and not dados.get("authors")
+            and not dados.get("source_label")
+        ):
+            self.add_error(
+                "source_label",
+                _("Informe os autores ou um rotulo: e o nome com que a fonte aparece no texto."),
+            )
         return dados
+
+
+class CategoriaDeDocumento(forms.ModelForm):
+    """Nome e perfil da categoria."""
+
+    class Meta:
+        model = DocumentCategory
+        fields = [
+            "name",
+            "source_class",
+            "supports_central_idea",
+            "citation_mode",
+            "confidential",
+            "validity_days",
+            "description",
+        ]
+        widgets = {"description": forms.Textarea(attrs={"rows": 2})}
 
 
 class ConfiguracaoDeBusca(forms.ModelForm):

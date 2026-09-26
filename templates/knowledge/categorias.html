@@ -3,25 +3,65 @@
 {% block menu %}{% include "_menu.html" %}{% endblock %}
 {% block conteudo %}
   <h1>{% translate "Categorias de documento" %}</h1>
-  <p class="sub">{% translate "Agrupam o acervo e orientam a curadoria." %}</p>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Cada categoria carrega um perfil de fonte: que natureza ela tem, se pode
+      sustentar a afirmacao central de um texto, como aparece no texto
+      publicado e por quanto tempo vale.
+    {% endblocktranslate %}
+  </p>
 
-  <ul class="lista">
-    {% for categoria in categorias %}
-      <li>
-        <strong>{{ categoria.name }}</strong>
-        <div class="pre-visualizacao">{{ categoria.total }} {% translate "documento(s)" %}</div>
-      </li>
-    {% empty %}
-      <li class="vazio">{% translate "Nenhuma categoria ainda." %}</li>
-    {% endfor %}
-  </ul>
+  <table>
+    <thead>
+      <tr>
+        <th>{% translate "Categoria" %}</th>
+        <th>{% translate "Natureza" %}</th>
+        <th>{% translate "Ideia central" %}</th>
+        <th>{% translate "Citacao" %}</th>
+        <th>{% translate "Validade" %}</th>
+        <th>{% translate "Documentos" %}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for categoria in categorias %}
+        <tr>
+          <td><strong>{{ categoria.name }}</strong>{% if categoria.confidential %} <span class="selo">{% translate "confidencial" %}</span>{% endif %}</td>
+          <td>{{ categoria.get_source_class_display }}</td>
+          <td>{% if categoria.supports_central_idea %}{% translate "sustenta" %}{% else %}{% translate "so contexto" %}{% endif %}</td>
+          <td>{{ categoria.get_citation_mode_display }}</td>
+          <td>{% if categoria.validity_days %}{{ categoria.validity_days }} {% translate "dias" %}{% else %}—{% endif %}</td>
+          <td>{{ categoria.total }}</td>
+          <td><a href="?editar={{ categoria.pk }}">{% translate "editar" %}</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="vazio">{% translate "Nenhuma categoria ainda." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 
   <form method="post">
     {% csrf_token %}
-    <div class="campo">
-      <label for="name">{% translate "Nova categoria" %}</label>
-      <input type="text" id="name" name="name" required placeholder="{% translate 'Artigo cientifico' %}">
+    <input type="hidden" name="acao" value="padrao">
+    <div class="acoes">
+      <button type="submit" class="botao secundario">{% translate "Criar as categorias padrao que faltam" %}</button>
     </div>
-    <button type="submit">{% translate "Criar" %}</button>
+  </form>
+
+  <h2>{% if editando %}{% translate "Editar" %} {{ editando.name }}{% else %}{% translate "Nova categoria" %}{% endif %}</h2>
+  <form method="post">
+    {% csrf_token %}
+    {% for campo in form %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="acoes">
+      <button type="submit">{% translate "Salvar" %}</button>
+      {% if editando %}<a class="botao secundario" href="{% url 'knowledge:categorias' %}">{% translate "Cancelar" %}</a>{% endif %}
+    </div>
   </form>
 {% endblock %}

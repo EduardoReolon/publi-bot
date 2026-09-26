@@ -645,6 +645,8 @@ class ArticleCitation(models.Model):
     # citacao precisa continuar auditavel.
     source_title = models.CharField(_("titulo"), max_length=500, blank=True)
     source_url = models.URLField(_("URL"), max_length=500, blank=True)
+    source_label = models.CharField(_("rotulo"), max_length=300, blank=True)
+    citation_mode = models.CharField(_("como citar"), max_length=12, default="link")
 
     class Meta:
         verbose_name = _("citacao")
@@ -965,6 +967,8 @@ class AnswerCitation(models.Model):
     used_as_primary = models.BooleanField(_("fonte primaria"), default=False)
     source_title = models.CharField(_("titulo"), max_length=500, blank=True)
     source_url = models.URLField(_("URL"), max_length=500, blank=True)
+    source_label = models.CharField(_("rotulo"), max_length=300, blank=True)
+    citation_mode = models.CharField(_("como citar"), max_length=12, default="link")
 
     class Meta:
         verbose_name = _("citacao de resposta")

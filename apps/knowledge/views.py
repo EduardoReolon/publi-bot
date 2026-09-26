@@ -79,16 +79,23 @@ def enviar_documento(request: HttpRequest) -> HttpResponse:
         return redirect("knowledge:categorias")
 
     if request.method != "POST":
+        from apps.knowledge.forms import EnvioPorUrl
+
         return render(
             request,
             "knowledge/enviar.html",
-            {"aba": "documentos", "form": EnvioDeDocumento()},
+            {"aba": "documentos", "form": EnvioDeDocumento(), "form_url": EnvioPorUrl()},
         )
 
     form = EnvioDeDocumento(request.POST, request.FILES)
     if not form.is_valid():
+        from apps.knowledge.forms import EnvioPorUrl
+
         return render(
-            request, "knowledge/enviar.html", {"aba": "documentos", "form": form}, status=400
+            request,
+            "knowledge/enviar.html",
+            {"aba": "documentos", "form": form, "form_url": EnvioPorUrl()},
+            status=400,
         )
 
     resultado = ingerir_documento(
@@ -386,15 +393,51 @@ def _citacoes_do_documento(documento) -> int:
 
 @login_required
 def categorias(request: HttpRequest) -> HttpResponse:
-    """Categorias do acervo — o agrupamento que orienta a curadoria."""
-    if request.method == "POST":
-        nome = (request.POST.get("name") or "").strip()
-        if nome:
-            from django.utils.text import slugify
+    """Categorias do acervo, com o perfil de fonte de cada uma.
 
-            DocumentCategory.objects.get_or_create(slug=slugify(nome)[:80], defaults={"name": nome})
-            messages.success(request, _("Categoria criada."))
-        return redirect("knowledge:categorias")
+    `?editar=<id>` abre a categoria no formulario; sem ele, o formulario cria
+    uma nova. Uma tela so, porque sao poucas e o perfil de uma se entende
+    melhor ao lado das outras.
+    """
+    from apps.knowledge.forms import CategoriaDeDocumento
+
+    instancia = None
+    if request.GET.get("editar"):
+        instancia = DocumentCategory.objects.filter(pk=request.GET["editar"]).first()
+
+    if request.method == "POST":
+        if request.POST.get("acao") == "padrao":
+            from apps.knowledge.perfis import criar_categorias_padrao
+
+            criadas = criar_categorias_padrao()
+            messages.success(
+                request, _("%(total)s categoria(s) padrao criada(s).") % {"total": criadas}
+            )
+            return redirect("knowledge:categorias")
+
+        form = CategoriaDeDocumento(request.POST, instance=instancia)
+        if form.is_valid():
+            categoria = form.save(commit=False)
+            if not categoria.slug:
+                from django.utils.text import slugify
+
+                base = slugify(categoria.name)[:70] or "categoria"
+                slug, n = base, 2
+                while DocumentCategory.objects.filter(slug=slug).exclude(pk=categoria.pk).exists():
+                    slug = f"{base}-{n}"
+                    n += 1
+                categoria.slug = slug
+            categoria.save()
+            messages.success(
+                request,
+                _(
+                    "Categoria salva. O perfil vale para os trechos indexados daqui "
+                    "em diante; os ja indexados mudam ao salvar a curadoria de novo."
+                ),
+            )
+            return redirect("knowledge:categorias")
+    else:
+        form = CategoriaDeDocumento(instance=instancia)
 
     return render(
         request,
@@ -404,8 +447,92 @@ def categorias(request: HttpRequest) -> HttpResponse:
             "categorias": DocumentCategory.objects.annotate(total=Count("documents")).order_by(
                 "name"
             ),
+            "form": form,
+            "editando": instancia,
         },
+        status=400 if request.method == "POST" else 200,
     )
+
+
+@login_required
+@require_POST
+def enviar_url(request: HttpRequest) -> HttpResponse:
+    """Busca a pagina e a manda para a conversao, como um arquivo enviado."""
+    from apps.knowledge.entradas import ingerir_url
+    from apps.knowledge.forms import EnvioPorUrl
+    from apps.knowledge.web import PaginaIndisponivel
+
+    form = EnvioPorUrl(request.POST)
+    if not form.is_valid():
+        messages.error(request, _("Informe um endereco valido e a categoria."))
+        return redirect("knowledge:enviar")
+
+    try:
+        resultado = ingerir_url(
+            form.cleaned_data["url"],
+            category=form.cleaned_data["category"],
+            uploaded_by=request.user,
+        )
+    except PaginaIndisponivel as exc:
+        messages.error(request, _("Nao foi possivel usar a pagina: %(erro)s") % {"erro": exc})
+        return redirect("knowledge:enviar")
+
+    if resultado.ja_existia:
+        messages.info(request, _("Esta pagina ja estava no acervo; abrindo o documento."))
+        return redirect("knowledge:curar", pk=resultado.document.pk)
+
+    messages.success(request, _("Pagina recebida. Confira na curadoria quando a leitura terminar."))
+    return redirect("knowledge:documentos")
+
+
+@login_required
+def nota_do_especialista(request: HttpRequest) -> HttpResponse:
+    """Registra o conhecimento de quem escreve como fonte, ja curada."""
+    from apps.knowledge.entradas import registrar_nota
+    from apps.knowledge.forms import NotaDoEspecialista
+
+    if request.method != "POST":
+        return render(
+            request,
+            "knowledge/nota.html",
+            {"aba": "documentos", "form": NotaDoEspecialista(initial={"autor": _nome(request)})},
+        )
+
+    form = NotaDoEspecialista(request.POST)
+    if not form.is_valid():
+        return render(
+            request, "knowledge/nota.html", {"aba": "documentos", "form": form}, status=400
+        )
+
+    try:
+        documento = registrar_nota(
+            titulo=form.cleaned_data["titulo"],
+            autor=form.cleaned_data["autor"],
+            credencial=form.cleaned_data["credencial"],
+            texto=form.cleaned_data["texto"],
+            escrita_por=request.user,
+        )
+    except Exception as exc:
+        logger.exception("Falha ao registrar nota do especialista")
+        messages.error(
+            request,
+            _("Nao foi possivel indexar a nota: %(erro)s") % {"erro": str(exc)[:200]},
+        )
+        return render(
+            request, "knowledge/nota.html", {"aba": "documentos", "form": form}, status=400
+        )
+
+    messages.success(
+        request,
+        _("Nota registrada e ja disponivel como fonte: %(titulo)s") % {"titulo": documento.title},
+    )
+    return redirect("knowledge:documentos")
+
+
+def _nome(request) -> str:
+    usuario = request.user
+    nome = getattr(usuario, "full_name", "") or ""
+    return nome or (usuario.get_full_name() if hasattr(usuario, "get_full_name") else "")
 
 
 @login_required

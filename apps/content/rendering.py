@@ -96,10 +96,28 @@ class MarcadorSemFonte(ValueError):
 
 @dataclass(frozen=True)
 class Fonte:
-    """Uma fonte confirmada, pronta para virar link."""
+    """Uma fonte confirmada, pronta para virar link, nome ou nada.
+
+    `modo` vem do perfil da categoria do documento:
+
+    * `link` — o marcador vira link para `url` (o comportamento original);
+    * `atribuicao` — vira o nome da fonte, sem link. Para o que nao tem URL
+      publica: manual da empresa, nota do especialista, entrevista;
+    * `interna` — some do texto. A fonte sustentou a frase, mas e confidencial
+      ou e so contexto (forum), e nao deve aparecer.
+
+    Link sem URL cai para atribuicao: melhor o nome que um link vazio.
+    """
 
     url: str
     anchor: str
+    modo: str = "link"
+
+    @property
+    def modo_efetivo(self) -> str:
+        if self.modo == "link" and not self.url:
+            return "atribuicao"
+        return self.modo
 
 
 def validar_saida_do_modelo(texto: str, *, max_marcadores: int = 2) -> list[int]:
@@ -129,8 +147,40 @@ def validar_saida_do_modelo(texto: str, *, max_marcadores: int = 2) -> list[int]
 TITULO_DAS_REFERENCIAS = "Referencias"
 
 
+# O que costuma anteceder o marcador numa atribuicao ("segundo [[FONTE_1]]").
+# Numa fonte interna o marcador some, e a preposicao sozinha deixaria "segundo ,".
+_PREFIXO_DE_ATRIBUICAO = r"(?:\b(?:segundo|conforme|de acordo com|according to|seg[uú]n)\s+)?"
+
+
+_INICIO_DE_FRASE = "\x00"
+
+
+def _remover_marcador(texto: str, indice: int) -> str:
+    """Tira o marcador de uma fonte interna, e o "segundo" que o anunciava.
+
+    No inicio de frase ("Segundo [[FONTE_1]] o custo cai") a frase que sobra
+    precisa voltar a comecar com maiuscula; no meio, basta nao deixar espaco
+    duplo.
+    """
+    padrao = re.compile(
+        _PREFIXO_DE_ATRIBUICAO + re.escape(f"[[FONTE_{indice}]]") + r"[ \t]*", re.IGNORECASE
+    )
+
+    def trocar(achado: re.Match) -> str:
+        anterior = achado.string[: achado.start()].rstrip(" \t")
+        no_inicio = not anterior or anterior[-1] in ".!?:\n"
+        return _INICIO_DE_FRASE if no_inicio else ""
+
+    texto = padrao.sub(trocar, texto)
+    return re.sub(
+        _INICIO_DE_FRASE + r"(\S?)",
+        lambda m: m.group(1).upper(),
+        texto,
+    )
+
+
 def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: bool = False) -> str:
-    """Troca `[[FONTE_N]]` por Markdown de link, com URL vinda do banco.
+    """Troca `[[FONTE_N]]` pela forma de citacao de cada fonte.
 
     Esta e a unica funcao do sistema que insere uma URL num texto gerado. A URL
     vem de `fontes`, montado a partir de documentos confirmados por humano —
@@ -139,34 +189,51 @@ def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: boo
     Com `ao_final`, o marcador vira o nome da fonte em texto simples e os links
     saem numa lista no fim. E a mesma atribuicao, em outro lugar: link no meio
     do paragrafo tira o leitor da pagina no meio do raciocinio. O texto da
-    frase e preservado nos dois modos — apagar o marcador deixaria buracos do
-    tipo "conforme , o efeito".
+    frase e preservado — apagar o marcador deixaria buracos do tipo "conforme
+    , o efeito". A excecao e a fonte interna, que some junto com a preposicao
+    que a anunciava.
     """
     usadas: list[int] = []
 
-    def trocar(achado: re.Match) -> str:
-        indice = int(achado.group(1))
-        fonte = fontes.get(indice)
-        if fonte is None:
+    for indice in {int(n) for n in PADRAO_MARCADOR.findall(texto)}:
+        if indice not in fontes:
             raise MarcadorSemFonte(
                 f"o texto cita [[FONTE_{indice}]], mas essa fonte nao esta entre "
                 f"as recuperadas ({sorted(fontes)})."
             )
+
+    # Internas primeiro, com a preposicao que as antecede.
+    for indice, fonte in fontes.items():
+        if fonte.modo_efetivo == "interna":
+            texto = _remover_marcador(texto, indice)
+
+    def trocar(achado: re.Match) -> str:
+        indice = int(achado.group(1))
+        fonte = fontes[indice]
         if indice not in usadas:
             usadas.append(indice)
-        if ao_final:
+        if ao_final or fonte.modo_efetivo == "atribuicao":
             return fonte.anchor
         # Sem `rel="nofollow"`: a ausencia do atributo E o comportamento
         # desejado. Nao existe `rel="dofollow"` em HTML — e um engano comum.
         return f"[{fonte.anchor}]({fonte.url})"
 
     corpo = PADRAO_MARCADOR.sub(trocar, texto)
+    # Espaco que sobrou antes de pontuacao, onde uma fonte interna saiu.
+    corpo = re.sub(r"[ \t]+([.,;:!?)])", r"\1", corpo)
+    corpo = re.sub(r"[ \t]{2,}", " ", corpo)
 
     if not ao_final or not usadas:
         return corpo
 
-    itens = "\n".join(f"- [{fontes[i].anchor}]({fontes[i].url})" for i in usadas)
-    return f"{corpo}\n\n## {TITULO_DAS_REFERENCIAS}\n\n{itens}"
+    itens = []
+    for i in usadas:
+        fonte = fontes[i]
+        if fonte.modo_efetivo == "link":
+            itens.append(f"- [{fonte.anchor}]({fonte.url})")
+        else:
+            itens.append(f"- {fonte.anchor}")
+    return f"{corpo}\n\n## {TITULO_DAS_REFERENCIAS}\n\n" + "\n".join(itens)
 
 
 def markdown_para_html(texto: str) -> str:

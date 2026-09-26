@@ -83,7 +83,7 @@ def test_arquivo_de_texto_e_convertido_sem_gpu(tenant_com_categoria):
 
 @pytest.mark.django_db
 def test_extensao_desconhecida_diz_o_que_fazer(tenant_com_categoria):
-    documento = _documento("planilha.xlsx", b"nao importa")
+    documento = _documento("apresentacao.key", b"nao importa")
 
     with pytest.raises(ExtracaoIndisponivel, match="Docling"):
         extrair_markdown(documento)
@@ -344,7 +344,7 @@ def test_metadados_conferidos_nao_sao_sobrescritos(tenant_com_categoria):
 @pytest.mark.django_db
 def test_falha_de_conversao_fica_registrada_no_documento(tenant_com_categoria):
     """O motivo tem de estar onde quem enviou o arquivo vai procurar."""
-    documento = _documento("planilha.xlsx", b"conteudo")
+    documento = _documento("apresentacao.key", b"conteudo")
     job = criar_job(kind=GenerationJob.Kind.PDF_INGESTION, target_object_id=str(documento.pk))
 
     assert avancar(str(job.pk)) == GenerationJob.Status.FAILED

@@ -74,6 +74,10 @@ padroes = [
   "apps/knowledge/flows.py",
   "apps/knowledge/tasks.py",
   "apps/knowledge/management/**",
+  "apps/knowledge/estruturados.py",
+  "apps/knowledge/web.py",
+  "apps/knowledge/entradas.py",
+  "apps/knowledge/perfis.py",
   "docs/EXTRACAO.md",
   "tests/test_blocos.py",
   "tests/test_ingestao.py",
@@ -94,6 +98,7 @@ padroes = [
   "apps/knowledge/embeddings.py",
   "apps/knowledge/services.py",
   "apps/knowledge/saude.py",
+  "apps/knowledge/reranker.py",
   "tests/test_knowledge.py",
   "tests/test_saude_da_busca.py",
   "tests/test_pgvector.py",
@@ -208,6 +213,22 @@ entrada = ["apps/content/models.py"]
 relacionados = ["geracao-texto", "revisao-telas", "publicacao"]
 # Curinga da area: modulo novo em apps/content/ cai aqui.
 padroes = ["apps/content/**"]
+
+
+# ---------------------------------------------------------------------------
+# apps/editorial — guia editorial do site
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "editorial"
+titulo = "Guia editorial: voz, vocabulario proibido e estruturas"
+resumo = """
+Como o site fala. O perfil editorial entra nos prompts que escrevem texto
+publicado (estrutura so no planejamento, convite so no fecho) e confere o texto
+antes da aprovacao: termo proibido bloqueia, marca de texto de maquina avisa.
+"""
+entrada = ["apps/editorial/services.py", "apps/editorial/models.py"]
+relacionados = ["geracao-texto", "revisao-telas"]
+padroes = ["apps/editorial/**", "templates/editorial/**", "tests/test_editorial.py"]
 
 
 # ---------------------------------------------------------------------------

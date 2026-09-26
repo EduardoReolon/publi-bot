@@ -37,6 +37,7 @@ from apps.inference.security import decifrar_chave
 logger = logging.getLogger("publibot.knowledge")
 
 EXTENSOES_DE_TEXTO = {".txt", ".md", ".markdown"}
+EXTENSOES_WEB = (".html", ".htm")
 
 
 class ExtracaoIndisponivel(RuntimeError):
@@ -90,6 +91,16 @@ def extrair_markdown(document, *, timeout: float = 600.0) -> ResultadoDaExtracao
     de layout.
     """
     from django.conf import settings
+
+    from apps.knowledge.estruturados import EXTENSOES_ESTRUTURADAS
+
+    nome_em_minusculas = (document.nome_do_arquivo or "").lower()
+    # Formatos que declaram a propria estrutura, e paginas web, sao lidos aqui
+    # mesmo: nao ha layout a adivinhar, e a placa fica para o PDF.
+    if nome_em_minusculas.endswith(EXTENSOES_ESTRUTURADAS):
+        return _extrair_estruturado(document)
+    if nome_em_minusculas.endswith(EXTENSOES_WEB):
+        return _extrair_pagina(document)
 
     conexao = conexao_de_conversao()
     if conexao is not None:
@@ -224,6 +235,51 @@ def converter_no_worker(
         markdown=dados.get("markdown", ""),
         metodo="docling",
         duracao_ms=int(dados.get("duration_ms", 0)),
+    )
+
+
+def _ler_arquivo(document) -> bytes:
+    document.original_file.open("rb")
+    try:
+        return document.original_file.read()
+    finally:
+        document.original_file.close()
+
+
+def _extrair_estruturado(document) -> ResultadoDaExtracao:
+    from apps.knowledge.estruturados import converter
+
+    try:
+        markdown = converter(document.nome_do_arquivo, _ler_arquivo(document))
+    except Exception as exc:
+        raise ExtracaoIndisponivel(f"nao foi possivel ler o arquivo: {exc}") from exc
+    if not markdown.strip():
+        raise ExtracaoIndisponivel("o arquivo nao tem texto.")
+    return ResultadoDaExtracao(markdown=markdown, metodo="estruturado")
+
+
+def _extrair_pagina(document) -> ResultadoDaExtracao:
+    """Pagina web gravada: texto principal, com os metadados que ela declara.
+
+    Os metadados vao nas MESMAS chaves do dicionario de Info do PDF (`/Title`,
+    `/Author`), porque e isso que a sugestao de metadados ja sabe ler. A data
+    vai em `data`, e o passo de conversao a grava como data de publicacao.
+    """
+    from apps.knowledge.web import PaginaIndisponivel, extrair_pagina
+
+    try:
+        pagina = extrair_pagina(_ler_arquivo(document), url=document.source_url)
+    except PaginaIndisponivel as exc:
+        raise ExtracaoIndisponivel(str(exc)) from exc
+
+    metadados = {"/Title": pagina.titulo, "/Author": pagina.autor, "site": pagina.site}
+    if pagina.data:
+        metadados["data"] = pagina.data.isoformat()
+    titulo = f"# {pagina.titulo}\n\n" if pagina.titulo else ""
+    return ResultadoDaExtracao(
+        markdown=f"{titulo}{pagina.markdown}",
+        metodo="web",
+        metadados={k: v for k, v in metadados.items() if v},
     )
 
 

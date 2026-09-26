@@ -23,11 +23,35 @@ from pgvector.django import HnswIndex, VectorField
 
 
 class DocumentCategory(models.Model):
-    """Tipo de documento: artigo cientifico, termo de referencia, relatorio.
+    """Tipo de documento, com o PERFIL de fonte que ele carrega.
 
     E um model, e nao um TextChoices, para que o proprio usuario cadastre
     categorias pelo painel sem exigir deploy.
+
+    O nome e so o rotulo. O que muda o comportamento e o perfil: que natureza
+    de fonte e (`source_class`), se pode sustentar a afirmacao central de um
+    texto, como e citada no texto publicado, se e confidencial e por quanto
+    tempo vale. Um artigo cientifico, a tabela SINAPI do mes, o manual interno
+    da empresa e um topico de forum sao fontes muito diferentes — e antes
+    disto o sistema so sabia trata-las como a primeira.
     """
+
+    class SourceClass(models.TextChoices):
+        SCIENTIFIC = "cientifico", _("Cientifica")
+        OFFICIAL = "normativo", _("Normativa ou oficial")
+        COMPANY = "empresa", _("Material da empresa")
+        EXPERT = "especialista", _("Especialista")
+        OUTLET = "veiculo", _("Veiculo de referencia")
+        COMMUNITY = "comunidade", _("Comunidade (forum, comentarios)")
+        VIDEO = "video", _("Video")
+
+    class CitationMode(models.TextChoices):
+        # Vira link no texto publicado. Exige URL.
+        LINK = "link", _("Link para a fonte")
+        # O nome da fonte aparece no texto, sem link ("segundo a equipe").
+        ATTRIBUTION = "atribuicao", _("Atribuicao sem link")
+        # Sustenta o texto, mas nao aparece nele. Para material interno.
+        INTERNAL = "interna", _("Interna (nao aparece no texto)")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(_("nome"), max_length=80)
@@ -38,6 +62,40 @@ class DocumentCategory(models.Model):
         blank=True,
         help_text=_("Texto injetado no prompt ao usar fontes desta categoria."),
     )
+
+    # --- Perfil de fonte ---------------------------------------------------
+    source_class = models.CharField(
+        _("natureza da fonte"),
+        max_length=12,
+        choices=SourceClass.choices,
+        default=SourceClass.SCIENTIFIC,
+    )
+    supports_central_idea = models.BooleanField(
+        _("pode sustentar a ideia central"),
+        default=True,
+        help_text=_(
+            "Desligado, a fonte serve para contexto e para entender a duvida, "
+            "nunca para a afirmacao que o texto existe para fazer."
+        ),
+    )
+    citation_mode = models.CharField(
+        _("como citar"), max_length=12, choices=CitationMode.choices, default=CitationMode.LINK
+    )
+    confidential = models.BooleanField(
+        _("confidencial"),
+        default=False,
+        help_text=_("Pode embasar o texto, mas nunca e citada nem linkada."),
+    )
+    validity_days = models.PositiveIntegerField(
+        _("validade (dias)"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Tabela de preco e indice mensal vencem; artigo cientifico nao. Vazio: "
+            "nao vence. Fonte vencida sai da busca ate ser atualizada."
+        ),
+    )
+
     created_at = models.DateTimeField(_("criado em"), default=timezone.now)
 
     class Meta:
@@ -47,6 +105,11 @@ class DocumentCategory(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def modo_de_citacao_efetivo(self) -> str:
+        """Confidencial vence qualquer escolha de citacao."""
+        return self.CitationMode.INTERNAL if self.confidential else self.citation_mode
 
 
 class Document(models.Model):
@@ -102,6 +165,13 @@ class Document(models.Model):
     # politica editorial de quem opera o sistema, nao uma regra do software.
     # Ver LICENCAS_QUE_DESCARTAM_TEXTO_INTEGRAL em core/settings/base.py.
 
+    class Origin(models.TextChoices):
+        UPLOAD = "upload", _("Arquivo enviado")
+        URL = "url", _("Pagina por URL")
+        NOTE = "nota", _("Nota do especialista")
+        WEB = "web", _("Encontrada na web")
+        YOUTUBE = "youtube", _("Video do YouTube")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     category = models.ForeignKey(
@@ -110,6 +180,20 @@ class Document(models.Model):
         related_name="documents",
         verbose_name=_("categoria"),
     )
+    origin = models.CharField(
+        _("origem"), max_length=10, choices=Origin.choices, default=Origin.UPLOAD
+    )
+
+    # Como a fonte aparece no texto quando nao ha autores e ano — o caso de
+    # quase tudo que nao e artigo: "Manual de uso da planilha, v3", "SINAPI PR,
+    # set/2026", "Entrevista com o eng. Fulano". Vazio, vale "autores, ano".
+    source_label = models.CharField(_("rotulo da fonte"), max_length=300, blank=True)
+
+    # Quando a fonte foi publicada, e quando foi buscada. A validade conta da
+    # publicacao; sem ela, da busca.
+    published_on = models.DateField(_("publicada em"), null=True, blank=True)
+    fetched_at = models.DateTimeField(_("buscada em"), null=True, blank=True)
+    valid_until = models.DateField(_("valida ate"), null=True, blank=True, db_index=True)
 
     original_file = models.FileField(_("arquivo"), upload_to="documents/%Y/%m/")
     file_sha256 = models.CharField(_("sha256"), max_length=64, unique=True, db_index=True)
@@ -148,6 +232,11 @@ class Document(models.Model):
         DOCLING = "docling", _("Docling (analise de layout)")
         PYPDF = "pypdf", _("Texto do PDF, sem analise de layout")
         TEXT = "texto", _("Arquivo ja em texto")
+        # DOCX, PPTX, XLSX: a estrutura ja vem declarada no arquivo (estilo de
+        # titulo, slide, planilha), entao nao ha layout a adivinhar.
+        STRUCTURED = "estruturado", _("Documento estruturado (DOCX, PPTX, XLSX)")
+        # Pagina web: texto principal extraido, sem menu, rodape e anuncio.
+        WEB = "web", _("Pagina web (texto principal)")
 
     # Registrado no documento, e nao so no trabalho que o converteu, porque e
     # informacao que a curadoria precisa ver: o `pypdf` devolve a camada de
@@ -290,11 +379,26 @@ class Document(models.Model):
         return self.title or f"Documento {self.pk}"
 
     @property
+    def rotulo(self) -> str:
+        """Como a fonte e nomeada numa citacao."""
+        if self.source_label:
+            return self.source_label
+        if self.authors:
+            return f"{self.authors}, {self.year}" if self.year else self.authors
+        return self.title or self.nome_do_arquivo
+
+    @property
+    def vencida(self) -> bool:
+        return bool(self.valid_until and self.valid_until < timezone.localdate())
+
+    @property
     def extracao_e_confiavel(self) -> bool:
         """Se o metodo usado da conta de um artigo cientifico de verdade."""
         return self.extraction_method in {
             self.ExtractionMethod.DOCLING,
             self.ExtractionMethod.TEXT,
+            self.ExtractionMethod.STRUCTURED,
+            self.ExtractionMethod.WEB,
             "",
         }
 
@@ -374,6 +478,11 @@ class SuperChunk(models.Model):
     source_year = models.PositiveSmallIntegerField(_("ano da fonte"), null=True, blank=True)
     source_url = models.URLField(_("URL da fonte"), max_length=500, blank=True)
     source_authority = models.PositiveSmallIntegerField(_("autoridade da fonte"), default=50)
+    source_label = models.CharField(_("rotulo da fonte"), max_length=300, blank=True)
+    # O perfil da categoria no momento da indexacao. Copiado pelo mesmo motivo
+    # dos outros: a citacao precisa sobreviver a uma mudanca posterior.
+    citation_mode = models.CharField(_("como citar"), max_length=12, default="link")
+    supports_central_idea = models.BooleanField(_("sustenta a ideia central"), default=True)
 
     # De que parte do documento este trecho saiu. O titulo e o que o proprio
     # documento disser — "Abstract", "Discussao", o que for, em qualquer idioma

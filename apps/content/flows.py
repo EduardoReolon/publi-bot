@@ -216,7 +216,13 @@ def passo_planejar(job: GenerationJob) -> dict:
         tipo_de_conteudo=article.content_type,
     )
 
-    plano = interpretar_plano(resultado.texto, total_de_fontes=len(trechos))
+    plano = interpretar_plano(
+        resultado.texto,
+        total_de_fontes=len(trechos),
+        fontes_para_ideia_central={
+            n for n, t in enumerate(trechos, start=1) if getattr(t, "supports_central_idea", True)
+        },
+    )
     secoes = aplicar_plano(article, plano, trechos=trechos)
 
     logger.info(

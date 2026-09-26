@@ -141,9 +141,24 @@ def montar_contexto_das_fontes(trechos) -> str:
         chunk = t.chunk if hasattr(t, "chunk") else t
         partes.append(
             f'<fonte numero="{i}" autores="{chunk.source_authors}" '
-            f'ano="{chunk.source_year or ""}">\n{chunk.content}\n</fonte>'
+            f'ano="{chunk.source_year or ""}"{_uso_da_fonte(chunk)}>\n{chunk.content}\n</fonte>'
         )
     return "\n\n".join(partes)
+
+
+def _uso_da_fonte(chunk) -> str:
+    """O que o modelo precisa saber sobre COMO usar esta fonte.
+
+    Vai como atributo da tag, e nao como instrucao do prompt, porque vale por
+    fonte: no mesmo artigo pode haver um estudo que sustenta a tese e um
+    comentario de forum que so mostra como as pessoas falam do assunto.
+    """
+    avisos = []
+    if not getattr(chunk, "supports_central_idea", True):
+        avisos.append("apenas contexto: nunca a use para a ideia central")
+    if getattr(chunk, "citation_mode", "link") == "interna":
+        avisos.append("citacao interna: ponha o marcador so no fim da frase, sem 'segundo'")
+    return f' uso="{"; ".join(avisos)}"' if avisos else ""
 
 
 def interpretar_tese(texto: str) -> ResultadoDaTese:
@@ -179,36 +194,54 @@ def registrar_citacoes(article: Article, trechos) -> None:
     if not trechos:
         return
 
-    ordenados = sorted(
-        trechos,
-        key=lambda t: (t.chunk if hasattr(t, "chunk") else t).source_authority,
-        reverse=True,
-    )
-    primaria = ordenados[0]
-    chunk_primario = primaria.chunk if hasattr(primaria, "chunk") else primaria
+    chunk_primario = escolher_primaria([_chunk_de(t) for t in trechos])
 
     for t in trechos:
-        chunk = t.chunk if hasattr(t, "chunk") else t
+        chunk = _chunk_de(t)
         ArticleCitation.objects.create(
             article=article,
             super_chunk=chunk,
             rank=getattr(t, "posicao", 1),
             distance=getattr(t, "distancia", 0.0),
-            used_as_primary=chunk.pk == chunk_primario.pk,
+            used_as_primary=chunk_primario is not None and chunk.pk == chunk_primario.pk,
             source_title=chunk.source_title,
             source_url=chunk.source_url,
+            source_label=_texto_ancora(chunk)[:300],
+            citation_mode=chunk.citation_mode,
         )
 
-    article.primary_source = chunk_primario.document
-    article.outbound_link_url = chunk_primario.source_url
-    article.anchor_text = _texto_ancora(chunk_primario)
+    article.primary_source = chunk_primario.document if chunk_primario else None
+    article.outbound_link_url = chunk_primario.source_url if chunk_primario else ""
+    article.anchor_text = _texto_ancora(chunk_primario) if chunk_primario else ""
     article.save(update_fields=["primary_source", "outbound_link_url", "anchor_text"])
 
 
+def escolher_primaria(chunks):
+    """A fonte que recebe o link de saida: a de maior autoridade QUE PODE ter link.
+
+    Material interno, nota do especialista e forum nao entram, mesmo com
+    autoridade alta: nao ha link publico para dar. Sem nenhuma fonte linkavel,
+    o artigo sai sem link de saida — e isso e correto, nao um defeito.
+    """
+    linkaveis = [c for c in chunks if c.citation_mode == "link" and c.source_url]
+    if not linkaveis:
+        return None
+    return max(linkaveis, key=lambda c: c.source_authority)
+
+
 def _texto_ancora(chunk) -> str:
+    if getattr(chunk, "source_label", ""):
+        return chunk.source_label
     autores = chunk.source_authors or chunk.source_title
     ano = chunk.source_year
     return f"{autores}, {ano}" if ano else autores
+
+
+def fonte_da_citacao(citacao) -> Fonte:
+    """A citacao gravada, na forma que `substituir_marcadores` usa."""
+    chunk = citacao.super_chunk
+    ancora = citacao.source_label or (_texto_ancora(chunk) if chunk else citacao.source_title)
+    return Fonte(url=citacao.source_url, anchor=ancora, modo=citacao.citation_mode or "link")
 
 
 def fontes_para_substituicao(article: Article) -> dict[int, Fonte]:
@@ -217,16 +250,9 @@ def fontes_para_substituicao(article: Article) -> dict[int, Fonte]:
     As URLs vem daqui — de documentos confirmados por humano — e nunca de algo
     que o modelo tenha escrito.
     """
-    mapa: dict[int, Fonte] = {}
-    for citacao in article.citations.order_by("rank"):
-        if citacao.source_url:
-            mapa[citacao.rank] = Fonte(
-                url=citacao.source_url,
-                anchor=_texto_ancora(citacao.super_chunk)
-                if citacao.super_chunk
-                else citacao.source_title,
-            )
-    return mapa
+    return {
+        citacao.rank: fonte_da_citacao(citacao) for citacao in article.citations.order_by("rank")
+    }
 
 
 @transaction.atomic
@@ -508,8 +534,7 @@ def aplicar_rascunho_de_resposta(question, markdown_bruto: str, *, trechos, site
     # As citacoes vem antes da substituicao: sao elas que definem para onde
     # cada marcador aponta.
     answer.citations.all().delete()
-    ordenados = sorted(trechos, key=lambda t: _chunk_de(t).source_authority, reverse=True)
-    chunk_primario = _chunk_de(ordenados[0]) if ordenados else None
+    chunk_primario = escolher_primaria([_chunk_de(t) for t in trechos])
 
     for t in trechos:
         chunk = _chunk_de(t)
@@ -521,13 +546,11 @@ def aplicar_rascunho_de_resposta(question, markdown_bruto: str, *, trechos, site
             used_as_primary=chunk_primario is not None and chunk.pk == chunk_primario.pk,
             source_title=chunk.source_title,
             source_url=chunk.source_url,
+            source_label=_texto_ancora(chunk)[:300],
+            citation_mode=chunk.citation_mode,
         )
 
-    fontes = {
-        c.rank: Fonte(url=c.source_url, anchor=_texto_ancora(c.super_chunk))
-        for c in answer.citations.order_by("rank")
-        if c.source_url
-    }
+    fontes = {c.rank: fonte_da_citacao(c) for c in answer.citations.order_by("rank")}
     markdown_final = substituir_marcadores(markdown_bruto, fontes)
 
     dominios = {
@@ -633,7 +656,9 @@ class PlanoDoArtigo:
     fontes_da_ideia_central: list[int] = field(default_factory=list)
 
 
-def interpretar_plano(texto: str, *, total_de_fontes: int) -> PlanoDoArtigo:
+def interpretar_plano(
+    texto: str, *, total_de_fontes: int, fontes_para_ideia_central: set[int] | None = None
+) -> PlanoDoArtigo:
     """Le o JSON do planejamento e recusa o que nao da para usar.
 
     A validacao dos numeros de fonte nao e zelo: o modelo escolhe quais fontes
@@ -684,6 +709,11 @@ def interpretar_plano(texto: str, *, total_de_fontes: int) -> PlanoDoArtigo:
     fontes_centrais = [
         n for n in _inteiros(dados.get("fontes_da_ideia_central")) if 1 <= n <= total_de_fontes
     ]
+    # Fonte de comunidade (forum, comentario) nao sustenta a afirmacao central,
+    # por mais que o modelo a aponte. Sobrando so ela, o plano cai na mesma
+    # trava de "sem embasamento".
+    if fontes_para_ideia_central is not None:
+        fontes_centrais = [n for n in fontes_centrais if n in fontes_para_ideia_central]
     temas = _textos(dados.get("temas"))
 
     _exigir_embasamento_central(ideia_central, fontes_centrais, secoes)

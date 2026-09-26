@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Nota do especialista" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Nota do especialista" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      O que voce sabe sobre um assunto, escrito por voce. Vira fonte no acervo,
+      e o texto publicado atribui a afirmacao a quem escreveu — por isso ela ja
+      entra curada. Escreva o que voce afirmaria em publico.
+    {% endblocktranslate %}
+  </p>
+
+  <form method="post">
+    {% csrf_token %}
+    {% for campo in form %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="acoes">
+      <button type="submit">{% translate "Registrar nota" %}</button>
+      <a class="botao secundario" href="{% url 'knowledge:documentos' %}">{% translate "Cancelar" %}</a>
+    </div>
+  </form>
+{% endblock %}

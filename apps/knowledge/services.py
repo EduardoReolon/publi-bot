@@ -165,15 +165,31 @@ def salvar_super_chunk(
             "token_count": tokens,
             # Copiados agora para que a citacao sobreviva a edicoes posteriores
             # do documento.
-            "source_title": document.title,
-            "source_authors": document.authors,
-            "source_year": document.year,
-            "source_url": document.source_url,
-            "source_authority": document.authority_score,
+            **campos_da_fonte(document),
             "is_active": True,
         },
     )
     return chunk
+
+
+def campos_da_fonte(document: Document) -> dict:
+    """O que cada trecho copia do documento e do perfil da categoria.
+
+    Copiado, e nao lido por JOIN na hora de citar, pelo mesmo motivo dos
+    outros metadados: a citacao de um artigo que ja foi ao ar precisa
+    sobreviver a uma mudanca posterior do documento ou da categoria.
+    """
+    categoria = document.category
+    return {
+        "source_title": document.title,
+        "source_authors": document.authors,
+        "source_year": document.year,
+        "source_url": document.source_url,
+        "source_authority": document.authority_score,
+        "source_label": document.rotulo[:300],
+        "citation_mode": categoria.modo_de_citacao_efetivo,
+        "supports_central_idea": categoria.supports_central_idea,
+    }
 
 
 @dataclass(frozen=True)
@@ -224,6 +240,10 @@ def recuperar(
 
     candidatos = (
         SuperChunk.objects.filter(is_active=True, embedding__isnull=False)
+        # Fonte vencida (tabela de preco do mes passado, norma revisada) sai da
+        # busca ate alguem atualiza-la. Citar um valor que ja mudou e pior que
+        # nao citar nada.
+        .exclude(document__valid_until__lt=timezone.localdate())
         .annotate(distancia=CosineDistance("embedding", vetor))
         .filter(distancia__lte=distancia_maxima)
         .order_by("distancia")[:limite_bruto]
@@ -273,8 +293,26 @@ def marcar_curado(*, document: Document, revisado_por, segundos: int = 0) -> Doc
     if not document.pode_guardar_texto_integral:
         document.markdown_full = ""
 
+    document.valid_until = calcular_validade(document)
     document.save()
     return document
+
+
+def calcular_validade(document: Document):
+    """Ate quando a fonte vale, pelo perfil da categoria.
+
+    Conta da data de publicacao; sem ela, de quando foi buscada; sem nenhuma
+    das duas, de hoje. Categoria sem validade: nao vence.
+    """
+    from datetime import timedelta
+
+    dias = document.category.validity_days
+    if not dias:
+        return None
+    base = document.published_on or (
+        timezone.localdate(document.fetched_at) if document.fetched_at else timezone.localdate()
+    )
+    return base + timedelta(days=dias)
 
 
 def possiveis_duplicatas(document: Document):
@@ -331,11 +369,7 @@ def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
                 embedding_model=cliente.model_name,
                 embedding_dim=cliente.dimensions,
                 token_count=paragrafo.tokens,
-                source_title=document.title,
-                source_authors=document.authors,
-                source_year=document.year,
-                source_url=document.source_url,
-                source_authority=document.authority_score,
+                **campos_da_fonte(document),
                 is_active=True,
             )
             criados += 1

@@ -105,6 +105,12 @@ def passo_converter(job: GenerationJob) -> dict:
 
     document.markdown_full = resultado.markdown
     document.extraction_method = resultado.metodo
+    # Data de publicacao declarada pela pagina. So preenche: uma data que a
+    # curadoria corrigiu nao e sobrescrita por uma reconversao.
+    if resultado.metadados.get("data") and not document.published_on:
+        import datetime
+
+        document.published_on = datetime.date.fromisoformat(resultado.metadados["data"])
     # Congelado aqui, antes de qualquer correcao humana. E o unico jeito de
     # saber depois o que a extracao errou neste documento.
     document.metadata_suggested = {
