@@ -700,8 +700,14 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
         {
             "aba": "documentos",
             "pendentes": pendentes[:100],
+            "aguardando_audio": CandidatoDeFonte.objects.filter(
+                situacao=CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO
+            ),
             "recentes": CandidatoDeFonte.objects.exclude(
-                situacao=CandidatoDeFonte.Situacao.PENDENTE
+                situacao__in=[
+                    CandidatoDeFonte.Situacao.PENDENTE,
+                    CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
+                ]
             ).select_related("documento")[:20],
             "categorias": DocumentCategory.objects.order_by("name"),
             "niveis": CaminhoConfiavel.Nivel.choices,
@@ -794,3 +800,29 @@ def caminhos_confiaveis(request: HttpRequest) -> HttpResponse:
             "aviso": AVISO_DE_CONFIANCA,
         },
     )
+
+
+@login_required
+@require_POST
+def enviar_audio(request: HttpRequest, pk) -> HttpResponse:
+    """O audio de um video cuja legenda nao veio. Vai para a transcricao."""
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.videos import EXTENSOES_DE_AUDIO, receber_audio
+
+    candidato = get_object_or_404(
+        CandidatoDeFonte, pk=pk, situacao=CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO
+    )
+    arquivo = request.FILES.get("audio")
+    if arquivo is None or not (arquivo.name or "").lower().endswith(EXTENSOES_DE_AUDIO):
+        messages.error(
+            request,
+            _("Envie um arquivo de audio (%(lista)s).") % {"lista": ", ".join(EXTENSOES_DE_AUDIO)},
+        )
+        return redirect("knowledge:fontes_sugeridas")
+
+    receber_audio(candidato, arquivo, por=request.user)
+    messages.success(
+        request,
+        _("Audio recebido. A transcricao roda no worker quando a placa estiver livre."),
+    )
+    return redirect("knowledge:fontes_sugeridas")

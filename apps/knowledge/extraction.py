@@ -102,6 +102,11 @@ def extrair_markdown(document, *, timeout: float = 600.0) -> ResultadoDaExtracao
     if nome_em_minusculas.endswith(EXTENSOES_WEB):
         return _extrair_pagina(document)
 
+    from apps.knowledge.videos import EXTENSOES_DE_AUDIO
+
+    if nome_em_minusculas.endswith(EXTENSOES_DE_AUDIO):
+        return _transcrever_no_worker(document, timeout=max(timeout, 1800.0))
+
     conexao = conexao_de_conversao()
     if conexao is not None:
         return _extrair_com_docling(document, conexao, timeout=timeout)
@@ -235,6 +240,87 @@ def converter_no_worker(
         markdown=dados.get("markdown", ""),
         metodo="docling",
         duracao_ms=int(dados.get("duration_ms", 0)),
+    )
+
+
+def _transcrever_no_worker(document, *, timeout: float) -> ResultadoDaExtracao:
+    """Audio -> texto com marcas de tempo, no worker da placa (Whisper).
+
+    Rota `/v1/audio/transcriptions`, no dialeto da OpenAI (multipart com
+    `file`, `model`, `language` e `response_format=verbose_json`). Segue o
+    contrato do worker: 503 adia, 500 com `error.code` e falha, conexao
+    recusada adia, conexao cortada no meio e falha.
+    """
+    from apps.inference.providers.openai_compatible import (
+        CODIGOS_SEM_VOLTA,
+        _codigo_do_erro,
+        _retry_after,
+    )
+    from apps.knowledge.videos import markdown_da_transcricao
+
+    conexao = conexao_de_conversao()
+    if conexao is None:
+        raise ExtracaoIndisponivel(
+            "transcrever audio exige o worker da placa (conexao de conversao). Cadastre-a "
+            "em Inferencia, ou envie a transcricao ja pronta como .txt."
+        )
+    segredo = decifrar_chave(conexao) or ""
+
+    try:
+        with reserva(conexao, owner_key=f"transcricao:{document.pk}"):
+            resposta = httpx.post(
+                f"{conexao.base_url.rstrip('/')}/v1/audio/transcriptions",
+                files={"file": (document.nome_do_arquivo, _ler_arquivo(document))},
+                data={
+                    "model": "whisper",
+                    "language": (document.language or "pt")[:2],
+                    "response_format": "verbose_json",
+                },
+                headers={"Authorization": f"Bearer {segredo}"},
+                timeout=timeout,
+            )
+    except SemCapacidade as exc:
+        raise ConversorOcupado(f"a maquina da placa esta ocupada: {exc}") from exc
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        raise ConversorOcupado(f"worker inalcancavel: {exc}") from exc
+    except httpx.TransportError as exc:
+        raise ExtracaoIndisponivel(
+            f"a conexao com o worker caiu no meio da transcricao ({type(exc).__name__}). "
+            f"O worker provavelmente morreu durante o trabalho."
+        ) from exc
+
+    if resposta.status_code == 503:
+        codigo = _codigo_do_erro(resposta)
+        if codigo in CODIGOS_SEM_VOLTA:
+            raise ExtracaoIndisponivel("o worker desistiu de transcrever por tempo.")
+        raise ConversorOcupado(
+            f"worker ocupado: {_mensagem_do_erro(resposta) or 'placa em uso'}",
+            retry_after=_retry_after(resposta),
+            code=codigo,
+        )
+    if resposta.status_code == 404:
+        raise ExtracaoIndisponivel(
+            "o worker nao tem a rota de transcricao (/v1/audio/transcriptions). "
+            "Veja docs/WORKER_TRANSCRICAO.md."
+        )
+    if resposta.status_code >= 400:
+        raise ExtracaoIndisponivel(
+            f"worker respondeu {resposta.status_code} na transcricao: "
+            f"{_mensagem_do_erro(resposta) or resposta.text[:300]}"
+        )
+
+    dados = resposta.json()
+    segmentos = [
+        (float(s.get("start") or 0), s.get("text") or "") for s in dados.get("segments") or []
+    ]
+    if not segmentos and dados.get("text"):
+        segmentos = [(0.0, dados["text"])]
+    if not segmentos:
+        raise ExtracaoIndisponivel("o worker devolveu uma transcricao vazia.")
+    return ResultadoDaExtracao(
+        markdown=markdown_da_transcricao(document.title or "", segmentos),
+        metodo="audio",
+        duracao_ms=int(float(dados.get("duration") or 0) * 1000),
     )
 
 

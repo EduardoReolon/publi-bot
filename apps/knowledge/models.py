@@ -240,6 +240,10 @@ class Document(models.Model):
         # DOCX, PPTX, XLSX: a estrutura ja vem declarada no arquivo (estilo de
         # titulo, slide, planilha), entao nao ha layout a adivinhar.
         STRUCTURED = "estruturado", _("Documento estruturado (DOCX, PPTX, XLSX)")
+        # Legenda do video, como o YouTube a entrega (manual ou automatica).
+        SUBTITLES = "legenda", _("Legenda do video")
+        # Audio transcrito pelo worker (Whisper).
+        AUDIO = "audio", _("Audio transcrito")
         # Pagina web: texto principal extraido, sem menu, rodape e anuncio.
         WEB = "web", _("Pagina web (texto principal)")
 
@@ -404,6 +408,8 @@ class Document(models.Model):
             self.ExtractionMethod.TEXT,
             self.ExtractionMethod.STRUCTURED,
             self.ExtractionMethod.WEB,
+            self.ExtractionMethod.SUBTITLES,
+            self.ExtractionMethod.AUDIO,
             "",
         }
 
@@ -752,11 +758,23 @@ class CandidatoDeFonte(models.Model):
         APROVADO = "aprovado", _("Aprovado")
         RECUSADO = "recusado", _("Recusado")
         FALHOU = "falhou", _("Nao foi possivel buscar")
+        # Video aprovado cuja legenda nao veio (sem legenda, ou o YouTube
+        # bloqueou este servidor): espera a pessoa enviar o audio.
+        AGUARDANDO_AUDIO = "audio", _("Aguardando o audio")
+
+    class Tipo(models.TextChoices):
+        PAGINA = "pagina", _("Pagina")
+        VIDEO = "video", _("Video")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     url = models.URLField(_("URL"), max_length=500, unique=True)
+    tipo = models.CharField(_("tipo"), max_length=8, choices=Tipo.choices, default=Tipo.PAGINA)
     titulo = models.CharField(_("titulo"), max_length=500, blank=True)
     trecho = models.TextField(_("trecho"), blank=True)
+    # Videos: o canal e o que a curadoria aprova como confiavel, e nao o video.
+    canal_id = models.CharField(_("canal"), max_length=100, blank=True)
+    canal_nome = models.CharField(_("nome do canal"), max_length=200, blank=True)
+    publicado_em = models.DateField(_("publicado em"), null=True, blank=True)
     dominio = models.CharField(_("dominio"), max_length=200, blank=True, db_index=True)
     consulta = models.CharField(_("consulta"), max_length=500, blank=True)
     pauta = models.ForeignKey(

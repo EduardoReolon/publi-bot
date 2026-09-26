@@ -188,6 +188,11 @@ def aprovar(
     from apps.knowledge.tasks import iniciar_ingestao
     from apps.knowledge.web import PaginaIndisponivel
 
+    if candidato.tipo == CandidatoDeFonte.Tipo.VIDEO:
+        from apps.knowledge.videos import aprovar_video
+
+        return aprovar_video(candidato, categoria=categoria, por=por, automatico=automatico)
+
     try:
         resultado = ingerir_url(
             candidato.url,
@@ -236,3 +241,10 @@ def curar_automaticamente(documento: Document) -> int:
     criados = indexar_blocos(document=documento, blocos_marcados=blocos)
     marcar_curado(document=documento, revisado_por=None)
     return criados
+
+
+def caminho_do_canal(canal_id: str) -> CaminhoConfiavel | None:
+    """O caminho confiavel de um canal do YouTube, pelo id do canal."""
+    if not canal_id:
+        return None
+    return CaminhoConfiavel.objects.filter(prefixo=f"youtube.com/channel/{canal_id}").first()

@@ -19,6 +19,15 @@ EXTENSOES_ACEITAS = (
     ".xlsx",
     ".html",
     ".htm",
+    # Audio: transcrito no worker da placa.
+    ".mp3",
+    ".m4a",
+    ".wav",
+    ".ogg",
+    ".opus",
+    ".webm",
+    ".mp4",
+    ".flac",
 )
 
 
@@ -27,7 +36,8 @@ class EnvioDeDocumento(forms.Form):
         label=_("Arquivo"),
         help_text=_(
             "PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), pagina salva "
-            "(.html) ou texto (.txt/.md)."
+            "(.html), texto (.txt/.md) ou audio (.mp3, .m4a...), que e transcrito "
+            "no worker."
         ),
     )
     category = forms.ModelChoiceField(

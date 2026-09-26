@@ -16,7 +16,8 @@
   {% for candidato in pendentes %}
     <div class="aviso">
       <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
-      {% if candidato.preferido %}<span class="selo ok">{% translate "caminho preferido" %}</span>{% endif %}
+      {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %} · {{ candidato.canal_nome }}</span>{% endif %}
+      {% if candidato.preferido %}<span class="selo ok">{% if candidato.tipo == 'video' %}{% translate "canal preferido" %}{% else %}{% translate "caminho preferido" %}{% endif %}</span>{% endif %}
       <div class="pre-visualizacao">{{ candidato.url }}</div>
       {% if candidato.trecho %}<div class="pre-visualizacao">{{ candidato.trecho|truncatechars:300 }}</div>{% endif %}
       {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
@@ -33,7 +34,7 @@
       </form>
 
       <details>
-        <summary>{% translate "Confiar neste caminho" %}</summary>
+        <summary>{% if candidato.tipo == 'video' %}{% translate "Confiar neste canal" %}{% else %}{% translate "Confiar neste caminho" %}{% endif %}</summary>
         <form method="post" action="{% url 'knowledge:caminhos' %}">
           {% csrf_token %}
           <input type="hidden" name="voltar" value="{% url 'knowledge:fontes_sugeridas' %}">
@@ -68,6 +69,22 @@
   {% empty %}
     <p class="vazio">{% translate "Nenhuma fonte sugerida esperando decisao." %}</p>
   {% endfor %}
+
+  {% if aguardando_audio %}
+    <h2>{% translate "Videos aguardando o audio" %}</h2>
+    {% for candidato in aguardando_audio %}
+      <div class="aviso">
+        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
+        <span class="selo">{{ candidato.canal_nome }}</span>
+        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
+        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_audio' candidato.pk %}" class="acoes">
+          {% csrf_token %}
+          <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
+          <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% endif %}
 
   {% if recentes %}
     <h2>{% translate "Decididas recentemente" %}</h2>
