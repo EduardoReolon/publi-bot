@@ -1,106 +1,100 @@
-# PubliBot
+# 🤖 PubliBot: AI-Driven SEO Content Orchestrator
 
-Orquestrador multi-tenant que transforma fontes reais — literatura cientifica,
-paginas e videos curados, notas do especialista — em conteudo web
-fundamentado, com revisao humana obrigatoria e publicacao agendada em sites de
-terceiros. Descobre sobre o que escrever pela demanda real (buscas, perguntas,
-concorrentes) e mede o resultado pelo Search Console.
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![Django 5.2 LTS](https://img.shields.io/badge/Django_5.2_LTS-Multi--Tenant-092E20?logo=django)](https://www.djangoproject.com/)
+[![Celery](https://img.shields.io/badge/Celery-Distributed_Task_Queue-37814A?logo=celery)](https://docs.celeryq.dev/)
+[![pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791?logo=postgresql)](https://github.com/pgvector/pgvector)
+[![Ollama](https://img.shields.io/badge/Local_LLM-Ollama-white?logo=ollama)](https://ollama.com/)
 
-## Status
+> **A multi-tenant SaaS that finds what people are actually searching for, grounds every claim in curated real sources, and publishes SEO content only after a human approves it — then measures the result in Google Search Console.**
 
-Este README descreve **o que existe hoje**, nao o que esta planejado.
+## 🎯 The Problem It Solves
 
-| Bloco | Estado |
+Most AI content generators produce generic, hallucinated text that search engines increasingly penalize (Google's E-E-A-T guidelines). Grounding the model with real documents (RAG) runs into three practical walls:
+
+* **Parsing:** standard PDF extractors scramble dual-column scientific layouts.
+* **Coherence:** injecting random chunks into a prompt causes the **"Frankenstein Effect"** — paragraphs that contradict each other.
+* **Direction:** even a well-grounded article is wasted if nobody searches for its topic, and most tools never check whether it ranked.
+
+## 💡 The PubliBot Solution
+
+PubliBot closes the whole loop — **demand → sources → writing → human review → publishing → measurement** — with each step designed against a specific way AI content goes wrong:
+
+1. **Demand Radar (no LLM involved):** collects signals from Google's "People Also Ask", related searches, real search volume, visitor questions, YouTube comments, competitors' sitemaps and rankings, and Search Console's "almost there" queries. Signals are clustered by embeddings and scored with an explainable breakdown (demand, source diversity, business fit, cannibalization, source coverage). Topics arrive as *suggestions*, with the evidence attached.
+2. **Vision-Based Ingestion:** PDFs are converted by a layout-aware vision model (`Docling`) on a local GPU, so dual-column papers become clean, structured Markdown. Office files, web pages, YouTube transcripts and expert notes are first-class sources too.
+3. **Curated Summary Indexing:** a human selects the high-value passages (abstracts, conclusions); only those are embedded, one vector per paragraph. Each source category carries a profile: how to cite it, whether it can back the article's central claim, and when it expires.
+4. **Anti-Frankenstein Thesis:** before drafting, the model reads the retrieved passages and builds a single "consensus thesis", explicitly recording where sources disagree. The article is written from that thesis, with citations that point back to real, verifiable sources.
+5. **Human-in-the-Loop, enforced:** nothing is published without approval by an identified author. An editorial guide checks tone, forbidden terms and telltale AI phrasing before approval.
+6. **Closed Feedback Loop:** Google Search Console shows impressions, clicks and position for every published article, and feeds new opportunities back into the radar.
+
+## 🏗️ System Architecture
+
+```mermaid
+flowchart TB
+    subgraph cloud["☁️ Cloud SaaS — Django + PostgreSQL"]
+        direction LR
+        UI["Tenant dashboard"] --> Q["Celery jobs<br/>stateful, resumable"]
+        R["Demand radar"] --> DB[("PostgreSQL<br/>schema per tenant<br/>+ pgvector")]
+        Q --> DB
+    end
+
+    subgraph gpu["🖥️ Local GPU worker — private network"]
+        direction TB
+        W["HTTP arbiter<br/>one lock per card"] --> L["Ollama LLMs"]
+        W --> D["Docling vision parser"]
+        W --> S["Stable Diffusion XL"]
+    end
+
+    subgraph ext["🌐 SEO data — per-tenant accounts"]
+        direction TB
+        DF["DataForSEO"]
+        YT["YouTube Data API"]
+        GSC["Search Console"]
+    end
+
+    subgraph sites["📰 Client websites"]
+        N["Any stack implementing /api/v1"]
+    end
+
+    cloud -- "inference over Tailscale" --> gpu
+    cloud -- "demand and results" --> ext
+    cloud -- "HMAC-signed publishing<br/>visitor questions" --> sites
+```
+
+* **The cloud never runs heavy models.** It talks HTTP to inference endpoints — a local GPU over Tailscale, or any OpenAI-compatible API — each with its own concurrency limit. Swapping providers is a row in the admin panel, not a deploy (no LangChain, no CrewAI).
+* **The database is the source of truth, not the broker.** Every generation is a stateful job; if the GPU goes offline mid-article, the job pauses and resumes from the exact step when the card is back.
+* **Client sites are plain HTTP.** Any platform that implements the documented `/api/v1` contract (HMAC-signed, replay-protected requests) can receive content. A Django reference implementation passes the contract test suite.
+
+## ✨ Core Engineering Features
+
+* **Real multi-tenancy:** one PostgreSQL schema per tenant (`django-tenants`), a subdomain per tenant, and uploaded files stored per schema.
+* **Hybrid retrieval:** HNSW vector search (`multilingual-e5-large`, on CPU via ONNX) fused with PostgreSQL full-text search by Reciprocal Rank Fusion, with an optional cross-encoder reranker and per-tenant relevance thresholds.
+* **The web as a supplier, not an author:** when the library can't support a topic, PubliBot proposes candidate pages and videos — they still go through human curation. Trust is granted per *path*, not per domain, in two levels (prefer in search / auto-approve), because user-generated areas live on reputable domains too.
+* **Competitor gap analysis:** competitors' public sitemaps (free), the keywords they rank for, and complaints in their Google reviews become demand signals; the cannibalization score removes what the site already covers, leaving the real content gap.
+* **Cost ledger with hard caps:** every external call — paid or free, success or failure — is recorded with the cost the provider reported. Monthly caps are checked *before* each call, per tenant and per installation. Batch rounds use DataForSEO's standard queue (about a third of the live price); only interactive searches pay for live results.
+* **Human-picked cover images:** Stable Diffusion XL generates covers in batches of three on the local GPU; a person chooses, and earlier batches are never discarded.
+* **FAQ as structured data:** questions and answers travel as a separate contract field, so each site renders them — and their schema markup — its own way.
+* **Q&A from real visitors:** questions submitted on client sites are pulled, answered from the same curated library, and reviewed before publishing.
+* **Idempotent ingestion:** files are deduplicated by SHA-256 at upload time, papers by DOI.
+* **Per-tenant publishing cadence:** independent schedules (crawl-budget friendly), with idempotency keys and reconciliation after timeouts, so a retry never publishes twice.
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
 |---|---|
-| Fundacao: configuracao, Celery, PostgreSQL, infraestrutura de dev | **Pronto** |
-| Tenancy: schema por tenant, cadastro por subdominio, isolamento | **Pronto** |
-| Base de conhecimento: documentos, curadoria, busca hibrida com pgvector | **Pronto** |
-| Fontes pela web: paginas, videos do YouTube, notas, caminhos confiaveis | **Pronto** |
-| Inferencia: conexoes, reserva de capacidade, retomada de trabalhos | **Pronto** |
-| Conteudo: prompts versionados, tese, redacao, FAQ, guia editorial | **Pronto** |
-| Contrato `/api/v1` e no de referencia | **Pronto** |
-| Cadencia, perguntas e respostas, sondas de saude, deploy | **Pronto** |
-| Interface do tenant: painel, acervo, pautas, revisao, site, operacao | **Pronto** |
-| Geracao de imagem de capa (worker-gpu) | **Pronto** |
-| Radar de pautas: SERP, volume, YouTube, concorrentes, livro-caixa de custo | **Pronto** — rotas novas da DataForSEO a conferir no primeiro uso |
-| Search Console: "quase la" e desempenho dos artigos publicados | **Pronto** — precisa da conta de servico |
-| Transcricao de audio | Cliente pronto; a rota do worker-gpu esta especificada em [`docs/WORKER_TRANSCRICAO.md`](docs/WORKER_TRANSCRICAO.md) |
+| Application | Python 3.12, Django 5.2 LTS, django-tenants |
+| Async engine | Celery 5.6, Redis, django-celery-beat |
+| Database | PostgreSQL + `pgvector` (HNSW, cosine distance) |
+| Embeddings | `intfloat/multilingual-e5-large` via fastembed (ONNX, CPU) |
+| Inference | Ollama and any OpenAI-compatible API; Anthropic supported |
+| Documents | Docling (GPU), python-docx, python-pptx, openpyxl, trafilatura |
+| Images | Stable Diffusion XL on the local GPU worker |
+| SEO data | DataForSEO, YouTube Data API v3, Google Search Console |
+| Infrastructure | Nginx, Gunicorn, systemd, Tailscale |
 
-As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/), com o
-raciocinio e as consequencias de cada uma. As falhas que so aparecem ao rodar
-— e os erros que apontam para o lugar errado — estao em
-[`docs/ARMADILHAS.md`](docs/ARMADILHAS.md). As contas externas (DataForSEO,
-YouTube, Search Console, SearXNG) — onde criar, onde pegar a chave e como
-testar — estao em [`docs/CONTAS_EXTERNAS.md`](docs/CONTAS_EXTERNAS.md).
+## 🚀 Getting Started
 
-Para explicar uma parte do sistema a uma IA de contexto pequeno,
-`python scripts/gerar_blocos.py` empacota cada capacidade num `.md` que se
-explica sozinho — ver [`docs/BLOCOS.md`](docs/BLOCOS.md). Quem for mexer na
-leitura de PDF comeca por [`docs/EXTRACAO.md`](docs/EXTRACAO.md).
-
-**Cerca de 880 testes**, em tres suites (`./scripts/test-all.sh`).
-
-## O problema
-
-Gerar conteudo com um modelo de linguagem sem fundamentacao produz texto
-generico e sujeito a alucinacao. Fundamenta-lo com documentos reais esbarra em
-dois obstaculos praticos: extratores de PDF falham em artigos cientificos de
-duas colunas, e injetar trechos avulsos no prompt produz paragrafos que se
-contradizem entre si.
-
-## A abordagem
-
-1. **Analise de layout por visao.** O PDF e convertido em Markdown estruturado
-   por um modelo que enxerga a pagina, em vez de um extrator de texto.
-2. **Indexacao por resumo, com curadoria humana.** Em vez de fatiar o documento
-   as cegas, uma pessoa seleciona os trechos de maior valor — tipicamente
-   resumo e conclusao — e apenas eles sao vetorizados.
-3. **Tese antes da redacao.** Antes de escrever, o sistema le os trechos
-   recuperados e constroi uma tese unica, registrando explicitamente quando as
-   fontes divergem entre si.
-4. **Revisao humana obrigatoria.** Nenhum conteudo e publicado sem aprovacao,
-   e o esforco editorial e registrado e mensuravel.
-5. **Pauta por demanda, sem LLM.** O radar junta buscas relacionadas, volume,
-   perguntas de visitantes, comentarios do YouTube, o que os concorrentes
-   publicam e o "quase la" do Search Console; agrupa por embedding e da nota
-   com as parcelas explicadas. A pauta nasce sugerida, com a evidencia junto
-   ([ADR-0020](docs/adr/ADR-0020-radar-e-web-como-fornecedora-de-fontes.md)).
-
-## Arquitetura em uma frase
-
-Um SaaS Django multi-tenant na nuvem coordena o trabalho; a inferencia pesada
-roda em endpoints HTTP — uma GPU local numa rede privada, ou APIs hospedadas —
-cada um com limite proprio de concorrencia; a fila e a fonte da verdade vivem
-no banco, nunca no broker.
-
-Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e nos ADRs.
-
-## Stack
-
-| Camada | Tecnologia |
-|---|---|
-| Aplicacao | Python 3.12, Django 5.2 LTS |
-| Multi-tenancy | django-tenants (um schema PostgreSQL por tenant) |
-| Fila | Celery 5.6 + Redis, com tenant-schemas-celery |
-| Agendamento | django-celery-beat (`DatabaseScheduler`) |
-| Banco | PostgreSQL 17 + pgvector (indice HNSW, distancia de cosseno) |
-| Embeddings | `intfloat/multilingual-e5-large` (1024 dim), em CPU via ONNX (fastembed) |
-| Busca | vetor (HNSW) + texto completo do PostgreSQL, fundidos por RRF |
-| Paginas da web | trafilatura + htmldate |
-| Inferencia | Ollama local e APIs compativeis com OpenAI |
-
-## Ambiente de desenvolvimento
-
-> Passo a passo completo — dev e servidor, incluindo o comportamento quando o
-> Ollama fica inacessivel — em [`docs/OPERACAO.md`](docs/OPERACAO.md). O resumo
-> abaixo cobre o caminho curto.
-
-Pre-requisitos: Python 3.12, PostgreSQL com pgvector, e Redis. Tudo nativo — o
-projeto nao depende de container em nenhuma etapa (ver passo 3).
-
-### 1. Clonar e criar o ambiente
-
-**Linux / macOS**
+**1. Clone and install** (requires PostgreSQL with `pgvector`, and Redis):
 
 ```bash
 git clone https://github.com/EduardoReolon/publi-bot.git
@@ -108,113 +102,11 @@ cd publi-bot
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
-```
-
-**Windows (PowerShell)**
-
-```powershell
-git clone https://github.com/EduardoReolon/publi-bot.git
-cd publi-bot
-py -3.12 -m venv venv
-venv\Scripts\Activate.ps1
-pip install -r requirements.txt -r requirements-dev.txt
-```
-
-### 2. Configurar
-
-```bash
-cp .env.example .env
-python -c "import secrets; print(secrets.token_urlsafe(64))"
-```
-
-Cole o valor gerado em `DJANGO_SECRET_KEY` e defina `POSTGRES_PASSWORD`.
-
-### 3. PostgreSQL (e Redis, se voce quiser)
-
-O caminho padrao e **nativo, sem container**. No Ubuntu o pgvector esta no
-repositorio oficial da distribuicao:
-
-```bash
-sudo apt install postgresql postgresql-contrib redis-server
-sudo apt install postgresql-16-pgvector      # ajuste 16 para a sua versao
+cp .env.example .env        # set DJANGO_SECRET_KEY and POSTGRES_PASSWORD
 ./scripts/setup-db.sh
 ```
 
-O script cria o papel, o banco e — o passo que nao pode ser esquecido — instala
-a extensao `vector` num schema **`extensions`** dedicado, nao no `public`.
-
-Isso nao e preciosismo: com um schema por tenant, uma extensao instalada apenas
-no `public` nao fica alcancavel da forma que as migrations esperam ao criar o
-segundo tenant. O primeiro funciona e o segundo falha com
-*type "vector" does not exist*. O `PG_EXTRA_SEARCH_PATHS = ["extensions"]` do
-settings fecha o circuito.
-
-#### Desenvolvendo no Windows? Da para rodar sem Redis.
-
-Nao existe build oficial de Redis para Windows. Como o PostgreSQL ja e
-necessario, ele pode servir tambem de fila em desenvolvimento — basta uma
-variavel no `.env`:
-
-```ini
-BROKER_BACKEND=postgres
-```
-
-A URL da fila e montada a partir das credenciais `POSTGRES_*` que voce ja
-configurou, no **mesmo banco** da aplicacao. Nenhuma variavel adicional, e
-nenhum servico a mais para manter.
-
-Instale a dependencia de desenvolvimento (ja incluida em
-`requirements-dev.txt`):
-
-```bash
-pip install -r requirements-dev.txt
-```
-
-**Isto e so para desenvolvimento.** Producao usa Redis. O modo Postgres nao
-reproduz o `visibility_timeout` do Redis — o comportamento de reentrega de
-mensagem ja reservada, que e justamente o risco de gerar o mesmo artigo duas
-vezes — e a latencia da fila e maior por causa do polling (medido: ~2100 ms
-contra ~3 ms). Para este produto isso e irrelevante, porque as tarefas reais
-levam dezenas de segundos, mas as diferencas estao documentadas em
-[`ADR-0013`](docs/adr/ADR-0013-broker-postgres-em-dev.md).
-
-Para o PostgreSQL e o pgvector no Windows, use o `compose.yaml` (abaixo) ou
-WSL2 — que tambem devolve o pool `prefork` do Celery, sem suporte oficial no
-Windows nativo.
-
-#### pgvector no Windows, sem container
-
-Nao ha binario oficial do pgvector para Windows: ele precisa ser compilado uma
-vez. Com o "C++ support" do Visual Studio instalado, abra o **x64 Native Tools
-Command Prompt** como administrador (o prompt comum falha com
-`error C2196: case value '4' already used`) e rode:
-
-```bat
-set "PGROOT=C:\Program Files\PostgreSQL\16"
-git clone --branch v0.8.6 https://github.com/pgvector/pgvector.git
-cd pgvector
-nmake /F Makefile.win
-nmake /F Makefile.win install
-```
-
-Ajuste o `16` para a sua versao do PostgreSQL. Depois, no `psql` como
-superusuario, rode o SQL que o `python manage.py check_db` imprime — ele monta
-os comandos com o nome do seu banco e do seu usuario.
-
-#### Alternativa em container (util no Windows)
-
-Compilar o pgvector no Windows exige MSVC e os headers do PostgreSQL. Se voce
-ainda desenvolve no Windows, o container evita esse trabalho:
-
-```bash
-docker compose up -d
-```
-
-O `compose.yaml` sobe **apenas** PostgreSQL com pgvector e Redis. O Django
-nunca e containerizado — ele roda no virtualenv nativo, preservando depurador,
-recarga automatica e stack trace direto.
-
-### 4. Migrar e rodar
+**2. Migrate and run.** `dev` starts the web server, the Celery worker and the beat scheduler together:
 
 ```bash
 python manage.py migrate_schemas --shared
@@ -223,312 +115,53 @@ python manage.py createsuperuser
 python manage.py dev
 ```
 
-O `dev` confere o banco antes de subir e recusa sair do lugar se faltar alguma
-coisa, imprimindo os comandos exatos. A verificacao avulsa e:
+Open `http://publibot.localhost:8000/`. Each tenant lives on its own subdomain (`http://acme.publibot.localhost:8000/`).
 
-```bash
-python manage.py check_db
-```
-
-Vale rodar isso primeiro num PostgreSQL que voce nao preparou. A verificacao
-principal nao consulta catalogo: ela CRIA uma coluna `vector`, que e o que a
-migration faz. So passa quando a extensao existe, esta no `search_path` E o
-usuario tem `USAGE` no schema dela — tres condicoes que, quando faltam,
-produzem a MESMA mensagem, e uma que nao menciona extensao nenhuma:
-
-```
-django.db.utils.ProgrammingError: tipo "vector" nao existe
-LINE 1: ... "embedding" vector(1024)...
-```
-
-Pior ainda, esse erro chega tarde: as migrations compartilhadas passam sem
-reclamar, e a falha so acontece ao provisionar o primeiro tenant, dentro de uma
-task do worker.
-
-**`dev`, e nao `runserver`.** Este sistema sao tres processos: o servidor web,
-o worker do Celery e o beat. O `dev` sobe os tres no mesmo terminal e o Ctrl+C
-encerra todos — os filhos herdam o grupo de processo do console, entao isso
-funciona sem supervisor nenhum, no Linux, no macOS e no Windows. No Windows ele
-ja acrescenta `-P solo` ao worker, porque o pool `prefork` nao tem suporte
-oficial desde o Celery 4 e falha de forma erratica.
-
-```bash
-python manage.py dev
-```
-
-Um processo novo amanha entra em `_servicos()`, dentro do proprio comando, e
-`manage.py dev` continua sendo o unico comando a saber. No servidor a lista
-equivalente sao as units de `deploy/systemd/`, uma para cada — a
-correspondencia e um para um, de proposito.
-
-Rodar os tres a mao continua valendo — o `dev` so evita o esquecimento:
-
-```bash
-celery -A core worker -l INFO --concurrency=1 --prefetch-multiplier=1
-celery -A core beat -l INFO --pidfile=
-```
-
-O **beat** e o que menos se sente falta e o mais silencioso quando falta: sem
-ele a aplicacao inteira responde e simplesmente nada acontece sozinho —
-conteudo aprovado nunca e publicado, trabalho parado nunca e retomado, reserva
-vencida nunca e solta. Nenhum erro em lugar nenhum.
-
-O worker nao e um extra para "quando for gerar artigo": **o cadastro de um
-tenant ja depende dele**. Criar o schema e rodar as migrations leva dezenas de
-segundos, tempo demais para uma request HTTP, entao o cadastro publica uma
-mensagem e a tela fica esperando (ADR-0001).
-
-Sem worker nada falha — e esse e o problema. O despacho funciona, a mensagem
-entra na fila e fica la. A tela de espera detecta isso: depois de ~30s ela
-inspeciona a profundidade da fila e, se a mensagem continua parada, nomeia a
-causa e o comando. A mensagem nao se perde: assim que um worker sobe, ela e
-consumida e a mesma tela vira "ambiente pronto", sem refazer o cadastro
-(verificado no Chromium: 6s depois de subir o worker).
-
-Dois brokers diferentes tem exatamente o mesmo efeito e sao piores de achar:
-com o servidor web em `BROKER_BACKEND=redis` e o worker em `postgres`, cada um
-fala com uma fila e os dois parecem saudaveis. Cada processo le o `.env` na
-hora em que sobe, entao um terminal aberto antes de voce editar o `.env`
-continua no broker antigo. Para conferir, de dentro do mesmo virtualenv:
-
-```bash
-python manage.py broker_status
-```
-
-Ele mostra o broker deste processo e quantas mensagens esperam um worker. O
-numero nao cair e a prova de que ninguem esta consumindo aquela fila; compare
-com a linha `transport:` do banner do worker.
-
-Note `migrate_schemas`, nao `migrate`: o comando puro do Django nao percorre os
-schemas dos tenants.
-
-O `bootstrap_public` nao e opcional e nao da para deduzir que falta. As
-migrations criam as TABELAS do schema `public`; elas nao criam a LINHA em
-`accounts_tenant` que o django-tenants consulta para descobrir qual schema
-atende um host. Sem ela a primeira requisicao devolve um 404 cru — o mesmo
-404 que um subdominio inexistente devolve:
-
-```
-Page not found (404)
-No tenant for hostname "publibot.localhost"
-```
-
-O comando e idempotente, entao pode entrar no roteiro de deploy junto do
-`migrate_schemas`, nao so na primeira instalacao.
-
-Acesse **`http://publibot.localhost:8000/`** — nao `http://localhost:8000/`.
-Um tenant chamado `acme` responde em `http://acme.publibot.localhost:8000/`,
-e **nao** em `http://acme.localhost:8000/`: o subdominio e do dominio raiz
-inteiro, nao de `localhost`. A home lista os ambientes com o endereco completo
-e com link, entao nao ha o que adivinhar.
-Navegadores resolvem qualquer `*.localhost` para 127.0.0.1, entao nada precisa
-ser adicionado ao `/etc/hosts`. Em `DEBUG`, abrir `localhost:8000` por reflexo
-redireciona para o dominio raiz em vez de dar 404 — mas so em `DEBUG`: em
-producao um host desconhecido continua recebendo 404 seco, sem dizer o que
-existe.
-
-O dominio de desenvolvimento tem **dois rotulos** de proposito. Verificado com
-o Chromium: ao receber `Set-Cookie: ...; Domain=.localhost`, o navegador
-descarta o atributo `Domain` e grava o cookie como host-only, porque
-`localhost` e tratado como sufixo publico. O login funcionaria no apex e o
-subdominio do tenant devolveria a tela de login, sem nenhuma mensagem que
-apontasse a causa.
-
-### 5. Worker do Celery
-
-Ja sobe junto no `manage.py dev`. Em producao ele e uma unit do systemd
-(`deploy/systemd/`), com `--concurrency=2` — la os dois processos sao
-independentes de proposito, e o `dev` recusa rodar fora do `DEBUG` por isso: ele
-amarra o ciclo de vida dos dois, e derrubar o site porque o worker morreu seria
-o oposto do que se quer em producao.
-
-### Quando algo nao funciona
-
-```bash
-python manage.py check_db        # banco, extensoes, tenant public
-python manage.py broker_status   # broker deste processo e profundidade da fila
-```
-
-[`docs/ARMADILHAS.md`](docs/ARMADILHAS.md) lista as falhas reais deste projeto
-com o sintoma literal, a causa e onde ela esta tratada. Vale a leitura antes de
-diagnosticar do zero: varias tem mensagens de erro que apontam para o lugar
-errado, e tres causas diferentes chegam a produzir texto identico.
-
-### Testes e lint
-
-```bash
-pytest
-ruff check .
-ruff format .
-pre-commit install    # uma vez, para rodar tudo isso a cada commit
-```
-
-## Como se opera
-
-Tudo acontece dentro do subdominio do tenant (`acme.publibot.localhost:8000`).
-
-| Tela | Para que serve |
-|---|---|
-| **Painel** | O que espera uma pessoa e o que quebrou, separados. Cada numero leva a tela que resolve. |
-| **Documentos** | Envio (PDF, Office, pagina, video, nota), conversao, curadoria e selecao do trecho que vai para o indice. Inclui as fontes sugeridas pela web e os caminhos confiaveis. |
-| **Pautas** | O tema a ser buscado no acervo, e o botao que dispara a geracao. |
-| **Artigos** | A fila de revisao e a tela de leitura: texto ao lado das fontes, edicao, aprovacao. |
-| **Perguntas** | Duvidas importadas do site, com resposta gerada do mesmo acervo. |
-| **Radar** | Sinais de demanda, grupos com nota, busca manual, concorrentes, Search Console e o gasto do mes com as contas externas. |
-| **Guia editorial** | Tom, termos proibidos e marcas de texto de IA que a revisao confere antes de aprovar. |
-| **Site e cadencia** | Credenciais do site de destino, teste de conexao e quando publicar. |
-| **Operacao** | Trabalhos, passos, chamadas ao modelo e tentativas de publicacao. |
-
-O caminho completo, na ordem:
-
-1. **Documentos > Categorias**: crie ao menos uma.
-2. **Documentos > Enviar**: um PDF, `.txt` ou `.md`. A conversao roda no worker.
-3. **Documentos > (o documento)**: confira titulo, autores, ano e **URL de
-   origem** — sao esses campos que viram o link publicado, e a URL e a unica
-   que o documento nao tem como informar sozinho. Abaixo aparecem os blocos que
-   a extracao reconheceu: marque os que podem sustentar um artigo e conclua.
-
-   Cada **paragrafo** de um bloco marcado vira um vetor proprio, e nao o bloco
-   inteiro ([ADR-0015](docs/adr/ADR-0015-vetorizacao-por-paragrafo.md)). Se um
-   PDF aparecer como um unico bloco disforme, foi lido sem analise de layout —
-   a propria forma da tela diz isso.
-
-   Atencao a licenca: concluir a curadoria de documento proprietario ou de
-   licenca desconhecida **apaga o texto integral** e nao ha como remarcar blocos
-   depois sem reenviar o arquivo. A tela avisa antes.
-4. **Pautas**: crie uma e clique em *Gerar artigo*.
-5. **Artigos**: revise, preencha o autor e aprove. Sem autor identificado nao
-   ha publicacao.
-6. **Site e cadencia**: cadastre o site e a cadencia para o agendador publicar.
-7. **Radar** (opcional): sementes, concorrentes e as contas externas. As
-   pautas sugeridas aparecem em **Pautas**, com a evidencia de demanda. O
-   passo a passo das contas esta em
-   [`docs/CONTAS_EXTERNAS.md`](docs/CONTAS_EXTERNAS.md).
-
-Nada disso funciona sem uma **conexao de inferencia** cadastrada. O caminho
-curto e um comando, que le o `.env` e confere que o endereco responde:
+**3. Connect an LLM:**
 
 ```bash
 python manage.py configurar_inferencia --testar
 ```
 
-Ele cria a conexao se faltar e PRESERVA a que existir — a conexao vive numa
-linha do banco, e nao num arquivo, para trocar de modelo sem implantar. Da para
-faze-lo pelo admin tambem (`/admin/inference/inferenceconnection/`), do tipo
-*Compativel com OpenAI*, com a carga `text` marcada.
+The full guide — development, production server, GPU machine and troubleshooting — is in [`docs/OPERACAO.md`](docs/OPERACAO.md). External accounts (DataForSEO, YouTube, Search Console) are covered step by step in [`docs/CONTAS_EXTERNAS.md`](docs/CONTAS_EXTERNAS.md).
 
-Ha mais duas, as duas opcionais e as duas atendidas pelo **worker-gpu** —
-outro repositorio, na maquina que tem a placa:
-
-```bash
-python manage.py configurar_conversao --testar   # PDF com analise de layout
-python manage.py configurar_imagem --testar      # imagem de capa
-```
-
-Sem a primeira, o PDF cai no extrator local, que embaralha coluna dupla e nao
-le documento digitalizado. Sem a segunda, o artigo sai igual, apenas sem capa
-— o Ollama nao gera imagem, e e por isso que ha um terceiro servico.
-
-As tres dividem a mesma placa, e a reserva conta vagas por MAQUINA para que se
-revezem. Na pratica quem as reveza hoje e o proprio worker, que e um
-arbitro: tudo passa por ele e disputa um lock so.
-
-## Comandos de tenant
-
-```bash
-# Cria um tenant COMPLETO: registro, schema fisico e migrations dentro dele.
-# E o comando a usar hoje — o `create_tenant` nativo do django-tenants NAO
-# basta neste projeto: ele so grava o registro. A criacao do schema fisico
-# so acontece automaticamente quando `auto_create_schema=True` no model, e
-# este projeto desliga essa flag de proposito (ADR-0001) para o
-# provisionamento nao travar a request HTTP do cadastro. Este comando e o
-# equivalente sincrono dessa rotina, para terminal e scripts — a Entrega 2
-# fara a mesma coisa de forma assincrona, por tras do cadastro web.
-python manage.py provision_tenant acme --name="ACME Ltda"
-
-# O mesmo comando RETOMA um tenant que ficou pela metade — o caso de um
-# cadastro feito sem o worker rodando: a linha existe, o schema nao. Passe o
-# schema_name que aparece na home.
-python manage.py provision_tenant teste1
-
-# Aplica migrations em public e em todos os tenants ja provisionados.
-# Tenants sem schema fisico sao IGNORADOS, com aviso: sem isso, um unico
-# cadastro pela metade derruba o comando inteiro com um erro que nao nomeia
-# o tenant nem a causa (ver apps/accounts/migration_executors.py).
-python manage.py migrate_schemas
-
-# Registra o tenant `public` e aponta ROOT_DOMAIN para ele. Idempotente.
-python manage.py bootstrap_public
-
-# Roda um comando dentro de um tenant especifico
-python manage.py tenant_command shell --schema=acme
-```
-
-## Estrutura
+## 📂 Project Structure
 
 ```
 apps/
-  accounts/      Tenant, Domain, User, TenantMembership  (schema public)
-  inference/     Conexoes de inferencia e reservas       (schema public)
-  knowledge/     Documentos, fontes da web, RAG          (por tenant)
-  content/       Prompts, artigos, FAQ, perguntas        (por tenant)
-  editorial/     Guia editorial e termos proibidos       (por tenant)
-  radar/         Demanda, concorrentes, Search Console   (por tenant)
-  integrations/  Sites, contrato, cadencia               (por tenant)
-  ops/           Trabalhos de geracao, sondas de saude   (por tenant)
-core/
-  settings/      base, dev, prod, test_contract
-  celery.py      app do Celery, com propagacao de tenant
-deploy/          Nginx, systemd, Gunicorn, scripts
+  accounts/      tenants, users, memberships            (public schema)
+  inference/     inference connections, capacity        (public schema)
+  knowledge/     documents, web sources, curation, RAG  (per tenant)
+  content/       prompts, topics, articles, FAQ, Q&A    (per tenant)
+  editorial/     editorial guide, forbidden terms       (per tenant)
+  radar/         demand, competitors, Search Console    (per tenant)
+  integrations/  client sites, /api/v1 client, cadence  (per tenant)
+  ops/           stateful jobs, health probes           (per tenant)
+core/            settings, routing, Celery app
+deploy/          Nginx, systemd units, deploy and backup scripts
 docs/
-  ARCHITECTURE.md    especificacao original, com as revisoes marcadas
-  ARMADILHAS.md      as falhas reais, e onde cada uma esta tratada
-  EXTRACAO.md        as heuristicas de leitura de PDF e como ajusta-las
-  BLOCOS.md          como empacotar o projeto para uma IA de contexto pequeno
-  CONTAS_EXTERNAS.md DataForSEO, YouTube, Search Console, SearXNG: criar e testar
-  WORKER_TRANSCRICAO.md  a rota de audio que o worker-gpu precisa ter
-  OPERACAO.md        subir em desenvolvimento e no servidor, e o que fazer
-                     quando o Ollama cai
-  adr/               decisoes de arquitetura
-  contrato/          contrato /api/v1 — o que um site precisa implementar
-    README.md          regras normativas, vetor de teste e lista de conferencia
-    openapi.yaml       esquemas completos das sete rotas
-    exemplos.md        o ciclo inteiro, com corpos reais
-    reference/django/  implementacao que passa nos testes de contrato
-fixtures/
-  extracao/          resultado esperado da extracao, por PDF de conferencia
-(o worker de GPU vive em repositorio proprio)
-tests/           Suite principal
-tests_contrato/  Contrato exercitado nos dois lados
+  adr/           architecture decision records
+  contrato/      the /api/v1 contract, OpenAPI spec and reference node
+tests/           main suite (~850 tests)
+tests_contrato/  end-to-end contract tests
 ```
 
-## Comandos uteis
+The GPU worker lives in its own repository.
 
-```bash
-# Confere as heuristicas de extracao contra PDFs reais, sem tocar no banco.
-# Ver docs/EXTRACAO.md para o ciclo de ajuste.
-python manage.py conferir_extracao --pasta casos/
-python manage.py conferir_extracao --pasta casos/ --gravar
+## 📚 Documentation
 
-# Lista os documentos em que a curadoria corrigiu a extracao. Nao precisa de
-# PDF: a conferencia humana ja e o gabarito.
-python manage.py tenant_command conferir_extracao --schema=acme --acervo
+The in-depth documentation is written in Portuguese.
 
-# Tira do servidor os casos marcados na tela (PDF + gabarito), para calibrar
-# na sua maquina. O servidor e deploy, nao clone.
-python manage.py tenant_command exportar_casos --schema=acme --destino=/tmp/casos
+* [`docs/adr/`](docs/adr/) — every architectural decision, with its reasoning and consequences.
+* [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md) — real failures, their literal symptoms, and where each one is handled.
+* [`docs/contrato/`](docs/contrato/) — what a website must implement to receive content.
+* [`docs/EXTRACAO.md`](docs/EXTRACAO.md) — PDF extraction heuristics and how to calibrate them.
+* [`docs/BLOCOS.md`](docs/BLOCOS.md) — packing each capability into a self-contained file for small-context AI assistants.
 
-# Mede as distancias do corpus de um tenant, para escolher o limiar. O valor
-# escolhido se grava pela tela Documentos > Qualidade da busca, que registra
-# tambem com que modelo a medicao foi feita (ADR-0016).
-python manage.py tenant_command calibrate_retrieval --schema=acme \
-    --consulta "sua consulta de teste"
+## 📄 License
 
-# Roda as tres suites
-./scripts/test-all.sh
-```
+No license is granted; all rights reserved. See [`NOTICE.md`](NOTICE.md).
 
-## Licenca
+---
 
-Nenhuma licenca foi concedida. Todos os direitos reservados. Ver
-[`NOTICE.md`](NOTICE.md).
+*Conceptualized and built as an exploration of scalable AI workflows, SEO engineering, and decoupled machine learning architectures.*
