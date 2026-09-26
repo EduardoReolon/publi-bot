@@ -606,3 +606,105 @@ def test_grupo_so_de_sementes_nao_vira_pauta_sozinho(radar, monkeypatch):  # noq
 
     assert GrupoDeDemanda.objects.exists()
     assert not Topic.objects.filter(origin=Topic.Origin.RADAR).exists()
+
+
+# ---------------------------------------------------------------------------
+# Concorrentes descobertos nas proprias buscas
+# ---------------------------------------------------------------------------
+def _serp_com(*urls):
+    from apps.radar.provedores import ItemDeBusca, ResultadoDeBusca
+
+    return ResultadoDeBusca(
+        provedor="dataforseo",
+        resultados=[ItemDeBusca(url=u, titulo=f"Titulo {i}") for i, u in enumerate(urls)],
+    )
+
+
+@pytest.mark.django_db
+def test_dominio_em_duas_buscas_diferentes_vira_sugestao(radar):  # noqa: F811
+    from apps.integrations.models import Site
+    from apps.radar.coleta import _sinais_da_serp
+    from apps.radar.concorrentes import sugeridos_para_a_tela
+
+    Site.objects.create(name="Meu", slug="meu", base_url="https://www.meusite.com.br")
+    config = ConfiguracaoDoRadar.carregar()
+    config.concorrentes = "jaconhecido.com.br"
+    config.save()
+
+    _sinais_da_serp(
+        _serp_com(
+            "https://pt.wikipedia.org/wiki/Churn",
+            "https://www.rival.com.br/blog/churn",
+            "https://meusite.com.br/churn",
+            "https://jaconhecido.com.br/churn",
+            "https://sozinho.com.br/x",
+            "https://www.youtube.com/watch?v=1",
+        ),
+        "redução de churn",
+        rodada=None,
+    )
+    assert sugeridos_para_a_tela() == []  # uma busca so e acaso
+
+    _sinais_da_serp(
+        _serp_com("https://a.com/", "https://rival.com.br/ltv"), "lifetime value", rodada=None
+    )
+
+    [sugerido] = sugeridos_para_a_tela()
+    assert sugerido.dominio == "rival.com.br"
+    assert sugerido.aparicoes == 2
+    assert sugerido.melhor_posicao == 2
+    assert [e["url"] for e in sugerido.exemplos] == [
+        "https://www.rival.com.br/blog/churn",
+        "https://rival.com.br/ltv",
+    ]
+
+
+@pytest.mark.django_db
+def test_confirmar_poe_na_lista_e_recusar_nao_volta(ambiente):  # noqa: F811
+    from apps.radar.models import ConcorrenteSugerido
+
+    _, _, client = ambiente
+    rival = ConcorrenteSugerido.objects.create(
+        dominio="rival.com.br", consultas={"churn": 2, "ltv": 5}
+    )
+    outro = ConcorrenteSugerido.objects.create(
+        dominio="portal.com.br", consultas={"churn": 1, "ltv": 1}
+    )
+    url_tela = reverse("radar:radar", urlconf="core.urls_tenants")
+    assert "<strong>rival.com.br</strong>" in client.get(url_tela).content.decode()
+
+    client.post(
+        reverse("radar:decidir_concorrente", args=[rival.pk], urlconf="core.urls_tenants"),
+        {"decisao": "confirmar", "nome": "Rival Consultoria"},
+    )
+    client.post(
+        reverse("radar:decidir_concorrente", args=[outro.pk], urlconf="core.urls_tenants"),
+        {"decisao": "recusar"},
+    )
+
+    assert ConfiguracaoDoRadar.carregar().lista_de_concorrentes == [
+        {"dominio": "rival.com.br", "nome": "Rival Consultoria"}
+    ]
+    outro.refresh_from_db()
+    assert outro.situacao == ConcorrenteSugerido.Situacao.RECUSADO
+    pagina = client.get(url_tela).content.decode()
+    assert "<strong>portal.com.br</strong>" not in pagina
+
+
+@pytest.mark.django_db
+def test_virar_pauta_na_tela_vale_para_grupo_so_de_sementes(ambiente, settings):  # noqa: F811
+    from apps.content.models import Topic
+    from apps.radar.models import SinalDeDemanda
+
+    settings.EMBEDDING_CLIENT = "tests.test_radar.EmbeddingPorPalavras"
+    from apps.knowledge.embeddings import get_embedding_client
+
+    get_embedding_client.cache_clear()
+    _, _, client = ambiente
+    grupo = GrupoDeDemanda.objects.create(rotulo="Up-sell", centroide=[0.0] * 1023 + [1.0])
+    SinalDeDemanda.objects.create(texto="Up-sell", fonte=SinalDeDemanda.Fonte.SEMENTE, grupo=grupo)
+
+    client.post(reverse("radar:grupo_para_pauta", args=[grupo.pk], urlconf="core.urls_tenants"))
+
+    assert Topic.objects.filter(origin=Topic.Origin.RADAR, title="Up-sell").exists()
+    get_embedding_client.cache_clear()

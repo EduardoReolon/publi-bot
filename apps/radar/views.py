@@ -11,6 +11,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
 from apps.radar import custos
+from apps.radar.concorrentes import sugeridos_para_a_tela
 from apps.radar.forms import BuscaManualForm, ConfiguracaoForm, ContasForm
 from apps.radar.models import (
     BuscaManual,
@@ -56,6 +57,7 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         "comparacoes_total": len(comparacoes),
         "comparacoes_falhas": sum(1 for c in comparacoes if c.gratuito_falhou),
         "chamadas": ChamadaExterna.objects.order_by("-criado_em")[:15],
+        "concorrentes_sugeridos": sugeridos_para_a_tela(),
         "tarefas_na_fila": TarefaNaFila.objects.filter(
             situacao=TarefaNaFila.Situacao.AGUARDANDO
         ).count(),
@@ -170,7 +172,7 @@ def grupo_para_pauta(request: HttpRequest, pk) -> HttpResponse:
 
     grupo = get_object_or_404(GrupoDeDemanda, pk=pk, situacao=GrupoDeDemanda.Situacao.NOVO)
     # Pedido pela pessoa: sem nota minima. A trava de canibalizacao continua.
-    criadas = propor_pautas({grupo.pk}, limite=1, nota_minima=0)
+    criadas = propor_pautas({grupo.pk}, limite=1, nota_minima=0, pedido_pela_pessoa=True)
     if criadas:
         messages.success(request, _("Pauta sugerida criada: %(t)s") % {"t": criadas[0]})
     else:
@@ -188,6 +190,26 @@ def descartar_grupo(request: HttpRequest, pk) -> HttpResponse:
     grupo.save(update_fields=["situacao", "atualizado_em"])
     grupo.sinais.update(situacao=SinalDeDemanda.Situacao.DESCARTADO)
     messages.success(request, _("Grupo descartado."))
+    return redirect("radar:radar")
+
+
+@login_required
+@require_POST
+def decidir_concorrente(request: HttpRequest, pk) -> HttpResponse:
+    """Confirmar poe o dominio na lista de concorrentes; recusar o esquece."""
+    from apps.radar.concorrentes import confirmar
+    from apps.radar.models import ConcorrenteSugerido
+
+    sugerido = get_object_or_404(ConcorrenteSugerido, pk=pk)
+    if request.POST.get("decisao") == "confirmar":
+        confirmar(sugerido, nome=request.POST.get("nome", "")[:200])
+        messages.success(
+            request, _("%(d)s entrou na lista de concorrentes.") % {"d": sugerido.dominio}
+        )
+    else:
+        sugerido.situacao = ConcorrenteSugerido.Situacao.RECUSADO
+        sugerido.save(update_fields=["situacao"])
+        messages.success(request, _("%(d)s nao sera mais sugerido.") % {"d": sugerido.dominio})
     return redirect("radar:radar")
 
 

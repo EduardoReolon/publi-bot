@@ -238,6 +238,10 @@ def _corpo_serp(config: ConfiguracaoDoRadar, consulta: str) -> dict:
 
 
 def _sinais_da_serp(resultado, consulta: str, *, rodada) -> list[SinalDeDemanda]:
+    from apps.radar.concorrentes import registrar_aparicoes
+
+    # Quem esta na primeira pagina desta busca: candidato a concorrente.
+    registrar_aparicoes(consulta, resultado.resultados)
     novos = []
     for pergunta in resultado.perguntas:
         novos.append(
@@ -516,7 +520,11 @@ def _coletar_concorrentes(config, contas, plano, rodada, resumo, *, fila: bool) 
 
 
 def propor_pautas(
-    ids_de_grupos: set, *, limite: int, nota_minima: float | None = None
+    ids_de_grupos: set,
+    *,
+    limite: int,
+    nota_minima: float | None = None,
+    pedido_pela_pessoa: bool = False,
 ) -> list[str]:
     """Pontua os grupos e transforma os melhores em pautas sugeridas.
 
@@ -534,7 +542,7 @@ def propor_pautas(
     candidatos = []
     for grupo in GrupoDeDemanda.objects.filter(pk__in=ids_de_grupos):
         pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito)
-        if not grupo.sinais.exclude(fonte__in=SO_REFORCAM).exists():
+        if not pedido_pela_pessoa and not grupo.sinais.exclude(fonte__in=SO_REFORCAM).exists():
             # Semente e o que o dono do site digitou, nao evidencia de que
             # alguem procura; avaliacao e a frase de um cliente, nao um tema.
             # As duas reforcam o grupo que outra fonte trouxe, mas sozinhas

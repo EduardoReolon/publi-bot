@@ -50,8 +50,8 @@
           <tr>
             <td>{{ rodada.iniciada_em|date:"d/m H:i" }}</td>
             <td>{{ rodada.get_origem_display }}</td>
-            <td>{{ rodada.get_situacao_display }}{% if rodada.erro %}<div class="ajuda">{{ rodada.erro|truncatechars:160 }}</div>{% endif %}
-              {% for erro in rodada.resumo.erros %}<div class="ajuda">{{ erro|truncatechars:160 }}</div>{% endfor %}</td>
+            <td>{{ rodada.get_situacao_display }}{% if rodada.situacao == "concluida" and rodada.resumo.erros %} <span class="selo">{% translate "com erros" %}</span>{% endif %}{% if rodada.erro %}<div class="ajuda">{{ rodada.erro|truncatechars:300 }}</div>{% endif %}
+              {% for erro in rodada.resumo.erros %}<div class="ajuda">{{ erro|truncatechars:300 }}</div>{% endfor %}</td>
             <td>{{ rodada.resumo.sinais|default:0 }}</td>
             <td>{{ rodada.resumo.pautas|length }}</td>
             <td>US$ {{ rodada.custo_usd|floatformat:4 }}</td>
@@ -97,6 +97,51 @@
         </tr>
       {% empty %}
         <tr><td colspan="6" class="vazio">{% translate "Nenhum tema ainda. Configure as sementes e rode o radar." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>{% translate "Possiveis concorrentes" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Sites que aparecem na primeira pagina de buscas diferentes do radar — quem
+      disputa as mesmas buscas que voce. Abra os exemplos e decida: confirmado,
+      ele entra na lista de concorrentes da configuracao (o nome do negocio no
+      Google e opcional, e so e usado para as avaliacoes). Recusado, nao volta.
+    {% endblocktranslate %}
+  </p>
+  <table>
+    <thead><tr>
+      <th>{% translate "Site" %}</th><th>{% translate "Buscas" %}</th>
+      <th>{% translate "Melhor posicao" %}</th><th>{% translate "Exemplos" %}</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for sugerido in concorrentes_sugeridos %}
+        <tr>
+          <td><strong>{{ sugerido.dominio }}</strong></td>
+          <td>{{ sugerido.aparicoes }}</td>
+          <td>{{ sugerido.melhor_posicao }}</td>
+          <td class="pre-visualizacao">
+            {% for exemplo in sugerido.exemplos %}
+              <div><a href="{{ exemplo.url }}" target="_blank" rel="noopener noreferrer">{{ exemplo.titulo|default:exemplo.url|truncatechars:80 }}</a> <span class="ajuda">({{ exemplo.consulta }})</span></div>
+            {% endfor %}
+          </td>
+          <td>
+            <form method="post" action="{% url 'radar:decidir_concorrente' sugerido.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="decisao" value="confirmar">
+              <input type="text" name="nome" placeholder="{% translate 'nome no Google (opcional)' %}" maxlength="200">
+              <button type="submit" class="botao secundario">{% translate "E concorrente" %}</button>
+            </form>
+            <form method="post" action="{% url 'radar:decidir_concorrente' sugerido.pk %}" style="display:inline">
+              {% csrf_token %}
+              <input type="hidden" name="decisao" value="recusar">
+              <button type="submit" class="botao perigo">{% translate "Nao e" %}</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="vazio">{% translate "Nenhum ainda. Eles aparecem conforme o radar busca: um site precisa estar na primeira pagina de pelo menos duas buscas diferentes." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

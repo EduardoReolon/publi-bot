@@ -17,5 +17,10 @@ urlpatterns = [
     path("buscas/<uuid:pk>/decidir/", views.decidir_busca, name="decidir_busca"),
     path("grupos/<uuid:pk>/pauta/", views.grupo_para_pauta, name="grupo_para_pauta"),
     path("grupos/<uuid:pk>/descartar/", views.descartar_grupo, name="descartar_grupo"),
+    path(
+        "concorrentes/<uuid:pk>/decidir/",
+        views.decidir_concorrente,
+        name="decidir_concorrente",
+    ),
     path("search-console/", views.coletar_console, name="coletar_console"),
 ]

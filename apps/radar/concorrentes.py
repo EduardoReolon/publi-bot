@@ -7,7 +7,10 @@ SINAL, e o que ja existe no radar decide o resto — o agrupamento junta temas
 parecidos, e a parcela de canibalizacao da nota derruba o que o site ja
 escreveu. O que sobra com nota alta e a lacuna.
 
-Tres fontes, da gratuita para as pagas:
+Quem e concorrente sai das proprias buscas do radar: dominio que aparece na
+primeira pagina de buscas diferentes vira SUGESTAO, e uma pessoa confirma
+(`registrar_aparicoes`). A lista confirmada fica na configuracao, e dela saem
+tres fontes, da gratuita para as pagas:
 
 1. **O sitemap** (gratuito). Todo site que quer ser achado publica a lista das
    proprias paginas (`/sitemap.xml`, apontado no `robots.txt`). O titulo sai
@@ -62,6 +65,101 @@ _PAGINAS_INSTITUCIONAIS = {
     "inicio",
     "blog",
 }
+
+
+# ---------------------------------------------------------------------------
+# Descoberta: quem aparece na primeira pagina das buscas do site
+# ---------------------------------------------------------------------------
+# Um dominio precisa aparecer em pelo menos tantas buscas DIFERENTES para ser
+# sugerido. Uma aparicao so e acaso; repetir em temas diferentes e disputa.
+APARICOES_PARA_SUGERIR = 2
+
+# Dominios que aparecem em tudo e nao disputam o mesmo cliente: enciclopedia,
+# rede social, marketplace, buscador. Somam-se as plataformas abertas da busca
+# de fontes (YouTube, Medium, LinkedIn...).
+_NAO_SAO_CONCORRENTES = (
+    "wikipedia.org",
+    "google.com",
+    "google.com.br",
+    "amazon.com",
+    "amazon.com.br",
+    "mercadolivre.com.br",
+    "shopee.com.br",
+    "magazineluiza.com.br",
+    "reclameaqui.com.br",
+    "jusbrasil.com.br",
+    "gov.br",
+)
+
+
+def _ignorado(dominio: str) -> bool:
+    from apps.knowledge.fontes_web import PLATAFORMAS_ABERTAS
+
+    for base in (*_NAO_SAO_CONCORRENTES, *PLATAFORMAS_ABERTAS):
+        if dominio == base or dominio.endswith("." + base):
+            return True
+    return False
+
+
+def _dominio_proprio() -> str:
+    from apps.integrations.models import Site
+
+    site = Site.objects.first()
+    anfitriao = urlparse(site.base_url).hostname if site and site.base_url else ""
+    return (anfitriao or "").lower().removeprefix("www.")
+
+
+def registrar_aparicoes(consulta: str, resultados) -> None:
+    """Conta os dominios da primeira pagina de uma busca.
+
+    `resultados` sao os `ItemDeBusca` organicos, na ordem da pagina. Nao custa
+    nada: sao as paginas de resultado que o radar ja pagou.
+    """
+    from django.utils import timezone
+
+    from apps.radar.models import ConcorrenteSugerido
+
+    config = ConfiguracaoDoRadar.carregar()
+    ja_listados = {c["dominio"] for c in config.lista_de_concorrentes}
+    proprio = _dominio_proprio()
+    chave = consulta.strip().lower()
+    for posicao, item in enumerate(list(resultados)[:10], start=1):
+        dominio = (urlparse(item.url).hostname or "").lower().removeprefix("www.")
+        if not dominio or dominio == proprio or dominio in ja_listados or _ignorado(dominio):
+            continue
+        sugerido, _criado = ConcorrenteSugerido.objects.get_or_create(dominio=dominio)
+        anterior = sugerido.consultas.get(chave)
+        sugerido.consultas[chave] = posicao if anterior is None else min(anterior, posicao)
+        if len(sugerido.exemplos) < 5 and item.url not in {e["url"] for e in sugerido.exemplos}:
+            sugerido.exemplos.append(
+                {"url": item.url, "titulo": item.titulo[:200], "consulta": consulta[:200]}
+            )
+        sugerido.visto_em = timezone.now()
+        sugerido.save(update_fields=["consultas", "exemplos", "visto_em"])
+
+
+def sugeridos_para_a_tela(limite: int = 15) -> list:
+    """Os que ainda esperam decisao e ja apareceram o bastante."""
+    from apps.radar.models import ConcorrenteSugerido
+
+    pendentes = [
+        c
+        for c in ConcorrenteSugerido.objects.filter(situacao=ConcorrenteSugerido.Situacao.SUGERIDO)
+        if c.aparicoes >= APARICOES_PARA_SUGERIR
+    ]
+    pendentes.sort(key=lambda c: (-c.aparicoes, c.melhor_posicao or 99))
+    return pendentes[:limite]
+
+
+def confirmar(sugerido, *, nome: str = "") -> None:
+    """Acrescenta o dominio a lista de concorrentes da configuracao."""
+    config = ConfiguracaoDoRadar.carregar()
+    if sugerido.dominio not in {c["dominio"] for c in config.lista_de_concorrentes}:
+        linha = f"{sugerido.dominio} | {nome.strip()}" if nome.strip() else sugerido.dominio
+        config.concorrentes = (config.concorrentes.rstrip() + "\n" + linha).strip()
+        config.save(update_fields=["concorrentes"])
+    sugerido.situacao = sugerido.Situacao.CONFIRMADO
+    sugerido.save(update_fields=["situacao"])
 
 
 # ---------------------------------------------------------------------------

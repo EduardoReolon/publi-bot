@@ -118,7 +118,8 @@ class ConfiguracaoDoRadar(models.Model):
         blank=True,
         help_text=_(
             "Um por linha: 'dominio | nome do negocio no Google'. O nome e opcional "
-            "e so e usado para as avaliacoes. Ex.: 'clinicax.com.br | Clinica X Curitiba'."
+            "e so e usado para as avaliacoes. Ex.: 'clinicax.com.br | Clinica X Curitiba'. "
+            "Os sugeridos pelo radar e confirmados na tela entram aqui sozinhos."
         ),
     )
     usar_concorrentes_conteudo = models.BooleanField(
@@ -587,3 +588,45 @@ class TarefaNaFila(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_tipo_display()} {self.task_id}"
+
+
+class ConcorrenteSugerido(models.Model):
+    """Dominio que aparece na primeira pagina das buscas do site.
+
+    E o jeito das ferramentas de SEO acharem "concorrentes organicos": quem
+    disputa as mesmas buscas. Aqui a lista sai das paginas de resultado que o
+    radar ja buscou (sem custo extra), e uma pessoa confirma: dominio grande
+    que aparece em tudo (portal de noticias, marketplace) nao e concorrente.
+    """
+
+    class Situacao(models.TextChoices):
+        SUGERIDO = "sugerido", _("Sugerido")
+        CONFIRMADO = "confirmado", _("Confirmado")
+        RECUSADO = "recusado", _("Nao e concorrente")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dominio = models.CharField(_("dominio"), max_length=255, unique=True)
+    situacao = models.CharField(
+        _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.SUGERIDO
+    )
+    # Consultas distintas em que apareceu, e a melhor posicao em cada uma.
+    consultas = models.JSONField(_("consultas"), default=dict, blank=True)
+    # Ate 5 paginas de exemplo: {"url", "titulo", "consulta"}.
+    exemplos = models.JSONField(_("exemplos"), default=list, blank=True)
+    visto_em = models.DateTimeField(_("visto em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("concorrente sugerido")
+        verbose_name_plural = _("concorrentes sugeridos")
+        ordering = ["dominio"]
+
+    def __str__(self) -> str:
+        return self.dominio
+
+    @property
+    def aparicoes(self) -> int:
+        return len(self.consultas)
+
+    @property
+    def melhor_posicao(self) -> int | None:
+        return min(self.consultas.values()) if self.consultas else None
