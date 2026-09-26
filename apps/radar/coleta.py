@@ -264,15 +264,18 @@ def executar_rodada(origem: str = RodadaDoRadar.Origem.AGENDADA) -> RodadaDoRada
             if fila and config.buscador == ConfiguracaoDoRadar.Buscador.DATAFORSEO:
                 from apps.radar.fila import postar
 
-                resumo["tarefas"] += len(
-                    postar(
-                        TarefaNaFila.Tipo.SERP,
-                        [(_corpo_serp(config, s), {"semente": s}) for s in sementes],
-                        contas=contas,
-                        finalidade=finalidade,
-                        rodada=rodada,
+                try:
+                    resumo["tarefas"] += len(
+                        postar(
+                            TarefaNaFila.Tipo.SERP,
+                            [(_corpo_serp(config, s), {"semente": s}) for s in sementes],
+                            contas=contas,
+                            finalidade=finalidade,
+                            rodada=rodada,
+                        )
                     )
-                )
+                except ProvedorIndisponivel as exc:
+                    resumo["erros"].append(f"busca: {exc}")
             else:
                 for semente in sementes:
                     try:
@@ -326,17 +329,23 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
                         "location_code": config.codigo_de_local,
                         "language_code": config.codigo_de_idioma,
                     }
-                    postar(
-                        TarefaNaFila.Tipo.VOLUME,
-                        [(corpo, {})],
-                        contas=contas,
-                        finalidade=finalidade,
-                        rodada=rodada,
-                    )
-                    resumo["tarefas"] = resumo.get("tarefas", 0) + 1
-                    rodada.situacao = RodadaDoRadar.Situacao.AGUARDANDO
-                    rodada.save(update_fields=["fase", "situacao", "resumo"])
-                    return rodada
+                    try:
+                        postar(
+                            TarefaNaFila.Tipo.VOLUME,
+                            [(corpo, {})],
+                            contas=contas,
+                            finalidade=finalidade,
+                            rodada=rodada,
+                        )
+                    except ProvedorIndisponivel as exc:
+                        # Sem volume a rodada ainda propoe: a nota usa o
+                        # tamanho do grupo.
+                        resumo.setdefault("erros", []).append(f"volume: {exc}")
+                    else:
+                        resumo["tarefas"] = resumo.get("tarefas", 0) + 1
+                        rodada.situacao = RodadaDoRadar.Situacao.AGUARDANDO
+                        rodada.save(update_fields=["fase", "situacao", "resumo"])
+                        return rodada
                 try:
                     _preencher_volumes(candidatos, finalidade=finalidade)
                 except ProvedorIndisponivel as exc:

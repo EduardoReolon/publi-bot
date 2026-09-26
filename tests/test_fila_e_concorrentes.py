@@ -186,6 +186,27 @@ def test_tarefa_que_falhou_vai_para_o_resumo_e_a_rodada_segue(radar, monkeypatch
 
 
 @pytest.mark.django_db
+def test_saldo_zerado_no_post_vai_para_o_resumo_e_a_rodada_termina(radar, monkeypatch):  # noqa: F811
+    from apps.radar.coleta import executar_rodada
+
+    _config_com_fila(sementes="bdi")
+
+    def post(url, json=None, auth=None, timeout=None):
+        corpo = {"status_code": 40200, "status_message": "Payment Required.", "tasks": []}
+        return httpx.Response(200, json=corpo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+
+    rodada = executar_rodada()
+
+    assert rodada.situacao == RodadaDoRadar.Situacao.CONCLUIDA
+    assert any("Payment" in e for e in rodada.resumo["erros"])
+    falhas = ChamadaExterna.objects.filter(endpoint__contains="task_post")
+    assert falhas.exists()
+    assert not falhas.filter(sucesso=True).exists()
+
+
+@pytest.mark.django_db
 def test_teto_e_conferido_antes_de_postar(radar, monkeypatch):  # noqa: F811
     from apps.radar.coleta import executar_rodada
 
