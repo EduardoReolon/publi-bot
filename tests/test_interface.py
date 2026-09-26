@@ -123,7 +123,7 @@ def test_envio_recusa_formato_que_ninguem_sabe_converter(ambiente):
     resposta = client.post(
         reverse("knowledge:enviar", urlconf="core.urls_tenants"),
         {
-            "arquivo": ContentFile(b"dados", name="planilha.xlsx"),
+            "arquivo": ContentFile(b"dados", name="apresentacao.key"),
             "category": str(DocumentCategory.objects.first().pk),
         },
     )

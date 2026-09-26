@@ -15,6 +15,8 @@ from __future__ import annotations
 import uuid
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVectorField
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -464,6 +466,12 @@ class SuperChunk(models.Model):
 
     embedding = VectorField(_("vetor"), dimensions=settings.EMBEDDING_DIM, null=True)
 
+    # Busca por texto, ao lado da vetorial. Configuracao `simple` (sem stemming)
+    # sobre texto sem acento: o acervo mistura portugues e ingles, e o que esta
+    # busca existe para acertar e o TERMO EXATO — "SINAPI", "BDI", uma sigla,
+    # um nome proprio — que o vetor aproxima mal.
+    search_vector = SearchVectorField(_("indice textual"), null=True)
+
     # Gravados POR LINHA, e nao lidos do settings na consulta: permite que duas
     # geracoes de modelo convivam durante uma migracao de embeddings.
     embedding_model = models.CharField(_("modelo"), max_length=120, blank=True)
@@ -521,6 +529,7 @@ class SuperChunk(models.Model):
                 ef_construction=64,
                 opclasses=["vector_cosine_ops"],
             ),
+            GinIndex(fields=["search_vector"], name="superchunk_busca_textual_gin"),
         ]
 
     def __str__(self) -> str:

@@ -687,6 +687,17 @@ RAG_TOP_K = env.integer("RAG_TOP_K", 3)
 # `manage.py calibrate_retrieval`.
 RAG_MAX_COSINE_DISTANCE = env.decimal("RAG_MAX_COSINE_DISTANCE", 0.16)
 
+# Busca hibrida: a textual (termo exato) corre ao lado da vetorial, e os
+# resultados se fundem por posicao (RRF). O limiar acima continua sendo a
+# trava; o trecho que casa por texto ganha so esta folga sobre ele.
+RAG_BUSCA_HIBRIDA = env.boolean("RAG_BUSCA_HIBRIDA", True)
+RAG_FOLGA_TEXTUAL = env.decimal("RAG_FOLGA_TEXTUAL", 0.03)
+
+# Cross-encoder que reordena os candidatos antes do corte. Vazio: desligado.
+# Sugestao: jinaai/jina-reranker-v2-base-multilingual (~1,1 GB, multilingue —
+# o acervo mistura fontes em ingles com pautas em portugues).
+RAG_RERANKER_MODEL = env.get("RAG_RERANKER_MODEL", "")
+
 # ---------------------------------------------------------------------------
 # Log
 # ---------------------------------------------------------------------------

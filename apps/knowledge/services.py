@@ -152,7 +152,7 @@ def salvar_super_chunk(
 
     vetor = cliente.embed_passage([content])[0]
 
-    chunk, _ = SuperChunk.objects.update_or_create(
+    chunk, _criado = SuperChunk.objects.update_or_create(
         document=document,
         kind=kind,
         defaults={
@@ -169,6 +169,7 @@ def salvar_super_chunk(
             "is_active": True,
         },
     )
+    atualizar_indice_textual([chunk])
     return chunk
 
 
@@ -199,6 +200,55 @@ class TrechoRecuperado:
     posicao: int
 
 
+# Termos curtos demais ou vazios de sentido na busca textual. Poucos, e so os
+# que mais aparecem: a busca textual e o complemento da vetorial para termo
+# exato, nao uma busca completa de linguagem natural.
+_PALAVRAS_VAZIAS = frozenset(
+    "a o as os de da do das dos e em no na nos nas um uma para por com que como "
+    "the of and to in for on with is are what how".split()
+)
+
+# Constante do Reciprocal Rank Fusion. 60 e o valor do artigo original e o
+# padrao de fato; o resultado e pouco sensivel a ele.
+_RRF_K = 60
+
+
+def texto_pesquisavel(chunk) -> str:
+    """O que a busca textual enxerga: trecho, titulo do bloco e da fonte."""
+    partes = [chunk.content, chunk.heading, chunk.source_title, chunk.source_label]
+    return normalizar_para_impressao(" ".join(p for p in partes if p))
+
+
+def atualizar_indice_textual(chunks) -> None:
+    """Grava o `search_vector` dos trechos. Chamado ao indexar."""
+    from django.contrib.postgres.search import SearchVector
+    from django.db.models import Value
+
+    for chunk in chunks:
+        SuperChunk.objects.filter(pk=chunk.pk).update(
+            search_vector=SearchVector(Value(texto_pesquisavel(chunk)), config="simple")
+        )
+
+
+def _consulta_textual(consulta: str):
+    """Os termos da consulta, em OU. Vazio quando nao sobra termo nenhum.
+
+    OU, e nao E: uma pauta tem dez palavras, e exigir todas num paragrafo so
+    nao casaria nada. Quem ordena e o rank, e quem decide se o trecho serve
+    continua sendo a distancia vetorial.
+    """
+    from django.contrib.postgres.search import SearchQuery
+
+    termos = [
+        t
+        for t in re.findall(r"[a-z0-9]+", normalizar_para_impressao(consulta))
+        if len(t) > 1 and t not in _PALAVRAS_VAZIAS
+    ]
+    if not termos:
+        return None
+    return SearchQuery(" | ".join(dict.fromkeys(termos)), search_type="raw", config="simple")
+
+
 def recuperar(
     *,
     consulta: str,
@@ -208,6 +258,19 @@ def recuperar(
     deduplicar_por_documento: bool = True,
 ) -> tuple[RetrievalQuery, list[TrechoRecuperado]]:
     """Busca trechos relevantes e registra a consulta.
+
+    Hibrida: a busca vetorial e a textual correm lado a lado e os resultados
+    se juntam por Reciprocal Rank Fusion. A vetorial acha o que DIZ a mesma
+    coisa com outras palavras; a textual acha o termo exato que o vetor
+    aproxima mal (sigla, nome de tabela, nome proprio).
+
+    O limiar continua sendo a trava: nenhum trecho passa so por ter a palavra.
+    O que casa por texto ganha uma folga pequena (`RAG_FOLGA_TEXTUAL`) — o
+    termo exato e evidencia de relevancia que a distancia nao capta —, mas
+    fica sujeito a ela.
+
+    Com `RAG_RERANKER_MODEL` configurado, um cross-encoder reordena os
+    candidatos que passaram, antes do corte por `top_k`.
 
     `deduplicar_por_documento` importa mais do que parece: dois trechos do
     mesmo artigo nao sao duas fontes independentes. Sem a deduplicacao, o
@@ -234,20 +297,38 @@ def recuperar(
         embedding_model=cliente.model_name,
     )
 
-    # Busca mais que top_k porque a deduplicacao por documento pode descartar
-    # varios candidatos.
-    limite_bruto = top_k * 4 if deduplicar_por_documento else top_k
+    # Busca mais que top_k porque a deduplicacao por documento e o limiar
+    # descartam varios candidatos.
+    limite_bruto = max(top_k * 8, 20)
 
-    candidatos = (
+    base = (
         SuperChunk.objects.filter(is_active=True, embedding__isnull=False)
         # Fonte vencida (tabela de preco do mes passado, norma revisada) sai da
         # busca ate alguem atualiza-la. Citar um valor que ja mudou e pior que
         # nao citar nada.
         .exclude(document__valid_until__lt=timezone.localdate())
         .annotate(distancia=CosineDistance("embedding", vetor))
-        .filter(distancia__lte=distancia_maxima)
-        .order_by("distancia")[:limite_bruto]
     )
+
+    por_vetor = list(
+        base.filter(distancia__lte=distancia_maxima).order_by("distancia")[:limite_bruto]
+    )
+
+    por_texto = []
+    folga = float(getattr(settings, "RAG_FOLGA_TEXTUAL", 0.0))
+    consulta_textual = _consulta_textual(consulta) if settings.RAG_BUSCA_HIBRIDA else None
+    if consulta_textual is not None:
+        from django.contrib.postgres.search import SearchRank
+        from django.db.models import F
+
+        por_texto = list(
+            base.filter(search_vector=consulta_textual, distancia__lte=distancia_maxima + folga)
+            .annotate(rank_textual=SearchRank(F("search_vector"), consulta_textual))
+            .order_by("-rank_textual")[:limite_bruto]
+        )
+
+    candidatos = _fundir([por_vetor, por_texto])
+    candidatos = _reordenar(consulta, candidatos)
 
     selecionados: list[TrechoRecuperado] = []
     documentos_vistos: set = set()
@@ -272,6 +353,43 @@ def recuperar(
     )
 
     return registro, selecionados
+
+
+def _fundir(listas: list[list]) -> list:
+    """Reciprocal Rank Fusion: a posicao em cada lista vale 1/(k + posicao).
+
+    Funde por POSICAO, e nao por nota, porque a distancia de cosseno e o rank
+    textual estao em escalas que nao se comparam. Um trecho bem colocado nas
+    duas listas sobe; um que so aparece numa fica atras dele.
+    """
+    notas: dict = {}
+    por_id: dict = {}
+    for lista in listas:
+        for posicao, chunk in enumerate(lista, start=1):
+            por_id.setdefault(chunk.pk, chunk)
+            notas[chunk.pk] = notas.get(chunk.pk, 0.0) + 1.0 / (_RRF_K + posicao)
+    ordem = sorted(notas, key=lambda pk: (-notas[pk], float(por_id[pk].distancia)))
+    return [por_id[pk] for pk in ordem]
+
+
+def _reordenar(consulta: str, candidatos: list) -> list:
+    """Aplica o cross-encoder, quando configurado. Sem ele, mantem a ordem.
+
+    Falha do reordenador nao derruba a busca: ele melhora a ordem, e uma ordem
+    um pouco pior e melhor que nenhum resultado.
+    """
+    from apps.knowledge.reranker import get_reordenador
+
+    reordenador = get_reordenador()
+    if reordenador is None or len(candidatos) < 2:
+        return candidatos
+    try:
+        notas = reordenador.notas(consulta, [c.content for c in candidatos])
+    except Exception:
+        logger.exception("Reordenador falhou; mantendo a ordem da busca.")
+        return candidatos
+    pares = sorted(zip(notas, range(len(candidatos)), strict=True), key=lambda p: (-p[0], p[1]))
+    return [candidatos[i] for _nota, i in pares]
 
 
 def marcar_curado(*, document: Document, revisado_por, segundos: int = 0) -> Document:
@@ -346,6 +464,7 @@ def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
     document.chunks.all().delete()
 
     criados = 0
+    novos = []
     for bloco in blocos:
         if bloco.ordem not in blocos_marcados:
             continue
@@ -356,7 +475,7 @@ def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
                 titulo_do_documento=document.title or "",
                 titulo_do_bloco=bloco.titulo,
             )
-            SuperChunk.objects.create(
+            novo = SuperChunk.objects.create(
                 document=document,
                 kind=SuperChunk.Kind.CUSTOM,
                 content=paragrafo.texto,
@@ -372,8 +491,10 @@ def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
                 **campos_da_fonte(document),
                 is_active=True,
             )
+            novos.append(novo)
             criados += 1
 
+    atualizar_indice_textual(novos)
     logger.info("Documento %s: %s trecho(s) indexados.", document.pk, criados)
     return criados
 
