@@ -156,7 +156,14 @@ class ConfiguracaoDoRadar(models.Model):
         ),
     )
     buscador = models.CharField(
-        _("buscador"), max_length=12, choices=Buscador.choices, default=Buscador.SEARXNG
+        _("buscador"),
+        max_length=12,
+        choices=Buscador.choices,
+        default=Buscador.DATAFORSEO,
+        help_text=_(
+            "O SearXNG so vale se voce hospedar um (SEARXNG_URL). Sem ele "
+            "configurado, as buscas vao para a DataForSEO de qualquer forma."
+        ),
     )
     taxa_de_comparacao = models.PositiveSmallIntegerField(
         _("comparar com o pago (%)"),

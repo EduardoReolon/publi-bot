@@ -35,6 +35,7 @@ from apps.radar.provedores import (
     TIMEOUT,
     ProvedorIndisponivel,
     _credenciais_dataforseo,
+    conferir_http_dataforseo,
 )
 
 logger = logging.getLogger("publibot.radar")
@@ -63,10 +64,7 @@ PRAZO = timedelta(hours=24)
 
 
 def _conferir_resposta(resposta: httpx.Response) -> dict:
-    if resposta.status_code == 401:
-        raise ProvedorIndisponivel("DataForSEO recusou o login e a senha (401).")
-    if not resposta.is_success:
-        raise ProvedorIndisponivel(f"DataForSEO respondeu HTTP {resposta.status_code}.")
+    conferir_http_dataforseo(resposta)
     dados = resposta.json()
     if dados.get("status_code") != PRONTA:
         raise ProvedorIndisponivel(

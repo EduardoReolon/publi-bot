@@ -71,6 +71,35 @@ def _credenciais_dataforseo(contas: ContasExternas) -> tuple[str, str]:
     return contas.dataforseo_login, senha
 
 
+def conferir_http_dataforseo(resposta: httpx.Response) -> None:
+    """Levanta com a mensagem que a DataForSEO mandou, e nao so o numero.
+
+    "HTTP 403" sozinho nao diz se e conta sem API liberada, IP fora da lista
+    permitida ou saldo; o corpo costuma dizer.
+    """
+    if resposta.is_success:
+        return
+    try:
+        corpo = resposta.json()
+        detalhe = f"{corpo.get('status_code', '')} {corpo.get('status_message', '')}".strip()
+    except ValueError:
+        detalhe = resposta.text[:200].strip()
+    dicas = {
+        401: "login ou API password errados (a API password nao e a senha do site)",
+        402: "sem saldo na conta",
+        403: (
+            "acesso recusado: confira no painel da DataForSEO se a conta esta "
+            "ativada e se ha lista de IPs permitidos que nao inclui este servidor"
+        ),
+    }
+    partes = [f"DataForSEO respondeu HTTP {resposta.status_code}"]
+    if detalhe:
+        partes.append(detalhe)
+    if resposta.status_code in dicas:
+        partes.append(dicas[resposta.status_code])
+    raise ProvedorIndisponivel(" — ".join(partes) + ".")
+
+
 def _post_dataforseo(caminho: str, corpo: list[dict], contas: ContasExternas) -> dict:
     login, senha = _credenciais_dataforseo(contas)
     try:
@@ -79,10 +108,7 @@ def _post_dataforseo(caminho: str, corpo: list[dict], contas: ContasExternas) ->
         )
     except httpx.HTTPError as exc:
         raise ProvedorIndisponivel(f"DataForSEO nao respondeu: {exc}") from exc
-    if resposta.status_code == 401:
-        raise ProvedorIndisponivel("DataForSEO recusou o login e a senha (401).")
-    if not resposta.is_success:
-        raise ProvedorIndisponivel(f"DataForSEO respondeu HTTP {resposta.status_code}.")
+    conferir_http_dataforseo(resposta)
     dados = resposta.json()
     # A DataForSEO responde 200 com o erro no corpo: 20000 e sucesso, o resto
     # nao. Olhar so o HTTP faria um saldo zerado passar por resultado vazio.
@@ -298,6 +324,22 @@ def buscar_searxng(
 # ---------------------------------------------------------------------------
 # A busca que o resto do sistema chama
 # ---------------------------------------------------------------------------
+def buscador_efetivo(config: ConfiguracaoDoRadar, contas: ContasExternas) -> str:
+    """O buscador que vai de fato atender.
+
+    SearXNG escolhido sem instancia configurada e DataForSEO disfarcada: cada
+    busca registraria uma falha do gratuito antes de cair no pago. Com conta
+    na DataForSEO, vai direto a ela.
+    """
+    if (
+        config.buscador == ConfiguracaoDoRadar.Buscador.SEARXNG
+        and not url_do_searxng(contas)
+        and contas.tem_dataforseo
+    ):
+        return ConfiguracaoDoRadar.Buscador.DATAFORSEO
+    return config.buscador
+
+
 def buscar(consulta: str, *, finalidade: str) -> ResultadoDeBusca:
     """Busca com o provedor configurado, com recurso ao pago e comparacao.
 
@@ -308,7 +350,7 @@ def buscar(consulta: str, *, finalidade: str) -> ResultadoDeBusca:
     config = ConfiguracaoDoRadar.carregar()
     contas = ContasExternas.carregar()
 
-    if config.buscador == ConfiguracaoDoRadar.Buscador.DATAFORSEO:
+    if buscador_efetivo(config, contas) == ConfiguracaoDoRadar.Buscador.DATAFORSEO:
         return buscar_dataforseo(consulta, config=config, contas=contas, finalidade=finalidade)
 
     try:

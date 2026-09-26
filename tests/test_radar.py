@@ -91,6 +91,12 @@ def _com_dataforseo():
     return contas
 
 
+def _usar_searxng():
+    config = ConfiguracaoDoRadar.carregar()
+    config.buscador = ConfiguracaoDoRadar.Buscador.SEARXNG
+    config.save()
+
+
 RESPOSTA_SERP = {
     "status_code": 20000,
     "cost": 0.002,
@@ -282,6 +288,7 @@ def test_gratuito_fora_do_ar_cai_para_o_pago(radar, monkeypatch):
     contas = ContasExternas.carregar()
     contas.searxng_url = "https://searx.exemplo.com"
     contas.save()
+    _usar_searxng()
 
     def get(url, params=None, timeout=None):
         raise httpx.ConnectError("recusado")
@@ -305,6 +312,7 @@ def test_comparacao_registra_quanto_o_gratuito_cobre_do_pago(radar, monkeypatch)
     contas = ContasExternas.carregar()
     contas.searxng_url = "https://searx.exemplo.com"
     contas.save()
+    _usar_searxng()
     config = ConfiguracaoDoRadar.carregar()
     config.taxa_de_comparacao = 100
     config.save()

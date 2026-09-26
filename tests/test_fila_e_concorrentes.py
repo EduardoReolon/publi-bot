@@ -493,3 +493,116 @@ def test_tela_mostra_os_campos_de_concorrentes(ambiente):  # noqa: F811
     pagina = client.get(reverse("radar:radar", urlconf="core.urls_tenants")).content.decode()
     assert 'name="concorrentes"' in pagina
     assert 'name="modo_dataforseo"' in pagina
+
+
+# ---------------------------------------------------------------------------
+# O que a primeira rodada real mostrou
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_http_403_traz_a_mensagem_da_dataforseo_e_a_dica(radar, monkeypatch):  # noqa: F811
+    from apps.radar.provedores import ProvedorIndisponivel, buscar_dataforseo
+
+    def post(url, json=None, auth=None, timeout=None):
+        corpo = {
+            "status_code": 40300,
+            "status_message": "Access denied. Visit Plans and Subscriptions.",
+        }
+        return httpx.Response(403, json=corpo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+
+    with pytest.raises(ProvedorIndisponivel) as erro:
+        buscar_dataforseo(
+            "x", config=ConfiguracaoDoRadar.carregar(), contas=_com_dataforseo(), finalidade="radar"
+        )
+    assert "HTTP 403" in str(erro.value)
+    assert "Access denied" in str(erro.value)
+    assert "lista de IPs" in str(erro.value)
+
+
+@pytest.mark.django_db
+def test_searxng_escolhido_sem_instancia_vai_direto_ao_pago(radar, monkeypatch):  # noqa: F811
+    """O padrao antigo era o SearXNG. Sem instancia configurada, cada busca
+    registrava uma falha do gratuito antes de cair no pago — e a rodada nao
+    usava a fila, que so valia com o pago escolhido."""
+    from apps.radar.coleta import executar_rodada
+
+    _config_com_fila(sementes="bdi", buscador=ConfiguracaoDoRadar.Buscador.SEARXNG)
+    api = DataForSEOFalsa(monkeypatch)
+
+    rodada = executar_rodada()
+
+    assert rodada.situacao == RodadaDoRadar.Situacao.AGUARDANDO
+    assert api.posts[0][0].endswith("/serp/google/organic/task_post")
+    assert not ChamadaExterna.objects.filter(provedor="searxng").exists()
+
+
+@pytest.mark.django_db
+def test_volume_recusado_na_fila_nao_tenta_de_novo_ao_vivo(radar, monkeypatch):  # noqa: F811
+    from apps.radar.coleta import executar_rodada
+
+    _config_com_fila(sementes="bdi", usar_serp=False)
+    urls = []
+
+    def post(url, json=None, auth=None, timeout=None):
+        urls.append(url)
+        corpo = {"status_code": 40300, "status_message": "Access denied."}
+        return httpx.Response(403, json=corpo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+
+    rodada = executar_rodada()
+
+    assert rodada.situacao == RodadaDoRadar.Situacao.CONCLUIDA
+    assert len(urls) == 1 and urls[0].endswith("/search_volume/task_post")
+    assert len([e for e in rodada.resumo["erros"] if e.startswith("volume")]) == 1
+
+
+@pytest.mark.django_db
+def test_sementes_revezam_entre_as_rodadas(radar, monkeypatch):  # noqa: F811
+    """Com 23 sementes e 5 buscas por rodada, sempre as 5 primeiras deixariam
+    18 de fora para sempre."""
+    from apps.radar import coleta
+    from apps.radar.provedores import ResultadoDeBusca
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.intensidade = "minimo"  # 5 buscas
+    config.usar_perguntas_do_site = False
+    config.usar_volume = False
+    config.sementes = "\n".join(f"semente {i}" for i in range(12))
+    config.save()
+    buscadas = []
+
+    def buscar(consulta, *, finalidade):
+        buscadas.append(consulta)
+        return ResultadoDeBusca(provedor="searxng")
+
+    monkeypatch.setattr(coleta, "buscar", buscar)
+
+    for _ in range(3):
+        coleta.executar_rodada()
+
+    assert buscadas[:5] == [f"semente {i}" for i in range(5)]
+    assert buscadas[5:10] == [f"semente {i}" for i in range(5, 10)]
+    # Terceira rodada: as duas que faltavam, depois as mais antigas.
+    assert buscadas[10:15] == ["semente 10", "semente 11", "semente 0", "semente 1", "semente 2"]
+
+
+@pytest.mark.django_db
+def test_grupo_so_de_sementes_nao_vira_pauta_sozinho(radar, monkeypatch):  # noqa: F811
+    """Com a busca falhando, sobram as sementes: o que o dono digitou, e nao
+    evidencia de que alguem procura. Viram tema em observacao, nao pauta."""
+    from apps.content.models import Topic
+    from apps.radar.coleta import executar_rodada
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.intensidade = "minimo"
+    config.usar_serp = False
+    config.usar_perguntas_do_site = False
+    config.sementes = "Up-sell\nCross-sell\nLifetime Value"
+    config.save()
+
+    executar_rodada()
+
+    assert GrupoDeDemanda.objects.exists()
+    assert not Topic.objects.filter(origin=Topic.Origin.RADAR).exists()

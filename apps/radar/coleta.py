@@ -49,6 +49,7 @@ from apps.radar.models import (
 )
 from apps.radar.provedores import (
     ProvedorIndisponivel,
+    buscador_efetivo,
     buscar,
     palavra_para_volume,
     volume_dataforseo,
@@ -90,6 +91,9 @@ INTENSIDADES = {
         avaliacoes=60,
     ),
 }
+
+# Fontes que, sozinhas, nao fazem um grupo virar pauta automaticamente.
+SO_REFORCAM = {SinalDeDemanda.Fonte.SEMENTE, SinalDeDemanda.Fonte.AVALIACAO}
 
 # Fontes que nao vao para o pedido de volume: a do site e a avaliacao sao
 # frases, nao buscas; Search Console e Labs ja trazem o numero.
@@ -147,6 +151,25 @@ def _sementes(config: ConfiguracaoDoRadar) -> list[str]:
 
     site = Site.objects.first()
     return [site.niche] if site and site.niche else []
+
+
+def _sementes_da_vez(config: ConfiguracaoDoRadar, quantas: int) -> list[str]:
+    """As `quantas` sementes buscadas ha mais tempo (nunca buscadas primeiro).
+
+    Com 23 sementes e 5 buscas por rodada, pegar sempre as 5 primeiras deixaria
+    18 para sempre de fora. Assim a lista inteira roda em poucas rodadas.
+    """
+    sementes = _sementes(config)
+    ultima_vez: dict[str, int] = {}
+    rodadas = RodadaDoRadar.objects.order_by("-iniciada_em").values_list("resumo", flat=True)
+    for idade, resumo in enumerate(rodadas[:200]):
+        for semente in (resumo or {}).get("sementes", []):
+            ultima_vez.setdefault(semente.lower(), idade)
+    # Nunca buscada = idade infinita; empate mantem a ordem da lista.
+    ordenadas = sorted(
+        enumerate(sementes), key=lambda p: (-ultima_vez.get(p[1].lower(), 10**9), p[0])
+    )
+    return [s for _, s in ordenadas[:quantas]]
 
 
 def _colher_da_busca(consulta: str, *, rodada, finalidade: str) -> list[SinalDeDemanda]:
@@ -255,13 +278,14 @@ def executar_rodada(origem: str = RodadaDoRadar.Origem.AGENDADA) -> RodadaDoRada
     fila = _usa_fila(config, contas)
 
     try:
-        sementes = _sementes(config)[: plano.buscas]
+        sementes = _sementes_da_vez(config, plano.buscas)
         for semente in sementes:
             resumo["sementes"].append(semente)
             _novo_sinal(semente, SinalDeDemanda.Fonte.SEMENTE, rodada=rodada)
 
         if config.usar_serp and sementes:
-            if fila and config.buscador == ConfiguracaoDoRadar.Buscador.DATAFORSEO:
+            pago = buscador_efetivo(config, contas) == ConfiguracaoDoRadar.Buscador.DATAFORSEO
+            if fila and pago:
                 from apps.radar.fila import postar
 
                 try:
@@ -339,17 +363,19 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
                         )
                     except ProvedorIndisponivel as exc:
                         # Sem volume a rodada ainda propoe: a nota usa o
-                        # tamanho do grupo.
+                        # tamanho do grupo. E nao tenta o ao vivo: o que
+                        # recusou a fila (login, saldo, IP) recusa o ao vivo.
                         resumo.setdefault("erros", []).append(f"volume: {exc}")
                     else:
                         resumo["tarefas"] = resumo.get("tarefas", 0) + 1
                         rodada.situacao = RodadaDoRadar.Situacao.AGUARDANDO
                         rodada.save(update_fields=["fase", "situacao", "resumo"])
                         return rodada
-                try:
-                    _preencher_volumes(candidatos, finalidade=finalidade)
-                except ProvedorIndisponivel as exc:
-                    resumo.setdefault("erros", []).append(f"volume: {exc}")
+                else:
+                    try:
+                        _preencher_volumes(candidatos, finalidade=finalidade)
+                    except ProvedorIndisponivel as exc:
+                        resumo.setdefault("erros", []).append(f"volume: {exc}")
 
         rodada.fase = "fim"
         sinais = _sem_grupo()
@@ -508,9 +534,11 @@ def propor_pautas(
     candidatos = []
     for grupo in GrupoDeDemanda.objects.filter(pk__in=ids_de_grupos):
         pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito)
-        if not grupo.sinais.exclude(fonte=SinalDeDemanda.Fonte.AVALIACAO).exists():
-            # Avaliacao sozinha e a frase de um cliente, nao um tema: ela
-            # reforca o grupo que outra fonte trouxe, mas nao vira pauta.
+        if not grupo.sinais.exclude(fonte__in=SO_REFORCAM).exists():
+            # Semente e o que o dono do site digitou, nao evidencia de que
+            # alguem procura; avaliacao e a frase de um cliente, nao um tema.
+            # As duas reforcam o grupo que outra fonte trouxe, mas sozinhas
+            # nao viram pauta (a pessoa ainda pode promover o tema na tela).
             continue
         if grupo.situacao == GrupoDeDemanda.Situacao.NOVO and grupo.nota >= nota_minima:
             # Muito perto do que ja existe nao vira pauta: seria outro texto

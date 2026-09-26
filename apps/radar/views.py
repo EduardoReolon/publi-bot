@@ -23,6 +23,7 @@ from apps.radar.models import (
     SinalDeDemanda,
     TarefaNaFila,
 )
+from apps.radar.provedores import buscador_efetivo
 
 
 def _contexto(config=None, contas=None, busca_form=None) -> dict:
@@ -38,6 +39,9 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         "contas": contas or ContasForm(instance=contas_obj),
         "contas_obj": contas_obj,
         "config_obj": config_obj,
+        "buscador_efetivo": ConfiguracaoDoRadar.Buscador(
+            buscador_efetivo(config_obj, contas_obj)
+        ).label,
         "busca_form": busca_form or BuscaManualForm(),
         "resumo": custos.resumo_do_mes(),
         "grupos": GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO)
