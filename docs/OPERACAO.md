@@ -475,6 +475,34 @@ tambem, nao so o codigo de saida:
   requisicao** — rode `./venv/bin/python baixar_modelo.py` na maquina da placa
   antes de usar.
 
+### Passo 6b — Radar, fontes externas e Search Console (opcionais)
+
+Nada disto e obrigatorio para publicar. Sem eles, o radar fica desligado e as
+pautas continuam sendo criadas a mao.
+
+**Buscador gratuito (SearXNG).** Suba uma instancia propria com a saida JSON
+ligada (`search: formats: [html, json]` no `settings.yml` dele) e informe
+`SEARXNG_URL` no `.env`. Cada site pode apontar outra na tela do Radar.
+
+**DataForSEO e YouTube** sao cadastrados POR SITE, na tela do Radar > Contas
+externas: o custo cai na conta do proprio cliente. `RADAR_TETO_MAXIMO_USD`
+limita o teto mensal que um site pode escolher.
+
+**Search Console.** Crie uma conta de servico no Google Cloud, ative a
+"Google Search Console API" no projeto, baixe a chave JSON e aponte
+`GSC_CONTA_DE_SERVICO_ARQUIVO` para ela (arquivo legivel so pelo usuario do
+servico). Cada cliente adiciona o `client_email` dela como usuario da
+propriedade, com permissao restrita; a tela do Radar mostra o e-mail e o
+passo a passo.
+
+**Transcricao de audio** depende da rota `/v1/audio/transcriptions` no
+worker-gpu — especificacao em [`WORKER_TRANSCRICAO.md`](WORKER_TRANSCRICAO.md).
+Sem ela, video sem legenda fica esperando e o envio de audio falha com uma
+mensagem que aponta para esse arquivo.
+
+**Reordenador da busca** (opcional): `RAG_RERANKER_MODEL=jinaai/jina-reranker-v2-base-multilingual`
+baixa ~1,1 GB na primeira busca. Deixe vazio em maquina com pouca memoria.
+
 ### Passo 7 — Primeiro acesso
 
 ```bash
