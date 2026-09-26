@@ -432,6 +432,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 3600.0,
         "options": {"expires": 3000},
     },
+    "colher-fila-do-radar": {
+        "task": "apps.radar.tasks.colher_fila",
+        # A fila padrao da DataForSEO devolve em minutos; colher e gratuito.
+        "schedule": 300.0,
+        "options": {"expires": 240},
+    },
     "purge-expired-questions": {
         "task": "apps.integrations.tasks.purge_expired_questions",
         # Uma vez por dia: e uma obrigacao de retencao, nao algo urgente.

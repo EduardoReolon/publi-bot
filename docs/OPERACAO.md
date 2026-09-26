@@ -478,7 +478,14 @@ tambem, nao so o codigo de saida:
 ### Passo 6b — Radar, fontes externas e Search Console (opcionais)
 
 Nada disto e obrigatorio para publicar. Sem eles, o radar fica desligado e as
-pautas continuam sendo criadas a mao.
+pautas continuam sendo criadas a mao. O passo a passo de cada conta (onde
+criar, onde pegar a chave, como testar) esta em
+[`CONTAS_EXTERNAS.md`](CONTAS_EXTERNAS.md).
+
+**Fila da DataForSEO.** As rodadas usam a fila padrao (cerca de um terco do
+preco ao vivo): a rodada fica "aguardando" e o batimento `colher-fila-do-radar`
+do celery beat colhe os resultados a cada 5 minutos. Sem o beat rodando, a
+rodada nao termina.
 
 **Buscador gratuito (SearXNG).** Suba uma instancia propria com a saida JSON
 ligada (`search: formats: [html, json]` no `settings.yml` dele) e informe

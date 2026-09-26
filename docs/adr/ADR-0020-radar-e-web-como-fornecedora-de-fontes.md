@@ -71,6 +71,24 @@ automaticamente" (entra curado, com aviso em vermelho e confirmacao). Em
 plataforma aberta (YouTube, Medium, foruns) o dominio inteiro e recusado; a
 confianca e no canal ou autor.
 
+### 4b. Fila padrao nas rodadas, ao vivo so onde alguem espera
+
+A DataForSEO cobra cerca de um terco pela mesma SERP quando o resultado pode
+chegar em minutos. A rodada nao tem pressa: posta as tarefas
+(`TarefaNaFila`), fica "aguardando", e um batimento de 5 minutos colhe e
+avanca de fase (coleta -> volume -> fim). A busca manual continua ao vivo. O
+modo e escolhido por site; a economia pode virar mais buscas pela mesma conta.
+
+### 4c. Concorrentes: lacuna de conteudo como sinal, nao como calculo
+
+O padrao do mercado (o "content/keyword gap" das ferramentas de SEO) e listar
+o que o concorrente cobre e o site nao. Aqui cada pagina do sitemap do
+concorrente (gratuito, sem baixar as paginas), cada busca em que ele aparece
+(DataForSEO Labs) e cada reclamacao nas avaliacoes dele vira SINAL. O
+agrupamento e a nota que ja existem fazem o resto: a canibalizacao derruba o
+que o site ja cobriu, e o que sobra e a lacuna. Avaliacao reforca um tema,
+mas sozinha nao vira pauta nem da titulo.
+
 ### 7. Nota do especialista, e nao "gerar sem fonte"
 
 Para o tema sem artigo, a saida e a pessoa escrever o que sabe — e isso vira

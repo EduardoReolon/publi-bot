@@ -168,10 +168,12 @@ def pontuar(
     volume = sum(s.volume for s in com_volume)
     # Rotulo: o texto de maior volume; sem volume, o mais curto (costuma ser o
     # mais proximo de como a pessoa busca).
+    # A avaliacao de cliente nao da titulo a um tema, se houver outra fonte.
+    rotulaveis = [s for s in sinais if s.fonte != SinalDeDemanda.Fonte.AVALIACAO] or sinais
     principal = (
         max(com_volume, key=lambda s: s.volume)
         if com_volume
-        else min(sinais, key=lambda s: len(s.texto))
+        else min(rotulaveis, key=lambda s: len(s.texto))
     )
 
     if com_volume:

@@ -130,7 +130,7 @@ RESPOSTA_VOLUME = {
         {
             "status_code": 20000,
             "result": [
-                {"keyword": "como calcular o bdi?", "search_volume": 1900},
+                {"keyword": "como calcular o bdi", "search_volume": 1900},
                 {"keyword": "bdi tcu", "search_volume": 480},
             ],
         }
@@ -222,7 +222,8 @@ def test_volume_numa_chamada_so_para_todas_as_palavras(radar, monkeypatch):
         finalidade="radar",
     )
 
-    assert volumes == {"como calcular o bdi?": 1900, "bdi tcu": 480}
+    # O "?" sai antes de ir para o Google Ads: com ele, a tarefa inteira falha.
+    assert volumes == {"como calcular o bdi": 1900, "bdi tcu": 480}
     assert len(chamadas) == 1
 
 
@@ -353,7 +354,9 @@ def _fingir_provedores(monkeypatch, *, perguntas, volumes=None):
         return ResultadoDeBusca(provedor="dataforseo", perguntas=list(perguntas))
 
     def volume(palavras, **kwargs):
-        return {p.lower(): v for p, v in (volumes or {}).items()}
+        from apps.radar.provedores import palavra_para_volume
+
+        return {palavra_para_volume(p): v for p, v in (volumes or {}).items()}
 
     monkeypatch.setattr(coleta, "buscar", buscar)
     monkeypatch.setattr(coleta, "volume_dataforseo", volume)
@@ -368,6 +371,7 @@ def test_rodada_vira_pauta_sugerida_com_evidencia(radar, monkeypatch):
     config = ConfiguracaoDoRadar.carregar()
     config.intensidade = "minimo"
     config.sementes = "calcular bdi obra"
+    config.modo_dataforseo = "ao_vivo"  # a fila tem os testes dela
     config.save()
     _fingir_provedores(
         monkeypatch,
@@ -454,7 +458,8 @@ def test_perguntas_dos_visitantes_entram_como_sinal(radar, monkeypatch):
     assert SinalDeDemanda.objects.filter(fonte=SinalDeDemanda.Fonte.PERGUNTA_DO_SITE).exists()
 
 
-def test_intensidade_decide_se_a_rodada_e_devida():
+@pytest.mark.django_db
+def test_intensidade_decide_se_a_rodada_e_devida(radar):
     from apps.radar.coleta import rodada_devida
 
     agora = timezone.now()

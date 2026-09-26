@@ -21,6 +21,7 @@ from apps.radar.models import (
     GrupoDeDemanda,
     RodadaDoRadar,
     SinalDeDemanda,
+    TarefaNaFila,
 )
 
 
@@ -51,6 +52,9 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         "comparacoes_total": len(comparacoes),
         "comparacoes_falhas": sum(1 for c in comparacoes if c.gratuito_falhou),
         "chamadas": ChamadaExterna.objects.order_by("-criado_em")[:15],
+        "tarefas_na_fila": TarefaNaFila.objects.filter(
+            situacao=TarefaNaFila.Situacao.AGUARDANDO
+        ).count(),
         **_contexto_do_console(),
     }
 
@@ -102,6 +106,15 @@ def rodar_agora(request: HttpRequest) -> HttpResponse:
 
     from apps.radar.tasks import rodar_radar
 
+    if RodadaDoRadar.objects.filter(situacao=RodadaDoRadar.Situacao.AGUARDANDO).exists():
+        messages.warning(
+            request,
+            _(
+                "Ja ha uma rodada aguardando os resultados da fila da DataForSEO. "
+                "Ela termina sozinha em alguns minutos."
+            ),
+        )
+        return redirect("radar:radar")
     transaction.on_commit(lambda: rodar_radar.delay())
     messages.success(
         request,

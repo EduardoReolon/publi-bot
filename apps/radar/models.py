@@ -112,7 +112,49 @@ class ConfiguracaoDoRadar(models.Model):
         _("candidatos por pauta"), default=5, validators=[MaxValueValidator(20)]
     )
 
+    # --- Concorrentes ----------------------------------------------------------
+    concorrentes = models.TextField(
+        _("concorrentes"),
+        blank=True,
+        help_text=_(
+            "Um por linha: 'dominio | nome do negocio no Google'. O nome e opcional "
+            "e so e usado para as avaliacoes. Ex.: 'clinicax.com.br | Clinica X Curitiba'."
+        ),
+    )
+    usar_concorrentes_conteudo = models.BooleanField(
+        _("o que os concorrentes publicam (sitemap)"),
+        default=False,
+        help_text=_("Gratuito: le o sitemap publico de cada concorrente."),
+    )
+    usar_concorrentes_buscas = models.BooleanField(
+        _("buscas em que os concorrentes aparecem"),
+        default=False,
+        help_text=_("Pago (DataForSEO Labs): palavras em que cada dominio ranqueia."),
+    )
+    usar_avaliacoes = models.BooleanField(
+        _("avaliacoes dos concorrentes no Google"),
+        default=False,
+        help_text=_(
+            "Pago (DataForSEO, fila): reclamacoes e perguntas nas avaliacoes do "
+            "Perfil da Empresa. Para negocio local."
+        ),
+    )
+
     # --- Buscador ---------------------------------------------------------
+    class ModoDataForSEO(models.TextChoices):
+        FILA = "fila", _("Fila padrao (mais barata, resultado em minutos)")
+        AO_VIVO = "ao_vivo", _("Ao vivo (resultado na hora, ~3x mais caro)")
+
+    modo_dataforseo = models.CharField(
+        _("modo da DataForSEO nas rodadas"),
+        max_length=8,
+        choices=ModoDataForSEO.choices,
+        default=ModoDataForSEO.FILA,
+        help_text=_(
+            "As rodadas nao tem pressa: na fila padrao o resultado chega em alguns "
+            "minutos, por cerca de um terco do preco. A busca manual e sempre ao vivo."
+        ),
+    )
     buscador = models.CharField(
         _("buscador"), max_length=12, choices=Buscador.choices, default=Buscador.SEARXNG
     )
@@ -179,6 +221,20 @@ class ConfiguracaoDoRadar(models.Model):
     def lista_de_sementes(self) -> list[str]:
         return [s.strip() for s in self.sementes.splitlines() if s.strip()]
 
+    @property
+    def lista_de_concorrentes(self) -> list[dict]:
+        """[{"dominio": ..., "nome": ...}] a partir do texto da tela."""
+        saida = []
+        for linha in self.concorrentes.splitlines():
+            if not linha.strip():
+                continue
+            dominio, _sep, nome = (p.strip() for p in linha.partition("|"))
+            dominio = dominio.lower().removeprefix("https://").removeprefix("http://")
+            dominio = dominio.removeprefix("www.").strip("/")
+            if dominio:
+                saida.append({"dominio": dominio, "nome": nome})
+        return saida
+
 
 class ChamadaExterna(models.Model):
     """Uma chamada a servico externo, paga ou nao.
@@ -199,6 +255,7 @@ class ChamadaExterna(models.Model):
         MANUAL = "manual", _("Busca manual")
         COMPARACAO = "comparacao", _("Comparacao de buscadores")
         FONTES = "fontes", _("Busca de fontes")
+        CONCORRENTES = "concorrentes", _("Concorrentes")
         TRANSCRICAO = "transcricao", _("Transcricao")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -257,6 +314,8 @@ class RodadaDoRadar(models.Model):
 
     class Situacao(models.TextChoices):
         RODANDO = "rodando", _("Rodando")
+        # Tarefas na fila da DataForSEO: a coleta volta a cada poucos minutos.
+        AGUARDANDO = "aguardando", _("Aguardando resultados da fila")
         CONCLUIDA = "concluida", _("Concluida")
         PARADA_NO_TETO = "teto", _("Parada no teto de custo")
         FALHOU = "falhou", _("Falhou")
@@ -268,6 +327,10 @@ class RodadaDoRadar(models.Model):
     )
     iniciada_em = models.DateTimeField(_("iniciada em"), default=timezone.now)
     concluida_em = models.DateTimeField(_("concluida em"), null=True, blank=True)
+    # Onde a rodada esta: "coleta" (buscas e fontes gratuitas), "volume"
+    # (esperando o volume de busca) ou "fim". So muda de fase quando as
+    # tarefas da fila da fase anterior voltaram (ou expiraram).
+    fase = models.CharField(_("fase"), max_length=10, default="coleta")
     custo_usd = models.DecimalField(_("custo (US$)"), max_digits=10, decimal_places=6, default=0)
     resumo = models.JSONField(_("resumo"), default=dict, blank=True)
     erro = models.TextField(_("erro"), blank=True)
@@ -292,6 +355,9 @@ class SinalDeDemanda(models.Model):
         YOUTUBE = "youtube", _("Comentario no YouTube")
         SEARCH_CONSOLE = "search_console", _("Search Console")
         MANUAL = "manual", _("Busca manual")
+        CONCORRENTE_CONTEUDO = "conc_conteudo", _("Publicado por concorrente")
+        CONCORRENTE_BUSCA = "conc_busca", _("Busca em que o concorrente aparece")
+        AVALIACAO = "avaliacao", _("Avaliacao de concorrente")
 
     class Situacao(models.TextChoices):
         # Da busca manual: espera a pessoa dizer se e do segmento.
@@ -465,3 +531,52 @@ class LinhaDoConsole(models.Model):
 
     def __str__(self) -> str:
         return f"{self.consulta} @ {self.posicao:.1f}"
+
+
+class TarefaNaFila(models.Model):
+    """Uma tarefa postada na fila padrao da DataForSEO, esperando o resultado.
+
+    O custo e cobrado quando a tarefa e POSTADA; buscar o resultado depois e
+    gratuito. Por isso o livro-caixa registra o post, e esta tabela so
+    acompanha o que falta colher.
+    """
+
+    class Tipo(models.TextChoices):
+        SERP = "serp", _("Pagina de resultados")
+        VOLUME = "volume", _("Volume de busca")
+        AVALIACOES = "avaliacoes", _("Avaliacoes")
+
+    class Situacao(models.TextChoices):
+        AGUARDANDO = "aguardando", _("Aguardando")
+        COLHIDA = "colhida", _("Colhida")
+        FALHOU = "falhou", _("Falhou")
+        EXPIRADA = "expirada", _("Expirada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    task_id = models.CharField(_("id na DataForSEO"), max_length=100, unique=True)
+    tipo = models.CharField(_("tipo"), max_length=12, choices=Tipo.choices)
+    finalidade = models.CharField(_("finalidade"), max_length=12)
+    rodada = models.ForeignKey(
+        RodadaDoRadar,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="tarefas",
+        verbose_name=_("rodada"),
+    )
+    contexto = models.JSONField(_("contexto"), default=dict, blank=True)
+    situacao = models.CharField(
+        _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.AGUARDANDO
+    )
+    erro = models.TextField(_("erro"), blank=True)
+    criada_em = models.DateTimeField(_("criada em"), default=timezone.now)
+    colhida_em = models.DateTimeField(_("colhida em"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("tarefa na fila")
+        verbose_name_plural = _("tarefas na fila")
+        ordering = ["criada_em"]
+        indexes = [models.Index(fields=["situacao", "criada_em"])]
+
+    def __str__(self) -> str:
+        return f"{self.get_tipo_display()} {self.task_id}"

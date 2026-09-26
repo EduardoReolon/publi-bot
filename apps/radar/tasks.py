@@ -32,6 +32,27 @@ def _rodar_se_devido() -> int:
 
 
 @shared_task
+def colher_fila() -> int:
+    """Colhe as tarefas da fila padrao da DataForSEO e avanca as rodadas."""
+    from apps.accounts.varredura import para_cada_tenant
+
+    return para_cada_tenant(_colher_se_houver, "colher_fila")
+
+
+def _colher_se_houver() -> int:
+    from apps.radar.coleta import colher_fila as colher
+    from apps.radar.models import RodadaDoRadar, TarefaNaFila
+
+    # O batimento passa em todos os tenants; a maioria nao tem nada na fila.
+    if not (
+        TarefaNaFila.objects.filter(situacao=TarefaNaFila.Situacao.AGUARDANDO).exists()
+        or RodadaDoRadar.objects.filter(situacao=RodadaDoRadar.Situacao.AGUARDANDO).exists()
+    ):
+        return 0
+    return colher()
+
+
+@shared_task
 def rodar_radar() -> str:
     """Rodada pedida na tela. Despachada de dentro do tenant."""
     from apps.radar.coleta import executar_rodada

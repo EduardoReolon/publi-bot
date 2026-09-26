@@ -239,14 +239,21 @@ nome = "radar"
 titulo = "Radar de pautas: demanda, custo e sugestao de temas"
 resumo = """
 Descobre sobre o que vale escrever: perguntas relacionadas e volume de busca
-(DataForSEO), buscador gratuito (SearXNG) com comparacao por amostragem,
-perguntas dos visitantes, YouTube e Search Console. Agrupa os sinais por
+(DataForSEO, na fila padrao nas rodadas), buscador gratuito (SearXNG) com
+comparacao por amostragem, perguntas dos visitantes, YouTube, Search Console e
+concorrentes (sitemap, buscas e avaliacoes). Agrupa os sinais por
 embedding, da nota com as parcelas explicadas e propoe pautas SUGERIDAS. Toda
 chamada externa vai para o livro-caixa, e o teto e conferido antes de cada uma.
 """
-entrada = ["apps/radar/coleta.py", "apps/radar/provedores.py"]
+entrada = ["apps/radar/coleta.py", "apps/radar/provedores.py", "apps/radar/fila.py"]
 relacionados = ["conteudo-modelos", "acervo-busca"]
-padroes = ["apps/radar/**", "templates/radar/**", "tests/test_radar.py"]
+padroes = [
+  "apps/radar/**",
+  "templates/radar/**",
+  "docs/CONTAS_EXTERNAS.md",
+  "tests/test_radar.py",
+  "tests/test_fila_e_concorrentes.py",
+]
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,11 @@ class ConfiguracaoForm(forms.ModelForm):
             "usar_search_console",
             "buscar_fontes",
             "fontes_por_pauta",
+            "concorrentes",
+            "usar_concorrentes_conteudo",
+            "usar_concorrentes_buscas",
+            "usar_avaliacoes",
+            "modo_dataforseo",
             "buscador",
             "taxa_de_comparacao",
             "codigo_de_local",
@@ -28,7 +33,10 @@ class ConfiguracaoForm(forms.ModelForm):
             "teto_mensal_usd",
             "propriedade_search_console",
         ]
-        widgets = {"sementes": forms.Textarea(attrs={"rows": 5})}
+        widgets = {
+            "sementes": forms.Textarea(attrs={"rows": 5}),
+            "concorrentes": forms.Textarea(attrs={"rows": 4}),
+        }
 
     def clean_teto_mensal_usd(self):
         from decimal import Decimal

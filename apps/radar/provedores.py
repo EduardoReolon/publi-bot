@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from urllib.parse import urlparse
@@ -124,8 +125,24 @@ def buscar_dataforseo(
         )
         raise
 
-    resultado = ResultadoDeBusca(provedor="dataforseo", custo=Decimal(str(dados.get("cost") or 0)))
-    for bloco in ((dados["tasks"][0].get("result") or [{}])[0].get("items")) or []:
+    resultado = ler_serp(dados["tasks"][0])
+    resultado.custo = Decimal(str(dados.get("cost") or 0))
+
+    custos.registrar(
+        provedor=ChamadaExterna.Provedor.DATAFORSEO,
+        endpoint="serp/google/organic/live/advanced",
+        finalidade=finalidade,
+        consulta=consulta,
+        custo=resultado.custo,
+        itens=len(resultado.resultados) + len(resultado.perguntas),
+    )
+    return resultado
+
+
+def ler_serp(tarefa: dict) -> ResultadoDeBusca:
+    """Le a tarefa de SERP (ao vivo ou colhida da fila: o formato e o mesmo)."""
+    resultado = ResultadoDeBusca(provedor="dataforseo")
+    for bloco in ((tarefa.get("result") or [{}])[0] or {}).get("items") or []:
         tipo = bloco.get("type")
         if tipo == "organic" and bloco.get("url"):
             resultado.resultados.append(
@@ -144,16 +161,31 @@ def buscar_dataforseo(
                 texto = relacionada if isinstance(relacionada, str) else relacionada.get("title")
                 if texto:
                     resultado.relacionadas.append(texto)
-
-    custos.registrar(
-        provedor=ChamadaExterna.Provedor.DATAFORSEO,
-        endpoint="serp/google/organic/live/advanced",
-        finalidade=finalidade,
-        consulta=consulta,
-        custo=resultado.custo,
-        itens=len(resultado.resultados) + len(resultado.perguntas),
-    )
     return resultado
+
+
+# O Google Ads recusa estes simbolos na palavra-chave, e UMA palavra invalida
+# derruba a tarefa inteira. Pergunta ("como calcular o bdi?") e o caso comum.
+_SIMBOLOS_RECUSADOS = re.compile(r"[,!@%^()={};~`<>?\\|*\[\]\"'.:+#$&]")
+
+
+def palavra_para_volume(texto: str) -> str | None:
+    """A forma que vai para o volume de busca, ou None se nao couber.
+
+    Limites do Google Ads: ate 80 caracteres e 10 palavras.
+    """
+    limpa = " ".join(_SIMBOLOS_RECUSADOS.sub(" ", texto.lower()).split())
+    if not limpa or len(limpa) > 80 or len(limpa.split()) > 10:
+        return None
+    return limpa
+
+
+def ler_volumes(tarefa: dict) -> dict[str, int]:
+    volumes = {}
+    for item in tarefa.get("result") or []:
+        if item.get("keyword") is not None and item.get("search_volume") is not None:
+            volumes[item["keyword"].lower()] = int(item["search_volume"])
+    return volumes
 
 
 def volume_dataforseo(
@@ -162,9 +194,10 @@ def volume_dataforseo(
     """Volume mensal de busca, o mesmo do Planejador do Google Ads.
 
     Ate 1000 palavras numa tarefa, e o custo e por tarefa: por isso quem chama
-    junta tudo numa chamada so.
+    junta tudo numa chamada so. As chaves do retorno estao na forma de
+    `palavra_para_volume`.
     """
-    palavras = list(dict.fromkeys(p.strip().lower() for p in palavras if p.strip()))[:1000]
+    palavras = list(dict.fromkeys(filter(None, map(palavra_para_volume, palavras))))[:1000]
     if not palavras:
         return {}
     custos.conferir_teto(custos.ESTIMATIVAS[("dataforseo", "volume")])
@@ -188,10 +221,7 @@ def volume_dataforseo(
         )
         raise
 
-    volumes = {}
-    for item in dados["tasks"][0].get("result") or []:
-        if item.get("keyword") is not None and item.get("search_volume") is not None:
-            volumes[item["keyword"].lower()] = int(item["search_volume"])
+    volumes = ler_volumes(dados["tasks"][0])
 
     custos.registrar(
         provedor=ChamadaExterna.Provedor.DATAFORSEO,

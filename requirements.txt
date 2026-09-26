@@ -110,3 +110,4 @@ python-dotenv==1.2.3
 # gunicorn depende de fcntl, que nao existe no Windows. Em dev no Windows use
 # "manage.py runserver"; este pacote so instala em plataformas POSIX.
 gunicorn==26.2.0 ; sys_platform != "win32"
+defusedxml>=0.7

@@ -26,6 +26,7 @@
     <div>
       <label>{% translate "Ultima rodada" %}</label>
       <strong>{{ config_obj.ultima_rodada_em|date:"d/m H:i"|default:"—" }}</strong>
+      {% if tarefas_na_fila %}<div class="ajuda">{% blocktranslate count n=tarefas_na_fila %}{{ n }} tarefa na fila da DataForSEO{% plural %}{{ n }} tarefas na fila da DataForSEO{% endblocktranslate %}</div>{% endif %}
     </div>
   </div>
 

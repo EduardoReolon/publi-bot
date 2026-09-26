@@ -24,10 +24,17 @@ from apps.radar.models import ChamadaExterna, ConfiguracaoDoRadar
 logger = logging.getLogger("publibot.radar")
 
 # Estimativas por chamada, em US$, para a conferencia do teto. Precos da
-# DataForSEO em 2026 (modo live); o custo gravado vem da resposta.
+# DataForSEO em 2026; o custo gravado vem da resposta.
 ESTIMATIVAS = {
     ("dataforseo", "serp"): Decimal("0.002"),
     ("dataforseo", "volume"): Decimal("0.09"),
+    # Fila padrao: cerca de um terco do preco ao vivo.
+    ("dataforseo", "serp_fila"): Decimal("0.0006"),
+    ("dataforseo", "volume_fila"): Decimal("0.06"),
+    # Sem tabela conferida para estes dois: estimativas CONSERVADORAS. O que
+    # vale e o custo que a resposta informa, e e ele que vai para o registro.
+    ("dataforseo", "labs"): Decimal("0.05"),
+    ("dataforseo", "avaliacoes_fila"): Decimal("0.05"),
 }
 
 
