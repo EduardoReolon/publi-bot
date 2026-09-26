@@ -409,6 +409,40 @@ O `/healthz/` responde **antes** da resolucao de tenant, de proposito: um
 health check que passa pela resolucao devolveria 404 num dominio sem tenant, e
 o balanceador concluiria que a aplicacao esta fora do ar.
 
+#### Midia fora do projeto (opcional)
+
+Por padrao os arquivos ficam em `/srv/publibot/media`, cada tenant numa
+subpasta com o nome do schema (`media/<schema>/documents/...`,
+`media/<schema>/capas/...`). Para centralizar num storage do servidor, fora
+do projeto, sao quatro lugares — e os quatro precisam concordar:
+
+1. `.env`: `MEDIA_ROOT=/dados/publibot/media`
+2. Nginx: o `alias` do `location /protected-media/` aponta para a mesma pasta
+   (com a barra no fim): `alias /dados/publibot/media/;`
+3. systemd: os servicos rodam com `ProtectSystem=strict`, entao so escrevem
+   onde o unit libera. Um override, que sobrevive as implantacoes (o
+   `sincronizar-systemd.sh` copia os units, nao os `.d/`):
+
+   ```bash
+   for s in publibot celery-publibot; do
+     sudo mkdir -p /etc/systemd/system/$s.service.d
+     printf '[Service]\nReadWritePaths=/dados/publibot/media\n' |
+       sudo tee /etc/systemd/system/$s.service.d/midia.conf
+   done
+   sudo systemctl daemon-reload && sudo systemctl restart publibot celery-publibot
+   ```
+
+4. A pasta existe e e do usuario do servico:
+   `sudo install -d -o publibot -g publibot -m 0755 /dados/publibot/media`
+
+O `backup.sh` le o `MEDIA_ROOT` do `.env` sozinho. Se ja havia arquivos,
+mova a pasta inteira (com as subpastas dos schemas) antes de reiniciar.
+
+**Conferir:** envie um PDF num tenant e veja o arquivo em
+`/dados/publibot/media/<schema>/documents/`; baixe o original pela tela (com
+`USAR_X_ACCEL=true`, e o Nginx que entrega — um 404 aqui e o `alias`).
+Esquecer o passo 3 da `Read-only file system` no primeiro envio.
+
 ### Passo 5 — Primeira implantacao
 
 ```bash

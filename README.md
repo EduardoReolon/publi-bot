@@ -1,40 +1,44 @@
 # PubliBot
 
-Orquestrador multi-tenant que transforma literatura cientifica em conteudo web
+Orquestrador multi-tenant que transforma fontes reais — literatura cientifica,
+paginas e videos curados, notas do especialista — em conteudo web
 fundamentado, com revisao humana obrigatoria e publicacao agendada em sites de
-terceiros.
+terceiros. Descobre sobre o que escrever pela demanda real (buscas, perguntas,
+concorrentes) e mede o resultado pelo Search Console.
 
-> ### Status
->
-> Este README descreve **o que existe hoje**, nao o que esta planejado.
->
-> | Bloco | Estado |
-> |---|---|
-> | Fundacao: configuracao, Celery, PostgreSQL, infraestrutura de dev | **Pronto** |
-> | Tenancy: schema por tenant, cadastro por subdominio, isolamento | **Pronto** |
-> | Base de conhecimento: documentos, curadoria, RAG com pgvector | **Pronto** |
-> | Inferencia: conexoes, reserva de capacidade, retomada de trabalhos | **Pronto** |
-> | Conteudo: prompts versionados, tese, redacao, sanitizacao | **Pronto** |
-> | Contrato `/api/v1` e no de referencia | **Pronto** |
-> | Cadencia, perguntas e respostas, sondas de saude, deploy | **Pronto** |
-> | Pipeline: os componentes ligados num fluxo que roda | **Pronto** |
-> | Interface do tenant: painel, acervo, pautas, revisao, site, operacao | **Pronto** |
-> | Ligacao ponta a ponta com GPU real | A fazer — depende de hardware |
-> | Geracao de imagem | A fazer |
-> | Metricas de desempenho do conteudo publicado | A fazer |
->
-> As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/), com o
-> raciocinio e as consequencias de cada uma. As falhas que so aparecem ao rodar
-> — e os erros que apontam para o lugar errado — estao em
-> [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md). Para explicar uma parte do sistema
-> a uma IA de contexto pequeno, `python scripts/gerar_blocos.py` empacota cada
-> capacidade num `.md` que se explica sozinho — ver
-> [`docs/BLOCOS.md`](docs/BLOCOS.md). Quem for mexer na leitura de PDF
-> comeca por [`docs/EXTRACAO.md`](docs/EXTRACAO.md), que explica cada heuristica,
-> contra que impostor ela existe e como calibrar sem quebrar os artigos que ja
-> funcionavam.
->
-> **360 testes**, em tres suites (`./scripts/test-all.sh`).
+## Status
+
+Este README descreve **o que existe hoje**, nao o que esta planejado.
+
+| Bloco | Estado |
+|---|---|
+| Fundacao: configuracao, Celery, PostgreSQL, infraestrutura de dev | **Pronto** |
+| Tenancy: schema por tenant, cadastro por subdominio, isolamento | **Pronto** |
+| Base de conhecimento: documentos, curadoria, busca hibrida com pgvector | **Pronto** |
+| Fontes pela web: paginas, videos do YouTube, notas, caminhos confiaveis | **Pronto** |
+| Inferencia: conexoes, reserva de capacidade, retomada de trabalhos | **Pronto** |
+| Conteudo: prompts versionados, tese, redacao, FAQ, guia editorial | **Pronto** |
+| Contrato `/api/v1` e no de referencia | **Pronto** |
+| Cadencia, perguntas e respostas, sondas de saude, deploy | **Pronto** |
+| Interface do tenant: painel, acervo, pautas, revisao, site, operacao | **Pronto** |
+| Geracao de imagem de capa (worker-gpu) | **Pronto** |
+| Radar de pautas: SERP, volume, YouTube, concorrentes, livro-caixa de custo | **Pronto** — rotas novas da DataForSEO a conferir no primeiro uso |
+| Search Console: "quase la" e desempenho dos artigos publicados | **Pronto** — precisa da conta de servico |
+| Transcricao de audio | Cliente pronto; a rota do worker-gpu esta especificada em [`docs/WORKER_TRANSCRICAO.md`](docs/WORKER_TRANSCRICAO.md) |
+
+As decisoes que sustentam tudo isso estao em [`docs/adr/`](docs/adr/), com o
+raciocinio e as consequencias de cada uma. As falhas que so aparecem ao rodar
+— e os erros que apontam para o lugar errado — estao em
+[`docs/ARMADILHAS.md`](docs/ARMADILHAS.md). As contas externas (DataForSEO,
+YouTube, Search Console, SearXNG) — onde criar, onde pegar a chave e como
+testar — estao em [`docs/CONTAS_EXTERNAS.md`](docs/CONTAS_EXTERNAS.md).
+
+Para explicar uma parte do sistema a uma IA de contexto pequeno,
+`python scripts/gerar_blocos.py` empacota cada capacidade num `.md` que se
+explica sozinho — ver [`docs/BLOCOS.md`](docs/BLOCOS.md). Quem for mexer na
+leitura de PDF comeca por [`docs/EXTRACAO.md`](docs/EXTRACAO.md).
+
+**Cerca de 880 testes**, em tres suites (`./scripts/test-all.sh`).
 
 ## O problema
 
@@ -56,6 +60,11 @@ contradizem entre si.
    fontes divergem entre si.
 4. **Revisao humana obrigatoria.** Nenhum conteudo e publicado sem aprovacao,
    e o esforco editorial e registrado e mensuravel.
+5. **Pauta por demanda, sem LLM.** O radar junta buscas relacionadas, volume,
+   perguntas de visitantes, comentarios do YouTube, o que os concorrentes
+   publicam e o "quase la" do Search Console; agrupa por embedding e da nota
+   com as parcelas explicadas. A pauta nasce sugerida, com a evidencia junto
+   ([ADR-0020](docs/adr/ADR-0020-radar-e-web-como-fornecedora-de-fontes.md)).
 
 ## Arquitetura em uma frase
 
@@ -75,7 +84,9 @@ Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e nos ADRs.
 | Fila | Celery 5.6 + Redis, com tenant-schemas-celery |
 | Agendamento | django-celery-beat (`DatabaseScheduler`) |
 | Banco | PostgreSQL 17 + pgvector (indice HNSW, distancia de cosseno) |
-| Embeddings | `intfloat/multilingual-e5-large` (1024 dim), em CPU via ONNX |
+| Embeddings | `intfloat/multilingual-e5-large` (1024 dim), em CPU via ONNX (fastembed) |
+| Busca | vetor (HNSW) + texto completo do PostgreSQL, fundidos por RRF |
+| Paginas da web | trafilatura + htmldate |
 | Inferencia | Ollama local e APIs compativeis com OpenAI |
 
 ## Ambiente de desenvolvimento
@@ -129,8 +140,16 @@ sudo apt install postgresql-16-pgvector      # ajuste 16 para a sua versao
 ./scripts/setup-db.sh
 ```
 
-<details>
-<summary><strong>Desenvolvendo no Windows? Da para rodar sem Redis.</strong></summary>
+O script cria o papel, o banco e — o passo que nao pode ser esquecido — instala
+a extensao `vector` num schema **`extensions`** dedicado, nao no `public`.
+
+Isso nao e preciosismo: com um schema por tenant, uma extensao instalada apenas
+no `public` nao fica alcancavel da forma que as migrations esperam ao criar o
+segundo tenant. O primeiro funciona e o segundo falha com
+*type "vector" does not exist*. O `PG_EXTRA_SEARCH_PATHS = ["extensions"]` do
+settings fecha o circuito.
+
+#### Desenvolvendo no Windows? Da para rodar sem Redis.
 
 Nao existe build oficial de Redis para Windows. Como o PostgreSQL ja e
 necessario, ele pode servir tambem de fila em desenvolvimento — basta uma
@@ -163,19 +182,7 @@ Para o PostgreSQL e o pgvector no Windows, use o `compose.yaml` (abaixo) ou
 WSL2 — que tambem devolve o pool `prefork` do Celery, sem suporte oficial no
 Windows nativo.
 
-</details>
-
-O script cria o papel, o banco e — o passo que nao pode ser esquecido — instala
-a extensao `vector` num schema **`extensions`** dedicado, nao no `public`.
-
-Isso nao e preciosismo: com um schema por tenant, uma extensao instalada apenas
-no `public` nao fica alcancavel da forma que as migrations esperam ao criar o
-segundo tenant. O primeiro funciona e o segundo falha com
-*type "vector" does not exist*. O `PG_EXTRA_SEARCH_PATHS = ["extensions"]` do
-settings fecha o circuito.
-
-<details>
-<summary>pgvector no Windows, sem container</summary>
+#### pgvector no Windows, sem container
 
 Nao ha binario oficial do pgvector para Windows: ele precisa ser compilado uma
 vez. Com o "C++ support" do Visual Studio instalado, abra o **x64 Native Tools
@@ -194,10 +201,7 @@ Ajuste o `16` para a sua versao do PostgreSQL. Depois, no `psql` como
 superusuario, rode o SQL que o `python manage.py check_db` imprime — ele monta
 os comandos com o nome do seu banco e do seu usuario.
 
-</details>
-
-<details>
-<summary>Alternativa em container (util no Windows)</summary>
+#### Alternativa em container (util no Windows)
 
 Compilar o pgvector no Windows exige MSVC e os headers do PostgreSQL. Se voce
 ainda desenvolve no Windows, o container evita esse trabalho:
@@ -209,8 +213,6 @@ docker compose up -d
 O `compose.yaml` sobe **apenas** PostgreSQL com pgvector e Redis. O Django
 nunca e containerizado — ele roda no virtualenv nativo, preservando depurador,
 recarga automatica e stack trace direto.
-
-</details>
 
 ### 4. Migrar e rodar
 
@@ -368,10 +370,12 @@ Tudo acontece dentro do subdominio do tenant (`acme.publibot.localhost:8000`).
 | Tela | Para que serve |
 |---|---|
 | **Painel** | O que espera uma pessoa e o que quebrou, separados. Cada numero leva a tela que resolve. |
-| **Documentos** | Envio, conversao em Markdown, curadoria e selecao do trecho que vai para o indice. |
+| **Documentos** | Envio (PDF, Office, pagina, video, nota), conversao, curadoria e selecao do trecho que vai para o indice. Inclui as fontes sugeridas pela web e os caminhos confiaveis. |
 | **Pautas** | O tema a ser buscado no acervo, e o botao que dispara a geracao. |
 | **Artigos** | A fila de revisao e a tela de leitura: texto ao lado das fontes, edicao, aprovacao. |
 | **Perguntas** | Duvidas importadas do site, com resposta gerada do mesmo acervo. |
+| **Radar** | Sinais de demanda, grupos com nota, busca manual, concorrentes, Search Console e o gasto do mes com as contas externas. |
+| **Guia editorial** | Tom, termos proibidos e marcas de texto de IA que a revisao confere antes de aprovar. |
 | **Site e cadencia** | Credenciais do site de destino, teste de conexao e quando publicar. |
 | **Operacao** | Trabalhos, passos, chamadas ao modelo e tentativas de publicacao. |
 
@@ -396,6 +400,10 @@ O caminho completo, na ordem:
 5. **Artigos**: revise, preencha o autor e aprove. Sem autor identificado nao
    ha publicacao.
 6. **Site e cadencia**: cadastre o site e a cadencia para o agendador publicar.
+7. **Radar** (opcional): sementes, concorrentes e as contas externas. As
+   pautas sugeridas aparecem em **Pautas**, com a evidencia de demanda. O
+   passo a passo das contas esta em
+   [`docs/CONTAS_EXTERNAS.md`](docs/CONTAS_EXTERNAS.md).
 
 Nada disso funciona sem uma **conexao de inferencia** cadastrada. O caminho
 curto e um comando, que le o `.env` e confere que o endereco responde:
@@ -409,8 +417,8 @@ linha do banco, e nao num arquivo, para trocar de modelo sem implantar. Da para
 faze-lo pelo admin tambem (`/admin/inference/inferenceconnection/`), do tipo
 *Compativel com OpenAI*, com a carga `text` marcada.
 
-Ha mais duas, as duas opcionais e as duas atendidas por servicos em
-no **worker-gpu** — outro repositorio, na maquina que tem a placa:
+Ha mais duas, as duas opcionais e as duas atendidas pelo **worker-gpu** —
+outro repositorio, na maquina que tem a placa:
 
 ```bash
 python manage.py configurar_conversao --testar   # PDF com analise de layout
@@ -422,7 +430,7 @@ le documento digitalizado. Sem a segunda, o artigo sai igual, apenas sem capa
 — o Ollama nao gera imagem, e e por isso que ha um terceiro servico.
 
 As tres dividem a mesma placa, e a reserva conta vagas por MAQUINA para que se
-revezem. Na verdade quem as revezar hoje e o proprio worker, que e um
+revezem. Na pratica quem as reveza hoje e o proprio worker, que e um
 arbitro: tudo passa por ele e disputa um lock so.
 
 ## Comandos de tenant
@@ -462,8 +470,10 @@ python manage.py tenant_command shell --schema=acme
 apps/
   accounts/      Tenant, Domain, User, TenantMembership  (schema public)
   inference/     Conexoes de inferencia e reservas       (schema public)
-  knowledge/     Documentos, trechos curados, RAG        (por tenant)
-  content/       Prompts, artigos, perguntas, respostas  (por tenant)
+  knowledge/     Documentos, fontes da web, RAG          (por tenant)
+  content/       Prompts, artigos, FAQ, perguntas        (por tenant)
+  editorial/     Guia editorial e termos proibidos       (por tenant)
+  radar/         Demanda, concorrentes, Search Console   (por tenant)
   integrations/  Sites, contrato, cadencia               (por tenant)
   ops/           Trabalhos de geracao, sondas de saude   (por tenant)
 core/
@@ -475,6 +485,8 @@ docs/
   ARMADILHAS.md      as falhas reais, e onde cada uma esta tratada
   EXTRACAO.md        as heuristicas de leitura de PDF e como ajusta-las
   BLOCOS.md          como empacotar o projeto para uma IA de contexto pequeno
+  CONTAS_EXTERNAS.md DataForSEO, YouTube, Search Console, SearXNG: criar e testar
+  WORKER_TRANSCRICAO.md  a rota de audio que o worker-gpu precisa ter
   OPERACAO.md        subir em desenvolvimento e no servidor, e o que fazer
                      quando o Ollama cai
   adr/               decisoes de arquitetura
@@ -493,14 +505,6 @@ tests_contrato/  Contrato exercitado nos dois lados
 ## Comandos uteis
 
 ```bash
-# Cria um tenant completo: registro, schema e migrations
-python manage.py provision_tenant acme --name="ACME Ltda"
-
-# O mesmo comando RETOMA um tenant que ficou pela metade — o caso de um
-# cadastro feito sem o worker rodando: a linha existe, o schema nao. Passe o
-# schema_name que aparece na home.
-python manage.py provision_tenant teste1
-
 # Confere as heuristicas de extracao contra PDFs reais, sem tocar no banco.
 # Ver docs/EXTRACAO.md para o ciclo de ajuste.
 python manage.py conferir_extracao --pasta casos/

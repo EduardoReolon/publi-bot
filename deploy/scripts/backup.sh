@@ -24,8 +24,12 @@ PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
     --format=custom \
     --file="$DESTINO/publibot-$CARIMBO.dump"
 
-echo "==> Midias"
-tar -czf "$DESTINO/media-$CARIMBO.tar.gz" -C /srv/publibot media
+# A pasta de midia pode estar fora do projeto (MEDIA_ROOT no .env).
+MIDIA="${MEDIA_ROOT:-/srv/publibot/media}"
+MIDIA="${MIDIA%/}"
+
+echo "==> Midias ($MIDIA)"
+tar -czf "$DESTINO/media-$CARIMBO.tar.gz" -C "$(dirname "$MIDIA")" "$(basename "$MIDIA")"
 
 # A chave que cifra as credenciais dos clientes vive no .env, FORA do banco. Um
 # backup do banco sem ela nao permite recuperar credencial nenhuma — e por isso

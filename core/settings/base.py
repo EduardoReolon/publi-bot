@@ -234,7 +234,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
 MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+# Pode ficar fora da pasta do projeto (um storage centralizado no servidor).
+# Mudando, mude junto o `alias` do /protected-media/ no Nginx e o
+# ReadWritePaths dos servicos — ver docs/OPERACAO.md, "Midia fora do projeto".
+MEDIA_ROOT = Path(env.get("MEDIA_ROOT", "") or BASE_DIR / "media")
 
 # Cada tenant grava em MEDIA_ROOT/<schema_name>/... automaticamente. Com "%s"
 # o schema_name e interpolado; trocar para S3 depois e so trocar a storage,

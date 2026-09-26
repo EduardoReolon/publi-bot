@@ -9,6 +9,8 @@ processo do Gunicorn por download.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from django.conf import settings
 from django.http import FileResponse, HttpResponse
 
@@ -36,7 +38,9 @@ def entregar_arquivo(arquivo, *, tipo: str, nome_para_baixar: str = "") -> HttpR
 
     if settings.USAR_X_ACCEL:
         resposta = HttpResponse(content_type=tipo)
-        resposta["X-Accel-Redirect"] = f"{settings.PREFIXO_X_ACCEL}{arquivo.name}"
+        resposta["X-Accel-Redirect"] = (
+            f"{settings.PREFIXO_X_ACCEL}{caminho_sob_media_root(arquivo)}"
+        )
         if disposicao:
             resposta["Content-Disposition"] = disposicao
         return resposta
@@ -45,6 +49,17 @@ def entregar_arquivo(arquivo, *, tipo: str, nome_para_baixar: str = "") -> HttpR
     if disposicao:
         resposta["Content-Disposition"] = disposicao
     return resposta
+
+
+def caminho_sob_media_root(arquivo) -> str:
+    """O caminho do arquivo a partir de `MEDIA_ROOT`, que e o que o Nginx serve.
+
+    NAO e `arquivo.name`: o storage por tenant grava em
+    `MEDIA_ROOT/<schema>/documents/...`, e o `name` e relativo a pasta do
+    tenant (`documents/...`). Mandar o `name` ao Nginx pede um arquivo que nao
+    existe, e o 404 nao diz por que.
+    """
+    return Path(arquivo.path).resolve().relative_to(Path(settings.MEDIA_ROOT).resolve()).as_posix()
 
 
 def _sanear(nome: str) -> str:

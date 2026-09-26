@@ -371,6 +371,7 @@ padroes = [
   ".env.example",
   "docs/OPERACAO.md",
   "tests/conftest.py",
+  "tests/test_armazenamento.py",
   # O gerador de blocos e a documentacao dele viajam juntos: quem lê um
   # precisa do outro.
   "docs/BLOCOS.md",
