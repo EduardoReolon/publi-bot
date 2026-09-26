@@ -51,6 +51,20 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         "comparacoes_total": len(comparacoes),
         "comparacoes_falhas": sum(1 for c in comparacoes if c.gratuito_falhou),
         "chamadas": ChamadaExterna.objects.order_by("-criado_em")[:15],
+        **_contexto_do_console(),
+    }
+
+
+def _contexto_do_console() -> dict:
+    from apps.radar.models import ColetaDoConsole
+    from apps.radar.search_console import desempenho_dos_artigos, email_da_conta, quase_la
+
+    coleta = ColetaDoConsole.objects.order_by("-coletada_em").first()
+    return {
+        "console_email": email_da_conta(),
+        "console_coleta": coleta,
+        "console_quase_la": list(quase_la(coleta)[:20]) if coleta else [],
+        "console_artigos": desempenho_dos_artigos() if coleta else [],
     }
 
 
@@ -157,4 +171,24 @@ def descartar_grupo(request: HttpRequest, pk) -> HttpResponse:
     grupo.save(update_fields=["situacao", "atualizado_em"])
     grupo.sinais.update(situacao=SinalDeDemanda.Situacao.DESCARTADO)
     messages.success(request, _("Grupo descartado."))
+    return redirect("radar:radar")
+
+
+@login_required
+@require_POST
+def coletar_console(request: HttpRequest) -> HttpResponse:
+    """Tira um retrato do Search Console agora."""
+    from apps.radar.provedores import ProvedorIndisponivel
+    from apps.radar.search_console import coletar
+
+    try:
+        coleta = coletar()
+    except ProvedorIndisponivel as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(
+            request,
+            _("Search Console coletado: %(n)s linhas de %(i)s a %(f)s.")
+            % {"n": coleta.linhas, "i": coleta.inicio, "f": coleta.fim},
+        )
     return redirect("radar:radar")

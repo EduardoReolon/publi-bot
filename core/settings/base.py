@@ -723,6 +723,12 @@ RADAR_NOTA_MINIMA = env.decimal("RADAR_NOTA_MINIMA", 40.0)
 # Distancia de cosseno abaixo da qual dois sinais sao o mesmo tema.
 RADAR_DISTANCIA_DO_GRUPO = env.decimal("RADAR_DISTANCIA_DO_GRUPO", 0.10)
 
+# Conta de servico do Google usada no Search Console: o arquivo JSON baixado
+# em Google Cloud > IAM > Contas de servico > Chaves. Cada cliente adiciona o
+# e-mail dela como usuario (leitura) da propriedade — sem OAuth, sem app a
+# verificar. Vazio: a integracao fica desligada.
+GSC_CONTA_DE_SERVICO_ARQUIVO = env.get("GSC_CONTA_DE_SERVICO_ARQUIVO", "")
+
 # ---------------------------------------------------------------------------
 # Log
 # ---------------------------------------------------------------------------

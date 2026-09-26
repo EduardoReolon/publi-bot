@@ -26,6 +26,7 @@ class ConfiguracaoForm(forms.ModelForm):
             "codigo_de_local",
             "codigo_de_idioma",
             "teto_mensal_usd",
+            "propriedade_search_console",
         ]
         widgets = {"sementes": forms.Textarea(attrs={"rows": 5})}
 

@@ -166,6 +166,62 @@
     </p>
   {% endif %}
 
+  <h2>{% translate "Search Console" %}</h2>
+  {% if not console_email %}
+    <p class="vazio">
+      {% blocktranslate trimmed %}
+        Desligado nesta instalacao: falta a conta de servico do Google
+        (GSC_CONTA_DE_SERVICO_ARQUIVO no .env).
+      {% endblocktranslate %}
+    </p>
+  {% else %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed with email=console_email %}
+        Para ligar: no Search Console do site, va em Configuracoes > Usuarios e
+        permissoes > Adicionar usuario, informe <code>{{ email }}</code> com
+        permissao Restrita (so leitura), e preencha a propriedade abaixo, na
+        configuracao do radar.
+      {% endblocktranslate %}
+    </p>
+    <form method="post" action="{% url 'radar:coletar_console' %}">
+      {% csrf_token %}
+      <div class="acoes"><button type="submit" class="botao secundario">{% translate "Coletar agora" %}</button></div>
+    </form>
+    {% if console_coleta %}
+      <p class="pre-visualizacao">
+        {% translate "Ultimo retrato:" %} {{ console_coleta.inicio|date:"d/m" }} {% translate "a" %} {{ console_coleta.fim|date:"d/m/Y" }} · {{ console_coleta.linhas }} {% translate "linhas" %}
+      </p>
+      <h3>{% translate "Quase la (posicao 8 a 20)" %}</h3>
+      <table>
+        <thead><tr><th>{% translate "Consulta" %}</th><th>{% translate "Posicao" %}</th><th>{% translate "Impressoes" %}</th><th>{% translate "Cliques" %}</th><th>{% translate "Pagina" %}</th></tr></thead>
+        <tbody>
+          {% for linha in console_quase_la %}
+            <tr><td>{{ linha.consulta }}</td><td>{{ linha.posicao|floatformat:1 }}</td><td>{{ linha.impressoes }}</td><td>{{ linha.cliques }}</td><td class="pre-visualizacao">{{ linha.pagina|truncatechars:60 }}</td></tr>
+          {% empty %}
+            <tr><td colspan="5" class="vazio">{% translate "Nenhuma consulta nessa faixa." %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <h3>{% translate "Artigos publicados" %}</h3>
+      <table>
+        <thead><tr><th>{% translate "Artigo" %}</th><th>{% translate "Cliques" %}</th><th>{% translate "Impressoes" %}</th><th>{% translate "Posicao" %}</th><th>{% translate "Principais buscas" %}</th></tr></thead>
+        <tbody>
+          {% for item in console_artigos %}
+            <tr>
+              <td><a href="{% url 'content:revisar' item.artigo.pk %}">{{ item.artigo.title|truncatechars:70 }}</a></td>
+              <td>{{ item.cliques }}</td>
+              <td>{{ item.impressoes }}</td>
+              <td>{{ item.posicao|floatformat:1|default:"—" }}{% if item.posicao_anterior %} <span class="ajuda">({% translate "antes" %} {{ item.posicao_anterior|floatformat:1 }})</span>{% endif %}</td>
+              <td class="pre-visualizacao">{% for c in item.consultas %}{{ c.consulta }}{% if not forloop.last %} · {% endif %}{% endfor %}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="vazio">{% translate "Nenhum artigo publicado ainda." %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  {% endif %}
+
   <div class="duas-colunas">
     <div>
       <h2>{% translate "Configuracao" %}</h2>

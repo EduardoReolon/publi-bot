@@ -150,6 +150,17 @@ class ConfiguracaoDoRadar(models.Model):
         help_text=_("Atingido o teto, nenhuma chamada paga sai ate o mes virar."),
     )
 
+    # --- Search Console -----------------------------------------------------
+    propriedade_search_console = models.CharField(
+        _("propriedade no Search Console"),
+        max_length=300,
+        blank=True,
+        help_text=_(
+            "Como aparece no Search Console: 'sc-domain:exemplo.com.br' (dominio) "
+            "ou 'https://www.exemplo.com.br/' (prefixo de URL)."
+        ),
+    )
+
     ultima_rodada_em = models.DateTimeField(_("ultima rodada"), null=True, blank=True)
 
     class Meta:
@@ -405,3 +416,52 @@ class BuscaManual(models.Model):
 
     def __str__(self) -> str:
         return self.consulta
+
+
+class ColetaDoConsole(models.Model):
+    """Um retrato do Search Console: consultas e paginas de um periodo.
+
+    Guardado por coleta, e nao sobrescrito: e a sequencia de retratos que
+    mostra se um artigo publicado esta subindo ou caindo.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    propriedade = models.CharField(_("propriedade"), max_length=300)
+    inicio = models.DateField(_("inicio"))
+    fim = models.DateField(_("fim"))
+    linhas = models.PositiveIntegerField(_("linhas"), default=0)
+    coletada_em = models.DateTimeField(_("coletada em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("coleta do Search Console")
+        verbose_name_plural = _("coletas do Search Console")
+        ordering = ["-coletada_em"]
+
+    def __str__(self) -> str:
+        return f"{self.propriedade} {self.inicio} a {self.fim}"
+
+
+class LinhaDoConsole(models.Model):
+    """Uma consulta numa pagina, no periodo da coleta."""
+
+    id = models.BigAutoField(primary_key=True)
+    coleta = models.ForeignKey(
+        ColetaDoConsole,
+        on_delete=models.CASCADE,
+        related_name="linhas_set",
+        verbose_name=_("coleta"),
+    )
+    consulta = models.CharField(_("consulta"), max_length=500)
+    pagina = models.URLField(_("pagina"), max_length=500)
+    cliques = models.PositiveIntegerField(_("cliques"), default=0)
+    impressoes = models.PositiveIntegerField(_("impressoes"), default=0)
+    ctr = models.FloatField(_("CTR"), default=0)
+    posicao = models.FloatField(_("posicao media"), default=0)
+
+    class Meta:
+        verbose_name = _("linha do Search Console")
+        verbose_name_plural = _("linhas do Search Console")
+        indexes = [models.Index(fields=["coleta", "pagina"])]
+
+    def __str__(self) -> str:
+        return f"{self.consulta} @ {self.posicao:.1f}"
