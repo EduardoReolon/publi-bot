@@ -232,6 +232,24 @@ padroes = ["apps/editorial/**", "templates/editorial/**", "tests/test_editorial.
 
 
 # ---------------------------------------------------------------------------
+# apps/radar — descoberta de pautas
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "radar"
+titulo = "Radar de pautas: demanda, custo e sugestao de temas"
+resumo = """
+Descobre sobre o que vale escrever: perguntas relacionadas e volume de busca
+(DataForSEO), buscador gratuito (SearXNG) com comparacao por amostragem,
+perguntas dos visitantes, YouTube e Search Console. Agrupa os sinais por
+embedding, da nota com as parcelas explicadas e propoe pautas SUGERIDAS. Toda
+chamada externa vai para o livro-caixa, e o teto e conferido antes de cada uma.
+"""
+entrada = ["apps/radar/coleta.py", "apps/radar/provedores.py"]
+relacionados = ["conteudo-modelos", "acervo-busca"]
+padroes = ["apps/radar/**", "templates/radar/**", "tests/test_radar.py"]
+
+
+# ---------------------------------------------------------------------------
 # apps/integrations — entrega ao site
 # ---------------------------------------------------------------------------
 [[bloco]]

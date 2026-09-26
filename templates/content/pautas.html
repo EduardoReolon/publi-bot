@@ -27,7 +27,21 @@
             <tr>
               <td>
                 <strong>{{ pauta.title }}</strong>
-                {% if pauta.briefing %}
+                {% if pauta.origin == 'radar' %}
+                  <span class="selo">{% translate "radar" %} · {{ pauta.demand_score|floatformat:0 }}</span>
+                {% endif %}
+                {% if pauta.content_type %}<span class="selo">{{ pauta.get_content_type_display }}</span>{% endif %}
+                {% if pauta.evidence.sinais %}
+                  <details class="pre-visualizacao">
+                    <summary>{% translate "Por que esta pauta" %}</summary>
+                    <ul>
+                      {% for sinal in pauta.evidence.sinais %}
+                        <li>{{ sinal.texto }} <span class="selo">{{ sinal.fonte }}</span>{% if sinal.volume is not None %} {{ sinal.volume }}/{% translate "mes" %}{% endif %}</li>
+                      {% endfor %}
+                    </ul>
+                    <div>{% for nome, valor in pauta.evidence.parcelas.items %}{{ nome }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+                  </details>
+                {% elif pauta.briefing %}
                   <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>
                 {% endif %}
               </td>

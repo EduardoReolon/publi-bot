@@ -285,6 +285,19 @@ class Topic(models.Model):
     # e passariam batido numa comparacao literal.
     cannibalization_score = models.FloatField(_("risco de canibalizacao"), default=0.0)
 
+    class Origin(models.TextChoices):
+        MANUAL = "manual", _("Criada a mao")
+        RADAR = "radar", _("Sugerida pelo radar")
+
+    origin = models.CharField(
+        _("origem"), max_length=8, choices=Origin.choices, default=Origin.MANUAL
+    )
+    # Por que o radar sugeriu: os sinais (perguntas, volume, fonte de cada um)
+    # e as parcelas da nota. Quem aprova precisa ver a evidencia, e nao so o
+    # titulo.
+    evidence = models.JSONField(_("evidencia"), default=dict, blank=True)
+    demand_score = models.FloatField(_("nota do radar"), null=True, blank=True)
+
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

@@ -1,0 +1,239 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Radar" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Radar de pautas" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Descobre sobre o que vale escrever: perguntas que as pessoas fazem, volume
+      de busca, duvidas dos visitantes. Tudo aqui e sinal de DEMANDA — nunca fato
+      para o texto, que continua saindo do acervo curado.
+    {% endblocktranslate %}
+  </p>
+
+  <div class="cartoes">
+    <div>
+      <label>{% translate "Gasto no mes" %}</label>
+      <strong>US$ {{ resumo.gasto|floatformat:4 }}</strong>
+      <div class="ajuda">{% translate "teto" %}: US$ {{ resumo.teto }}</div>
+    </div>
+    <div>
+      <label>{% translate "Intensidade" %}</label>
+      <strong>{{ config_obj.get_intensidade_display }}</strong>
+      <div class="ajuda">{% translate "buscador" %}: {{ config_obj.get_buscador_display }}</div>
+    </div>
+    <div>
+      <label>{% translate "Ultima rodada" %}</label>
+      <strong>{{ config_obj.ultima_rodada_em|date:"d/m H:i"|default:"—" }}</strong>
+    </div>
+  </div>
+
+  <form method="post" action="{% url 'radar:rodar_agora' %}">
+    {% csrf_token %}
+    <div class="acoes">
+      <button type="submit">{% translate "Rodar o radar agora" %}</button>
+    </div>
+  </form>
+
+  {% if rodadas %}
+    <h2>{% translate "Rodadas" %}</h2>
+    <table>
+      <thead><tr>
+        <th>{% translate "Quando" %}</th><th>{% translate "Origem" %}</th>
+        <th>{% translate "Situacao" %}</th><th>{% translate "Sinais" %}</th>
+        <th>{% translate "Pautas" %}</th><th>{% translate "Custo" %}</th>
+      </tr></thead>
+      <tbody>
+        {% for rodada in rodadas %}
+          <tr>
+            <td>{{ rodada.iniciada_em|date:"d/m H:i" }}</td>
+            <td>{{ rodada.get_origem_display }}</td>
+            <td>{{ rodada.get_situacao_display }}{% if rodada.erro %}<div class="ajuda">{{ rodada.erro|truncatechars:160 }}</div>{% endif %}
+              {% for erro in rodada.resumo.erros %}<div class="ajuda">{{ erro|truncatechars:160 }}</div>{% endfor %}</td>
+            <td>{{ rodada.resumo.sinais|default:0 }}</td>
+            <td>{{ rodada.resumo.pautas|length }}</td>
+            <td>US$ {{ rodada.custo_usd|floatformat:4 }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <h2>{% translate "Temas em observacao" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Sinais parecidos viram um tema. A nota combina demanda (volume), diversidade
+      de fontes, aderencia ao negocio, canibalizacao (quanto mais perto do que ja
+      foi escrito, pior) e cobertura do acervo. Os melhores viram pauta sugerida
+      sozinhos a cada rodada; aqui voce pode adiantar ou descartar.
+    {% endblocktranslate %}
+  </p>
+  <table>
+    <thead><tr>
+      <th>{% translate "Tema" %}</th><th>{% translate "Nota" %}</th>
+      <th>{% translate "Volume" %}</th><th>{% translate "Sinais" %}</th>
+      <th>{% translate "Parcelas" %}</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for grupo in grupos %}
+        <tr>
+          <td>{{ grupo.rotulo }}</td>
+          <td><strong>{{ grupo.nota|floatformat:0 }}</strong></td>
+          <td>{{ grupo.volume_total|default:"—" }}</td>
+          <td>{{ grupo.total }}</td>
+          <td class="pre-visualizacao">
+            {% for nome, valor in grupo.parcelas.items %}{{ nome }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}
+          </td>
+          <td>
+            <form method="post" action="{% url 'radar:grupo_para_pauta' grupo.pk %}" style="display:inline">
+              {% csrf_token %}<button type="submit" class="botao secundario">{% translate "Virar pauta" %}</button>
+            </form>
+            <form method="post" action="{% url 'radar:descartar_grupo' grupo.pk %}" style="display:inline">
+              {% csrf_token %}<button type="submit" class="botao perigo">{% translate "Descartar" %}</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="vazio">{% translate "Nenhum tema ainda. Configure as sementes e rode o radar." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>{% translate "Busca manual" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Para pesquisar um tema por curiosidade. O resultado espera a sua decisao:
+      guardar (e do seu segmento, entra no radar) ou descartar. O custo e
+      registrado nos dois casos.
+    {% endblocktranslate %}
+  </p>
+  <form method="post" action="{% url 'radar:busca_manual' %}">
+    {% csrf_token %}
+    {% for campo in busca_form %}
+      <div class="campo">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        {{ campo }}
+        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="acoes"><button type="submit" class="botao secundario">{% translate "Buscar" %}</button></div>
+  </form>
+
+  {% for busca in buscas_pendentes %}
+    <div class="aviso">
+      <strong>{{ busca.consulta }}</strong> — {{ busca.criado_em|date:"d/m H:i" }}
+      {% if busca.erro %}<div class="erro">{{ busca.erro }}</div>{% endif %}
+      <ul>
+        {% for sinal in busca.sinais.all %}
+          <li>{{ sinal.texto }} <span class="selo">{{ sinal.get_fonte_display }}</span>{% if sinal.volume is not None %} {{ sinal.volume }}/{% translate "mes" %}{% endif %}</li>
+        {% endfor %}
+      </ul>
+      <form method="post" action="{% url 'radar:decidir_busca' busca.pk %}" class="acoes">
+        {% csrf_token %}
+        <button type="submit" name="decisao" value="guardar">{% translate "E do mesmo segmento: guardar" %}</button>
+        <button type="submit" name="decisao" value="descartar" class="botao secundario">{% translate "Descartar" %}</button>
+      </form>
+    </div>
+  {% endfor %}
+
+  <h2>{% translate "Buscador gratuito x pago" %}</h2>
+  {% if comparacoes_total %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed with n=comparacoes_total falhas=comparacoes_falhas %}
+        Ultimas {{ n }} comparacoes ({{ falhas }} com o gratuito fora do ar).
+      {% endblocktranslate %}
+      {% translate "Do top 10 pago, o gratuito trouxe em media" %}
+      <strong>{{ comparacao_media.urls|default:0|floatformat:2 }}</strong> {% translate "das URLs e" %}
+      <strong>{{ comparacao_media.dominios|default:0|floatformat:2 }}</strong> {% translate "dos dominios." %}
+    </p>
+    <table>
+      <thead><tr><th>{% translate "Consulta" %}</th><th>URLs</th><th>{% translate "Dominios" %}</th><th>{% translate "So no pago" %}</th></tr></thead>
+      <tbody>
+        {% for c in comparacoes %}
+          <tr>
+            <td>{{ c.consulta }}</td>
+            <td>{% if c.gratuito_falhou %}{% translate "gratuito falhou" %}{% else %}{{ c.sobreposicao_urls|floatformat:2 }}{% endif %}</td>
+            <td>{% if not c.gratuito_falhou %}{{ c.sobreposicao_dominios|floatformat:2 }}{% endif %}</td>
+            <td class="pre-visualizacao">{{ c.so_no_pago|join:", " }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="vazio">
+      {% translate "Sem comparacoes ainda. Com o buscador gratuito e uma conta DataForSEO, defina a taxa de comparacao abaixo." %}
+    </p>
+  {% endif %}
+
+  <div class="duas-colunas">
+    <div>
+      <h2>{% translate "Configuracao" %}</h2>
+      <form method="post" action="{% url 'radar:salvar_configuracao' %}">
+        {% csrf_token %}
+        {% for campo in config %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+        <div class="acoes"><button type="submit">{% translate "Salvar configuracao" %}</button></div>
+      </form>
+    </div>
+    <div>
+      <h2>{% translate "Contas externas" %}</h2>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          As contas sao deste site: o custo cai direto na conta dele. As chaves
+          ficam cifradas e nunca voltam para a tela.
+        {% endblocktranslate %}
+      </p>
+      <ul class="lista">
+        <li>DataForSEO: {% if contas_obj.tem_dataforseo %}<span class="selo ok">{% translate "configurada" %}</span>{% else %}<span class="selo">{% translate "nao configurada" %}</span>{% endif %}</li>
+        <li>YouTube: {% if contas_obj.tem_youtube %}<span class="selo ok">{% translate "configurada" %}</span>{% else %}<span class="selo">{% translate "nao configurada" %}</span>{% endif %}</li>
+      </ul>
+      <form method="post" action="{% url 'radar:salvar_contas' %}">
+        {% csrf_token %}
+        {% for campo in contas %}
+          <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+        <div class="acoes"><button type="submit">{% translate "Salvar contas" %}</button></div>
+      </form>
+    </div>
+  </div>
+
+  <h2>{% translate "Uso do mes" %}</h2>
+  <table>
+    <thead><tr><th>{% translate "Provedor" %}</th><th>{% translate "Finalidade" %}</th><th>{% translate "Chamadas" %}</th><th>{% translate "Custo" %}</th></tr></thead>
+    <tbody>
+      {% for linha in resumo.linhas %}
+        <tr><td>{{ linha.provedor }}</td><td>{{ linha.finalidade }}</td><td>{{ linha.chamadas }}</td><td>US$ {{ linha.total|floatformat:4 }}</td></tr>
+      {% empty %}
+        <tr><td colspan="4" class="vazio">{% translate "Nenhuma chamada neste mes." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>{% translate "Ultimas chamadas" %}</h2>
+  <table>
+    <thead><tr><th>{% translate "Quando" %}</th><th>{% translate "Provedor" %}</th><th>{% translate "Consulta" %}</th><th>{% translate "Custo" %}</th><th></th></tr></thead>
+    <tbody>
+      {% for chamada in chamadas %}
+        <tr>
+          <td>{{ chamada.criado_em|date:"d/m H:i" }}</td>
+          <td>{{ chamada.get_provedor_display }} <span class="pre-visualizacao">{{ chamada.get_finalidade_display }}</span></td>
+          <td>{{ chamada.consulta|truncatechars:80 }}</td>
+          <td>US$ {{ chamada.custo_usd|floatformat:4 }}</td>
+          <td>{% if not chamada.sucesso %}<span class="selo">{% translate "falhou" %}</span> <span class="ajuda">{{ chamada.erro|truncatechars:120 }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

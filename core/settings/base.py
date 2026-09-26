@@ -81,6 +81,7 @@ TENANT_APPS = [
     "apps.content",
     "apps.integrations",
     "apps.editorial",
+    "apps.radar",
     #   "apps.integrations",
     #   "apps.ops",
 ]
@@ -425,6 +426,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 300.0,
         "options": {"expires": 240},
     },
+    "tick-radar": {
+        "task": "apps.radar.tasks.tick_radar",
+        # De hora em hora; a intensidade de cada tenant decide se roda.
+        "schedule": 3600.0,
+        "options": {"expires": 3000},
+    },
     "purge-expired-questions": {
         "task": "apps.integrations.tasks.purge_expired_questions",
         # Uma vez por dia: e uma obrigacao de retencao, nao algo urgente.
@@ -697,6 +704,24 @@ RAG_FOLGA_TEXTUAL = env.decimal("RAG_FOLGA_TEXTUAL", 0.03)
 # Sugestao: jinaai/jina-reranker-v2-base-multilingual (~1,1 GB, multilingue —
 # o acervo mistura fontes em ingles com pautas em portugues).
 RAG_RERANKER_MODEL = env.get("RAG_RERANKER_MODEL", "")
+
+# ---------------------------------------------------------------------------
+# Radar de pautas
+# ---------------------------------------------------------------------------
+# Buscador gratuito padrao: uma instancia do SearXNG com a saida JSON ligada
+# (`search.formats: [html, json]` no settings.yml dele). Cada tenant pode
+# apontar outra na tela do radar.
+SEARXNG_URL = env.get("SEARXNG_URL", "")
+
+# O teto mensal que um tenant pode escolher, em US$. As contas pagas sao do
+# proprio tenant; isto so impede que um valor digitado errado vire fatura.
+RADAR_TETO_MAXIMO_USD = env.decimal("RADAR_TETO_MAXIMO_USD", 20.0)
+
+# Nota minima (0 a 100) para um grupo de demanda virar pauta sugerida sozinho.
+RADAR_NOTA_MINIMA = env.decimal("RADAR_NOTA_MINIMA", 40.0)
+
+# Distancia de cosseno abaixo da qual dois sinais sao o mesmo tema.
+RADAR_DISTANCIA_DO_GRUPO = env.decimal("RADAR_DISTANCIA_DO_GRUPO", 0.10)
 
 # ---------------------------------------------------------------------------
 # Log
