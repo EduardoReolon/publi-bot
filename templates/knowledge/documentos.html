@@ -16,6 +16,8 @@
     <a class="botao" href="{% url 'knowledge:enviar' %}">{% translate "Enviar documento" %}</a>
     <a class="botao secundario" href="{% url 'knowledge:categorias' %}">{% translate "Categorias" %}</a>
     <a class="botao secundario" href="{% url 'knowledge:busca' %}">{% translate "Qualidade da busca" %}</a>
+    <a class="botao secundario" href="{% url 'knowledge:fontes_sugeridas' %}">{% translate "Fontes sugeridas" %}{% if fontes_pendentes %} ({{ fontes_pendentes }}){% endif %}</a>
+    <a class="botao secundario" href="{% url 'knowledge:caminhos' %}">{% translate "Caminhos confiaveis" %}</a>
   </div>
 
   {% if marcados %}

@@ -157,6 +157,21 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
+def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
+    """Busca na web paginas que podem sustentar a pauta."""
+    from apps.knowledge.tasks import buscar_fontes_da_pauta
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    transaction.on_commit(lambda: buscar_fontes_da_pauta.delay(str(pauta.pk)))
+    messages.success(
+        request,
+        _("Buscando fontes na web. As candidatas aparecem em Documentos > Fontes sugeridas."),
+    )
+    return redirect("content:pautas")
+
+
+@login_required
+@require_POST
 def rejeitar_pauta(request: HttpRequest, pk) -> HttpResponse:
     pauta = get_object_or_404(Topic, pk=pk)
     pauta.status = Topic.Status.REJECTED

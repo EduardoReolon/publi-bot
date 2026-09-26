@@ -262,6 +262,9 @@ class Topic(models.Model):
     class Status(models.TextChoices):
         SUGGESTED = "suggested", _("Sugerida")
         APPROVED = "approved", _("Aprovada")
+        # Tentou gerar e o acervo nao sustenta o tema. Fica esperando fonte —
+        # as que a busca na web achou estao em Documentos > Fontes sugeridas.
+        WAITING_SOURCES = "waiting_sources", _("Aguardando fontes")
         REJECTED = "rejected", _("Rejeitada")
         USED = "used", _("Usada")
 
@@ -276,7 +279,7 @@ class Topic(models.Model):
         _("tipo de conteudo"), max_length=20, choices=TIPOS_DE_CONTEUDO, blank=True
     )
     status = models.CharField(
-        _("situacao"), max_length=12, choices=Status.choices, default=Status.SUGGESTED
+        _("situacao"), max_length=16, choices=Status.choices, default=Status.SUGGESTED
     )
 
     # Alto = o tema conflita com conteudo ja publicado. Medido por similaridade

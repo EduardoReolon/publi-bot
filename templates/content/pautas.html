@@ -47,7 +47,7 @@
               </td>
               <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}</td>
               <td>
-                <span class="selo {% if pauta.status == 'used' %}ok{% elif pauta.status == 'rejected' %}ruim{% endif %}">
+                <span class="selo {% if pauta.status == 'used' %}ok{% elif pauta.status == 'rejected' or pauta.status == 'waiting_sources' %}ruim{% endif %}">
                   {{ pauta.get_status_display }}
                 </span>
               </td>
@@ -60,6 +60,10 @@
                   <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
                     {% csrf_token %}
                     <button type="submit" class="botao secundario">{% translate "Gerar artigo" %}</button>
+                  </form>
+                  <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" class="botao secundario">{% translate "Buscar fontes na web" %}</button>
                   </form>
                   <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">
                     {% csrf_token %}

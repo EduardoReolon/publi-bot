@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Caminhos confiaveis" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Caminhos confiaveis" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Dois niveis. "Preferir na busca": a busca de fontes procura ali primeiro, e o
+      que vier chega marcado — mas ainda passa pela curadoria. "Aprovar
+      automaticamente": o que vier de la entra no acervo sem curadoria, com todos
+      os blocos indexados.
+    {% endblocktranslate %}
+  </p>
+
+  <table>
+    <thead><tr><th>{% translate "Caminho" %}</th><th>{% translate "Nivel" %}</th><th>{% translate "Categoria" %}</th><th></th></tr></thead>
+    <tbody>
+      {% for caminho in caminhos %}
+        <tr>
+          <td><code>{{ caminho.prefixo }}</code>{% if caminho.observacao %}<div class="ajuda">{{ caminho.observacao }}</div>{% endif %}</td>
+          <td><span class="selo {% if caminho.nivel == 'aprovar' %}ruim{% endif %}">{{ caminho.get_nivel_display }}</span></td>
+          <td>{{ caminho.categoria.name }}</td>
+          <td>
+            <form method="post">{% csrf_token %}
+              <button type="submit" name="remover" value="{{ caminho.pk }}" class="botao perigo">{% translate "Remover" %}</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="vazio">{% translate "Nenhum caminho ainda." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>{% translate "Novo caminho" %}</h2>
+  <form method="post">
+    {% csrf_token %}
+    <div class="campo">
+      <label>{% translate "Caminho" %}</label>
+      <input type="text" name="prefixo" placeholder="gov.br/caixa/sinapi" required>
+      <div class="ajuda">{% translate "Caminho, e nao so dominio. Em YouTube, Medium, foruns e afins, aponte o canal ou o autor." %}</div>
+    </div>
+    <div class="campo">
+      <label>{% translate "Nivel" %}</label>
+      <select name="nivel">{% for valor, rotulo in niveis %}<option value="{{ valor }}">{{ rotulo }}</option>{% endfor %}</select>
+    </div>
+    <div class="campo">
+      <label>{% translate "Categoria das fontes deste caminho" %}</label>
+      <select name="categoria">{% for categoria in categorias %}<option value="{{ categoria.pk }}">{{ categoria.name }}</option>{% endfor %}</select>
+    </div>
+    <div class="campo">
+      <label>{% translate "Observacao" %}</label>
+      <input type="text" name="observacao">
+    </div>
+    <div class="aviso ruim">
+      <strong>{{ aviso }}</strong>
+      <label style="display:flex; gap:.5rem; align-items:center; margin-top:.4rem">
+        <input type="checkbox" name="confirmo" value="1" style="width:auto">
+        <span>{% translate "Li o aviso (obrigatorio para aprovar automaticamente)" %}</span>
+      </label>
+    </div>
+    <button type="submit">{% translate "Salvar caminho" %}</button>
+  </form>
+{% endblock %}

@@ -29,6 +29,7 @@ from apps.content.inference import executar_prompt
 from apps.content.models import Article, ArticleSection, Question, Topic
 from apps.content.rendering import validar_saida_do_modelo
 from apps.content.services import (
+    SemEmbasamentoCentral,
     SemFontesSuficientes,
     aplicar_plano,
     aplicar_rascunho,
@@ -89,9 +90,13 @@ def passo_recuperar_fontes(job: GenerationJob) -> dict:
     _, trechos = recuperar(consulta=consulta, origem=RetrievalQuery.Origin.ARTICLE)
 
     if not trechos:
+        from apps.knowledge.tasks import pauta_sem_fontes
+
+        pauta_sem_fontes(topic)
         raise SemFontesSuficientes(
             f"nenhum trecho do acervo ficou abaixo do limiar de distancia para "
-            f"a pauta {topic.title!r}. Envie documentos sobre o tema, ou ajuste "
+            f"a pauta {topic.title!r}. Envie documentos sobre o tema (ou aprove "
+            f"as fontes sugeridas em Documentos > Fontes sugeridas), ou ajuste "
             f"a pauta para algo que o acervo sustente."
         )
 
@@ -216,13 +221,22 @@ def passo_planejar(job: GenerationJob) -> dict:
         tipo_de_conteudo=article.content_type,
     )
 
-    plano = interpretar_plano(
-        resultado.texto,
-        total_de_fontes=len(trechos),
-        fontes_para_ideia_central={
-            n for n, t in enumerate(trechos, start=1) if getattr(t, "supports_central_idea", True)
-        },
-    )
+    try:
+        plano = interpretar_plano(
+            resultado.texto,
+            total_de_fontes=len(trechos),
+            fontes_para_ideia_central={
+                n
+                for n, t in enumerate(trechos, start=1)
+                if getattr(t, "supports_central_idea", True)
+            },
+        )
+    except SemEmbasamentoCentral:
+        if article.topic_id:
+            from apps.knowledge.tasks import pauta_sem_fontes
+
+            pauta_sem_fontes(article.topic, marcar=False)
+        raise
     secoes = aplicar_plano(article, plano, trechos=trechos)
 
     logger.info(

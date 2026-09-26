@@ -1,0 +1,86 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Fontes sugeridas" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Fontes sugeridas" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Paginas achadas na web para pautas que o acervo ainda nao sustenta. Nada
+      daqui e usado sem a sua decisao: aprovar manda a pagina para o acervo, e
+      ela ainda passa pela curadoria. Recusar faz a pagina nao ser sugerida de novo.
+    {% endblocktranslate %}
+    <a href="{% url 'knowledge:caminhos' %}">{% translate "Caminhos confiaveis" %}</a>
+  </p>
+
+  {% for candidato in pendentes %}
+    <div class="aviso">
+      <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
+      {% if candidato.preferido %}<span class="selo ok">{% translate "caminho preferido" %}</span>{% endif %}
+      <div class="pre-visualizacao">{{ candidato.url }}</div>
+      {% if candidato.trecho %}<div class="pre-visualizacao">{{ candidato.trecho|truncatechars:300 }}</div>{% endif %}
+      {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
+
+      <form method="post" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
+        {% csrf_token %}
+        <select name="categoria" style="width:auto">
+          {% for categoria in categorias %}
+            <option value="{{ categoria.pk }}" {% if categoria.source_class == 'veiculo' %}selected{% endif %}>{{ categoria.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" name="decisao" value="aprovar">{% translate "Aprovar e enviar para a curadoria" %}</button>
+        <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+      </form>
+
+      <details>
+        <summary>{% translate "Confiar neste caminho" %}</summary>
+        <form method="post" action="{% url 'knowledge:caminhos' %}">
+          {% csrf_token %}
+          <input type="hidden" name="voltar" value="{% url 'knowledge:fontes_sugeridas' %}">
+          <div class="campo">
+            <label>{% translate "Caminho" %}</label>
+            <input type="text" name="prefixo" value="{{ candidato.dominio }}">
+            <div class="ajuda">{% translate "Encurte ate o trecho em que voce confia por inteiro." %}</div>
+          </div>
+          <div class="campo">
+            <label>{% translate "Nivel" %}</label>
+            <select name="nivel">
+              {% for valor, rotulo in niveis %}<option value="{{ valor }}">{{ rotulo }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="campo">
+            <label>{% translate "Categoria" %}</label>
+            <select name="categoria">
+              {% for categoria in categorias %}<option value="{{ categoria.pk }}">{{ categoria.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="aviso ruim">
+            <strong>{{ aviso }}</strong>
+            <label style="display:flex; gap:.5rem; align-items:center; margin-top:.4rem">
+              <input type="checkbox" name="confirmo" value="1" style="width:auto">
+              <span>{% translate "Li o aviso (obrigatorio para aprovar automaticamente)" %}</span>
+            </label>
+          </div>
+          <button type="submit" class="botao secundario">{% translate "Salvar caminho" %}</button>
+        </form>
+      </details>
+    </div>
+  {% empty %}
+    <p class="vazio">{% translate "Nenhuma fonte sugerida esperando decisao." %}</p>
+  {% endfor %}
+
+  {% if recentes %}
+    <h2>{% translate "Decididas recentemente" %}</h2>
+    <table>
+      <tbody>
+        {% for candidato in recentes %}
+          <tr>
+            <td>{{ candidato.titulo|default:candidato.url|truncatechars:90 }}</td>
+            <td>{{ candidato.get_situacao_display }}{% if candidato.motivo %}<div class="ajuda">{{ candidato.motivo|truncatechars:120 }}</div>{% endif %}</td>
+            <td>{% if candidato.documento %}<a href="{% url 'knowledge:curar' candidato.documento.pk %}">{% translate "curadoria" %}</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

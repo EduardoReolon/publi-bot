@@ -13,6 +13,7 @@ urlpatterns = [
     path("pautas/nova/", views.nova_pauta, name="nova_pauta"),
     path("pautas/<uuid:pk>/gerar/", views.gerar, name="gerar"),
     path("pautas/<uuid:pk>/rejeitar/", views.rejeitar_pauta, name="rejeitar_pauta"),
+    path("pautas/<uuid:pk>/fontes/", views.buscar_fontes, name="buscar_fontes"),
     path("artigos/", views.artigos, name="artigos"),
     path("artigos/<uuid:pk>/", views.revisar, name="revisar"),
     path("artigos/<uuid:pk>/secoes/", views.salvar_secoes, name="salvar_secoes"),

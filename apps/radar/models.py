@@ -99,6 +99,19 @@ class ConfiguracaoDoRadar(models.Model):
     usar_youtube = models.BooleanField(_("comentarios do YouTube"), default=False)
     usar_search_console = models.BooleanField(_("Search Console"), default=False)
 
+    # --- Fontes -------------------------------------------------------------
+    buscar_fontes = models.BooleanField(
+        _("buscar fontes na web para pauta sem cobertura"),
+        default=True,
+        help_text=_(
+            "Quando o acervo nao sustenta uma pauta, busca paginas candidatas e "
+            "as deixa em Documentos > Fontes sugeridas, esperando curadoria."
+        ),
+    )
+    fontes_por_pauta = models.PositiveSmallIntegerField(
+        _("candidatos por pauta"), default=5, validators=[MaxValueValidator(20)]
+    )
+
     # --- Buscador ---------------------------------------------------------
     buscador = models.CharField(
         _("buscador"), max_length=12, choices=Buscador.choices, default=Buscador.SEARXNG

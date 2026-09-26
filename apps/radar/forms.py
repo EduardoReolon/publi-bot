@@ -19,6 +19,8 @@ class ConfiguracaoForm(forms.ModelForm):
             "usar_perguntas_do_site",
             "usar_youtube",
             "usar_search_console",
+            "buscar_fontes",
+            "fontes_por_pauta",
             "buscador",
             "taxa_de_comparacao",
             "codigo_de_local",

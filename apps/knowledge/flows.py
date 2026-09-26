@@ -159,6 +159,16 @@ def passo_converter(job: GenerationJob) -> dict:
         resultado.metodo,
         len(resultado.markdown),
     )
+
+    if document.auto_curate:
+        # Veio de caminho que a pessoa marcou como "aprovar automaticamente".
+        # Falha aqui deixa o documento na curadoria manual, e nao o perde.
+        from apps.knowledge.fontes_web import curar_automaticamente
+
+        try:
+            curar_automaticamente(document)
+        except Exception:
+            logger.exception("Curadoria automatica do documento %s falhou.", document.pk)
     return {
         "metodo": resultado.metodo,
         "caracteres": len(resultado.markdown),

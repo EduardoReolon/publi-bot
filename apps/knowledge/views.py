@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_POST
 
 from apps.knowledge.blocos import preparar_blocos
@@ -62,8 +63,15 @@ def documentos(request: HttpRequest) -> HttpResponse:
             "tem_categoria": DocumentCategory.objects.exists(),
             "marcados": Document.objects.filter(extraction_flagged_at__isnull=False).count(),
             "filtro_extracao": request.GET.get("extracao", ""),
+            "fontes_pendentes": _fontes_pendentes(),
         },
     )
+
+
+def _fontes_pendentes() -> int:
+    from apps.knowledge.models import CandidatoDeFonte
+
+    return CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE).count()
 
 
 @login_required
@@ -665,3 +673,124 @@ def _consultas_recentes(limite: int = 15):
     return RetrievalQuery.objects.annotate(encontradas=Count("hits")).order_by("-created_at")[
         :limite
     ]
+
+
+# ---------------------------------------------------------------------------
+# Fontes sugeridas pela web, e caminhos confiaveis
+# ---------------------------------------------------------------------------
+AVISO_DE_CONFIANCA = gettext_lazy(
+    "Considere muito bem: e muito comum sites terem areas livres para usuarios "
+    "externos (comentarios, forum, perfis, posts de convidados). So marque se "
+    "voce tem certeza de que todo o conteudo deste caminho e 100% criado pelo "
+    "autor do site."
+)
+
+
+@login_required
+def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
+    """Candidatos a fonte achados na web, esperando curadoria."""
+    from apps.knowledge.models import CaminhoConfiavel, CandidatoDeFonte
+
+    pendentes = CandidatoDeFonte.objects.filter(
+        situacao=CandidatoDeFonte.Situacao.PENDENTE
+    ).select_related("pauta")
+    return render(
+        request,
+        "knowledge/fontes_sugeridas.html",
+        {
+            "aba": "documentos",
+            "pendentes": pendentes[:100],
+            "recentes": CandidatoDeFonte.objects.exclude(
+                situacao=CandidatoDeFonte.Situacao.PENDENTE
+            ).select_related("documento")[:20],
+            "categorias": DocumentCategory.objects.order_by("name"),
+            "niveis": CaminhoConfiavel.Nivel.choices,
+            "aviso": AVISO_DE_CONFIANCA,
+        },
+    )
+
+
+@login_required
+@require_POST
+def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
+    from apps.knowledge.fontes_web import aprovar, recusar
+    from apps.knowledge.models import CandidatoDeFonte
+
+    candidato = get_object_or_404(
+        CandidatoDeFonte, pk=pk, situacao=CandidatoDeFonte.Situacao.PENDENTE
+    )
+    if request.POST.get("decisao") == "recusar":
+        recusar(candidato, por=request.user, motivo=request.POST.get("motivo", ""))
+        messages.success(request, _("Recusado. Esta pagina nao sera sugerida de novo."))
+        return redirect("knowledge:fontes_sugeridas")
+
+    categoria = DocumentCategory.objects.filter(pk=request.POST.get("categoria")).first()
+    if categoria is None:
+        messages.error(request, _("Escolha a categoria da fonte."))
+        return redirect("knowledge:fontes_sugeridas")
+
+    candidato = aprovar(candidato, categoria=categoria, por=request.user)
+    if candidato.situacao == CandidatoDeFonte.Situacao.FALHOU:
+        messages.error(
+            request, _("Nao foi possivel buscar a pagina: %(m)s") % {"m": candidato.motivo}
+        )
+    else:
+        messages.success(
+            request,
+            _("Pagina enviada para o acervo. Confira na curadoria quando a leitura terminar."),
+        )
+    return redirect("knowledge:fontes_sugeridas")
+
+
+@login_required
+def caminhos_confiaveis(request: HttpRequest) -> HttpResponse:
+    """Lista e cadastro dos caminhos em que a pessoa confia."""
+    from apps.knowledge.fontes_web import CaminhoRecusado, conferir_caminho
+    from apps.knowledge.models import CaminhoConfiavel
+
+    if request.method == "POST":
+        if request.POST.get("remover"):
+            CaminhoConfiavel.objects.filter(pk=request.POST["remover"]).delete()
+            messages.success(request, _("Caminho removido."))
+            return redirect(request.POST.get("voltar") or "knowledge:caminhos")
+
+        nivel = request.POST.get("nivel", "")
+        categoria = DocumentCategory.objects.filter(pk=request.POST.get("categoria")).first()
+        if nivel not in CaminhoConfiavel.Nivel.values or categoria is None:
+            messages.error(request, _("Escolha o nivel e a categoria."))
+            return redirect(request.POST.get("voltar") or "knowledge:caminhos")
+        if nivel == CaminhoConfiavel.Nivel.APROVAR and not request.POST.get("confirmo"):
+            messages.error(
+                request,
+                _("Para aprovar automaticamente, confirme que leu o aviso em vermelho."),
+            )
+            return redirect(request.POST.get("voltar") or "knowledge:caminhos")
+        try:
+            prefixo = conferir_caminho(request.POST.get("prefixo", ""), nivel)
+        except CaminhoRecusado as exc:
+            messages.error(request, str(exc))
+            return redirect(request.POST.get("voltar") or "knowledge:caminhos")
+
+        CaminhoConfiavel.objects.update_or_create(
+            prefixo=prefixo,
+            defaults={
+                "nivel": nivel,
+                "categoria": categoria,
+                "observacao": request.POST.get("observacao", "")[:300],
+                "criado_por": request.user,
+            },
+        )
+        messages.success(request, _("Caminho salvo: %(p)s") % {"p": prefixo})
+        return redirect(request.POST.get("voltar") or "knowledge:caminhos")
+
+    return render(
+        request,
+        "knowledge/caminhos.html",
+        {
+            "aba": "documentos",
+            "caminhos": CaminhoConfiavel.objects.select_related("categoria"),
+            "categorias": DocumentCategory.objects.order_by("name"),
+            "niveis": CaminhoConfiavel.Nivel.choices,
+            "aviso": AVISO_DE_CONFIANCA,
+        },
+    )

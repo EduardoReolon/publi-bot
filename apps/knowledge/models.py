@@ -196,6 +196,9 @@ class Document(models.Model):
     published_on = models.DateField(_("publicada em"), null=True, blank=True)
     fetched_at = models.DateTimeField(_("buscada em"), null=True, blank=True)
     valid_until = models.DateField(_("valida ate"), null=True, blank=True, db_index=True)
+    # Veio de um caminho que a pessoa marcou como "aprovar automaticamente":
+    # a conversao ja indexa todos os blocos e conclui a curadoria sozinha.
+    auto_curate = models.BooleanField(_("curadoria automatica"), default=False)
 
     original_file = models.FileField(_("arquivo"), upload_to="documents/%Y/%m/")
     file_sha256 = models.CharField(_("sha256"), max_length=64, unique=True, db_index=True)
@@ -684,3 +687,115 @@ class RetrievalSettings(models.Model):
         a nao querer dizer nada.
         """
         return bool(self.calibrated_model) and self.calibrated_model != self.modelo_em_uso
+
+
+# ---------------------------------------------------------------------------
+# Fontes encontradas na web
+# ---------------------------------------------------------------------------
+class CaminhoConfiavel(models.Model):
+    """Um endereco em que a pessoa confia, em um de dois niveis.
+
+    * PREFERIR — a busca de fontes procura ali primeiro, e o que vier de la
+      chega a curadoria marcado. Continua passando por curadoria.
+    * APROVAR — o que vier de la entra no acervo SEM curadoria: todos os
+      blocos indexados, na categoria escolhida. E o nivel perigoso, e a tela
+      diz isso em vermelho.
+
+    O prefixo e caminho, e nao so dominio: `gov.br/caixa/sinapi` e nao
+    `gov.br`. Em plataforma aberta a usuarios (YouTube, Medium, forum,
+    Wikipedia) confiar no dominio inteiro e recusado — a confianca ali e no
+    canal ou no autor, que e um caminho dentro dela.
+    """
+
+    class Nivel(models.TextChoices):
+        PREFERIR = "preferir", _("Preferir na busca")
+        APROVAR = "aprovar", _("Aprovar automaticamente")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    prefixo = models.CharField(_("caminho"), max_length=300, unique=True)
+    nivel = models.CharField(_("nivel"), max_length=10, choices=Nivel.choices)
+    categoria = models.ForeignKey(
+        DocumentCategory,
+        on_delete=models.PROTECT,
+        related_name="caminhos_confiaveis",
+        verbose_name=_("categoria"),
+    )
+    observacao = models.CharField(_("observacao"), max_length=300, blank=True)
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("criado por"),
+    )
+    criado_em = models.DateTimeField(_("criado em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("caminho confiavel")
+        verbose_name_plural = _("caminhos confiaveis")
+        ordering = ["prefixo"]
+
+    def __str__(self) -> str:
+        return f"{self.prefixo} ({self.get_nivel_display()})"
+
+
+class CandidatoDeFonte(models.Model):
+    """Uma pagina achada na web que PODE virar fonte, esperando decisao.
+
+    Recusado continua na tabela de proposito: e o que impede a mesma URL de
+    ser proposta de novo a cada busca.
+    """
+
+    class Situacao(models.TextChoices):
+        PENDENTE = "pendente", _("Aguardando curadoria")
+        APROVADO = "aprovado", _("Aprovado")
+        RECUSADO = "recusado", _("Recusado")
+        FALHOU = "falhou", _("Nao foi possivel buscar")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    url = models.URLField(_("URL"), max_length=500, unique=True)
+    titulo = models.CharField(_("titulo"), max_length=500, blank=True)
+    trecho = models.TextField(_("trecho"), blank=True)
+    dominio = models.CharField(_("dominio"), max_length=200, blank=True, db_index=True)
+    consulta = models.CharField(_("consulta"), max_length=500, blank=True)
+    pauta = models.ForeignKey(
+        "content.Topic",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="candidatos_de_fonte",
+        verbose_name=_("pauta"),
+    )
+    # De caminho marcado como PREFERIR: chega destacado na curadoria.
+    preferido = models.BooleanField(_("de caminho preferido"), default=False)
+    situacao = models.CharField(
+        _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.PENDENTE
+    )
+    documento = models.ForeignKey(
+        Document,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="candidatos",
+        verbose_name=_("documento"),
+    )
+    motivo = models.TextField(_("motivo"), blank=True)
+    decidido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("decidido por"),
+    )
+    decidido_em = models.DateTimeField(_("decidido em"), null=True, blank=True)
+    encontrado_em = models.DateTimeField(_("encontrado em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("candidato a fonte")
+        verbose_name_plural = _("candidatos a fonte")
+        ordering = ["-preferido", "-encontrado_em"]
+
+    def __str__(self) -> str:
+        return self.titulo or self.url
