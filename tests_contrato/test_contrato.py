@@ -614,7 +614,6 @@ def test_as_capacidades_declaradas_sao_as_que_o_openapi_conhece():
     assert set(RECURSOS) <= conhecidas, set(RECURSOS) - conhecidas
 
 
-
 # ---------------------------------------------------------------------------
 # Atualizacao (recurso `update`)
 # ---------------------------------------------------------------------------
