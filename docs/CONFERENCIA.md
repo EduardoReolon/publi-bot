@@ -447,6 +447,21 @@ venv/bin/python manage.py shell -c "from apps.integrations.tasks import coletar_
 
 ---
 
+## 14. Rendimento das sementes e "Copiar para outra IA"
+
+- [ ] **Onde:** Radar › Demanda e pautas › **Rendimento das sementes**.
+      **Espere:** por semente, sinais, quantos com volume, o volume somado, as
+      pautas e o melhor sinal. Semente com muitos sinais e volume "—" está no
+      jargão; a que soma volume está na língua de quem busca.
+- [ ] **Onde:** logo abaixo, **Analisar com outra IA**. **Faça:** *Copiar para
+      outra IA* e cole num modelo grande. **Espere:** um texto com as perguntas
+      no começo e, depois, o negócio, o rendimento das sementes, os sinais, os
+      temas com as parcelas, as pautas, as oportunidades e os concorrentes.
+      Sem HTTPS (desenvolvimento), o botão seleciona o texto para você copiar
+      com Ctrl+C.
+
+---
+
 ## Se algo não bater
 
 | Onde olhar | O que mostra |

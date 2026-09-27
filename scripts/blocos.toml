@@ -269,6 +269,7 @@ padroes = [
   "tests/test_radar_exemplo.py",
   "tests/test_fonte_vencida.py",
   "tests/test_teste_de_oportunidade.py",
+  "tests/test_resumo_do_radar.py",
 ]
 
 

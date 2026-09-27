@@ -161,6 +161,85 @@
 </div>
 
 <section class="secao" style="margin-top:1.2rem">
+  <h2>{% translate "Rendimento das sementes" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      O que cada palavra-semente trouxe nos ultimos 90 dias. Semente com muitos
+      sinais e nenhum volume costuma estar no jargao de quem vende; a que traz
+      volume esta na lingua de quem busca. "—" no volume nao e zero: o Google
+      Ads so da numero para buscas com alguma frequencia.
+    {% endblocktranslate %}
+  </p>
+  {% if rendimento %}
+    <div class="rolagem">
+      <table>
+        <thead><tr>
+          <th>{% translate "Semente" %}</th>
+          <th class="numero">{% translate "Sinais" %}</th>
+          <th class="numero">{% translate "Com volume" %}</th>
+          <th class="numero">{% translate "Volume somado" %}</th>
+          <th class="numero">{% translate "Pautas" %}</th>
+          <th>{% translate "Melhor sinal" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for r in rendimento %}
+            <tr>
+              <td>{{ r.semente }}{% if not r.configurada %} <span class="ajuda">({% translate "fora da lista" %})</span>{% endif %}</td>
+              <td class="numero">{% if r.sinais %}{{ r.sinais }}{% else %}<span class="ajuda">{% translate "ainda nao buscada" %}</span>{% endif %}</td>
+              <td class="numero">{{ r.com_volume }}</td>
+              <td class="numero">{% if r.volume %}<strong>{{ r.volume }}</strong>{% else %}—{% endif %}</td>
+              <td class="numero">{{ r.pautas }}</td>
+              <td>{% if r.melhor_sinal %}{{ r.melhor_sinal }} <span class="ajuda">{{ r.maior_volume }}/{% translate "mes" %}</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="vazio">{% translate "Nenhuma semente ainda." %}</p>
+  {% endif %}
+</section>
+
+<section class="secao">
+  <h2>{% translate "Analisar com outra IA" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      O negocio, o rendimento das sementes, os sinais, os temas, as pautas e os
+      concorrentes num texto so, com as perguntas certas no comeco. Copie e cole
+      num modelo grande (Claude, ChatGPT, Gemini): ele tira destes dados a
+      leitura de consultor que o modelo local nao tira. Nada e enviado pelo
+      PubliBot; o texto contem os dados do seu negocio.
+    {% endblocktranslate %}
+  </p>
+  <div class="acoes">
+    <button type="button" class="botao" id="copiar-para-ia">{% translate "Copiar para outra IA" %}</button>
+    <span class="ajuda" id="copiado" hidden>{% translate "Copiado." %}</span>
+  </div>
+  <details>
+    <summary>{% translate "Ver o texto" %}</summary>
+    <textarea id="texto-para-ia" readonly rows="16" style="width:100%">{{ texto_para_ia }}</textarea>
+  </details>
+  <script>
+    (function () {
+      var botao = document.getElementById("copiar-para-ia");
+      var campo = document.getElementById("texto-para-ia");
+      var aviso = document.getElementById("copiado");
+      botao.addEventListener("click", function () {
+        function feito() { aviso.hidden = false; setTimeout(function () { aviso.hidden = true; }, 2500); }
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(campo.value).then(feito, function () { campo.closest("details").open = true; campo.select(); });
+        } else {
+          // Sem HTTPS nao ha area de transferencia pela API: seleciona para Ctrl+C.
+          campo.closest("details").open = true;
+          campo.select();
+          try { if (document.execCommand("copy")) { feito(); } } catch (e) {}
+        }
+      });
+    })();
+  </script>
+</section>
+
+<section class="secao" style="margin-top:1.2rem">
   <h2>{% translate "Possiveis concorrentes" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}

@@ -90,7 +90,17 @@ def _contexto_do_console() -> dict:
 
 @login_required
 def radar(request: HttpRequest) -> HttpResponse:
-    return render(request, "radar/radar.html", _contexto())
+    from apps.radar.resumo import rendimento_das_sementes, texto_para_ia
+
+    return render(
+        request,
+        "radar/radar.html",
+        {
+            **_contexto(),
+            "rendimento": rendimento_das_sementes(),
+            "texto_para_ia": texto_para_ia(),
+        },
+    )
 
 
 @login_required
