@@ -820,3 +820,54 @@ class SementeSugerida(models.Model):
 
     def __str__(self) -> str:
         return self.texto
+
+
+class SugestaoDeAtualizacao(models.Model):
+    """Um artigo publicado que vale revisar, e o porque.
+
+    Quando o site ja cobriu um nicho, o trabalho passa de criar para
+    atualizar: acrescentar o que o publico passou a perguntar, empurrar para
+    a primeira pagina o que esta quase la, recuperar o que perdeu posicao.
+    """
+
+    class Tipo(models.TextChoices):
+        ACRESCENTAR = "acrescentar", _("Demanda nova sobre o mesmo tema")
+        QUASE_LA = "quase_la", _("Quase na primeira pagina")
+        PERDEU_POSICAO = "perdeu", _("Perdeu posicao")
+
+    class Situacao(models.TextChoices):
+        ABERTA = "aberta", _("Aberta")
+        FEITA = "feita", _("Feita")
+        DISPENSADA = "dispensada", _("Dispensada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    url = models.URLField(_("pagina"), max_length=500)
+    titulo = models.CharField(_("titulo"), max_length=300)
+    artigo = models.ForeignKey(
+        "content.Article",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sugestoes_de_atualizacao",
+        verbose_name=_("artigo"),
+    )
+    tipo = models.CharField(_("tipo"), max_length=12, choices=Tipo.choices)
+    situacao = models.CharField(
+        _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.ABERTA
+    )
+    # Conforme o tipo: {"sinais": [...]}, {"consultas": [...]} ou
+    # {"posicao": 12.3, "posicao_anterior": 7.1}.
+    evidencia = models.JSONField(_("evidencia"), default=dict, blank=True)
+    prioridade = models.FloatField(_("prioridade"), default=0)
+    criada_em = models.DateTimeField(_("criada em"), default=timezone.now)
+    atualizada_em = models.DateTimeField(_("atualizada em"), auto_now=True)
+    decidida_em = models.DateTimeField(_("decidida em"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("sugestao de atualizacao")
+        verbose_name_plural = _("sugestoes de atualizacao")
+        ordering = ["-prioridade"]
+        indexes = [models.Index(fields=["situacao", "url", "tipo"])]
+
+    def __str__(self) -> str:
+        return f"{self.get_tipo_display()}: {self.titulo}"

@@ -1,0 +1,8 @@
+{% load i18n %}
+<nav class="subabas">
+  <a href="{% url 'radar:radar' %}" class="{% if subaba == 'radar' %}ativo{% endif %}">{% translate "Demanda e pautas" %}</a>
+  <a href="{% url 'radar:oportunidades' %}" class="{% if subaba == 'oportunidades' %}ativo{% endif %}">{% translate "Oportunidades" %}</a>
+  <a href="{% url 'radar:atualizacoes' %}" class="{% if subaba == 'atualizacoes' %}ativo{% endif %}">
+    {% translate "Atualizar artigos" %}{% if pendencias.atualizacoes %} <span class="contagem">{{ pendencias.atualizacoes }}</span>{% endif %}
+  </a>
+</nav>

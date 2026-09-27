@@ -41,5 +41,16 @@ urlpatterns = [
         views.decidir_semente_sugerida,
         name="decidir_semente_sugerida",
     ),
+    path("atualizacoes/", views.atualizacoes, name="atualizacoes"),
+    path(
+        "atualizacoes/recalcular/",
+        views.recalcular_atualizacoes,
+        name="recalcular_atualizacoes",
+    ),
+    path(
+        "atualizacoes/<uuid:pk>/decidir/",
+        views.decidir_atualizacao,
+        name="decidir_atualizacao",
+    ),
     path("search-console/", views.coletar_console, name="coletar_console"),
 ]

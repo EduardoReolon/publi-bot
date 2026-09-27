@@ -38,6 +38,7 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
     ).aggregate(urls=Avg("sobreposicao_urls"), dominios=Avg("sobreposicao_dominios"))
     return {
         "aba": "radar",
+        "subaba": "radar",
         "config": config or ConfiguracaoForm(instance=config_obj),
         "contas": contas or ContasForm(instance=contas_obj),
         "contas_obj": contas_obj,
@@ -255,6 +256,9 @@ def coletar_console(request: HttpRequest) -> HttpResponse:
     except ProvedorIndisponivel as exc:
         messages.error(request, str(exc))
     else:
+        from apps.radar.atualizacoes import atualizar_sugestoes
+
+        atualizar_sugestoes()
         messages.success(
             request,
             _("Search Console coletado: %(n)s linhas de %(i)s a %(f)s.")
@@ -284,7 +288,8 @@ def oportunidades(request: HttpRequest) -> HttpResponse:
         request,
         "radar/oportunidades.html",
         {
-            "aba": "oportunidades",
+            "aba": "radar",
+            "subaba": "oportunidades",
             "form": form,
             "ver": ver,
             "situacoes": Oportunidade.Situacao.choices,
@@ -395,3 +400,57 @@ def decidir_semente_sugerida(request: HttpRequest, pk) -> HttpResponse:
         sugestao.situacao = SementeSugerida.Situacao.RECUSADA
         sugestao.save(update_fields=["situacao"])
     return redirect(request.POST.get("voltar") or "radar:radar")
+
+
+# ---------------------------------------------------------------------------
+# Atualizacoes
+# ---------------------------------------------------------------------------
+@login_required
+def atualizacoes(request: HttpRequest) -> HttpResponse:
+    from apps.radar.models import SugestaoDeAtualizacao
+
+    ver = request.GET.get("ver", "aberta")
+    ver = ver if ver in {s.value for s in SugestaoDeAtualizacao.Situacao} else "aberta"
+    return render(
+        request,
+        "radar/atualizacoes.html",
+        {
+            "aba": "radar",
+            "subaba": "atualizacoes",
+            "ver": ver,
+            "situacoes": SugestaoDeAtualizacao.Situacao.choices,
+            "sugestoes": SugestaoDeAtualizacao.objects.filter(situacao=ver)
+            .select_related("artigo")
+            .order_by("-prioridade")[:60],
+        },
+    )
+
+
+@login_required
+@require_POST
+def recalcular_atualizacoes(request: HttpRequest) -> HttpResponse:
+    from apps.radar.atualizacoes import atualizar_sugestoes
+
+    novas = atualizar_sugestoes()
+    messages.success(request, _("%(n)s sugestao(oes) nova(s).") % {"n": novas})
+    return redirect("radar:atualizacoes")
+
+
+@login_required
+@require_POST
+def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
+    from django.utils import timezone
+
+    from apps.radar.models import SugestaoDeAtualizacao
+
+    sugestao = get_object_or_404(SugestaoDeAtualizacao, pk=pk)
+    decisao = request.POST.get("decisao")
+    if decisao == "feita":
+        sugestao.situacao = SugestaoDeAtualizacao.Situacao.FEITA
+    elif decisao == "dispensar":
+        sugestao.situacao = SugestaoDeAtualizacao.Situacao.DISPENSADA
+    else:
+        sugestao.situacao = SugestaoDeAtualizacao.Situacao.ABERTA
+    sugestao.decidida_em = timezone.now()
+    sugestao.save(update_fields=["situacao", "decidida_em", "atualizada_em"])
+    return redirect("radar:atualizacoes")

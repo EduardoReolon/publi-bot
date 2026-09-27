@@ -59,7 +59,16 @@ def contagens_de_pendencia() -> dict[str, int]:
         .count(),
         "falhas": GenerationJob.objects.filter(status=GenerationJob.Status.FAILED).count()
         + Article.objects.filter(status=Article.Status.PUSH_FAILED).count(),
+        "atualizacoes": _atualizacoes_abertas(),
     }
+
+
+def _atualizacoes_abertas() -> int:
+    from apps.radar.models import SugestaoDeAtualizacao
+
+    return SugestaoDeAtualizacao.objects.filter(
+        situacao=SugestaoDeAtualizacao.Situacao.ABERTA
+    ).count()
 
 
 def montar_resumo() -> ResumoDoPainel:
@@ -100,6 +109,12 @@ def montar_resumo() -> ResumoDoPainel:
             rotulo=_("Pautas aprovadas sem artigo"),
             total=_pautas_sem_artigo(),
             url=reverse("content:pautas") + "?situacao=approved",
+        ),
+        Pendencia(
+            rotulo=_("Artigos para atualizar"),
+            total=_atualizacoes_abertas(),
+            url=reverse("radar:atualizacoes"),
+            detalhe=str(_("Demanda nova, quase na primeira pagina ou perda de posicao.")),
         ),
     ]
 

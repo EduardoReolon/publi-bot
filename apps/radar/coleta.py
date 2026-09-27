@@ -463,6 +463,9 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
 
         resumo["oportunidades"] = atualizar_oportunidades()
         resumo["sementes_sugeridas"] = sugerir_pelo_radar()
+        from apps.radar.atualizacoes import atualizar_sugestoes
+
+        resumo["atualizacoes"] = atualizar_sugestoes()
     except custos.TetoAtingido as exc:
         return _encerrar(rodada, RodadaDoRadar.Situacao.PARADA_NO_TETO, str(exc))
     except Exception as exc:

@@ -1,0 +1,70 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Atualizar artigos" %} · PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+{% include "radar/_abas.html" %}
+<h1>{% translate "Atualizar artigos" %}</h1>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    Quando o site ja cobriu um assunto, parte do trabalho passa de criar para
+    atualizar — e pagina que melhora sobe. Tres motivos aparecem aqui:
+    <strong>demanda nova</strong> sobre um tema que um artigo seu ja trata (o
+    radar nao criou pauta para nao competir com ele), <strong>quase na primeira
+    pagina</strong> (posicao 8 a 20 no Search Console) e <strong>perda de
+    posicao</strong> de um retrato para o outro. Atualize o artigo no site e
+    marque como feita: a mesma sugestao so volta em 60 dias, o tempo de o
+    Google reavaliar.
+  {% endblocktranslate %}
+</div>
+
+<div class="acoes">
+  <nav class="abas">
+    {% for valor, rotulo in situacoes %}
+      <a href="?ver={{ valor }}" class="{% if ver == valor %}ativo{% endif %}">{{ rotulo }}</a>
+    {% endfor %}
+  </nav>
+  <form method="post" action="{% url 'radar:recalcular_atualizacoes' %}">
+    {% csrf_token %}<button type="submit" class="botao secundario">{% translate "Procurar agora" %}</button>
+  </form>
+</div>
+
+{% for s in sugestoes %}
+  <article class="secao atualizacao tipo-{{ s.tipo }}">
+    <header class="cabeca-oportunidade">
+      <div>
+        <span class="selo {% if s.tipo == 'perdeu' %}ruim{% elif s.tipo == 'quase_la' %}ok{% else %}espera{% endif %}">{{ s.get_tipo_display }}</span>
+        <h3><a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.titulo }}</a></h3>
+        {% if s.artigo %}<a class="ajuda" href="{% url 'content:revisar' s.artigo.pk %}">{% translate "abrir no PubliBot" %}</a>{% endif %}
+      </div>
+    </header>
+
+    {% if s.tipo == "acrescentar" %}
+      <p>{% blocktranslate with tema=s.evidencia.tema trimmed %}O publico passou a procurar <strong>{{ tema }}</strong>. Responda estas perguntas no artigo, numa secao nova ou no FAQ:{% endblocktranslate %}</p>
+      <ul class="sinais">
+        {% for sinal in s.evidencia.sinais %}<li>{{ sinal.texto }}{% if sinal.volume %} <span class="ajuda">{{ sinal.volume }}/{% translate "mes" %}</span>{% endif %}</li>{% endfor %}
+      </ul>
+    {% elif s.tipo == "quase_la" %}
+      <p>{% blocktranslate with n=s.evidencia.impressoes trimmed %}A pagina aparece entre a 8a e a 20a posicao para estas buscas ({{ n }} impressoes no periodo). Deixe a resposta a elas mais completa e mais visivel — no titulo de uma secao, no inicio do texto:{% endblocktranslate %}</p>
+      <ul class="sinais">
+        {% for c in s.evidencia.consultas %}<li>{{ c.consulta }} <span class="ajuda">{% translate "posicao" %} {{ c.posicao }} · {{ c.impressoes }} {% translate "impressoes" %}</span></li>{% endfor %}
+      </ul>
+    {% else %}
+      <p>{% blocktranslate with a=s.evidencia.posicao_anterior b=s.evidencia.posicao trimmed %}A posicao media caiu de <strong>{{ a }}</strong> para <strong>{{ b }}</strong>. Confira se as fontes e os dados ainda valem, e compare com quem passou na frente.{% endblocktranslate %}</p>
+    {% endif %}
+
+    <div class="acoes">
+      {% if s.situacao == "aberta" %}
+        <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="feita"><button type="submit">{% translate "Atualizei" %}</button></form>
+        <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="dispensar"><button type="submit" class="botao discreto">{% translate "Dispensar" %}</button></form>
+      {% else %}
+        <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="reabrir"><button type="submit" class="botao secundario">{% translate "Reabrir" %}</button></form>
+      {% endif %}
+    </div>
+  </article>
+{% empty %}
+  <div class="vazio-grande">
+    {% translate "Nada para atualizar agora. As sugestoes aparecem depois das rodadas do radar e das coletas do Search Console." %}
+  </div>
+{% endfor %}
+{% endblock %}
