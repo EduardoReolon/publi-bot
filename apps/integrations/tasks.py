@@ -59,7 +59,11 @@ def publish_content(self, tipo: str, identificador: str) -> str:
     from apps.content.models import Answer, Article
     from apps.integrations.errors import SiteTransientError
     from apps.integrations.models import Site
-    from apps.integrations.publishing import publicar_artigo, publicar_resposta
+    from apps.integrations.publishing import (
+        PublicacaoBloqueada,
+        publicar_artigo,
+        publicar_resposta,
+    )
 
     site = Site.objects.first()
     if site is None:
@@ -73,6 +77,23 @@ def publish_content(self, tipo: str, identificador: str) -> str:
 
         try:
             publicar_artigo(artigo, site)
+        except PublicacaoBloqueada as exc:
+            # Condicao do produto (site sem o recurso, estado errado), nao da
+            # rede: repetir daria o mesmo. Fica visivel como falha, com o motivo.
+            if artigo.status == Article.Status.APPROVED_SCHEDULED:
+                artigo.status = Article.Status.PUSH_FAILED
+                artigo.last_publish_error = str(exc)[:2000]
+                artigo.last_error_code = "blocked"
+                artigo.next_retry_at = None
+                artigo.save(
+                    update_fields=[
+                        "status",
+                        "last_publish_error",
+                        "last_error_code",
+                        "next_retry_at",
+                    ]
+                )
+            return "bloqueado"
         except SiteTransientError as exc:
             # `countdown` a partir do proprio erro respeita o `Retry-After` que
             # o site informou: ele sabe melhor quando volta a aceitar.

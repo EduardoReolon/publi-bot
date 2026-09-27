@@ -284,7 +284,11 @@ def desempenho_dos_artigos(limite: int = 30) -> list[dict]:
         return agregado
 
     saida = []
-    artigos = Article.objects.exclude(published_url="").order_by("-published_at")[:limite]
+    artigos = (
+        Article.objects.filter(status=Article.Status.PUBLISHED)
+        .exclude(published_url="")
+        .order_by("-published_at")[:limite]
+    )
     for artigo in artigos:
         atual = totais(coletas[0], artigo.published_url)
         anterior = totais(coletas[1], artigo.published_url) if len(coletas) > 1 else {}

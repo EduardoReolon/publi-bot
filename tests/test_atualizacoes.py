@@ -30,7 +30,9 @@ URL = "https://site.exemplo.com.br/como-calcular-bdi"
 def _artigo(titulo="Como calcular o BDI de obra", url=URL):
     from apps.content.models import Article
 
-    return Article.objects.create(title=titulo, published_url=url, published_at=timezone.now())
+    return Article.objects.create(
+        title=titulo, published_url=url, published_at=timezone.now(), status="published"
+    )
 
 
 def _coleta(dias_atras, linhas):

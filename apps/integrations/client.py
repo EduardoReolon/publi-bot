@@ -10,6 +10,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from django.conf import settings
@@ -230,6 +231,41 @@ class SiteClient:
             # O site devolve 200 quando a chave se repete, em vez de criar de
             # novo. O SaaS trata 200 e 409 como sucesso.
             ja_existia=dados.get("status") == "already_exists",
+            precisa_da_foto=bool(dados.get("author_photo_required")),
+        )
+
+    def update(
+        self, remote_id: str, payload: dict, *, idempotency_key: str
+    ) -> RespostaDePublicacao:
+        """Substitui o conteudo de uma publicacao existente (recurso `update`).
+
+        A chave e a da VERSAO nova, reenviada identica em toda tentativa: o
+        site devolve `already_applied` se a atualizacao ja tinha sido aplicada
+        e so a resposta se perdeu. Por isso nao ha reconciliacao aqui.
+        """
+        if not settings.PUBLISHING_ENABLED:
+            raise SitePermanentError(
+                "publicacao desligada globalmente (PUBLISHING_ENABLED)",
+                code="publishing_disabled",
+            )
+        if self.site.publishing_paused:
+            raise SitePermanentError(
+                f"publicacao pausada para {self.site.name!r}", code="publishing_paused"
+            )
+        dados = self._requisitar(
+            "PUT",
+            f"/publications/{quote(str(remote_id), safe='')}/",
+            json=payload,
+            headers={"Idempotency-Key": str(idempotency_key)},
+        )
+        return RespostaDePublicacao(
+            status=dados.get("status", "updated"),
+            remote_id=str(dados.get("remote_id", remote_id)),
+            url=dados.get("url", ""),
+            slug=dados.get("slug", ""),
+            post_status=dados.get("post_status", ""),
+            published_at=dados.get("published_at"),
+            ja_existia=dados.get("status") == "already_applied",
             precisa_da_foto=bool(dados.get("author_photo_required")),
         )
 

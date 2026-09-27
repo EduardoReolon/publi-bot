@@ -2,9 +2,10 @@
 
 Tres motivos, cada um com evidencia na tela:
 
-* **acrescentar**: um tema com demanda que a canibalizacao barrou de virar
-  pauta — perto demais de um artigo que ja existe. Em vez de descartar, o
-  radar aponta QUAL artigo deveria responder aquelas perguntas;
+* **acrescentar**: demanda nova que o artigo deveria responder. Duas vias:
+  o artigo com idade minima vigia os temas novos (com volume, tao perto dele
+  quanto o tema que o originou — a distancia de referencia); e um tema que a
+  canibalizacao barrou de virar pauta aponta a pagina que ja o cobre;
 * **quase la**: a pagina aparece entre a 8a e a 20a posicao para buscas com
   impressoes (Search Console). E o empurrao mais barato que existe;
 * **perdeu posicao**: a posicao media piorou 3 ou mais de um retrato do
@@ -45,7 +46,8 @@ def paginas_publicadas() -> list[dict]:
     from apps.integrations.models import SitePost
 
     vistas: dict[str, dict] = {}
-    for artigo in Article.objects.exclude(published_url=""):
+    # So a versao que esta no ar: as substituidas tem o mesmo endereco.
+    for artigo in Article.objects.filter(status=Article.Status.PUBLISHED).exclude(published_url=""):
         vistas[_chave(artigo.published_url)] = {
             "url": artigo.published_url,
             "titulo": artigo.title,
@@ -87,6 +89,135 @@ def _sugerir(pagina: dict, tipo: str, evidencia: dict, prioridade: float) -> boo
         prioridade=prioridade,
     )
     return True
+
+
+# A referencia nunca fica mais exigente que isto (um artigo que encaixou
+# perfeito no tema de origem nao pode exigir perfeicao dos temas novos) nem mais
+# frouxa que a canibalizacao (ai ja seria outro assunto).
+LIMIAR_MINIMO = 0.10
+LIMIAR_MAXIMO = 0.16
+VOLUME_PARA_AMPLIAR = 30
+
+
+def _texto_do_artigo(artigo) -> str:
+    partes = [artigo.title, artigo.focus_keyword, *(artigo.secondary_keywords or [])]
+    partes += list(artigo.sections.values_list("heading", flat=True)[:20])
+    return ". ".join(p for p in partes if p)
+
+
+def _primeira_publicacao(artigo):
+    """A data em que a PAGINA foi ao ar: a da versao 1, nao a da ultima."""
+    atual = artigo
+    while atual.previous_version_id:
+        atual = atual.previous_version
+    return atual.published_at
+
+
+def vigia_de(artigo):
+    """A vigia do artigo, criada na primeira vez com a distancia de referencia.
+
+    Referencia: a distancia entre o artigo e o tema que o originou (o grupo do
+    radar que virou a pauta dele). Versao nova herda a referencia da anterior:
+    o tema de origem e o mesmo.
+    """
+    from apps.radar.agrupamento import _distancia, _vetor
+    from apps.radar.models import VigiaDeArtigo
+
+    vigia = VigiaDeArtigo.objects.filter(artigo=artigo).first()
+    if vigia is not None:
+        return vigia
+    vetor = _vetor(_texto_do_artigo(artigo))
+    grupo, distancia = None, None
+    anterior = (
+        getattr(artigo.previous_version, "vigia", None) if artigo.previous_version_id else None
+    )
+    if anterior is not None:
+        grupo, distancia = anterior.grupo_de_referencia, anterior.distancia_de_referencia
+    elif artigo.topic_id:
+        grupo = (
+            GrupoDeDemanda.objects.filter(pauta_id=artigo.topic_id)
+            .exclude(centroide__isnull=True)
+            .first()
+        )
+        if grupo is not None:
+            distancia = _distancia(vetor, np.asarray(grupo.centroide, dtype=np.float32))
+    return VigiaDeArtigo.objects.create(
+        artigo=artigo,
+        vetor=vetor.tolist(),
+        grupo_de_referencia=grupo,
+        distancia_de_referencia=distancia,
+    )
+
+
+def pela_proximidade(paginas: list[dict]) -> set[str]:
+    """Artigos com idade minima: temas novos, com volume, perto como a referencia.
+
+    Devolve as URLs que ganharam sugestao, para a canibalizacao nao repetir.
+    """
+    from apps.radar.agrupamento import _distancia
+    from apps.radar.models import ConfiguracaoDoRadar, SinalDeDemanda
+
+    idade = timezone.timedelta(days=ConfiguracaoDoRadar.carregar().idade_para_vigiar)
+    limite_de_data = timezone.now() - idade
+    grupos = [
+        (g, np.asarray(g.centroide, dtype=np.float32))
+        for g in GrupoDeDemanda.objects.filter(
+            situacao=GrupoDeDemanda.Situacao.NOVO, volume_total__gte=VOLUME_PARA_AMPLIAR
+        ).exclude(centroide__isnull=True)
+    ]
+    atendidas: set[str] = set()
+    if not grupos:
+        return atendidas
+    for pagina in paginas:
+        artigo = pagina["artigo"]
+        if artigo is None:
+            continue
+        publicado = _primeira_publicacao(artigo)
+        if publicado is None or publicado > limite_de_data:
+            continue
+        vigia = vigia_de(artigo)
+        vetor = np.asarray(vigia.vetor, dtype=np.float32)
+        referencia = vigia.distancia_de_referencia
+        limiar = min(LIMIAR_MAXIMO, max(LIMIAR_MINIMO, referencia if referencia is not None else 0))
+        perto = sorted(
+            (
+                (d, g)
+                for g, c in grupos
+                if g.pk != vigia.grupo_de_referencia_id and (d := _distancia(vetor, c)) <= limiar
+            ),
+            key=lambda x: (-(x[1].volume_total or 0), x[0]),
+        )[:3]
+        if not perto:
+            continue
+        temas, sinais = [], []
+        for distancia, grupo in perto:
+            temas.append(
+                {
+                    "tema": grupo.rotulo,
+                    "volume": grupo.volume_total,
+                    "distancia": round(distancia, 3),
+                }
+            )
+            sinais += list(
+                grupo.sinais.exclude(situacao=SinalDeDemanda.Situacao.DESCARTADO)
+                .order_by("-volume")
+                .values("texto", "volume", "fonte")[:5]
+            )
+        evidencia = {
+            "tema": temas[0]["tema"],
+            "volume": sum(t["volume"] or 0 for t in temas),
+            "temas": temas,
+            "sinais": sinais[:10],
+            "referencia": round(referencia, 3) if referencia is not None else None,
+        }
+        _sugerir(
+            pagina,
+            SugestaoDeAtualizacao.Tipo.ACRESCENTAR,
+            evidencia,
+            max(g.nota for _d, g in perto),
+        )
+        atendidas.add(_chave(pagina["url"]))
+    return atendidas
 
 
 def pela_canibalizacao(paginas: list[dict]) -> int:
@@ -185,5 +316,9 @@ def _posicao(coleta: ColetaDoConsole, url: str) -> float | None:
 
 
 def atualizar_sugestoes() -> int:
+    antes = SugestaoDeAtualizacao.objects.count()
     paginas = paginas_publicadas()
-    return pela_canibalizacao(paginas) + pelo_search_console(paginas)
+    atendidas = pela_proximidade(paginas)
+    pela_canibalizacao([p for p in paginas if _chave(p["url"]) not in atendidas])
+    pelo_search_console(paginas)
+    return SugestaoDeAtualizacao.objects.count() - antes

@@ -16,7 +16,42 @@
     {% if artigo.human_edit_ratio %}
       <span class="selo">{{ artigo.human_edit_ratio|floatformat:2 }} {% translate "editado" %}</span>
     {% endif %}
+    {% if artigo.version_number > 1 %}<span class="selo espera">{% translate "versao" %} {{ artigo.version_number }}</span>{% endif %}
   </p>
+
+  {% if artigo.previous_version %}
+    <div class="explica">
+      {% blocktranslate trimmed with n=artigo.version_number %}
+        Esta e a <strong>versao {{ n }}</strong> de um artigo que ja esta no ar. Aprovada,
+        ela substitui o conteudo da MESMA pagina (mesmo endereco), sem esperar a
+        cadencia.
+      {% endblocktranslate %}
+      <a href="{% url 'content:revisar' artigo.previous_version.pk %}">{% translate "ver a versao anterior" %}</a>
+      {% if artigo.published_url %} · <a href="{{ artigo.published_url }}" target="_blank" rel="noopener noreferrer">{% translate "ver no site" %}</a>{% endif %}
+      {% if artigo.update_notes %}
+        <p style="margin-bottom:0"><strong>{% translate "O que atualizar" %}:</strong></p>
+        <pre style="white-space:pre-wrap;font:inherit;margin:.3rem 0 0">{{ artigo.update_notes }}</pre>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if artigo.status == 'published' or artigo.status == 'superseded' %}
+    <div class="aviso">
+      {% with aberta=artigo.versao_em_aberto %}
+        {% if aberta %}
+          {% translate "Ha uma versao nova deste artigo em andamento." %}
+          <a href="{% url 'content:revisar' aberta.pk %}">{% translate "Abrir a versao" %} {{ aberta.version_number }}</a>
+        {% elif artigo.status == 'published' %}
+          {% translate "Artigo no ar. Para melhorar, crie uma versao nova: ela passa pela revisao e substitui esta pagina no site." %}
+          <form method="post" action="{% url 'content:nova_versao' artigo.pk %}" style="display:inline">
+            {% csrf_token %}<button type="submit" class="pequeno">{% translate "Criar versao nova" %}</button>
+          </form>
+        {% else %}
+          {% translate "Esta versao foi substituida por uma mais nova." %}
+        {% endif %}
+      {% endwith %}
+    </div>
+  {% endif %}
 
   {% if artigo.exige_confirmacao_de_divergencia %}
     {% comment %}

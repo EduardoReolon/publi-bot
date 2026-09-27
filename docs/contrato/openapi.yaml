@@ -189,7 +189,7 @@ components:
       type: object
       required: [status, remote_id, url]
       properties:
-        status: { type: string, enum: [success, already_exists] }
+        status: { type: string, enum: [success, already_exists, updated, already_applied] }
         remote_id:
           type: string
           description: |
@@ -200,6 +200,10 @@ components:
         slug: { type: string }
         post_status: { type: string }
         published_at: { type: string, format: date-time }
+        version:
+          type: integer
+          description: Recurso `update`. 1 na criacao; +1 a cada atualizacao aplicada.
+        updated_at: { type: string, format: date-time, nullable: true }
         author_photo_required:
           type: boolean
           default: false
@@ -491,3 +495,57 @@ paths:
                   results:
                     type: array
                     items: { $ref: "#/components/schemas/RespostaDePublicacao" }
+
+  /publications/{remote_id}/:
+    put:
+      summary: Substitui o conteudo de um artigo ja publicado
+      description: |
+        Recurso `update`. O corpo e o MESMO de `POST /publish/` (`type:
+        article`), e substitui o conteudo inteiro — nao e atualizacao parcial.
+
+        O endereco da pagina NAO muda: ignore o `slug` recebido. A pagina ja
+        acumulou links e posicao no Google com aquele endereco; trocar a URL
+        numa atualizacao jogaria isso fora. Se o seu site precisar mudar o
+        endereco, responda a URL nova e redirecione a antiga com 301.
+
+        Idempotente por `Idempotency-Key`: a mesma chave da ultima atualizacao
+        aplicada devolve `already_applied` com o estado atual, sem aplicar de
+        novo. Chave nova aplica. Guarde ao menos a ultima chave por
+        publicacao.
+      parameters:
+        - $ref: "#/components/parameters/Idempotencia"
+        - { name: remote_id, in: path, required: true, schema: { type: string },
+            description: "O `remote_id` devolvido por /publish/." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublicacaoDeArtigo" }
+      responses:
+        "200":
+          description: Atualizado (`updated`) ou ja aplicado (`already_applied`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RespostaDePublicacao" }
+        "401":
+          description: Chave ou assinatura invalida. Mesmo corpo para todos os casos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "404":
+          description: Nenhuma publicacao com esse `remote_id`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "422":
+          description: Conteudo recusado pela sanitizacao
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "429":
+          description: Limite excedido
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }

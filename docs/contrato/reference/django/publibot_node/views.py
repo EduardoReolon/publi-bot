@@ -12,7 +12,7 @@ from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from publibot_node import RECURSOS, VERSAO, VERSOES_DO_CONTRATO
 from publibot_node.auth import conferir_assinatura
@@ -178,8 +178,7 @@ def publish(request):
         )
 
     try:
-        html = sanitizar(dados.get("html_content", ""))
-        faq = _faq_sanitizado(dados.get("faq"))
+        campos = _campos_do_conteudo(dados)
     except ConteudoRecusado as exc:
         return _erro("content_rejected", str(exc), 422)
     except ValueError as exc:
@@ -194,29 +193,11 @@ def publish(request):
             publicacao = ReceivedPublication.objects.create(
                 idempotency_key=chave,
                 kind=tipo,
-                title=sanitizar_texto(dados.get("title", "")),
                 slug=dados.get("slug", "")[:300],
-                html_content=html,
-                excerpt=sanitizar_texto(dados.get("excerpt", ""), limite=1000),
-                meta_description=sanitizar_texto(dados.get("meta_description", ""), limite=160),
-                focus_keyword=sanitizar_texto(dados.get("focus_keyword", ""), limite=120),
-                language=dados.get("language", "pt-br")[:10],
-                author_name=sanitizar_texto(autor.get("name", ""), limite=150),
-                author_credentials=sanitizar_texto(autor.get("credentials", ""), limite=200),
-                author_reference=_uuid_ou_nada(autor.get("reference")),
-                reviewed_by=sanitizar_texto(dados.get("reviewed_by", ""), limite=150),
-                reviewed_at=dados.get("reviewed_at") or None,
-                content_disclosure=sanitizar_texto(dados.get("content_disclosure", ""), limite=500),
-                canonical_source=dados.get("canonical_source", "")[:500],
-                cover_image_url=(dados.get("cover_image") or {}).get("url", "")[:500],
-                cover_image_alt=sanitizar_texto(
-                    (dados.get("cover_image") or {}).get("alt_text", "")
-                ),
-                faq=faq,
                 question_id=str(dados.get("question_id", ""))[:120],
-                post_status=dados.get("status", "published")[:20],
                 publish_at=dados.get("publish_at") or None,
                 published_at=timezone.now() if dados.get("status") == "published" else None,
+                **campos,
             )
     except IntegrityError:
         # Duas requisicoes simultaneas com a mesma chave: a restricao UNICA do
@@ -231,6 +212,90 @@ def publish(request):
         VisitorQuestion.objects.filter(id=publicacao.question_id).update(answered_at=timezone.now())
 
     return JsonResponse(_resposta(publicacao, quer_foto=quer_foto), status=201)
+
+
+def _campos_do_conteudo(dados: dict) -> dict:
+    """Os campos de conteudo, sanitizados: os mesmos na publicacao e na
+    atualizacao. Levanta `ConteudoRecusado` (422) ou `ValueError` (400)."""
+    autor = dados.get("author") or {}
+    capa = dados.get("cover_image") or {}
+    return {
+        "title": sanitizar_texto(dados.get("title", "")),
+        "html_content": sanitizar(dados.get("html_content", "")),
+        "excerpt": sanitizar_texto(dados.get("excerpt", ""), limite=1000),
+        "meta_description": sanitizar_texto(dados.get("meta_description", ""), limite=160),
+        "focus_keyword": sanitizar_texto(dados.get("focus_keyword", ""), limite=120),
+        "language": dados.get("language", "pt-br")[:10],
+        "author_name": sanitizar_texto(autor.get("name", ""), limite=150),
+        "author_credentials": sanitizar_texto(autor.get("credentials", ""), limite=200),
+        "author_reference": _uuid_ou_nada(autor.get("reference")),
+        "reviewed_by": sanitizar_texto(dados.get("reviewed_by", ""), limite=150),
+        "reviewed_at": dados.get("reviewed_at") or None,
+        "content_disclosure": sanitizar_texto(dados.get("content_disclosure", ""), limite=500),
+        "canonical_source": dados.get("canonical_source", "")[:500],
+        "cover_image_url": capa.get("url", "")[:500],
+        "cover_image_alt": sanitizar_texto(capa.get("alt_text", "")),
+        "faq": _faq_sanitizado(dados.get("faq")),
+        "post_status": dados.get("status", "published")[:20],
+    }
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def update_publication(request, remote_id):
+    """Substitui o conteudo de uma publicacao existente. Recurso `update`.
+
+    Substituicao inteira, e nao parcial: o corpo e o mesmo de /publish/. O
+    endereco NAO muda — o slug recebido e ignorado —, porque a pagina ja
+    acumulou links e posicao no Google com aquele endereco.
+
+    Idempotente por `Idempotency-Key`: reenviar a chave da ultima atualizacao
+    devolve o estado atual, sem aplicar de novo (o caso do timeout em que a
+    resposta se perdeu).
+    """
+    bloqueio = _proteger(request, limite=LIMITE_DE_PUBLICACAO_POR_MINUTO)
+    if bloqueio is not None:
+        return bloqueio
+
+    if len(request.body) > TAMANHO_MAXIMO_DO_CORPO:
+        return _erro("payload_too_large", "Corpo excede o limite.", 413)
+
+    chave = _uuid_ou_nada(request.headers.get("Idempotency-Key", ""))
+    if chave is None:
+        return _erro("invalid_payload", "Cabecalho Idempotency-Key obrigatorio.", 400)
+
+    publicacao = ReceivedPublication.objects.filter(
+        id=_uuid_ou_nada(remote_id), kind=ReceivedPublication.Kind.ARTICLE
+    ).first()
+    if publicacao is None:
+        return _erro("not_found", "Publicacao inexistente.", 404)
+
+    if publicacao.last_update_key == chave:
+        return JsonResponse(_resposta(publicacao, status="already_applied"), status=200)
+
+    try:
+        dados = json.loads(request.body)
+        campos = _campos_do_conteudo(dados)
+    except json.JSONDecodeError:
+        return _erro("invalid_payload", "Corpo nao e JSON valido.", 400)
+    except ConteudoRecusado as exc:
+        return _erro("content_rejected", str(exc), 422)
+    except ValueError as exc:
+        return _erro("invalid_payload", str(exc), 400)
+
+    with transaction.atomic():
+        atual = ReceivedPublication.objects.select_for_update().get(pk=publicacao.pk)
+        for campo, valor in campos.items():
+            setattr(atual, campo, valor)
+        atual.version += 1
+        atual.updated_at = timezone.now()
+        atual.last_update_key = chave
+        atual.save()
+
+    return JsonResponse(
+        _resposta(atual, status="updated", quer_foto=_precisa_da_foto(dados.get("author") or {})),
+        status=200,
+    )
 
 
 MAXIMO_DE_PERGUNTAS = 20
@@ -294,6 +359,8 @@ def _resposta(
         "slug": publicacao.slug,
         "post_status": publicacao.post_status,
         "published_at": publicacao.published_at.isoformat() if publicacao.published_at else None,
+        "version": publicacao.version,
+        "updated_at": publicacao.updated_at.isoformat() if publicacao.updated_at else None,
         "author_photo_required": quer_foto,
     }
 

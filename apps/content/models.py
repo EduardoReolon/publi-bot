@@ -335,6 +335,8 @@ class Article(models.Model):
         PUBLISHED = "published", _("Publicado")
         PUSH_FAILED = "push_failed", _("Falha na publicacao")
         REJECTED = "rejected", _("Rejeitado")
+        # Uma versao nova deste artigo foi publicada no lugar dele.
+        SUPERSEDED = "superseded", _("Substituido por versao nova")
 
     class Consensus(models.TextChoices):
         HIGH = "high", _("Concordancia alta")
@@ -486,6 +488,24 @@ class Article(models.Model):
     last_error_code = models.CharField(_("codigo do erro"), max_length=40, blank=True)
     next_retry_at = models.DateTimeField(_("proxima tentativa"), null=True, blank=True)
 
+    # --- Versoes -------------------------------------------------------------
+    # Atualizar um artigo publicado cria uma linha NOVA, que aponta para a
+    # anterior: o que saiu no ar continua guardado como saiu. A versao nova
+    # herda o `remote_id` e vai ao site pela rota de atualizacao, e nao por
+    # /publish/ — e a MESMA pagina, com o mesmo endereco.
+    previous_version = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="next_versions",
+        verbose_name=_("versao anterior"),
+    )
+    version_number = models.PositiveSmallIntegerField(_("versao"), default=1)
+    # O que motivou a versao: perguntas novas, consultas do Search Console,
+    # perda de posicao. Aparece na revisao, para quem edita saber o que mudar.
+    update_notes = models.TextField(_("o que atualizar"), blank=True)
+
     created_at = models.DateTimeField(_("criado em"), default=timezone.now)
     updated_at = models.DateTimeField(_("atualizado em"), auto_now=True)
 
@@ -500,6 +520,22 @@ class Article(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+    @property
+    def e_atualizacao(self) -> bool:
+        """Versao nova de um artigo que ja esta no ar."""
+        return self.previous_version_id is not None and bool(self.remote_id)
+
+    @property
+    def versao_em_aberto(self):
+        """A versao seguinte ainda nao publicada, se houver uma."""
+        return (
+            self.next_versions.exclude(
+                status__in=[self.Status.PUBLISHED, self.Status.REJECTED, self.Status.SUPERSEDED]
+            )
+            .order_by("-created_at")
+            .first()
+        )
 
     @property
     def exige_confirmacao_de_divergencia(self) -> bool:

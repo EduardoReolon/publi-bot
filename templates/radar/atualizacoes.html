@@ -12,9 +12,11 @@
     <strong>demanda nova</strong> sobre um tema que um artigo seu ja trata (o
     radar nao criou pauta para nao competir com ele), <strong>quase na primeira
     pagina</strong> (posicao 8 a 20 no Search Console) e <strong>perda de
-    posicao</strong> de um retrato para o outro. Atualize o artigo no site e
-    marque como feita: a mesma sugestao so volta em 60 dias, o tempo de o
-    Google reavaliar.
+    posicao</strong> de um retrato para o outro. Artigo feito pelo PubliBot se
+    atualiza aqui mesmo: vira uma versao nova, com o motivo anotado, que passa
+    pela revisao e substitui a pagina no site. Publicacao feita por fora, voce
+    atualiza no site e marca como feita. A mesma sugestao so volta em 60 dias, o
+    tempo de o Google reavaliar.
   {% endblocktranslate %}
 </div>
 
@@ -55,7 +57,12 @@
 
     <div class="acoes">
       {% if s.situacao == "aberta" %}
-        <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="feita"><button type="submit">{% translate "Atualizei" %}</button></form>
+        {% if s.artigo %}
+          <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="versao"><button type="submit">{% translate "Atualizar no PubliBot" %}</button></form>
+          <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="feita"><button type="submit" class="botao secundario">{% translate "Ja atualizei no site" %}</button></form>
+        {% else %}
+          <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="feita"><button type="submit">{% translate "Atualizei" %}</button></form>
+        {% endif %}
         <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="dispensar"><button type="submit" class="botao discreto">{% translate "Dispensar" %}</button></form>
       {% else %}
         <form method="post" action="{% url 'radar:decidir_atualizacao' s.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="reabrir"><button type="submit" class="botao secundario">{% translate "Reabrir" %}</button></form>

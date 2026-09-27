@@ -62,6 +62,13 @@ class ReceivedPublication(models.Model):
 
     created_at = models.DateTimeField(default=timezone.now)
 
+    # Atualizacao (recurso `update`): quantas vezes o conteudo foi substituido,
+    # quando, e a chave da ultima substituicao — reenviar a mesma chave nao
+    # aplica de novo, devolve o que ja esta.
+    version = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(null=True, blank=True)
+    last_update_key = models.UUIDField(null=True, blank=True)
+
     class Meta:
         verbose_name = "publicacao recebida"
         verbose_name_plural = "publicacoes recebidas"

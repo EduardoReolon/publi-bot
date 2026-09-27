@@ -113,6 +113,17 @@ class ConfiguracaoDoRadar(models.Model):
     )
 
     # --- Concorrentes ----------------------------------------------------------
+    idade_para_vigiar = models.PositiveSmallIntegerField(
+        _("vigiar artigos publicados ha mais de (dias)"),
+        default=45,
+        help_text=_(
+            "Depois dessa idade, o radar compara cada artigo com os temas novos: "
+            "demanda com volume tao perto do artigo quanto o tema que o originou "
+            "vira sugestao de ampliar. Antes disso o Google ainda esta avaliando a "
+            "pagina, e mexer atrapalha."
+        ),
+    )
+
     concorrentes = models.TextField(
         _("concorrentes"),
         blank=True,
@@ -871,3 +882,39 @@ class SugestaoDeAtualizacao(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_tipo_display()}: {self.titulo}"
+
+
+class VigiaDeArtigo(models.Model):
+    """O que um artigo publicado cobre, para perceber demanda nova perto dele.
+
+    Na publicacao, o artigo e comparado com o tema que o originou: essa e a
+    distancia de REFERENCIA — o quanto o texto "encaixa" na demanda para a qual
+    foi escrito. Depois, a cada rodada, um tema com volume que fique TAO perto
+    quanto essa referencia (ou mais) e demanda que o artigo deveria responder.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    artigo = models.OneToOneField(
+        "content.Article",
+        on_delete=models.CASCADE,
+        related_name="vigia",
+        verbose_name=_("artigo"),
+    )
+    vetor = VectorField(_("vetor"), dimensions=settings.EMBEDDING_DIM, null=True, blank=True)
+    distancia_de_referencia = models.FloatField(_("distancia de referencia"), null=True, blank=True)
+    grupo_de_referencia = models.ForeignKey(
+        GrupoDeDemanda,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("tema de referencia"),
+    )
+    calculado_em = models.DateTimeField(_("calculado em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("vigia de artigo")
+        verbose_name_plural = _("vigias de artigo")
+
+    def __str__(self) -> str:
+        return str(self.artigo)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import time
 import uuid
 
@@ -63,6 +64,9 @@ class ClienteSeguro:
 
     def post(self, path, data=None, content_type=None, **extra):
         return self._client.post(path, data=data, content_type=content_type, secure=True, **extra)
+
+    def put(self, path, data=None, content_type=None, **extra):
+        return self._client.put(path, data=data, content_type=content_type, secure=True, **extra)
 
 
 @pytest.fixture
@@ -584,8 +588,10 @@ def test_toda_rota_do_openapi_existe_no_no_de_referencia():
     especificadas = set(yaml.safe_load(_ler_contrato("openapi.yaml"))["paths"])
 
     resolver = get_resolver("core.urls_contract_test")
+    # `publications/<str:remote_id>/` no Django e `/publications/{remote_id}/`
+    # no OpenAPI: a mesma rota, em duas notacoes.
     implementadas = {
-        "/" + padrao.pattern._route.removeprefix("api/v1/")
+        re.sub(r"<(?:\w+:)?(\w+)>", r"{\1}", "/" + padrao.pattern._route.removeprefix("api/v1/"))
         for lista in resolver.url_patterns
         for padrao in getattr(lista, "url_patterns", [])
         if hasattr(padrao.pattern, "_route")
@@ -606,3 +612,92 @@ def test_as_capacidades_declaradas_sao_as_que_o_openapi_conhece():
     conhecidas = set(corpo["properties"]["capabilities"]["items"]["enum"])
 
     assert set(RECURSOS) <= conhecidas, set(RECURSOS) - conhecidas
+
+
+
+# ---------------------------------------------------------------------------
+# Atualizacao (recurso `update`)
+# ---------------------------------------------------------------------------
+def _atualizar(cliente, remote_id: str, payload: dict, *, chave_idem: str | None = None):
+    corpo = json.dumps(payload).encode()
+    chave_idem = chave_idem or str(uuid.uuid4())
+    cabecalhos = _assinar(corpo)
+    cabecalhos["HTTP_IDEMPOTENCY_KEY"] = chave_idem
+    return cliente.put(
+        f"/api/v1/publications/{remote_id}/",
+        data=corpo,
+        content_type="application/json",
+        **cabecalhos,
+    ), chave_idem
+
+
+def test_atualizacao_substitui_o_conteudo_e_mantem_o_endereco(no_receptor):
+    from publibot_node.models import ReceivedPublication
+
+    resposta, _ = _publicar(no_receptor, PAYLOAD)
+    original = resposta.json()
+
+    nova = {
+        **PAYLOAD,
+        "title": "Monitoramento na gestacao, atualizado",
+        "slug": "outro-slug-que-deve-ser-ignorado",
+        "html_content": "<h2>Novo</h2><p>Secao nova.</p>",
+        "faq": [{"question": "E no terceiro trimestre?", "answer_html": "<p>Tambem.</p>"}],
+    }
+    resposta, _ = _atualizar(no_receptor, original["remote_id"], nova)
+
+    assert resposta.status_code == 200
+    dados = resposta.json()
+    assert dados["status"] == "updated"
+    assert dados["version"] == 2
+    assert dados["url"] == original["url"]  # o endereco nao muda
+    publicacao = ReceivedPublication.objects.get(pk=original["remote_id"])
+    assert publicacao.title == "Monitoramento na gestacao, atualizado"
+    assert "Secao nova" in publicacao.html_content
+    assert publicacao.faq[0]["question"] == "E no terceiro trimestre?"
+    assert ReceivedPublication.objects.count() == 1
+
+
+def test_mesma_chave_de_atualizacao_nao_aplica_duas_vezes(no_receptor):
+    resposta, _ = _publicar(no_receptor, PAYLOAD)
+    remote_id = resposta.json()["remote_id"]
+
+    primeira, chave = _atualizar(no_receptor, remote_id, {**PAYLOAD, "title": "V2"})
+    repetida, _ = _atualizar(no_receptor, remote_id, {**PAYLOAD, "title": "V2"}, chave_idem=chave)
+
+    assert primeira.json()["version"] == 2
+    assert repetida.status_code == 200
+    assert repetida.json()["status"] == "already_applied"
+    assert repetida.json()["version"] == 2
+
+
+def test_atualizacao_de_publicacao_inexistente_e_404(no_receptor):
+    resposta, _ = _atualizar(no_receptor, str(uuid.uuid4()), PAYLOAD)
+
+    assert resposta.status_code == 404
+    assert resposta.json()["error"]["code"] == "not_found"
+
+
+def test_atualizacao_passa_pela_mesma_sanitizacao(no_receptor):
+    resposta, _ = _publicar(no_receptor, PAYLOAD)
+    remote_id = resposta.json()["remote_id"]
+
+    resposta, _ = _atualizar(
+        no_receptor, remote_id, {**PAYLOAD, "html_content": "<p>oi</p><script>x()</script>"}
+    )
+
+    assert resposta.status_code == 422
+
+
+def test_atualizacao_sem_assinatura_e_recusada(no_receptor):
+    resposta, _ = _publicar(no_receptor, PAYLOAD)
+    remote_id = resposta.json()["remote_id"]
+
+    recusada = no_receptor.put(
+        f"/api/v1/publications/{remote_id}/",
+        data=json.dumps(PAYLOAD),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+    )
+
+    assert recusada.status_code == 401

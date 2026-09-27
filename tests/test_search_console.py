@@ -192,6 +192,7 @@ def test_artigo_publicado_e_comparado_com_o_retrato_anterior(conta, tenant):
         title="Como calcular o BDI",
         published_url="https://exemplo.com.br/bdi",
         published_at=timezone.now(),
+        status=Article.Status.PUBLISHED,
     )
     for dias_atras, posicao in ((30, 14.0), (0, 9.5)):
         coleta = ColetaDoConsole.objects.create(

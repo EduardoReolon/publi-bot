@@ -16,4 +16,7 @@ urlpatterns = [
     path("pending-questions/", views.pending_questions, name="pending_questions"),
     path("pending-questions/ack/", views.acknowledge_questions, name="acknowledge_questions"),
     path("publications/", views.publications, name="publications"),
+    path(
+        "publications/<str:remote_id>/", views.update_publication, name="update_publication"
+    ),
 ]

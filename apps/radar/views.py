@@ -463,6 +463,24 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
 
     sugestao = get_object_or_404(SugestaoDeAtualizacao, pk=pk)
     decisao = request.POST.get("decisao")
+    if decisao == "versao" and sugestao.artigo is not None:
+        # Atualizar no PubliBot: cria a versao nova com o motivo anotado. A
+        # sugestao so e dada como feita quando a versao for ao ar.
+        from apps.content.versoes import VersaoRecusada, criar_nova_versao, notas_da_sugestao
+
+        artigo = sugestao.artigo
+        # O artigo da sugestao pode ja ter sido substituido: parte da versao no ar.
+        while artigo.next_versions.filter(status="published").exists():
+            artigo = artigo.next_versions.filter(status="published").latest("created_at")
+        try:
+            nova = criar_nova_versao(artigo, notas=notas_da_sugestao(sugestao), por=request.user)
+        except VersaoRecusada as exc:
+            messages.error(request, str(exc))
+            return redirect("radar:atualizacoes")
+        sugestao.situacao = SugestaoDeAtualizacao.Situacao.FEITA
+        sugestao.decidida_em = timezone.now()
+        sugestao.save(update_fields=["situacao", "decidida_em", "atualizada_em"])
+        return redirect("content:revisar", pk=nova.pk)
     if decisao == "feita":
         sugestao.situacao = SugestaoDeAtualizacao.Situacao.FEITA
     elif decisao == "dispensar":

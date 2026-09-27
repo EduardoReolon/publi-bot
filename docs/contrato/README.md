@@ -22,6 +22,7 @@ guardar, nem rota de callback para expor.
 | `GET` | `/api/v1/pending-questions/` | Nao | `qa` |
 | `POST` | `/api/v1/pending-questions/ack/` | Nao | `qa` |
 | `GET` | `/api/v1/publications/` | Nao | `reconciliation` |
+| `PUT` | `/api/v1/publications/{remote_id}/` | Nao | `update` |
 
 ## Autenticacao
 
@@ -110,6 +111,36 @@ O motivo e um cenario comum, nao hipotetico: o site grava o artigo e responde
 `201`, a resposta se perde na rede, e o PubliBot reenvia. Sem idempotencia, o
 mesmo conteudo e publicado duas vezes. Conteudo duplicado e exatamente o
 problema que este produto existe para evitar.
+
+## Atualizacao de artigo publicado
+
+Recurso `update`. Um artigo que ja esta no ar ganha uma versao nova no
+PubliBot — mais completa, corrigida, respondendo o que o publico passou a
+perguntar — e ela substitui o conteudo da MESMA pagina:
+
+```http
+PUT /api/v1/publications/{remote_id}/
+Idempotency-Key: <uuid novo, um por atualizacao>
+```
+
+O corpo e o mesmo de `POST /publish/`. Tres regras:
+
+1. **Substituicao inteira.** Nao e patch: o corpo traz o artigo completo, e o
+   que nao vier (um FAQ removido, por exemplo) deixa de existir.
+2. **O endereco nao muda.** Ignore o `slug` recebido. A pagina ja tem links e
+   posicao no Google naquele endereco; trocar a URL numa atualizacao joga isso
+   fora. Se o seu site precisar mudar o endereco, devolva a URL nova e
+   redirecione a antiga com `301`.
+3. **Idempotente pela chave.** Reenviar a chave da ULTIMA atualizacao aplicada
+   devolve `200` com `status: "already_applied"` e o estado atual, sem aplicar
+   de novo. E o que torna seguro repetir apos um timeout. Guarde ao menos a
+   ultima chave por publicacao.
+
+`remote_id` desconhecido devolve `404` com `code: "not_found"` — terminal: o
+PubliBot nao repete, e avisa quem publicou.
+
+Sem declarar `update` em `/health/`, o PubliBot nao tenta: a versao nova fica
+aprovada, e a tela diz que o site nao aceita atualizacao.
 
 ## Foto do autor: duas etapas
 
@@ -243,6 +274,7 @@ Toda resposta de erro segue o mesmo formato:
 | 400 | `invalid_payload` | Nao |
 | 401 | `invalid_api_key`, `signature_expired`, `signature_invalid` | Nao — alerta |
 | 403 | `forbidden` | Nao |
+| 404 | `not_found` | Nao |
 | 409 | `duplicate_idempotency_key` | Tratado como sucesso |
 | 413 | `payload_too_large` | Nao |
 | 422 | `content_rejected` | Nao |
@@ -353,6 +385,15 @@ funcionar.
 
 - [ ] `GET /publications/?idempotency_key=` devolve a publicacao existente, ou
       lista vazia.
+
+**Se voce declarar `update`**
+
+- [ ] `PUT /publications/{remote_id}/` substitui o conteudo inteiro, com a
+      mesma sanitizacao de `/publish/`.
+- [ ] O endereco da pagina nao muda (ou muda com `301` do antigo).
+- [ ] A chave da ultima atualizacao, reenviada, devolve `already_applied` sem
+      reaplicar.
+- [ ] `remote_id` desconhecido devolve `404` com `code: "not_found"`.
 
 **Se voce declarar `faq`**
 

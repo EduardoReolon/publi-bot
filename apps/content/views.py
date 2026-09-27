@@ -452,7 +452,10 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
         aprovar_e_agendar(
             artigo,
             revisor=request.user,
-            quando=agendamento.cleaned_data["quando"] or _proximo_horario(),
+            # Versao nova de artigo no ar nao entra na cadencia: e a mesma
+            # pagina, e cada dia com o texto antigo e um dia perdido.
+            quando=agendamento.cleaned_data["quando"]
+            or (timezone.now() if artigo.e_atualizacao else _proximo_horario()),
             exige_revisor_tecnico=bool(site and site.is_sensitive),
             termos_confirmados=agendamento.cleaned_data["confirmar_termos"],
         )
@@ -464,6 +467,26 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
 
     messages.success(request, _("Artigo aprovado e agendado."))
     return redirect("content:artigos")
+
+
+@login_required
+@require_POST
+def nova_versao(request: HttpRequest, pk) -> HttpResponse:
+    """Cria a versao seguinte de um artigo publicado e abre a revisao dela."""
+    from apps.content.versoes import VersaoRecusada, criar_nova_versao
+
+    artigo = get_object_or_404(Article, pk=pk)
+    try:
+        nova = criar_nova_versao(artigo, notas=request.POST.get("notas", ""), por=request.user)
+    except VersaoRecusada as exc:
+        messages.error(request, str(exc))
+        return redirect("content:revisar", pk=artigo.pk)
+    messages.success(
+        request,
+        _("Versao %(n)s criada. Edite e aprove: ela substitui a pagina no site.")
+        % {"n": nova.version_number},
+    )
+    return redirect("content:revisar", pk=nova.pk)
 
 
 @login_required

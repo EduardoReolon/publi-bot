@@ -250,7 +250,52 @@ Lista vazia significa "nunca chegou aqui", e o PubliBot reenvia.
 
 ---
 
-## 7. Erros
+## 7. Atualizacao de artigo: `PUT /publications/{remote_id}/`
+
+Recurso `update`. A versao 2 do artigo publicado no exemplo 2, com uma secao
+nova. O corpo e o mesmo de `/publish/`, inteiro; a chave de idempotencia e
+nova (uma por atualizacao).
+
+```http
+PUT /api/v1/publications/9c1d/
+Idempotency-Key: 0b7e4d2a-91c3-4f5e-8a6b-3c2d1e0f9a87
+Content-Type: application/json
+```
+
+```json
+{
+  "type": "article",
+  "title": "Monitoramento da pressao na gestacao",
+  "slug": "monitoramento-da-pressao-na-gestacao",
+  "html_content": "<h2>O que dizem os estudos</h2><p>...</p><h2>E no terceiro trimestre?</h2><p>...</p>",
+  "meta_description": "Como e por que medir a pressao arterial durante a gestacao.",
+  "author": {"name": "Ana Souza", "credentials": "COREN-SP 123456"},
+  "reviewed_by": "Ana Souza",
+  "content_disclosure": "Produzido com apoio de IA e revisado por Ana Souza.",
+  "status": "published"
+}
+```
+
+```json
+{
+  "status": "updated",
+  "remote_id": "9c1d",
+  "url": "https://exemplo.com.br/blog/monitoramento-da-pressao-na-gestacao",
+  "slug": "monitoramento-da-pressao-na-gestacao",
+  "post_status": "published",
+  "published_at": "2026-08-29T14:02:40Z",
+  "version": 2,
+  "updated_at": "2026-11-03T09:15:12Z"
+}
+```
+
+A mesma requisicao repetida (timeout, resposta perdida) devolve `200` com
+`"status": "already_applied"` e o mesmo corpo, sem aplicar de novo. O endereco
+e o `published_at` sao os da publicacao original.
+
+---
+
+## 8. Erros
 
 Todos com o mesmo envelope. O `code` e o que decide se o PubliBot repete —
 ver o [catalogo](README.md#catalogo).

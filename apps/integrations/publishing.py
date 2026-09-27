@@ -204,7 +204,16 @@ def resumir_payload(payload: dict) -> dict:
 
 
 def publicar_artigo(article: Article, site: Site) -> Article:
-    """Entrega o artigo, respeitando idempotencia e o modo de simulacao."""
+    """Entrega o artigo, respeitando idempotencia e o modo de simulacao.
+
+    Versao nova de um artigo que ja esta no ar vai pela rota de atualizacao,
+    para a MESMA pagina — se o site declarar o recurso `update`.
+    """
+    if article.e_atualizacao and not site.suporta("update"):
+        raise PublicacaoBloqueada(
+            f"o site {site.name!r} nao declara o recurso 'update' em /health/: a versao "
+            f"nova nao tem como substituir a pagina que esta no ar."
+        )
     return _publicar(article, site, payload=montar_payload_de_artigo(article, site))
 
 
@@ -256,6 +265,18 @@ def _publicar(conteudo, site: Site, *, payload: dict):
 
     cliente = SiteClient(site)
 
+    if getattr(conteudo, "e_atualizacao", False):
+        # Atualizacao: idempotente pela chave da versao; sem reconciliacao.
+        try:
+            resposta = cliente.update(
+                conteudo.remote_id, payload, idempotency_key=conteudo.idempotency_key
+            )
+        except (SiteAuthError, SitePermanentError) as exc:
+            return _falhar(conteudo, site, exc, tentativa, payload, terminal=True)
+        except SiteTransientError as exc:
+            return _falhar(conteudo, site, exc, tentativa, payload, terminal=False)
+        return _concluir(conteudo, site, resposta, tentativa, payload)
+
     # Apos um timeout, pergunta antes de reenviar: o conteudo pode ter sido
     # gravado e apenas a resposta ter se perdido.
     if tentativa > 1:
@@ -289,19 +310,26 @@ def _concluir(conteudo, site: Site, resposta, tentativa: int, payload: dict):
         site,
         attempt_number=tentativa,
         payload_summary=resumir_payload(payload),
-        http_status=200 if resposta.ja_existia else 201,
+        http_status=200
+        if resposta.ja_existia or getattr(conteudo, "e_atualizacao", False)
+        else 201,
         succeeded=True,
     )
 
     conteudo.status = conteudo.Status.PUBLISHED
     conteudo.published_at = timezone.now()
-    conteudo.published_url = resposta.url
-    conteudo.remote_id = resposta.remote_id
+    conteudo.published_url = resposta.url or conteudo.published_url
+    conteudo.remote_id = resposta.remote_id or conteudo.remote_id
     conteudo.publish_attempts = tentativa
     conteudo.last_publish_error = ""
     conteudo.last_error_code = ""
     conteudo.next_retry_at = None
     conteudo.save()
+
+    if getattr(conteudo, "e_atualizacao", False):
+        from apps.content.versoes import marcar_anteriores_como_substituidas
+
+        marcar_anteriores_como_substituidas(conteudo)
 
     Site.objects.filter(pk=site.pk).update(
         consecutive_failures=0,

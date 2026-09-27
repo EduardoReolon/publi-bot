@@ -16,6 +16,7 @@ urlpatterns = [
     path("pautas/<uuid:pk>/fontes/", views.buscar_fontes, name="buscar_fontes"),
     path("artigos/", views.artigos, name="artigos"),
     path("artigos/<uuid:pk>/", views.revisar, name="revisar"),
+    path("artigos/<uuid:pk>/versao/", views.nova_versao, name="nova_versao"),
     path("artigos/<uuid:pk>/secoes/", views.salvar_secoes, name="salvar_secoes"),
     path("artigos/<uuid:pk>/refazer/", views.refazer_secoes, name="refazer_secoes"),
     path("artigos/<uuid:pk>/replanejar/", views.replanejar, name="replanejar"),
