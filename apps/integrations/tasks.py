@@ -253,38 +253,78 @@ def _expurgar_vencidas() -> int:
 @shared_task
 def fetch_seo_context(site_id: str) -> int:
     """Atualiza o espelho local do que o site ja publicou."""
-    from apps.integrations.client import SiteClient
     from apps.integrations.errors import SiteError
-    from apps.integrations.models import Site, SitePost
+    from apps.integrations.models import Site
 
     site = Site.objects.filter(pk=site_id).first()
     if site is None:
         return 0
-
     try:
-        dados = SiteClient(site).seo_context()
+        return atualizar_contexto(site)
     except SiteError as exc:
         logger.warning("Falha ao obter contexto de %s: %s", site, exc)
         return 0
 
-    total = 0
-    for item in dados.get("published_posts", []):
-        _, criado = SitePost.objects.update_or_create(
-            site=site,
-            remote_id=str(item["remote_id"]),
-            defaults={
-                "title": item.get("title", "")[:300],
-                "url": item.get("url", "")[:500],
-                "published_at": item.get("published_at") or None,
-                "primary_keyword": item.get("primary_keyword", "")[:120],
-                "word_count": item.get("word_count", 0),
-                "synced_at": timezone.now(),
-            },
-        )
-        if criado:
-            total += 1
 
+def atualizar_contexto(site) -> int:
+    """Pagina inicial e publicacoes do site, pelo /seo-context/.
+
+    Percorre as paginas do cursor. Devolve quantas publicacoes eram novas.
+    Levanta `SiteError` se o site nao responder.
+    """
+    from apps.integrations.client import SiteClient
+    from apps.integrations.models import SitePost
+
+    cliente = SiteClient(site)
+    total, cursor, paginas = 0, None, 0
+    while True:
+        dados = cliente.seo_context(cursor=cursor or "")
+        if paginas == 0:
+            site.home_content_text = (dados.get("home_content_text") or "")[:8000]
+            site.context_synced_at = timezone.now()
+            site.save(update_fields=["home_content_text", "context_synced_at"])
+        for item in dados.get("published_posts", []):
+            _, criado = SitePost.objects.update_or_create(
+                site=site,
+                remote_id=str(item["remote_id"]),
+                defaults={
+                    "title": item.get("title", "")[:300],
+                    "url": item.get("url", "")[:500],
+                    "published_at": item.get("published_at") or None,
+                    "primary_keyword": item.get("primary_keyword", "")[:120],
+                    "word_count": item.get("word_count", 0),
+                    "synced_at": timezone.now(),
+                },
+            )
+            if criado:
+                total += 1
+        cursor = dados.get("next_cursor")
+        paginas += 1
+        # Limite de paginas: um site que devolvesse sempre o mesmo cursor nao
+        # pode prender a tarefa para sempre.
+        if not cursor or paginas >= 50:
+            break
     return total
+
+
+@shared_task
+def atualizar_contexto_dos_sites() -> int:
+    """Uma vez por dia, em cada tenant: pagina inicial e publicacoes."""
+    from apps.accounts.varredura import para_cada_tenant
+
+    def _rotina() -> int:
+        from apps.integrations.errors import SiteError
+        from apps.integrations.models import Site
+
+        total = 0
+        for site in Site.objects.filter(api_key_ciphertext__isnull=False):
+            try:
+                total += atualizar_contexto(site)
+            except SiteError as exc:
+                logger.warning("Falha ao obter contexto de %s: %s", site, exc)
+        return total
+
+    return para_cada_tenant(_rotina, "atualizar_contexto_dos_sites")
 
 
 @shared_task

@@ -182,6 +182,25 @@ def _da_vez(lista: list[str], quantas: int, *, chave: str) -> list[str]:
     return [s for _, s in ordenadas[:quantas]]
 
 
+def _temas_para_expandir(limite: int = 30) -> list[str]:
+    """Os rotulos dos grupos mais fortes que cabem numa busca."""
+    temas = []
+    # So grupos com sinal de fora: um grupo feito so da propria semente (ou da
+    # dor) repetiria uma busca que ja e feita.
+    for rotulo in (
+        GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO, nota__gt=0)
+        .filter(sinais__in=SinalDeDemanda.objects.exclude(fonte__in=SO_REFORCAM))
+        .distinct()
+        .order_by("-nota")
+        .values_list("rotulo", flat=True)[: limite * 2]
+    ):
+        if palavra_para_volume(rotulo) is not None:
+            temas.append(rotulo)
+        if len(temas) == limite:
+            break
+    return temas
+
+
 def _colher_da_busca(consulta: str, *, rodada, finalidade: str) -> list[SinalDeDemanda]:
     return _sinais_da_serp(buscar(consulta, finalidade=finalidade), consulta, rodada=rodada)
 
@@ -319,7 +338,17 @@ def executar_rodada(origem: str = RodadaDoRadar.Origem.AGENDADA) -> RodadaDoRada
         resumo["dores"] = dores
         for dor in dores:
             _novo_sinal(dor, SinalDeDemanda.Fonte.DOR, rodada=rodada)
-        sementes = sementes + [d for d in dores if d.lower() not in {s.lower() for s in sementes}]
+        # Expansao em profundidade: parte das buscas vai para os temas fortes
+        # que o proprio radar descobriu. E o que traz o "as pessoas tambem
+        # perguntam" de segundo nivel — a cauda longa que as sementes sozinhas
+        # nunca alcancam.
+        expansoes = _da_vez(_temas_para_expandir(), max(1, plano.buscas // 3), chave="expansoes")
+        resumo["expansoes"] = expansoes
+        ja = {s.lower() for s in sementes}
+        for extra in dores + expansoes:
+            if extra.lower() not in ja:
+                sementes.append(extra)
+                ja.add(extra.lower())
 
         if config.usar_serp and sementes:
             pago = buscador_efetivo(config, contas) == ConfiguracaoDoRadar.Buscador.DATAFORSEO
@@ -430,8 +459,10 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
         grupos = agrupar(sinais)
         resumo["pautas"] = propor_pautas(grupos, limite=plano.pautas)
         from apps.radar.oportunidades import atualizar_oportunidades
+        from apps.radar.sugestoes import sugerir_pelo_radar
 
         resumo["oportunidades"] = atualizar_oportunidades()
+        resumo["sementes_sugeridas"] = sugerir_pelo_radar()
     except custos.TetoAtingido as exc:
         return _encerrar(rodada, RodadaDoRadar.Situacao.PARADA_NO_TETO, str(exc))
     except Exception as exc:

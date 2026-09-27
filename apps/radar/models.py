@@ -779,3 +779,44 @@ class Oportunidade(models.Model):
             {"nome": rotulos.get(k, k), "valor": v, "pct": round(100 * float(v or 0))}
             for k, v in (self.parcelas or {}).items()
         ]
+
+
+class SementeSugerida(models.Model):
+    """Uma palavra-semente ou dor sugerida, esperando a pessoa decidir."""
+
+    class Tipo(models.TextChoices):
+        SEMENTE = "semente", _("Palavra-semente")
+        DOR = "dor", _("Dor do publico")
+
+    class Origem(models.TextChoices):
+        PAGINA = "pagina", _("Pagina do site")
+        MODELO = "modelo", _("Modelo de linguagem")
+        RADAR = "radar", _("Tema forte do radar")
+
+    class Situacao(models.TextChoices):
+        SUGERIDA = "sugerida", _("Sugerida")
+        ACEITA = "aceita", _("Aceita")
+        RECUSADA = "recusada", _("Recusada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    texto = models.CharField(_("texto"), max_length=200)
+    # Sem acento e em minusculas: a mesma sugestao de duas origens e uma so.
+    chave = models.CharField(_("chave"), max_length=200)
+    tipo = models.CharField(_("tipo"), max_length=8, choices=Tipo.choices)
+    origem = models.CharField(_("origem"), max_length=8, choices=Origem.choices)
+    situacao = models.CharField(
+        _("situacao"), max_length=9, choices=Situacao.choices, default=Situacao.SUGERIDA
+    )
+    evidencia = models.JSONField(_("evidencia"), default=dict, blank=True)
+    criada_em = models.DateTimeField(_("criada em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("semente sugerida")
+        verbose_name_plural = _("sementes sugeridas")
+        ordering = ["tipo", "-criada_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["chave", "tipo"], name="semente_sugerida_unica")
+        ]
+
+    def __str__(self) -> str:
+        return self.texto

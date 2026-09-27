@@ -121,6 +121,10 @@ def vetores_do_que_ja_foi_escrito() -> np.ndarray | None:
         .order_by("-created_at")
         .values_list("title", flat=True)[:200]
     ) + list(Article.objects.order_by("-created_at").values_list("title", flat=True)[:200])
+    # O que o site publicou por fora do PubliBot tambem canibaliza.
+    from apps.integrations.models import SitePost
+
+    titulos += list(SitePost.objects.order_by("-synced_at").values_list("title", flat=True)[:300])
     titulos = list(dict.fromkeys(t for t in titulos if t))
     if not titulos:
         return None

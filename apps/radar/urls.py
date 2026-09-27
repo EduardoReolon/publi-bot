@@ -35,5 +35,11 @@ urlpatterns = [
         views.descrever_oportunidade,
         name="descrever_oportunidade",
     ),
+    path("sementes/sugerir/", views.sugerir_sementes, name="sugerir_sementes"),
+    path(
+        "sementes/<uuid:pk>/decidir/",
+        views.decidir_semente_sugerida,
+        name="decidir_semente_sugerida",
+    ),
     path("search-console/", views.coletar_console, name="coletar_console"),
 ]

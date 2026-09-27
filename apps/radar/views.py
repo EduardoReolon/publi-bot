@@ -22,6 +22,7 @@ from apps.radar.models import (
     GrupoDeDemanda,
     LocalDisponivel,
     RodadaDoRadar,
+    SementeSugerida,
     SinalDeDemanda,
     TarefaNaFila,
 )
@@ -60,6 +61,9 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         "comparacoes_falhas": sum(1 for c in comparacoes if c.gratuito_falhou),
         "chamadas": ChamadaExterna.objects.order_by("-criado_em")[:15],
         "concorrentes_sugeridos": sugeridos_para_a_tela(),
+        "sementes_sugeridas": SementeSugerida.objects.filter(
+            situacao=SementeSugerida.Situacao.SUGERIDA
+        ).order_by("tipo", "origem", "-criada_em")[:40],
         "tarefas_na_fila": TarefaNaFila.objects.filter(
             situacao=TarefaNaFila.Situacao.AGUARDANDO
         ).count(),
@@ -355,3 +359,39 @@ def descrever_oportunidade(request: HttpRequest, pk) -> HttpResponse:
         ),
     )
     return redirect("radar:oportunidades")
+
+
+# ---------------------------------------------------------------------------
+# Sementes sugeridas
+# ---------------------------------------------------------------------------
+@login_required
+@require_POST
+def sugerir_sementes(request: HttpRequest) -> HttpResponse:
+    from django.db import transaction
+
+    from apps.radar.tasks import sugerir_sementes as tarefa
+
+    transaction.on_commit(lambda: tarefa.delay())
+    messages.success(
+        request,
+        _(
+            "Sugestoes pedidas. As da pagina do site aparecem em instantes; as do "
+            "modelo de linguagem, quando a placa estiver livre."
+        ),
+    )
+    return redirect("radar:radar")
+
+
+@login_required
+@require_POST
+def decidir_semente_sugerida(request: HttpRequest, pk) -> HttpResponse:
+    from apps.radar.models import SementeSugerida
+    from apps.radar.sugestoes import aceitar
+
+    sugestao = get_object_or_404(SementeSugerida, pk=pk)
+    if request.POST.get("decisao") == "aceitar":
+        aceitar(sugestao)
+    else:
+        sugestao.situacao = SementeSugerida.Situacao.RECUSADA
+        sugestao.save(update_fields=["situacao"])
+    return redirect(request.POST.get("voltar") or "radar:radar")

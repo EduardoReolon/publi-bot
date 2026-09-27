@@ -101,6 +101,44 @@
     </tbody>
   </table>
 
+  <h2>{% translate "Sementes sugeridas" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      De tres lugares: os temas centrais da pagina inicial e dos artigos do site
+      (por algoritmo, sem modelo de linguagem), os temas fortes que o radar achou
+      e nenhuma semente cobre, e o modelo de linguagem, quando ha um no ar — que
+      sugere tambem dores do publico. Nada entra sozinho: aceite ou recuse.
+    {% endblocktranslate %}
+  </p>
+  <form method="post" action="{% url 'radar:sugerir_sementes' %}">
+    {% csrf_token %}
+    <button type="submit" class="botao secundario">{% translate "Sugerir a partir do site" %}</button>
+  </form>
+  {% if sementes_sugeridas %}
+    <table>
+      <thead><tr><th>{% translate "Sugestao" %}</th><th>{% translate "Tipo" %}</th><th>{% translate "De onde" %}</th><th></th></tr></thead>
+      <tbody>
+        {% for sugestao in sementes_sugeridas %}
+          <tr>
+            <td><strong>{{ sugestao.texto }}</strong>{% if sugestao.evidencia.volume %} <span class="ajuda">{{ sugestao.evidencia.volume }}/{% translate "mes" %}</span>{% endif %}</td>
+            <td><span class="selo {% if sugestao.tipo == 'dor' %}espera{% endif %}">{{ sugestao.get_tipo_display }}</span></td>
+            <td class="pre-visualizacao">{{ sugestao.get_origem_display }}</td>
+            <td>
+              <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}" style="display:inline">
+                {% csrf_token %}<input type="hidden" name="decisao" value="aceitar">
+                <button type="submit" class="botao secundario pequeno">{% translate "Aceitar" %}</button>
+              </form>
+              <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}" style="display:inline">
+                {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
+                <button type="submit" class="botao discreto pequeno">{% translate "Recusar" %}</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
   <h2>{% translate "Possiveis concorrentes" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}

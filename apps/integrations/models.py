@@ -75,6 +75,10 @@ class Site(models.Model):
     # resolver para o CharField. O erro aparece no import, longe da causa.
     site_timezone = models.CharField(_("fuso horario"), max_length=64, default="America/Sao_Paulo")
     niche = models.CharField(_("nicho"), max_length=200, blank=True)
+    # O texto da pagina inicial, como o site devolve em /seo-context/. Serve
+    # para sugerir as palavras-semente do radar.
+    home_content_text = models.TextField(_("texto da pagina inicial"), blank=True)
+    context_synced_at = models.DateTimeField(_("contexto atualizado em"), null=True, blank=True)
 
     is_sensitive = models.BooleanField(
         _("tema sensivel"),

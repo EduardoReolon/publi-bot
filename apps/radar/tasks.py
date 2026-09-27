@@ -92,3 +92,44 @@ def descrever_uma_oportunidade(pk: str) -> bool:
         logger.info("Descricao adiada: %s", exc)
         return False
     return True
+
+
+@shared_task(bind=True, max_retries=12)
+def sugerir_sementes(self, com_modelo: bool = True) -> int:
+    """Pedida na tela: sugestoes pela pagina do site e, se possivel, pelo modelo.
+
+    A pagina (algoritmo) sai na hora. O modelo, com a placa ocupada ou fora do
+    ar, e tentado de novo mais tarde, sem repetir a parte da pagina.
+    """
+    from django.utils import timezone
+
+    from apps.content.inference import SemModeloConfigurado
+    from apps.integrations.errors import SiteError
+    from apps.integrations.models import Site
+    from apps.integrations.tasks import atualizar_contexto
+    from apps.ops.orchestrator import PassoAdiado
+    from apps.radar.sugestoes import sugerir_pela_pagina, sugerir_pelo_modelo
+
+    novas = 0
+    if self.request.retries == 0:
+        site = Site.objects.first()
+        antigo = site and (
+            site.context_synced_at is None
+            or timezone.now() - site.context_synced_at > timezone.timedelta(days=1)
+        )
+        if antigo and site.api_key_ciphertext:
+            try:
+                atualizar_contexto(site)
+            except SiteError as exc:
+                logger.warning("Contexto do site indisponivel: %s", exc)
+        novas += sugerir_pela_pagina()
+    if com_modelo:
+        try:
+            novas += sugerir_pelo_modelo()
+        except PassoAdiado as exc:
+            raise self.retry(
+                countdown=exc.tentar_em_segundos or 600, kwargs={"com_modelo": True}
+            ) from exc
+        except SemModeloConfigurado as exc:
+            logger.info("Sugestao pelo modelo pulada: %s", exc)
+    return novas

@@ -435,6 +435,13 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 3600.0,
         "options": {"expires": 3000},
     },
+    "atualizar-contexto-dos-sites": {
+        "task": "apps.integrations.tasks.atualizar_contexto_dos_sites",
+        # Pagina inicial e publicacoes de cada site: base da canibalizacao e
+        # da sugestao de sementes. Uma vez por dia basta.
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
     "descrever-oportunidades": {
         "task": "apps.radar.tasks.descrever_oportunidades",
         # De hora em hora; sem placa no ar, tenta na proxima.

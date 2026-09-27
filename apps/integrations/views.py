@@ -146,7 +146,7 @@ def testar_conexao(request: HttpRequest) -> HttpResponse:
         messages.error(request, _("Falhou: %(erro)s") % {"erro": exc})
         return redirect("integrations:site")
 
-    posts = (contexto or {}).get("posts", []) if isinstance(contexto, dict) else []
+    posts = (contexto or {}).get("published_posts", []) if isinstance(contexto, dict) else []
     messages.success(
         request,
         _("Conexao ok. O site respondeu com %(total)s publicacao(oes) no espelho de SEO.")
