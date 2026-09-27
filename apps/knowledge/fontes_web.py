@@ -115,6 +115,16 @@ def caminho_de(url: str) -> CaminhoConfiavel | None:
     return melhor
 
 
+def bloqueada(url: str) -> bool:
+    """Se o caminho mais especifico que cobre a URL e BLOQUEAR."""
+    caminho = caminho_de(url)
+    return caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.BLOQUEAR
+
+
+def confiavel(caminho: CaminhoConfiavel | None) -> bool:
+    return caminho is not None and caminho.nivel != CaminhoConfiavel.Nivel.BLOQUEAR
+
+
 def _ja_conhecida(url: str) -> bool:
     return (
         CandidatoDeFonte.objects.filter(url=url).exists()
@@ -151,7 +161,7 @@ def buscar_fontes(pauta, *, limite: int | None = None) -> list[CandidatoDeFonte]
             if len(novos) >= limite:
                 break
             url = item.url[:500]
-            if _ja_conhecida(url):
+            if _ja_conhecida(url) or bloqueada(url):
                 continue
             caminho = caminho_de(url)
             candidato = CandidatoDeFonte.objects.create(
@@ -161,7 +171,7 @@ def buscar_fontes(pauta, *, limite: int | None = None) -> list[CandidatoDeFonte]
                 dominio=normalizar_caminho(url).split("/", 1)[0][:200],
                 consulta=consulta[:500],
                 pauta=pauta,
-                preferido=bool(caminho),
+                preferido=confiavel(caminho),
             )
             if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
                 aprovar(candidato, categoria=caminho.categoria, automatico=True)
@@ -224,12 +234,49 @@ def aprovar(
     return candidato
 
 
-def recusar(candidato: CandidatoDeFonte, *, por=None, motivo: str = "") -> None:
+def recusar(
+    candidato: CandidatoDeFonte, *, por=None, motivo: str = "", bloquear: str = ""
+) -> CaminhoConfiavel | None:
+    """Recusa a pagina. Com `bloquear` ("site" ou "caminho"), nada dali volta.
+
+    "site" bloqueia o dominio inteiro; "caminho", a pasta da pagina
+    (`exemplo.com/forum/tópico` -> `exemplo.com/forum`) — para o site que tem
+    uma parte boa e outra nao.
+    """
     candidato.situacao = CandidatoDeFonte.Situacao.RECUSADO
     candidato.motivo = motivo[:2000]
     candidato.decidido_por = por
     candidato.decidido_em = timezone.now()
     candidato.save()
+    if bloquear not in {"site", "caminho"}:
+        return None
+    endereco = normalizar_caminho(candidato.url)
+    if candidato.tipo == CandidatoDeFonte.Tipo.VIDEO and candidato.dominio:
+        # Num video, o "site" e o canal: bloquear o YouTube inteiro nao e o
+        # que ninguem quer ao recusar um video.
+        prefixo = candidato.dominio
+    elif bloquear == "site":
+        prefixo = endereco.split("/", 1)[0]
+    else:
+        prefixo = endereco.rsplit("/", 1)[0] if "/" in endereco else endereco
+    caminho, _ = CaminhoConfiavel.objects.update_or_create(
+        prefixo=prefixo[:300],
+        defaults={
+            "nivel": CaminhoConfiavel.Nivel.BLOQUEAR,
+            "categoria": None,
+            "observacao": (motivo or "bloqueado ao recusar uma sugestao")[:300],
+            "criado_por": por,
+        },
+    )
+    # O que ja estava esperando decisao, dali, sai da fila junto.
+    for outro in CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE):
+        if bloqueada(outro.url):
+            outro.situacao = CandidatoDeFonte.Situacao.RECUSADO
+            outro.motivo = f"caminho bloqueado: {prefixo}"
+            outro.decidido_por = por
+            outro.decidido_em = timezone.now()
+            outro.save()
+    return caminho
 
 
 def curar_automaticamente(documento: Document) -> int:

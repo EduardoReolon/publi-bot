@@ -19,6 +19,7 @@ class ConfiguracaoForm(forms.ModelForm):
             "usar_perguntas_do_site",
             "usar_youtube",
             "usar_search_console",
+            "fontes_pelo_radar",
             "buscar_fontes",
             "fontes_por_pauta",
             "idade_para_vigiar",
@@ -57,7 +58,7 @@ class ConfiguracaoForm(forms.ModelForm):
                 "propriedade_search_console",
             ],
         ),
-        (_("Fontes para os artigos"), ["buscar_fontes", "fontes_por_pauta"]),
+        (_("Fontes para os artigos"), ["fontes_pelo_radar", "buscar_fontes", "fontes_por_pauta"]),
         (_("Artigos publicados"), ["idade_para_vigiar"]),
         (
             _("Concorrentes"),

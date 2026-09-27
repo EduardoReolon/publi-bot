@@ -66,7 +66,14 @@ class EmbeddingPorPalavras(EmbeddingClient):
 
 
 @pytest.fixture
-def radar(tenant_factory, settings):
+def radar(tenant_factory, settings, monkeypatch):
+    # A rodada sugere fontes a partir dos resultados, baixando cada pagina
+    # para conferir se e artigo. Nos testes, nada sai para a rede: quem testa
+    # isso (test_fontes_do_radar) troca esta simulacao pela sua.
+    from apps.knowledge.web import Classificacao
+    from apps.radar import fontes
+
+    monkeypatch.setattr(fontes, "_classificar", lambda url: Classificacao(False, "teste"))
     settings.EMBEDDING_CLIENT = "tests.test_radar.EmbeddingPorPalavras"
     settings.RADAR_DISTANCIA_DO_GRUPO = 0.5
     settings.RADAR_NOTA_MINIMA = 0

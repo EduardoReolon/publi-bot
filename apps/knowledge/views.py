@@ -725,9 +725,23 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
     candidato = get_object_or_404(
         CandidatoDeFonte, pk=pk, situacao=CandidatoDeFonte.Situacao.PENDENTE
     )
-    if request.POST.get("decisao") == "recusar":
-        recusar(candidato, por=request.user, motivo=request.POST.get("motivo", ""))
-        messages.success(request, _("Recusado. Esta pagina nao sera sugerida de novo."))
+    if request.POST.get("decisao") in {"recusar", "bloquear_site", "bloquear_caminho"}:
+        bloquear = {"bloquear_site": "site", "bloquear_caminho": "caminho"}.get(
+            request.POST["decisao"], ""
+        )
+        caminho = recusar(
+            candidato,
+            por=request.user,
+            motivo=request.POST.get("motivo", ""),
+            bloquear=bloquear,
+        )
+        if caminho is not None:
+            messages.success(
+                request,
+                _("Recusado, e nada de %(p)s sera sugerido de novo.") % {"p": caminho.prefixo},
+            )
+        else:
+            messages.success(request, _("Recusado. Esta pagina nao sera sugerida de novo."))
         return redirect("knowledge:fontes_sugeridas")
 
     categoria = DocumentCategory.objects.filter(pk=request.POST.get("categoria")).first()
@@ -762,7 +776,8 @@ def caminhos_confiaveis(request: HttpRequest) -> HttpResponse:
 
         nivel = request.POST.get("nivel", "")
         categoria = DocumentCategory.objects.filter(pk=request.POST.get("categoria")).first()
-        if nivel not in CaminhoConfiavel.Nivel.values or categoria is None:
+        bloquear = nivel == CaminhoConfiavel.Nivel.BLOQUEAR
+        if nivel not in CaminhoConfiavel.Nivel.values or (categoria is None and not bloquear):
             messages.error(request, _("Escolha o nivel e a categoria."))
             return redirect(request.POST.get("voltar") or "knowledge:caminhos")
         if nivel == CaminhoConfiavel.Nivel.APROVAR and not request.POST.get("confirmo"):
@@ -781,7 +796,7 @@ def caminhos_confiaveis(request: HttpRequest) -> HttpResponse:
             prefixo=prefixo,
             defaults={
                 "nivel": nivel,
-                "categoria": categoria,
+                "categoria": None if bloquear else categoria,
                 "observacao": request.POST.get("observacao", "")[:300],
                 "criado_por": request.user,
             },

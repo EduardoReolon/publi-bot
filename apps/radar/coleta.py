@@ -67,6 +67,8 @@ class Plano:
     videos: int
     # Dores do publico buscadas por rodada (as Oportunidades).
     dores: int = 3
+    # Paginas das buscas do radar sugeridas como fonte, por rodada.
+    fontes: int = 3
     # Por concorrente: paginas do sitemap, buscas do Labs e avaliacoes.
     paginas_de_concorrente: int = 50
     buscas_de_concorrente: int = 50
@@ -81,6 +83,7 @@ INTENSIDADES = {
         pautas=4,
         videos=5,
         dores=5,
+        fontes=5,
         paginas_de_concorrente=100,
         buscas_de_concorrente=100,
         avaliacoes=40,
@@ -91,6 +94,7 @@ INTENSIDADES = {
         pautas=6,
         videos=10,
         dores=10,
+        fontes=8,
         paginas_de_concorrente=200,
         buscas_de_concorrente=200,
         avaliacoes=60,
@@ -285,8 +289,13 @@ def _corpo_serp(config: ConfiguracaoDoRadar, consulta: str, local: int) -> dict:
 def _sinais_da_serp(resultado, consulta: str, *, rodada) -> list[SinalDeDemanda]:
     from apps.radar.concorrentes import registrar_aparicoes
 
-    # Quem esta na primeira pagina desta busca: candidato a concorrente.
+    # Quem esta na primeira pagina desta busca: candidato a concorrente. E a
+    # propria pagina, guardada, pode virar fonte no fim da rodada.
     registrar_aparicoes(consulta, resultado.resultados)
+    if rodada is not None:
+        from apps.radar.fontes import guardar_resultados
+
+        guardar_resultados(consulta, resultado.resultados, rodada=rodada)
     novos = []
     for pergunta in resultado.perguntas:
         novos.append(
@@ -464,8 +473,10 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
         resumo["oportunidades"] = atualizar_oportunidades()
         resumo["sementes_sugeridas"] = sugerir_pelo_radar()
         from apps.radar.atualizacoes import atualizar_sugestoes
+        from apps.radar.fontes import sugerir_fontes
 
         resumo["atualizacoes"] = atualizar_sugestoes()
+        resumo["fontes_sugeridas"] = sugerir_fontes(rodada, cota=plano.fontes)
     except custos.TetoAtingido as exc:
         return _encerrar(rodada, RodadaDoRadar.Situacao.PARADA_NO_TETO, str(exc))
     except Exception as exc:

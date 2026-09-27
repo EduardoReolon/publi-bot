@@ -31,7 +31,10 @@
         </select>
         <button type="submit" name="decisao" value="aprovar">{% translate "Aprovar e enviar para a curadoria" %}</button>
         <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+        <button type="submit" name="decisao" value="bloquear_caminho" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere paginas desta pasta do site' %}">{% translate "Recusar esta area do site" %}</button>
+        <button type="submit" name="decisao" value="bloquear_site" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere nada deste site' %}">{% translate "Recusar o site inteiro" %}</button>
       </form>
+      {% if candidato.origem == 'radar' %}<div class="ajuda">{% translate "Achada nas buscas do radar" %}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}{% if candidato.classificacao %} · {{ candidato.classificacao }}{% endif %}</div>{% endif %}
 
       <details>
         <summary>{% if candidato.tipo == 'video' %}{% translate "Confiar neste canal" %}{% else %}{% translate "Confiar neste caminho" %}{% endif %}</summary>

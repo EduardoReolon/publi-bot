@@ -95,6 +95,7 @@ def test_regiao_dentro_de_outra_e_recusada(radar):  # noqa: F811
         "codigo_de_idioma": "pt",
         "teto_mensal_usd": "2",
         "fontes_por_pauta": 3,
+        "idade_para_vigiar": 45,
     }
     import json
 

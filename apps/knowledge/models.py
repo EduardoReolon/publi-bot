@@ -716,13 +716,20 @@ class CaminhoConfiavel(models.Model):
     class Nivel(models.TextChoices):
         PREFERIR = "preferir", _("Preferir na busca")
         APROVAR = "aprovar", _("Aprovar automaticamente")
+        # O contrario da confianca: nada dali e sugerido. Serve para o site
+        # inteiro que so traz pagina ruim, ou para uma area dele (o forum, a
+        # loja) — o caminho mais especifico decide, como nos outros niveis.
+        BLOQUEAR = "bloquear", _("Nunca sugerir")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     prefixo = models.CharField(_("caminho"), max_length=300, unique=True)
     nivel = models.CharField(_("nivel"), max_length=10, choices=Nivel.choices)
+    # Obrigatoria para confiar; caminho bloqueado nao tem categoria.
     categoria = models.ForeignKey(
         DocumentCategory,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="caminhos_confiaveis",
         verbose_name=_("categoria"),
     )
@@ -787,6 +794,17 @@ class CandidatoDeFonte(models.Model):
     )
     # De caminho marcado como PREFERIR: chega destacado na curadoria.
     preferido = models.BooleanField(_("de caminho preferido"), default=False)
+
+    class Origem(models.TextChoices):
+        PAUTA = "pauta", _("Busca de fontes da pauta")
+        RADAR = "radar", _("Buscas do radar")
+
+    origem = models.CharField(
+        _("origem"), max_length=6, choices=Origem.choices, default=Origem.PAUTA
+    )
+    # Por que o classificador achou que a pagina e um artigo (JSON-LD, og:type,
+    # tamanho do texto). So preenchido quando a pagina foi conferida antes.
+    classificacao = models.CharField(_("classificacao"), max_length=200, blank=True)
     situacao = models.CharField(
         _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.PENDENTE
     )

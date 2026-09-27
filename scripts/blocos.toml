@@ -258,6 +258,7 @@ padroes = [
   "tests/test_sugestoes.py",
   "tests/test_atualizacoes.py",
   "tests/test_vigia.py",
+  "tests/test_fontes_do_radar.py",
 ]
 
 

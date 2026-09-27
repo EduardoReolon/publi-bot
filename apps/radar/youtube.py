@@ -194,6 +194,8 @@ def _registrar_candidato(video: dict, *, consulta: str):
     if _ja_conhecida(url):
         return None
     caminho = caminho_do_canal(video["canal_id"])
+    if caminho is not None and caminho.nivel == "bloquear":
+        return None
     candidato = CandidatoDeFonte.objects.create(
         url=url,
         tipo=CandidatoDeFonte.Tipo.VIDEO,

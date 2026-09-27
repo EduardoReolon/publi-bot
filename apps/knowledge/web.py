@@ -147,3 +147,100 @@ def _data(valor: str) -> datetime.date | None:
         return None
     # Data no futuro e erro de metadado, nao publicacao.
     return data if data <= datetime.date.today() else None
+
+
+# ---------------------------------------------------------------------------
+# E um artigo, ou e outra coisa (home, listagem, loja, pagina de servico)?
+# ---------------------------------------------------------------------------
+# Tipos do schema.org que o proprio site declara para conteudo editorial. E a
+# evidencia mais forte que existe: quem publica diz o que a pagina e.
+TIPOS_DE_ARTIGO = {
+    "article",
+    "newsarticle",
+    "blogposting",
+    "scholarlyarticle",
+    "techarticle",
+    "report",
+    "medicalwebpage",
+    "medicalscholarlyarticle",
+    "analysisnewsarticle",
+    "reportagenewsarticle",
+}
+TIPOS_DE_NAO_ARTIGO = {
+    "product",
+    "offer",
+    "itemlist",
+    "collectionpage",
+    "searchresultspage",
+    "store",
+    "localbusiness",
+    "organization",
+    "contactpage",
+    "aboutpage",
+}
+PALAVRAS_MINIMAS = 400
+
+
+@dataclass(frozen=True)
+class Classificacao:
+    e_artigo: bool
+    motivo: str
+
+
+def _tipos_declarados(html: str) -> set[str]:
+    import json
+    import re
+
+    tipos: set[str] = set()
+    for bloco in re.findall(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        try:
+            dados = json.loads(bloco.strip())
+        except ValueError:
+            continue
+        pilha = [dados]
+        while pilha:
+            item = pilha.pop()
+            if isinstance(item, list):
+                pilha.extend(item)
+            elif isinstance(item, dict):
+                tipo = item.get("@type")
+                for t in tipo if isinstance(tipo, list) else [tipo]:
+                    if isinstance(t, str):
+                        tipos.add(t.lower())
+                pilha.extend(v for k, v in item.items() if k == "@graph")
+    og = re.search(
+        r'<meta[^>]+property=["\']og:type["\'][^>]+content=["\']([^"\']+)', html, re.IGNORECASE
+    )
+    if og:
+        tipos.add(f"og:{og.group(1).strip().lower()}")
+    return tipos
+
+
+def classificar_pagina(html: bytes | str, *, url: str = "") -> Classificacao:
+    """Decide se a pagina e um artigo, com o motivo.
+
+    Em ordem de confianca: o tipo que o site declara (schema.org em JSON-LD, ou
+    og:type), e, sem declaracao, o texto principal que a trafilatura extrai —
+    artigo tem corpo corrido; home, listagem e loja nao.
+    """
+    if isinstance(html, bytes):
+        html = html.decode("utf-8", errors="replace")
+    tipos = _tipos_declarados(html)
+    artigo = tipos & (TIPOS_DE_ARTIGO | {"og:article"})
+    if artigo:
+        return Classificacao(True, f"a pagina se declara {sorted(artigo)[0]}")
+    nao_artigo = tipos & TIPOS_DE_NAO_ARTIGO
+    if nao_artigo and not artigo:
+        return Classificacao(False, f"a pagina se declara {sorted(nao_artigo)[0]}")
+    try:
+        pagina = extrair_pagina(html, url=url)
+    except PaginaIndisponivel as exc:
+        return Classificacao(False, str(exc))
+    palavras = len(pagina.markdown.split())
+    if palavras < PALAVRAS_MINIMAS:
+        return Classificacao(False, f"so {palavras} palavras de texto principal")
+    return Classificacao(True, f"{palavras} palavras de texto corrido")

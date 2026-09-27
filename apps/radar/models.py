@@ -108,6 +108,16 @@ class ConfiguracaoDoRadar(models.Model):
             "as deixa em Documentos > Fontes sugeridas, esperando curadoria."
         ),
     )
+    fontes_pelo_radar = models.BooleanField(
+        _("sugerir fontes a partir das buscas do radar"),
+        default=True,
+        help_text=_(
+            "As paginas que as buscas do radar ja trazem (sem custo extra) viram "
+            "fonte sugerida — poucas por rodada, so de temas que o acervo ainda nao "
+            "cobre, e so o que parece artigo. Com muita sugestao esperando decisao, "
+            "para de sugerir."
+        ),
+    )
     fontes_por_pauta = models.PositiveSmallIntegerField(
         _("candidatos por pauta"), default=5, validators=[MaxValueValidator(20)]
     )
@@ -918,3 +928,35 @@ class VigiaDeArtigo(models.Model):
 
     def __str__(self) -> str:
         return str(self.artigo)
+
+
+class ResultadoOrganico(models.Model):
+    """Uma pagina da primeira pagina de uma busca do radar.
+
+    A busca ja foi paga: guardar os resultados permite reaproveita-los — para
+    achar concorrentes e fontes — sem buscar de novo. Os antigos sao apagados.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    rodada = models.ForeignKey(
+        RodadaDoRadar,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resultados",
+        verbose_name=_("rodada"),
+    )
+    consulta = models.CharField(_("consulta"), max_length=500)
+    url = models.URLField(_("URL"), max_length=500)
+    titulo = models.CharField(_("titulo"), max_length=500, blank=True)
+    trecho = models.TextField(_("trecho"), blank=True)
+    posicao = models.PositiveSmallIntegerField(_("posicao"))
+    criado_em = models.DateTimeField(_("criado em"), default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = _("resultado organico")
+        verbose_name_plural = _("resultados organicos")
+        ordering = ["rodada", "consulta", "posicao"]
+
+    def __str__(self) -> str:
+        return f"{self.posicao}. {self.url}"

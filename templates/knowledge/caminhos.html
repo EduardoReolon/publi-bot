@@ -18,7 +18,7 @@
       {% for caminho in caminhos %}
         <tr>
           <td><code>{{ caminho.prefixo }}</code>{% if caminho.observacao %}<div class="ajuda">{{ caminho.observacao }}</div>{% endif %}</td>
-          <td><span class="selo {% if caminho.nivel == 'aprovar' %}ruim{% endif %}">{{ caminho.get_nivel_display }}</span></td>
+          <td><span class="selo {% if caminho.nivel == 'aprovar' %}ruim{% elif caminho.nivel == 'bloquear' %}alerta{% endif %}">{{ caminho.get_nivel_display }}</span></td>
           <td>{{ caminho.categoria.name }}</td>
           <td>
             <form method="post">{% csrf_token %}

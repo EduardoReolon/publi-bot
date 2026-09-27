@@ -125,6 +125,30 @@ posicao (Search Console) tambem viram sugestao. A atualizacao e feita pela
 pessoa no site: o contrato nao tem republicacao — o proximo passo natural, e
 uma mudanca dos dois lados.
 
+### 4h. Versoes de artigo, e a rota de atualizacao
+
+Atualizar no PubliBot, e nao so no site: e aqui que estao as fontes, a revisao
+e as travas. Uma versao nova e uma linha nova de `Article`, apontando para a
+anterior e herdando o `remote_id`; o que foi ao ar continua guardado como foi.
+O contrato ganhou `PUT /publications/{remote_id}/` (recurso `update`):
+substituicao inteira, mesmo endereco, idempotente pela chave da ultima
+atualizacao. Versao aprovada vai ao ar sem esperar a cadencia.
+
+Cada artigo publicado guarda a distancia ao tema que o originou; depois de uma
+idade minima, tema novo com volume tao perto quanto essa referencia vira
+sugestao de ampliar. E o que mantem o site crescendo depois que o nicho foi
+coberto.
+
+### 4i. O radar como fornecedor de fontes
+
+As paginas da primeira pagina das buscas do radar ja foram pagas; poucas por
+rodada viram fonte sugerida — so de tema que o acervo nao cobre, so o que
+parece artigo (o tipo schema.org que o proprio site declara, og:type, ou texto
+corrido suficiente), com teto de pendentes para a curadoria nao virar entulho.
+A busca de fontes da pauta fica para quando uma pauta precisa e nao ha nada.
+Recusar uma sugestao pode bloquear a area do site ou o site inteiro (nivel
+"nunca sugerir" dos caminhos).
+
 ### 7. Nota do especialista, e nao "gerar sem fonte"
 
 Para o tema sem artigo, a saida e a pessoa escrever o que sabe — e isso vira
