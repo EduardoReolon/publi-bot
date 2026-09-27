@@ -124,7 +124,11 @@ class PerfilDoNegocio(models.Model):
     tem um uso so, descrito na tela Negocio:
 
     * `tema` (+ sementes do radar): o "perto do tema do site" do radar;
-    * `oferta`: onde cabe a chamada no artigo, e o "perto da oferta";
+    * `oferta`: onde cabe a chamada no artigo, e o "perto da oferta" — a porta
+      de entrada, o que e mais facil de vender;
+    * `frentes`: o resto do que o negocio faz, inclusive o que uma oportunidade
+      testada validou. O sistema so acrescenta aqui com a pessoa confirmando:
+      a referencia do que e medido nao muda sozinha;
     * `publico`: para quem o artigo e escrito, no planejamento;
     * valores: a comparacao com anuncios (custo por conversao, retorno).
 
@@ -158,6 +162,16 @@ class PerfilDoNegocio(models.Model):
             "O que o site vende, como o cliente diria. Ex.: 'Assinatura mensal: voce "
             "manda as notas de material pelo WhatsApp e um engenheiro planilha os "
             "custos e diz se voce pagou caro'."
+        ),
+    )
+    frentes = models.TextField(
+        _("frentes validadas"),
+        blank=True,
+        help_text=_(
+            "Servicos alem da oferta de entrada, um por linha: os que voce ja faz, e "
+            "as oportunidades que o teste com artigo validou (entram por 'Validar', "
+            "em Radar > Oportunidades). Contam como parte do negocio, e deixam de ser "
+            "novidade."
         ),
     )
     valor_da_conversao = models.DecimalField(

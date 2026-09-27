@@ -383,6 +383,11 @@ def _descricao_do_negocio() -> str:
         linhas.append(f"Tema do site: {perfil.tema}")
     if perfil and perfil.oferta:
         linhas.append(f"Oferta: {perfil.oferta}")
+    if perfil and perfil.frentes.strip():
+        linhas.append(
+            "Outras frentes: "
+            + "; ".join(f.strip() for f in perfil.frentes.splitlines() if f.strip())
+        )
     sementes = ConfiguracaoDoRadar.carregar().lista_de_sementes[:30]
     if sementes:
         linhas.append("Sementes: " + ", ".join(sementes))

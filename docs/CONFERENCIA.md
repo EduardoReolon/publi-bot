@@ -425,6 +425,28 @@ venv/bin/python manage.py shell -c "from apps.integrations.tasks import coletar_
 
 ---
 
+## 13. Oportunidade testada: o resultado volta
+
+- [ ] **Onde:** Radar › Oportunidades. **Faça:** *Testar com um artigo* numa
+      oportunidade, gere e publique o artigo da pauta.
+- [ ] **Onde:** aba **Em teste com artigo**. **Espere:** "Resultado do teste"
+      com o veredito e os números: dias no ar, impressões e cliques no Google,
+      leituras, cliques na chamada e conversões.
+  - **Aguardando:** sem artigo no ar, ou publicado há menos de 28 dias;
+  - **Validada:** alguém converteu depois de ler, ou 3+ cliques na chamada;
+  - **Sem tração:** 60 dias no ar, menos de 100 impressões e nenhum clique na
+    chamada;
+  - **Em andamento:** o resto.
+- [ ] **Faça:** *Validar: virar frente do negócio*. **Espere:** a oportunidade
+      vai para a aba "Validada", e o tema aparece em Negócio › **Frentes
+      validadas**. É o único caminho pelo qual o sistema escreve no Negócio, e
+      sempre pelo seu clique.
+- [ ] **Espere, na rodada seguinte:** temas perto da frente validada passam a
+      ser "perto do tema do site" (viram pauta) e deixam de ser novidade nas
+      oportunidades.
+
+---
+
 ## Se algo não bater
 
 | Onde olhar | O que mostra |

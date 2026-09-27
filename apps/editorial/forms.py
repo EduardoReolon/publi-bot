@@ -146,12 +146,16 @@ class PerfilDoNegocioForm(forms.ModelForm):
             "tema",
             "publico",
             "oferta",
+            "frentes",
             "valor_da_conversao",
             "investimento_publibot",
             "investimento_anuncios",
             "cotacao_do_dolar",
         ]
-        widgets = {"oferta": forms.Textarea(attrs={"rows": 3})}
+        widgets = {
+            "oferta": forms.Textarea(attrs={"rows": 3}),
+            "frentes": forms.Textarea(attrs={"rows": 4}),
+        }
 
     def __init__(self, *args, config=None, **kwargs):
         super().__init__(*args, **kwargs)

@@ -65,6 +65,21 @@ As parcelas da nota passam a ser mostradas com a referencia no nome.
 - `canonical_source` e documentado como o que e (a fonte principal) e com o
   aviso de nunca virar `rel=canonical`.
 
+### 4. A oportunidade testada fecha o ciclo, e a referencia so muda com a pessoa
+
+"Testar com um artigo" ganha resultado: impressoes e cliques do Search
+Console, leituras, cliques na chamada e conversoes dos artigos da pauta, com
+um veredito por regra fixa (aguardando; validada = conversao ou 3+ cliques na
+chamada; sem tracao = 60 dias, menos de 100 impressoes e nenhum clique na
+chamada; em andamento). "Validar" acrescenta o tema as **frentes** do Negocio,
+que passam a contar no "perto do tema do site".
+
+O perfil do negocio nunca muda sozinho. O sistema mede a proximidade COM ele;
+se ele se reescrevesse a partir do que o proprio sistema publicou, passaria a
+confirmar as proprias escolhas. Por isso tudo que entra no Negocio vindo do
+sistema (frentes validadas, dores sugeridas) passa por um clique da pessoa. A
+oferta — a porta de entrada, para onde vai a chamada — so muda a mao.
+
 ## Alternativas descartadas
 
 - **PubliBot como CMS do site.** Duplicaria o que qualquer plataforma ja faz

@@ -120,12 +120,12 @@ def _escala(valor: float, perto: float, longe: float) -> float:
 
 
 def _texto_do_negocio() -> str:
-    """A referencia do "perto do tema do site": tema, oferta e sementes (Negocio)."""
+    """A referencia do "perto do tema do site": tema, oferta, frentes e sementes."""
     from apps.editorial.models import perfil_do_negocio
     from apps.radar.models import ConfiguracaoDoRadar
 
     perfil = perfil_do_negocio()
-    partes = [perfil.tema, perfil.oferta] if perfil else []
+    partes = [perfil.tema, perfil.oferta, *perfil.frentes.splitlines()] if perfil else []
     partes += ConfiguracaoDoRadar.carregar().lista_de_sementes
     return ". ".join(p.strip() for p in partes if p and p.strip())
 

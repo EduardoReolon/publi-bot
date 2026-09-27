@@ -10,7 +10,8 @@
     Temas que o seu publico procura e que o site ainda nao oferece — nao
     pautas, e sim possiveis servicos ou produtos. Saem dos mesmos sinais do
     radar (buscas, perguntas do site, YouTube, concorrentes), com outra nota:
-    <strong>novidade</strong> (longe do que voce ja faz), <strong>perto do
+    <strong>novidade</strong> (longe do que voce ja faz: tema, oferta e frentes
+    da tela Negocio), <strong>perto do
     publico</strong> (das dores, definidas em Negocio), <strong>crescimento</strong> (ano a
     ano, sem se enganar com sazonalidade) e <strong>valor comercial</strong>
     (quanto empresas pagam por clique no Google para alcancar quem busca).
@@ -94,8 +95,30 @@
       </ul>
     </details>
 
+    {% if op.teste %}
+      {% with t=op.teste %}
+      <div class="descricao">
+        <p><strong>{% translate "Resultado do teste" %}:</strong>
+          <span class="selo {% if t.veredito == 'validada' %}ok{% elif t.veredito == 'sem_tracao' %}ruim{% else %}espera{% endif %}">{{ t.rotulo }}</span>
+          <span class="ajuda">{{ t.motivo }}</span></p>
+        {% if t.artigos %}
+          <p class="ajuda">
+            {% blocktranslate count n=t.artigos|length %}{{ n }} artigo no ar{% plural %}{{ n }} artigos no ar{% endblocktranslate %}{% if t.dias_no_ar is not None %} · {{ t.dias_no_ar }} {% translate "dias" %}{% endif %}
+            · {{ t.impressoes }} {% translate "impressoes" %} · {{ t.cliques_no_google }} {% translate "cliques no Google" %}
+            · {{ t.leituras }} {% translate "leituras" %} · {{ t.cliques_na_chamada }} {% translate "cliques na chamada" %}
+            · {{ t.conversoes }} {% translate "conversoes" %}
+          </p>
+          <ul class="sinais">{% for a in t.artigos %}<li><a href="{% url 'content:revisar' a.pk %}">{{ a.title }}</a></li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+      {% endwith %}
+    {% endif %}
+
     <div class="acoes">
-      {% if op.situacao == "nova" %}
+      {% if op.situacao == "em_teste" %}
+        <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="validar"><button type="submit" {% if op.teste.veredito != "validada" %}class="botao secundario"{% endif %}>{% translate "Validar: virar frente do negocio" %}</button></form>
+        <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="arquivar"><button type="submit" class="botao discreto">{% translate "Arquivar" %}</button></form>
+      {% elif op.situacao == "nova" %}
         <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="testar"><button type="submit">{% translate "Testar com um artigo" %}</button></form>
         <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="semente"><button type="submit" class="botao secundario">{% translate "Acompanhar (virar semente)" %}</button></form>
         {% if not op.descricao %}

@@ -296,6 +296,19 @@ def oportunidades(request: HttpRequest) -> HttpResponse:
     ver = request.GET.get("ver", "nova")
     situacoes = {s.value for s in Oportunidade.Situacao}
     ver = ver if ver in situacoes else "nova"
+    oportunidades = list(
+        Oportunidade.objects.filter(situacao=ver)
+        .select_related("grupo")
+        .prefetch_related("grupo__sinais")
+        .order_by("-nota")[:50]
+    )
+    if ver == Oportunidade.Situacao.EM_TESTE and oportunidades:
+        from apps.content.desempenho import painel
+        from apps.radar.teste import resultado
+
+        uma_vez = painel(90)
+        for oportunidade in oportunidades:
+            oportunidade.teste = resultado(oportunidade, painel=uma_vez)
     return render(
         request,
         "radar/oportunidades.html",
@@ -306,10 +319,7 @@ def oportunidades(request: HttpRequest) -> HttpResponse:
             "ver": ver,
             "situacoes": Oportunidade.Situacao.choices,
             "contagens": {s: Oportunidade.objects.filter(situacao=s).count() for s in situacoes},
-            "oportunidades": Oportunidade.objects.filter(situacao=ver)
-            .select_related("grupo")
-            .prefetch_related("grupo__sinais")
-            .order_by("-nota")[:50],
+            "oportunidades": oportunidades,
             "tem_dores": bool(config.lista_de_dores),
         },
     )
@@ -344,10 +354,24 @@ def decidir_oportunidade(request: HttpRequest, pk) -> HttpResponse:
         messages.success(
             request,
             _(
-                "Pauta criada: %(t)s. Publicado o artigo, o Search Console mostra em "
-                "algumas semanas se ha interesse."
+                "Pauta criada: %(t)s. Publicado o artigo, o resultado do teste aparece "
+                "na aba 'Em teste com artigo' (busca, leitura, chamada e conversao)."
             )
             % {"t": criadas[0]},
+        )
+    elif decisao == "validar":
+        # O unico caminho pelo qual o sistema escreve no Negocio: a pessoa
+        # confirmando que o teste deu certo.
+        from apps.editorial.models import PerfilDoNegocio
+
+        perfil = PerfilDoNegocio.carregar()
+        frentes = [f.strip() for f in perfil.frentes.splitlines() if f.strip()]
+        if tema.lower() not in {f.lower() for f in frentes}:
+            perfil.frentes = "\n".join([*frentes, tema[:200]])
+            perfil.save(update_fields=["frentes"])
+        oportunidade.situacao = Oportunidade.Situacao.VALIDADA
+        messages.success(
+            request, _("'%(t)s' virou frente do negocio (tela Negocio).") % {"t": tema}
         )
     elif decisao == "arquivar":
         oportunidade.situacao = Oportunidade.Situacao.ARQUIVADA

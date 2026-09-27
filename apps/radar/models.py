@@ -757,6 +757,7 @@ class Oportunidade(models.Model):
         NOVA = "nova", _("Nova")
         ACOMPANHANDO = "acompanhando", _("Virou semente")
         EM_TESTE = "em_teste", _("Em teste com artigo")
+        VALIDADA = "validada", _("Validada: virou frente")
         ARQUIVADA = "arquivada", _("Arquivada")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -24,7 +24,16 @@
 
   <section class="secao">
     <h2>{% translate "O que vende" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        A <strong>oferta</strong> e a porta de entrada: o que e mais facil de
+        vender, e para onde vai a chamada dos artigos. As <strong>frentes</strong>
+        sao o resto do que voce faz, e crescem quando uma oportunidade testada
+        se confirma.
+      {% endblocktranslate %}
+    </p>
     {% include "_campo.html" with campo=form.oferta %}
+    {% include "_campo.html" with campo=form.frentes %}
   </section>
 
   <section class="secao">
@@ -82,6 +91,7 @@
         <tr><td>{% translate "Tema do site + sementes" %}</td><td>{% translate "Radar: a parcela 'perto do tema do site' da nota de cada tema. Oportunidades: o contrario (novidade = longe do tema). Sugestao de sementes e descricao de oportunidades pelo modelo." %}</td></tr>
         <tr><td>{% translate "Publico" %}</td><td>{% translate "Planejamento do artigo: para quem ele e escrito, quando a pauta nao diz." %}</td></tr>
         <tr><td>{% translate "Dores do publico" %}</td><td>{% translate "Radar: buscadas como consultas, com cota propria. Oportunidades: a parcela 'perto do publico'." %}</td></tr>
+        <tr><td>{% translate "Frentes validadas" %}</td><td>{% translate "Radar: entram no 'perto do tema do site'. Oportunidades: o que ja e frente deixa de ser novidade. A chamada continua indo para a oferta de entrada." %}</td></tr>
         <tr><td>{% translate "Oferta" %}</td><td>{% translate "Artigo: se cabe chamada e em que secao ('perto da oferta'). Radar: entra no 'perto do tema do site', junto com o tema." %}</td></tr>
         <tr><td>{% translate "Valores" %}</td><td>{% translate "Desempenho no site: custo por conversao, valor do trafego organico em reais, retorno." %}</td></tr>
       </tbody>
