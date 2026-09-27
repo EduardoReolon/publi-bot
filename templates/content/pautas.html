@@ -65,6 +65,7 @@
                     {% csrf_token %}
                     <button type="submit" class="botao secundario">{% translate "Buscar fontes na web" %}</button>
                   </form>
+                  <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
                   <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">
                     {% csrf_token %}
                     <button type="submit" class="botao secundario">{% translate "Rejeitar" %}</button>

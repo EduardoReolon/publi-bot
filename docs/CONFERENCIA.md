@@ -462,6 +462,32 @@ venv/bin/python manage.py shell -c "from apps.integrations.tasks import coletar_
 
 ---
 
+## 15. Com outra IA: primeiros passos, intenção de busca e concorrentes
+
+- [ ] **Onde:** Negócio › **Primeiros passos, com a ajuda de outra IA** (vem
+      aberto enquanto tema e oferta estão vazios). **Faça:** escreva oferta e
+      público do seu jeito e salve; *Copiar pedido 1*, cole num modelo grande,
+      cole a resposta inteira e *Preencher os campos*. **Espere:** tema,
+      público, oferta, dores e frentes preenchidos **sem salvar** (aviso
+      amarelo), dores e frentes somadas às que já existiam. Revise e salve.
+- [ ] **Faça:** *Copiar pedido 2*, cole a resposta e *Mandar para Sementes
+      sugeridas*. **Espere:** em Radar › Sementes sugeridas, as sementes com
+      origem "Outra IA", as marcadas pelo modelo com o selo "testar primeiro",
+      e os pilares com a lista de subtemas.
+- [ ] **Onde:** Pautas › *Intenção (outra IA)* numa pauta. **Espere:** o pedido
+      com a palavra-chave, os sinais com volume e o negócio. **Faça:** cole a
+      resposta. **Espere:** título, tipo de conteúdo e orientação da pauta
+      trocados (a orientação começa com "Intenção de busca: ..."). Pauta já
+      usada ou rejeitada não muda.
+- [ ] **Onde:** Radar › Analisar com outra IA. **Espere:** em "Concorrentes",
+      os mesmos sugeridos que a tela mostra (com buscas, melhor posição e
+      exemplos), e a pergunta que pede para classificar cada domínio em
+      concorrente de negócio, de conteúdo, possível parceiro ou irrelevante.
+- [ ] **Espere, em qualquer resposta colada:** negrito, título com #, acento,
+      bloco de código e comentário do modelo depois do FIM não atrapalham.
+
+---
+
 ## Se algo não bater
 
 | Onde olhar | O que mostra |

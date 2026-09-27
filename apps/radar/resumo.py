@@ -83,7 +83,13 @@ Quero, em portugues, em listas curtas e diretas:
 4. Para cada pauta criada, um angulo de artigo que atenda a busca E leve
    naturalmente a oferta — e um titulo melhor, se o atual for fraco.
 5. Temas da lista que eu deveria descartar, e por que.
-6. Um padrao que voce veja nos dados e que eu nao tenha perguntado.
+6. Para cada dominio em "Concorrentes", classifique: concorrente de NEGOCIO
+   (vende algo que substitui a minha oferta), concorrente de CONTEUDO (disputa
+   as mesmas buscas, mas vende outra coisa), possivel PARCEIRO (publica para o
+   mesmo publico sem competir: artigo convidado, indicacao, conteudo em
+   conjunto) ou IRRELEVANTE. Uma linha de porque para cada, e diga quais eu
+   deveria confirmar como concorrente no radar e quais recusar.
+7. Um padrao que voce veja nos dados e que eu nao tenha perguntado.
 
 Nao invente volumes: onde nao ha numero, diga "testar". Se algo depender de
 informacao que nao esta aqui, pergunte no fim.
@@ -92,8 +98,8 @@ informacao que nao esta aqui, pergunte no fim.
 
 def texto_para_ia() -> str:
     from apps.editorial.models import perfil_do_negocio
+    from apps.radar.concorrentes import sugeridos_para_a_tela
     from apps.radar.models import (
-        ConcorrenteSugerido,
         ConfiguracaoDoRadar,
         GrupoDeDemanda,
         Oportunidade,
@@ -169,10 +175,24 @@ def texto_para_ia() -> str:
     ] or ["(nenhuma)"]
 
     partes.append("\n## Concorrentes")
-    confirmados = [c["dominio"] for c in config.lista_de_concorrentes]
-    partes.append("Confirmados: " + (", ".join(confirmados) or "(nenhum)"))
-    sugeridos = ConcorrenteSugerido.objects.filter(
-        situacao=ConcorrenteSugerido.Situacao.SUGERIDO
-    ).values_list("dominio", flat=True)[:10]
-    partes.append("Aparecem na primeira pagina das mesmas buscas: " + (", ".join(sugeridos) or "—"))
+    partes.append("Confirmados por mim no radar:")
+    confirmados = config.lista_de_concorrentes
+    partes += [
+        f"- {c['dominio']}" + (f" ({c['nome']})" if c.get("nome") else "") for c in confirmados
+    ] or ["- (nenhum)"]
+    partes.append(
+        "Sugeridos pelo radar (aparecem na primeira pagina de buscas diferentes; "
+        "dominio | buscas | melhor posicao | paginas que apareceram):"
+    )
+    sugeridos = sugeridos_para_a_tela()
+    for sugerido in sugeridos:
+        exemplos = "; ".join(
+            f"{e.get('titulo') or e.get('url')} [busca: {e.get('consulta', '')}]"
+            for e in sugerido.exemplos[:3]
+        )
+        partes.append(
+            f"- {sugerido.dominio} | {sugerido.aparicoes} | {sugerido.melhor_posicao} | {exemplos}"
+        )
+    if not sugeridos:
+        partes.append("- (nenhum ainda)")
     return "\n".join(partes)

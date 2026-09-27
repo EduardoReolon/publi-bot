@@ -235,6 +235,7 @@ padroes = [
   "templates/editorial/**",
   "tests/test_editorial.py",
   "tests/test_negocio.py",
+  "tests/test_primeiros_passos.py",
 ]
 
 

@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Intencao de busca" %} · PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+<h1>{% translate "Intencao de busca" %}</h1>
+<p class="sub"><strong>{{ pauta.title }}</strong>{% if pauta.target_keyword %} · {{ pauta.target_keyword }}{% endif %}</p>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    Antes de gerar: o que quem busca espera encontrar? Errar a intencao (um
+    comparativo para quem quer saber o que e, uma definicao para quem ja quer
+    contratar) e o motivo mais comum de artigo bom que nao posiciona. Copie o
+    pedido para um modelo grande e cole a resposta: o titulo, o tipo de
+    conteudo e a orientacao da pauta sao atualizados, e o planejamento do
+    artigo parte deles.
+  {% endblocktranslate %}
+</div>
+
+<section class="secao">
+  <h2>{% translate "1. Copie o pedido" %}</h2>
+  <div class="acoes"><button type="button" class="botao" data-copiar="pedido-intencao">{% translate "Copiar pedido" %}</button></div>
+  <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-intencao" readonly rows="16" style="width:100%">{{ pedido }}</textarea></details>
+</section>
+
+<section class="secao">
+  <h2>{% translate "2. Cole a resposta" %}</h2>
+  <form method="post">
+    {% csrf_token %}
+    <textarea name="resposta" rows="10" style="width:100%" aria-label="{% translate 'Resposta do modelo' %}"></textarea>
+    <div class="acoes">
+      <button type="submit">{% translate "Atualizar a pauta" %}</button>
+      <a class="botao discreto" href="{% url 'content:pautas' %}">{% translate "Voltar" %}</a>
+    </div>
+  </form>
+  {% if pauta.briefing %}
+    <p class="ajuda">{% translate "Orientacao atual" %}:</p>
+    <pre class="pre-visualizacao" style="white-space:pre-wrap">{{ pauta.briefing }}</pre>
+  {% endif %}
+</section>
+{% endblock %}

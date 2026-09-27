@@ -289,6 +289,10 @@
       border: 1px solid var(--borda); border-radius: .6rem; padding: 1rem 1.2rem; background: var(--superficie);
     }
     .renderizado img { max-width: 100%; }
+    /* Primeiros passos do Negocio: separado do resto, numerado. */
+    .passos { border-left: 4px solid var(--realce); }
+    .passos > summary { cursor: pointer; font-size: 1.05rem; }
+    .lista-de-passos > li { margin: .9rem 0; }
     /* Numero de destaque (PubliBot x anuncios). */
     .cartao-numero { border: 1px solid var(--borda); border-radius: .6rem; padding: .8rem 1rem; background: var(--superficie); }
     .numero-grande { font-size: 1.6rem; font-weight: 700; color: var(--realce-texto); }
@@ -347,5 +351,27 @@
     {% endif %}
     {% block conteudo %}{% endblock %}
   </main>
+<script>
+  /* Botao de copiar: <button data-copiar="id-do-campo">. Sem HTTPS (desenvolvimento)
+     nao ha API de area de transferencia; o campo fica selecionado para Ctrl+C. */
+  document.addEventListener("click", function (evento) {
+    var botao = evento.target.closest && evento.target.closest("[data-copiar]");
+    if (!botao) return;
+    var campo = document.getElementById(botao.getAttribute("data-copiar"));
+    if (!campo) return;
+    var rotulo = botao.textContent;
+    function feito() { botao.textContent = "Copiado"; setTimeout(function () { botao.textContent = rotulo; }, 2000); }
+    function selecionar() {
+      var caixa = campo.closest("details"); if (caixa) caixa.open = true;
+      campo.select();
+      try { if (document.execCommand("copy")) feito(); } catch (e) {}
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(campo.value).then(feito, selecionar);
+    } else {
+      selecionar();
+    }
+  });
+</script>
 </body>
 </html>

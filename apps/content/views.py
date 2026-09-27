@@ -82,6 +82,31 @@ def pautas(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+def intencao_da_pauta(request: HttpRequest, pk) -> HttpResponse:
+    """Analise de intencao com outra IA: copia o pedido, cola a resposta."""
+    from apps.content import intencao
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    if request.method == "POST":
+        if pauta.status in {Topic.Status.USED, Topic.Status.REJECTED}:
+            messages.error(request, _("Pauta ja usada ou rejeitada nao muda mais."))
+            return redirect("content:pautas")
+        mudados = intencao.aplicar(pauta, request.POST.get("resposta", ""))
+        if mudados:
+            messages.success(
+                request,
+                _("Pauta atualizada (titulo, tipo e orientacao conforme a resposta)."),
+            )
+            return redirect("content:pautas")
+        messages.error(request, _("Nao achei TITULO, TIPO nem ORIENTACAO na resposta colada."))
+    return render(
+        request,
+        "content/intencao.html",
+        {"aba": "pautas", "pauta": pauta, "pedido": intencao.pedido(pauta)},
+    )
+
+
+@login_required
 def nova_pauta(request: HttpRequest) -> HttpResponse:
     if request.method != "POST":
         return redirect("content:pautas")

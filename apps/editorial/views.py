@@ -69,15 +69,50 @@ def aplicar(request: HttpRequest) -> HttpResponse:
 @login_required
 def negocio(request: HttpRequest) -> HttpResponse:
     """O que o site e e o que vende: a referencia de tudo que o PubliBot mede."""
+    from apps.editorial import primeiros_passos
     from apps.radar.models import ConfiguracaoDoRadar
 
     perfil = PerfilDoNegocio.carregar()
     config = ConfiguracaoDoRadar.carregar()
-    form = PerfilDoNegocioForm(request.POST or None, instance=perfil, config=config)
-    if request.method == "POST" and form.is_valid():
-        form.save()
-        messages.success(request, _("Negocio salvo. Vale para a proxima rodada e geracao."))
+    acao = request.POST.get("acao", "salvar") if request.method == "POST" else ""
+    colado = False
+
+    if acao == "colar_negocio":
+        # A resposta do pedido 1 preenche o formulario SEM salvar: a pessoa
+        # revisa antes. Dores e frentes somam as que ja existem.
+        lido = primeiros_passos.ler_negocio(request.POST.get("resposta", ""))
+        if not lido:
+            messages.error(
+                request,
+                _("Nao achei TEMA, PUBLICO, OFERTA, DORES nem FRENTES na resposta colada."),
+            )
+            return redirect("editorial:negocio")
+        inicial = {k: v for k, v in lido.items() if k in {"tema", "publico", "oferta"}}
+        if "dores" in lido:
+            inicial["dores"] = primeiros_passos.unir(config.dores, lido["dores"])
+        if "frentes" in lido:
+            inicial["frentes"] = primeiros_passos.unir(perfil.frentes, lido["frentes"])
+        form = PerfilDoNegocioForm(instance=perfil, config=config, initial=inicial)
+        colado = True
+    elif acao == "colar_sementes":
+        criadas = primeiros_passos.sugerir_sementes(request.POST.get("resposta", ""))
+        if criadas:
+            messages.success(
+                request,
+                _("%(n)s semente(s) em Radar > Sementes sugeridas, para aceitar ou recusar.")
+                % {"n": criadas},
+            )
+        else:
+            messages.error(
+                request, _("Nenhuma semente nova na resposta (ou todas ja estavam na lista).")
+            )
         return redirect("editorial:negocio")
+    else:
+        form = PerfilDoNegocioForm(request.POST or None, instance=perfil, config=config)
+        if request.method == "POST" and form.is_valid():
+            form.save()
+            messages.success(request, _("Negocio salvo. Vale para a proxima rodada e geracao."))
+            return redirect("editorial:negocio")
     return render(
         request,
         "editorial/negocio.html",
@@ -85,8 +120,12 @@ def negocio(request: HttpRequest) -> HttpResponse:
             "aba": "negocio",
             "form": form,
             "sementes": config.lista_de_sementes,
+            "colado": colado,
+            "pedido_do_negocio": primeiros_passos.pedido_do_negocio(perfil, config),
+            "pedido_das_sementes": primeiros_passos.pedido_das_sementes(perfil, config),
+            "comecando": not (perfil.tema and perfil.oferta),
             "regioes": [nome for _codigo, nome in config.locais() if nome],
             "concorrentes": config.lista_de_concorrentes,
         },
-        status=400 if request.method == "POST" else 200,
+        status=400 if request.method == "POST" and not colado else 200,
     )

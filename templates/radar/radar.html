@@ -111,7 +111,8 @@
         <div class="texto">
           <strong>{{ sugestao.texto }}</strong>
           <span class="selo {% if sugestao.tipo == 'dor' %}alerta{% else %}espera{% endif %}">{{ sugestao.get_tipo_display }}</span>
-          <span class="ajuda">{{ sugestao.get_origem_display }}{% if sugestao.evidencia.volume %} · {{ sugestao.evidencia.volume }}/{% translate "mes" %}{% endif %}</span>
+          {% if sugestao.evidencia.prioritaria %}<span class="selo ok">{% translate "testar primeiro" %}</span>{% endif %}
+          <span class="ajuda">{{ sugestao.get_origem_display }}{% if sugestao.evidencia.volume %} · {{ sugestao.evidencia.volume }}/{% translate "mes" %}{% endif %}{% if sugestao.evidencia.pilar %} · {% translate "pilar" %}: {{ sugestao.evidencia.pilar }}{% endif %}</span>
         </div>
         <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}">
           {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
@@ -212,31 +213,12 @@
     {% endblocktranslate %}
   </p>
   <div class="acoes">
-    <button type="button" class="botao" id="copiar-para-ia">{% translate "Copiar para outra IA" %}</button>
-    <span class="ajuda" id="copiado" hidden>{% translate "Copiado." %}</span>
+    <button type="button" class="botao" data-copiar="texto-para-ia">{% translate "Copiar para outra IA" %}</button>
   </div>
   <details>
     <summary>{% translate "Ver o texto" %}</summary>
     <textarea id="texto-para-ia" readonly rows="16" style="width:100%">{{ texto_para_ia }}</textarea>
   </details>
-  <script>
-    (function () {
-      var botao = document.getElementById("copiar-para-ia");
-      var campo = document.getElementById("texto-para-ia");
-      var aviso = document.getElementById("copiado");
-      botao.addEventListener("click", function () {
-        function feito() { aviso.hidden = false; setTimeout(function () { aviso.hidden = true; }, 2500); }
-        if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(campo.value).then(feito, function () { campo.closest("details").open = true; campo.select(); });
-        } else {
-          // Sem HTTPS nao ha area de transferencia pela API: seleciona para Ctrl+C.
-          campo.closest("details").open = true;
-          campo.select();
-          try { if (document.execCommand("copy")) { feito(); } } catch (e) {}
-        }
-      });
-    })();
-  </script>
 </section>
 
 <section class="secao" style="margin-top:1.2rem">

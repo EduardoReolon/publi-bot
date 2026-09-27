@@ -13,6 +13,68 @@
   {% endblocktranslate %}
 </div>
 
+<details class="secao passos" {% if comecando %}open{% endif %}>
+  <summary><strong>{% translate "Primeiros passos, com a ajuda de outra IA" %}</strong></summary>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Um caminho para preencher esta tela sem saber SEO. Voce escreve o basico
+      do seu jeito, um modelo grande (Claude, ChatGPT, Gemini) traduz para o que
+      o radar precisa, e voce so cola a resposta de volta. Nada e enviado pelo
+      PubliBot; voce revisa tudo antes de salvar.
+    {% endblocktranslate %}
+  </p>
+
+  <ol class="lista-de-passos">
+    <li>
+      <strong>{% translate "O basico do basico." %}</strong>
+      {% blocktranslate trimmed %}
+        Em <em>O que vende</em> (oferta) e em <em>Publico</em>, abaixo, escreva
+        do seu jeito, uma ou duas frases cada. Salve.
+      {% endblocktranslate %}
+    </li>
+    <li>
+      <strong>{% translate "Pedido 1: o negocio." %}</strong>
+      {% translate "Copie e cole num modelo grande. Ele devolve tema, publico, oferta na lingua do cliente, dores e frentes." %}
+      <div class="acoes"><button type="button" class="botao secundario" data-copiar="pedido-negocio">{% translate "Copiar pedido 1" %}</button></div>
+      <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-negocio" readonly rows="12" style="width:100%">{{ pedido_do_negocio }}</textarea></details>
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="acao" value="colar_negocio">
+        <label for="resposta-negocio">{% translate "Cole aqui a resposta inteira" %}</label>
+        <textarea id="resposta-negocio" name="resposta" rows="5" style="width:100%"></textarea>
+        <div class="acoes"><button type="submit">{% translate "Preencher os campos" %}</button></div>
+      </form>
+    </li>
+    <li>
+      <strong>{% translate "Revise e salve." %}</strong>
+      {% translate "Os campos abaixo ficam preenchidos com a resposta, sem salvar. Ajuste o que nao soar como voce e clique em Salvar." %}
+    </li>
+    <li>
+      <strong>{% translate "Pedido 2: pilares e sementes." %}</strong>
+      {% translate "Depois de salvar. As sementes vao para Radar > Sementes sugeridas, para voce aceitar ou recusar uma a uma." %}
+      <div class="acoes"><button type="button" class="botao secundario" data-copiar="pedido-sementes">{% translate "Copiar pedido 2" %}</button></div>
+      <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-sementes" readonly rows="12" style="width:100%">{{ pedido_das_sementes }}</textarea></details>
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="acao" value="colar_sementes">
+        <label for="resposta-sementes">{% translate "Cole aqui a resposta inteira" %}</label>
+        <textarea id="resposta-sementes" name="resposta" rows="5" style="width:100%"></textarea>
+        <div class="acoes"><button type="submit">{% translate "Mandar para Sementes sugeridas" %}</button></div>
+      </form>
+    </li>
+    <li>
+      <strong>{% translate "Rode o radar e repita." %}</strong>
+      {% blocktranslate trimmed %}
+        Depois de cada rodada, <em>Radar › Analisar com outra IA</em> mostra o
+        que cada semente rendeu, e o modelo diz o que manter, trocar e descartar.
+      {% endblocktranslate %}
+      <a href="{% url 'radar:radar' %}">{% translate "Ir para o Radar" %}</a>
+    </li>
+  </ol>
+</details>
+
+{% if colado %}
+  <p class="aviso">{% translate "Campos preenchidos com a resposta colada. Nada foi salvo ainda: revise e clique em Salvar no fim da pagina." %}</p>
+{% endif %}
+
 <form method="post">
   {% csrf_token %}
   <section class="secao">

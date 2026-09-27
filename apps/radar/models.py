@@ -833,6 +833,7 @@ class SementeSugerida(models.Model):
         PAGINA = "pagina", _("Pagina do site")
         MODELO = "modelo", _("Modelo de linguagem")
         RADAR = "radar", _("Tema forte do radar")
+        OUTRA_IA = "outra_ia", _("Outra IA (resposta colada)")
 
     class Situacao(models.TextChoices):
         SUGERIDA = "sugerida", _("Sugerida")
