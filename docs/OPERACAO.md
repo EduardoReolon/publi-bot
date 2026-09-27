@@ -3,6 +3,9 @@
 Dois ambientes, o MESMO Ollama. Em desenvolvimento ele roda na sua maquina; em
 producao, na mesma maquina de sempre, alcancada por Tailscale. Muda uma URL.
 
+Depois de atualizar, o roteiro para conferir cada funcao na tela esta em
+[`CONFERENCIA.md`](CONFERENCIA.md).
+
 ---
 
 ## Parte 1 — Desenvolvimento

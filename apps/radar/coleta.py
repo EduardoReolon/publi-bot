@@ -194,6 +194,8 @@ def _temas_para_expandir(limite: int = 30) -> list[str]:
     for rotulo in (
         GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO, nota__gt=0)
         .filter(sinais__in=SinalDeDemanda.objects.exclude(fonte__in=SO_REFORCAM))
+        # Dado de exemplo (manage.py radar_exemplo) nunca vira busca paga.
+        .exclude(sinais__extra__exemplo=True)
         .distinct()
         .order_by("-nota")
         .values_list("rotulo", flat=True)[: limite * 2]
