@@ -126,7 +126,7 @@
     </p>
   {% endif %}
 
-  <h2>{% translate "Testar uma consulta" %}</h2>
+  <h2 id="testar">{% translate "Testar uma consulta" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
       Mede a distancia entre a consulta e cada trecho do acervo. Nao gera
@@ -164,6 +164,7 @@
             <th>{% translate "Entra?" %}</th>
             <th>{% translate "Fonte" %}</th>
             <th>{% translate "Trecho" %}</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -184,6 +185,19 @@
                 {% endif %}
               </td>
               <td class="pre-visualizacao">{{ linha.conteudo|truncatechars:180 }}</td>
+              <td>
+                {% comment %}
+                  O corte na distancia desta linha, com uma folga minima para ela
+                  entrar: esta e as de cima passam a valer como fonte, as de baixo nao.
+                {% endcomment %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="consulta" value="{{ medicao.consulta }}">
+                  <input type="hidden" name="max_cosine_distance" value="{{ linha.corte }}">
+                  <input type="hidden" name="top_k" value="{{ config.top_k }}">
+                  <button type="submit" class="botao discreto pequeno" title="{% translate 'Esta linha e as de cima entram como fonte; as de baixo nao' %}">{% translate "Cortar aqui" %}</button>
+                </form>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -192,7 +206,7 @@
     <p class="pre-visualizacao">
       {% blocktranslate trimmed %}
         O corte certo fica entre a ultima linha que voce considera relevante e a
-        primeira que nao e. A faixa costuma ser estreita: com este modelo, ate
+        primeira que nao e: clique em Cortar aqui na ultima relevante. A faixa costuma ser estreita: com este modelo, ate
         um texto de outro assunto raramente passa de 0.20 — um limiar generoso
         nao filtra nada.
       {% endblocktranslate %}

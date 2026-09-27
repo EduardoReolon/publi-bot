@@ -75,7 +75,7 @@ flowchart TB
 
 * **The cloud never runs heavy models.** It talks HTTP to inference endpoints — a local GPU over Tailscale, or any OpenAI-compatible API — each with its own concurrency limit. Swapping providers is a row in the admin panel, not a deploy (no LangChain, no CrewAI).
 * **The database is the source of truth, not the broker.** Every generation is a stateful job; if the GPU goes offline mid-article, the job pauses and resumes from the exact step when the card is back.
-* **Client sites are plain HTTP.** Any platform that implements the documented `/api/v1` contract (HMAC-signed, replay-protected requests) can receive content. A Django reference implementation passes the contract test suite.
+* **Client sites are plain HTTP.** Any platform that implements the documented `/api/v1` contract (HMAC-signed, replay-protected requests) can receive content. For Django sites, the `publi-bot-core-django` package implements it and passes the contract test suite.
 
 ## ✨ Core Engineering Features
 
@@ -161,7 +161,7 @@ core/            settings, routing, Celery app
 deploy/          Nginx, systemd units, deploy and backup scripts
 docs/
   adr/           architecture decision records
-  contrato/      the /api/v1 contract, OpenAPI spec and reference node
+  contrato/      the /api/v1 contract and OpenAPI spec (the Django side is the publi-bot-core-django package)
 tests/           main suite (~850 tests)
 tests_contrato/  end-to-end contract tests
 ```

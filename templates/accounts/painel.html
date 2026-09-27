@@ -14,6 +14,9 @@
   {% for alerta in alertas %}
     <div class="aviso ruim">{{ alerta }}</div>
   {% endfor %}
+  {% if busca.config and not busca.config.foi_calibrado and busca.trechos_ativos %}
+    <div class="acoes"><a class="botao secundario" href="{% url 'knowledge:busca' %}#testar">{% translate "Ajustar o filtro agora" %}</a></div>
+  {% endif %}
 
   {% if resumo.tem_problema %}
     <h2>{% translate "Precisa de atencao" %}</h2>

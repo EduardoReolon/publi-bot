@@ -652,6 +652,7 @@ def _medir_consulta(request: HttpRequest, consulta: str, config):
         "trechos": [
             {
                 "distancia": float(t.distancia),
+                "corte": f"{float(t.distancia) + 0.0005:.4f}",
                 "aceito": float(t.distancia) <= limiar,
                 "titulo": t.source_title or str(t.document_id),
                 "heading": t.heading,

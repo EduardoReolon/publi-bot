@@ -363,6 +363,8 @@ def test_teste_de_consulta_nao_registra_nada(navegador, tenant_de_busca):
     resposta = navegador.get(_url("knowledge:busca"), {"consulta": "efeito observado"})
     assert resposta.status_code == 200
     assert b"Distancia" in resposta.content
+    # Cada linha oferece o corte ali mesmo, sem digitar numero.
+    assert b"Cortar aqui" in resposta.content
 
     with schema_context(tenant_de_busca.schema_name):
         assert RetrievalQuery.objects.count() == 0

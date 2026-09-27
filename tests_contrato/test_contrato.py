@@ -1,6 +1,6 @@
 """Testa o contrato exercitando os DOIS lados de verdade.
 
-O cliente do PubliBot fala com a implementacao de referencia por HTTP real,
+O cliente do PubliBot fala com o lado do site (publibot_core) por HTTP real,
 com assinatura real. Testar so um lado deixaria passar exatamente a classe de
 defeito que mais importa aqui: os dois lados calcularem a assinatura de forma
 diferente, ou discordarem sobre o que e idempotencia.
@@ -47,7 +47,7 @@ def _assinar(
 class ClienteSeguro:
     """Cliente de teste que sempre fala HTTPS.
 
-    O contrato EXIGE TLS, e a implementacao de referencia responde 403 a
+    O contrato EXIGE TLS, e o publibot_core responde 403 a
     requisicao em texto claro. Desligar essa checagem para os testes passarem
     esconderia justamente a defesa que se quer verificar.
 
@@ -71,7 +71,7 @@ class ClienteSeguro:
 
 @pytest.fixture
 def no_receptor(client):
-    """Cliente HTTP falando com o no de referencia.
+    """Cliente HTTP falando com o publibot_core.
 
     As credenciais e o caminho do app vem de `core.settings.test_contract`.
     """
@@ -192,7 +192,7 @@ def test_mesma_chave_nao_publica_duas_vezes(no_receptor):
     """O cenario classico: o site grava e responde 201, a resposta se perde na
     rede, e o PubliBot repete. Sem idempotencia, o mesmo conteudo e publicado
     duas vezes — exatamente o problema que o produto existe para evitar."""
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     chave = str(uuid.uuid4())
 
@@ -205,7 +205,7 @@ def test_mesma_chave_nao_publica_duas_vezes(no_receptor):
     assert segunda.json()["status"] == "already_exists"
 
     assert primeira.json()["remote_id"] == segunda.json()["remote_id"]
-    assert ReceivedPublication.objects.filter(idempotency_key=chave).count() == 1
+    assert Publication.objects.filter(idempotency_key=chave).count() == 1
 
 
 def test_chaves_diferentes_criam_publicacoes_diferentes(no_receptor):
@@ -258,22 +258,22 @@ def test_script_no_conteudo_e_recusado_com_422(no_receptor):
 
 
 def test_atributo_de_evento_e_removido(no_receptor):
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     com_evento = {**PAYLOAD, "html_content": '<p onclick="x()">texto</p>'}
     resposta, chave = _publicar(no_receptor, com_evento)
 
     assert resposta.status_code == 201
-    gravado = ReceivedPublication.objects.get(idempotency_key=chave)
+    gravado = Publication.objects.get(idempotency_key=chave)
     assert "onclick" not in gravado.html_content
     assert "texto" in gravado.html_content
 
 
 def test_titulo_tambem_e_sanitizado(no_receptor):
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     _, chave = _publicar(no_receptor, {**PAYLOAD, "title": "<b>Titulo</b> com marcacao"})
-    gravado = ReceivedPublication.objects.get(idempotency_key=chave)
+    gravado = Publication.objects.get(idempotency_key=chave)
     assert "<b>" not in gravado.title
 
 
@@ -290,23 +290,23 @@ FAQ = [
 
 
 def test_faq_chega_separado_do_corpo_e_na_ordem(no_receptor):
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     resposta, chave = _publicar(no_receptor, {**PAYLOAD, "faq": FAQ})
 
     assert resposta.status_code == 201
-    gravado = ReceivedPublication.objects.get(idempotency_key=chave)
+    gravado = Publication.objects.get(idempotency_key=chave)
     assert gravado.faq == FAQ
     assert "Medir em casa" not in gravado.html_content
 
 
 def test_artigo_sem_faq_e_normal(no_receptor):
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     resposta, chave = _publicar(no_receptor, PAYLOAD)
 
     assert resposta.status_code == 201
-    assert ReceivedPublication.objects.get(idempotency_key=chave).faq == []
+    assert Publication.objects.get(idempotency_key=chave).faq == []
 
 
 def test_faq_nao_e_caminho_alternativo_para_script(no_receptor):
@@ -319,12 +319,12 @@ def test_faq_nao_e_caminho_alternativo_para_script(no_receptor):
 
 
 def test_pergunta_do_faq_e_texto_puro(no_receptor):
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     com_marcacao = [{"question": "<b>Negrito</b>?", "answer_html": "<p onclick='x()'>R.</p>"}]
     _, chave = _publicar(no_receptor, {**PAYLOAD, "faq": com_marcacao})
 
-    item = ReceivedPublication.objects.get(idempotency_key=chave).faq[0]
+    item = Publication.objects.get(idempotency_key=chave).faq[0]
     assert item["question"] == "Negrito?"
     assert "onclick" not in item["answer_html"]
 
@@ -366,7 +366,7 @@ def test_perguntas_confirmadas_nao_voltam(no_receptor):
     """A unica coisa que remove uma pergunta do estado pendente e a publicacao,
     que so acontece apos revisao humana. Sem confirmacao, cada ciclo
     reimportaria as mesmas perguntas e geraria a mesma resposta repetidamente."""
-    from publibot_node.models import VisitorQuestion
+    from publibot_core.models import VisitorQuestion
 
     q1 = VisitorQuestion.objects.create(question_text="Primeira duvida")
     VisitorQuestion.objects.create(question_text="Segunda duvida")
@@ -391,7 +391,7 @@ def test_perguntas_confirmadas_nao_voltam(no_receptor):
 
 def test_nome_do_visitante_so_sai_com_consentimento(no_receptor):
     """O nome nao e necessario para produzir o conteudo."""
-    from publibot_node.models import VisitorQuestion
+    from publibot_core.models import VisitorQuestion
 
     VisitorQuestion.objects.create(question_text="Duvida", author_name="Joao Silva")
 
@@ -483,7 +483,7 @@ def test_no_nao_pede_foto_de_autor_que_nao_tem_foto(no_receptor):
 
 def test_foto_e_guardada_pela_referencia_do_autor(no_receptor):
     """Guardar pelo nome criaria um segundo registro quando o autor e renomeado."""
-    from publibot_node.models import AuthorPhoto
+    from publibot_core.models import AuthorPhoto
 
     referencia = str(uuid.uuid4())
     conteudo = _foto_webp()
@@ -510,7 +510,7 @@ def test_mesma_foto_enviada_de_novo_nao_regrava(no_receptor):
 
 def test_foto_trocada_substitui_a_anterior(no_receptor):
     """O digest muda quando a foto muda; e assim que a troca chega ao site."""
-    from publibot_node.models import AuthorPhoto
+    from publibot_core.models import AuthorPhoto
 
     referencia = str(uuid.uuid4())
     _enviar_foto(no_receptor, referencia, _foto_webp(lado=40))
@@ -580,8 +580,8 @@ def test_o_vetor_de_teste_do_readme_bate_com_a_implementacao():
     assert f"{len(corpo)} bytes" in readme
 
 
-def test_toda_rota_do_openapi_existe_no_no_de_referencia():
-    """A implementacao de referencia so serve como referencia se implementar
+def test_toda_rota_do_openapi_existe_no_publibot_core():
+    """O publibot_core so serve aos sites se implementar
     tudo o que o contrato especifica."""
     from django.urls import get_resolver
 
@@ -604,7 +604,7 @@ def test_as_capacidades_declaradas_sao_as_que_o_openapi_conhece():
     """Um recurso anunciado em /health/ que o contrato nao descreve nao tem como
     ser consumido; um que o contrato descreve e o no nao anuncia nunca e
     chamado."""
-    from publibot_node import RECURSOS
+    from publibot_core import RECURSOS
 
     especificacao = yaml.safe_load(_ler_contrato("openapi.yaml"))
     caminho = especificacao["paths"]["/health/"]["get"]["responses"]["200"]
@@ -631,7 +631,7 @@ def _atualizar(cliente, remote_id: str, payload: dict, *, chave_idem: str | None
 
 
 def test_atualizacao_substitui_o_conteudo_e_mantem_o_endereco(no_receptor):
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     resposta, _ = _publicar(no_receptor, PAYLOAD)
     original = resposta.json()
@@ -650,11 +650,11 @@ def test_atualizacao_substitui_o_conteudo_e_mantem_o_endereco(no_receptor):
     assert dados["status"] == "updated"
     assert dados["version"] == 2
     assert dados["url"] == original["url"]  # o endereco nao muda
-    publicacao = ReceivedPublication.objects.get(pk=original["remote_id"])
+    publicacao = Publication.objects.get(pk=original["remote_id"])
     assert publicacao.title == "Monitoramento na gestacao, atualizado"
     assert "Secao nova" in publicacao.html_content
     assert publicacao.faq[0]["question"] == "E no terceiro trimestre?"
-    assert ReceivedPublication.objects.count() == 1
+    assert Publication.objects.count() == 1
 
 
 def test_mesma_chave_de_atualizacao_nao_aplica_duas_vezes(no_receptor):
@@ -712,18 +712,18 @@ CORPO_COM_CHAMADA = (
 
 def test_chamada_no_meio_e_trocada_pelo_bloco_do_site(no_receptor):
     from django.template import Context, Template
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     resposta, _ = _publicar(
         no_receptor, {**PAYLOAD, "html_content": CORPO_COM_CHAMADA, "call_to_action": "inline"}
     )
-    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
+    publicacao = Publication.objects.get(pk=resposta.json()["remote_id"])
     assert publicacao.call_to_action == "inline"
     assert '<aside data-publibot="chamada"></aside>' in publicacao.html_content
 
-    pagina = Template(
-        "{% load publibot_node %}{% corpo_com_chamada p %}|{% chamada_no_fim p %}"
-    ).render(Context({"p": publicacao}))
+    pagina = Template("{% load publibot %}{% corpo_com_chamada p %}|{% chamada_no_fim p %}").render(
+        Context({"p": publicacao})
+    )
     meio, fim = pagina.split("|")
     assert "data-publibot-bloco" in meio and 'data-publibot="chamada"' not in meio
     assert meio.index("A.") < meio.index("data-publibot-bloco") < meio.index("B.")
@@ -732,26 +732,26 @@ def test_chamada_no_meio_e_trocada_pelo_bloco_do_site(no_receptor):
 
 def test_sem_chamada_nao_ha_bloco_nem_marca(no_receptor):
     from django.template import Context, Template
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     resposta, _ = _publicar(
         no_receptor, {**PAYLOAD, "html_content": CORPO_COM_CHAMADA, "call_to_action": "none"}
     )
-    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
-    pagina = Template("{% load publibot_node %}{% corpo_com_chamada p %}{% chamada_no_fim p %}")
+    publicacao = Publication.objects.get(pk=resposta.json()["remote_id"])
+    pagina = Template("{% load publibot %}{% corpo_com_chamada p %}{% chamada_no_fim p %}")
     html = pagina.render(Context({"p": publicacao}))
     assert "aside" not in html
 
 
 def test_aside_so_passa_vazio_e_com_o_marcador(no_receptor):
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     sujo = (
         '<p>A.</p><aside data-publibot="chamada" onclick="x()"><b>falso</b></aside>'
         '<aside class="anuncio">texto</aside><aside data-publibot="chamada"></aside>'
     )
     resposta, _ = _publicar(no_receptor, {**PAYLOAD, "html_content": sujo, "call_to_action": "x"})
-    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
+    publicacao = Publication.objects.get(pk=resposta.json()["remote_id"])
 
     assert publicacao.html_content.count("<aside") == 1
     assert "falso" not in publicacao.html_content and "onclick" not in publicacao.html_content
@@ -775,7 +775,7 @@ def _medir(client, rota: str, dados: dict, **extra):
 
 
 def test_leitura_conta_so_tempo_ativo_de_verdade(no_receptor, client):
-    from publibot_node.models import LeituraDoDia
+    from publibot_core.models._internos import DailyReading
 
     remote_id = _publicacao(no_receptor)
     _medir(client, "leitura", {"id": remote_id, "active": 3})
@@ -784,14 +784,14 @@ def test_leitura_conta_so_tempo_ativo_de_verdade(no_receptor, client):
     _medir(client, "leitura", {"id": remote_id, "active": 60}, HTTP_USER_AGENT="Googlebot/2.1")
     _medir(client, "leitura", {"id": str(uuid.uuid4()), "active": 60})
 
-    linha = LeituraDoDia.objects.get()
+    linha = DailyReading.objects.get()
     assert (linha.views, linha.engaged_views) == (3, 2)
     assert linha.engaged_seconds == 3 + 95 + 1800
     assert (linha.read_to_end, linha.cta_views, linha.cta_clicks) == (1, 1, 1)
 
 
 def test_conversao_guarda_a_jornada_sem_duplicar(no_receptor, client):
-    from publibot_node.models import Conversao
+    from publibot_core.models._internos import Conversion
 
     remote_id = _publicacao(no_receptor)
     conversao = {
@@ -805,7 +805,7 @@ def test_conversao_guarda_a_jornada_sem_duplicar(no_receptor, client):
     assert _medir(client, "conversao", conversao).status_code == 204
     _medir(client, "conversao", conversao)
 
-    guardada = Conversao.objects.get()
+    guardada = Conversion.objects.get()
     assert guardada.kind == "whatsappscript" and guardada.via_cta
     assert (guardada.first_channel, guardada.last_channel) == ("organic", "other")
     assert guardada.journey == [{"remote_id": remote_id, "engaged_seconds": 95}]
@@ -864,10 +864,13 @@ def test_leitura_js_classifica_o_canal_de_entrada():
     node = shutil.which("node")
     if node is None:
         pytest.skip("node nao instalado")
+    import publibot_core
+
     script = Path(__file__).resolve().parent / "leitura_canal.js"
-    # O caminho e o do node do PATH e o de um arquivo deste repositorio.
+    leitura = Path(publibot_core.__file__).parent / "static" / "publibot" / "leitura.js"
+    # O node do PATH, um arquivo deste repositorio e um do pacote instalado.
     resultado = subprocess.run(  # noqa: S603
-        [node, str(script)], capture_output=True, text=True, timeout=30
+        [node, str(script), str(leitura)], capture_output=True, text=True, timeout=30
     )
     assert resultado.returncode == 0, resultado.stdout + resultado.stderr
 
@@ -877,19 +880,17 @@ def test_leitura_js_classifica_o_canal_de_entrada():
 # ---------------------------------------------------------------------------
 def test_relacionados_sao_guardados_limpos_e_exibidos(no_receptor):
     from django.template import Context, Template
-    from publibot_node.models import ReceivedPublication
+    from publibot_core.models import Publication
 
     relacionados = [
         {"remote_id": "a1", "title": "Preco do <b>cimento</b>", "url": "https://s.com.br/cimento/"},
         {"remote_id": "a2", "title": "Falso", "url": "javascript:alert(1)"},
     ]
     resposta, _ = _publicar(no_receptor, {**PAYLOAD, "related_articles": relacionados})
-    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
+    publicacao = Publication.objects.get(pk=resposta.json()["remote_id"])
 
     assert publicacao.related_articles == [
         {"remote_id": "a1", "title": "Preco do cimento", "url": "https://s.com.br/cimento/"}
     ]
-    html = Template("{% load publibot_node %}{% leia_tambem p %}").render(
-        Context({"p": publicacao})
-    )
+    html = Template("{% load publibot %}{% leia_tambem p %}").render(Context({"p": publicacao}))
     assert '<a href="https://s.com.br/cimento/">Preco do cimento</a>' in html

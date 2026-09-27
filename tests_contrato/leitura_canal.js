@@ -1,7 +1,7 @@
 // Canal de entrada do leitura.js (anuncio, organico, social...), com entradas simuladas.
 const fs = require('fs');
-const path = require("path");
-const src = fs.readFileSync(path.join(__dirname, "..", "docs/contrato/reference/django/publibot_node/static/publibot_node/leitura.js"), "utf8");
+// O leitura.js e o do pacote publi-bot-core-django instalado; o teste passa o caminho.
+const src = fs.readFileSync(process.argv[2], "utf8");
 const corpo = src.slice(src.indexOf('function canalDaEntrada()'), src.indexOf('function lerCanais()'));
 function caso(url, ref) {
   const u = new URL(url);

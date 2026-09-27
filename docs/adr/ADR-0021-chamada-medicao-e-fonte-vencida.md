@@ -64,7 +64,7 @@ Tres lacunas apareceram:
 - O radar ganha a parcela **conversao** so quando ha dado: tema vizinho
   (distancia <= 0,20) de artigo que converte acima da media sobe, com peso de
   15%. Sem dado, a nota e identica a de antes.
-- O no de referencia traz o script (`leitura.js`), as rotas que recebem do
+- O lado do site (hoje o pacote publi-bot-core-django) traz o script (`leitura.js`), as rotas que recebem do
   navegador e as tags de template do bloco.
 
 ## Alternativas descartadas

@@ -64,7 +64,6 @@ class Plano:
     rodadas_por_semana: int
     buscas: int
     pautas: int
-    videos: int
     # Dores do publico buscadas por rodada (as Oportunidades).
     dores: int = 3
     # Paginas das buscas do radar sugeridas como fonte, por rodada.
@@ -76,14 +75,13 @@ class Plano:
 
 
 INTENSIDADES = {
-    # Videos: o YouTube e gratuito ate a cota (uma busca = 100 de 10 mil
-    # unidades por dia); no minimo, 3 por rodada ja trazem comentarios e fontes.
-    "minimo": Plano(rodadas_por_semana=1, buscas=5, pautas=2, videos=3),
+    # O YouTube fica fora da intensidade: e gratuito ate a cota diaria, e a
+    # rodada busca sempre o que cabe nela (apps/radar/youtube.py).
+    "minimo": Plano(rodadas_por_semana=1, buscas=5, pautas=2),
     "normal": Plano(
         rodadas_por_semana=2,
         buscas=10,
         pautas=4,
-        videos=5,
         dores=5,
         fontes=5,
         paginas_de_concorrente=100,
@@ -94,7 +92,6 @@ INTENSIDADES = {
         rodadas_por_semana=3,
         buscas=20,
         pautas=6,
-        videos=10,
         dores=10,
         fontes=8,
         paginas_de_concorrente=200,
@@ -580,11 +577,15 @@ def _processar(tarefa: TarefaNaFila, resultado: dict) -> None:
 def _coletas_extras(config, plano, rodada, resumo) -> list[SinalDeDemanda]:
     """YouTube e Search Console, quando ligados. Falha de um nao para a rodada."""
     novos: list[SinalDeDemanda] = []
-    if config.usar_youtube and plano.videos:
+    if config.usar_youtube:
         try:
-            from apps.radar.youtube import colher_sinais
+            from apps.radar.youtube import SEMENTES_POR_RODADA, colher_sinais
 
-            novos += colher_sinais(_sementes(config), rodada=rodada, videos=plano.videos)
+            # Em revezamento, como as buscas pagas: com mais de 6 sementes, a
+            # lista inteira passa pelo YouTube em poucas rodadas.
+            escolhidas = _da_vez(_sementes(config), SEMENTES_POR_RODADA, chave="youtube")
+            resumo["youtube"] = escolhidas
+            novos += colher_sinais(escolhidas, rodada=rodada)
         except ProvedorIndisponivel as exc:
             resumo["erros"].append(f"youtube: {exc}")
     if config.usar_search_console:

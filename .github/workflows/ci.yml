@@ -150,7 +150,7 @@ jobs:
         run: pytest -q
 
       - name: Testes de contrato
-        # Rodam com outro settings: o no de referencia e um site comum, sem
+        # Rodam com outro settings: o publibot_core e um site comum, sem
         # multi-tenancy, e por isso ficam fora do `testpaths` padrao.
         run: pytest tests_contrato/ -q --ds=core.settings.test_contract
 

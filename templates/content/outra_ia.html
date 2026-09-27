@@ -37,6 +37,11 @@
       {% endblocktranslate %}
       {% translate "Chamada para a oferta" %}: {{ artigo.get_call_to_action_display }}.
     </p>
+    <ol class="pre-visualizacao">
+      {% for citacao in artigo.citations.all %}
+        <li>{{ citacao.source_title|default:citacao.source_label }}{% if citacao.used_as_primary %} <span class="selo ok">{% translate "link de saida" %}</span>{% endif %}</li>
+      {% endfor %}
+    </ol>
     <div class="acoes"><button type="button" class="botao" data-copiar="pedido-artigo">{% translate "Copiar pedido" %}</button></div>
     <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-artigo" readonly rows="20" style="width:100%">{{ pedido }}</textarea></details>
     <p class="ajuda">{% translate "Use um modelo grande sem a busca na web ligada. Se ele pedir para pesquisar, responda que nao: so as fontes do pedido." %}</p>

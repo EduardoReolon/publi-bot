@@ -313,6 +313,9 @@
     /* Sugestao de titulo: o botao primeiro, o texto depois. A pessoa percorre
        a lista lendo e clica na linha que escolheu, sem procurar o controle. */
     .sugestao { display: flex; gap: .7rem; align-items: baseline; }
+    /* "hidden" vence qualquer display do CSS (senao .sugestao, com flex, some
+       do controle do "Ver mais"). */
+    [hidden] { display: none !important; }
     .sugestao .texto { flex: 1; }
     .sugestao button { padding: .3rem .7rem; font-size: .85rem; white-space: nowrap; }
 

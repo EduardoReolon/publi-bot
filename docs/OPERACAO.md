@@ -540,8 +540,8 @@ o recurso `insights` e alimenta Artigos > Desempenho no site e a parcela de
 conversao do radar. O que o site precisa implementar para isso (e para a
 chamada da oferta no meio do artigo) esta em
 [`contrato/README.md`](contrato/README.md), secoes "Chamada para a oferta do
-site" e "Leitura e conversoes"; o no de referencia em Django ja traz o script
-de medicao e as tags de template.
+site" e "Leitura e conversoes"; o pacote `publi-bot-core-django` (sites em
+Django) ja traz o script de medicao e as tags de template.
 
 **Negocio primeiro.** Antes da primeira rodada do radar, preencha a tela
 **Negocio** (tema, publico, oferta, dores, valores): e a referencia de tudo que
@@ -585,6 +585,23 @@ venv/bin/python manage.py provision_tenant acme --name="ACME Ltda"
 Se o login reaparecer sem erro nenhum, o `ROOT_DOMAIN` tem um rotulo so: o
 navegador DESCARTA o atributo `Domain` do cookie e a sessao nao atravessa para
 o subdominio.
+
+### Passo 7b — O site do cliente
+
+O site que recebe os artigos implementa o contrato `/api/v1`
+([`contrato/README.md`](contrato/README.md)). Se ele e Django, o contrato ja
+vem pronto no pacote
+[`publi-bot-core-django`](https://github.com/EduardoReolon/publi-bot-core-django):
+
+```bash
+pip install "publi-bot-core-django @ git+https://github.com/EduardoReolon/publi-bot-core-django@main"
+```
+
+O passo a passo de la (`docs/IMPLANTACAO.md`) cobre settings, rotas, HTTPS e
+midia; o `docs/PARA_IA.md` diz as tabelas e tags que o template usa. A chave e
+o segredo saem do cadastro em **Site e cadencia**. Para conferir as duas
+pontas: `manage.py publibot_conferir` no site e `manage.py conferir_instalacao`
+aqui (linha "site").
 
 ### Passo 8 — Roteiro de aceitacao
 

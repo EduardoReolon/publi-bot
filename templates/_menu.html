@@ -6,22 +6,30 @@
 {% endcomment %}
 <div class="menu">
   <div class="envolucro">
+    {# Na ordem em que alguem novo preenche: o site, o negocio e a voz; depois
+       o radar descobre temas, o acervo sustenta, e as pautas viram artigos. #}
     <a href="{% url 'accounts:painel' %}" class="{% if aba == 'painel' %}ativo{% endif %}">
       {% translate "Painel" %}
-    </a>
-    <a href="{% url 'editorial:negocio' %}" class="{% if aba == 'negocio' %}ativo{% endif %}">
-      {% translate "Negocio" %}
     </a>
     <a href="{% url 'integrations:site' %}" class="{% if aba == 'site' %}ativo{% endif %}">
       {% translate "Site e cadencia" %}
     </a>
-    <a href="{% url 'knowledge:documentos' %}" class="{% if aba == 'documentos' %}ativo{% endif %}">
-      {% translate "Documentos" %}
-      {% if pendencias.curadoria %}<span class="contagem">{{ pendencias.curadoria }}</span>{% endif %}
+    <a href="{% url 'editorial:negocio' %}" class="{% if aba == 'negocio' %}ativo{% endif %}">
+      {% translate "Negocio" %}
+    </a>
+    <a href="{% url 'editorial:guia' %}" class="{% if aba == 'editorial' %}ativo{% endif %}">
+      {% translate "Guia editorial" %}
+    </a>
+    <a href="{% url 'content:autores' %}" class="{% if aba == 'autores' %}ativo{% endif %}">
+      {% translate "Autores" %}
     </a>
     <a href="{% url 'radar:radar' %}" class="{% if aba == 'radar' %}ativo{% endif %}">
       {% translate "Radar" %}
       {% if pendencias.atualizacoes %}<span class="contagem" title="{% translate 'artigos para atualizar' %}">{{ pendencias.atualizacoes }}</span>{% endif %}
+    </a>
+    <a href="{% url 'knowledge:documentos' %}" class="{% if aba == 'documentos' %}ativo{% endif %}">
+      {% translate "Documentos" %}
+      {% if pendencias.curadoria %}<span class="contagem">{{ pendencias.curadoria }}</span>{% endif %}
     </a>
     <a href="{% url 'content:pautas' %}" class="{% if aba == 'pautas' %}ativo{% endif %}">
       {% translate "Pautas" %}
@@ -30,15 +38,9 @@
       {% translate "Artigos" %}
       {% if pendencias.revisao %}<span class="contagem">{{ pendencias.revisao }}</span>{% endif %}
     </a>
-    <a href="{% url 'content:autores' %}" class="{% if aba == 'autores' %}ativo{% endif %}">
-      {% translate "Autores" %}
-    </a>
     <a href="{% url 'content:perguntas' %}" class="{% if aba == 'perguntas' %}ativo{% endif %}">
       {% translate "Perguntas" %}
       {% if pendencias.perguntas %}<span class="contagem">{{ pendencias.perguntas }}</span>{% endif %}
-    </a>
-    <a href="{% url 'editorial:guia' %}" class="{% if aba == 'editorial' %}ativo{% endif %}">
-      {% translate "Guia editorial" %}
     </a>
     <a href="{% url 'operacao:trabalhos' %}" class="{% if aba == 'operacao' %}ativo{% endif %}">
       {% translate "Operacao" %}

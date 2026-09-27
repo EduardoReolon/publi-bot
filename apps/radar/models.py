@@ -100,9 +100,9 @@ class ConfiguracaoDoRadar(models.Model):
         _("comentarios do YouTube"),
         default=False,
         help_text=_(
-            "A cada rodada, busca videos das primeiras sementes (minimo: 3, normal: 5, "
-            "intenso: 10): as perguntas dos comentarios viram sinais, e os videos vao para "
-            "Documentos > Fontes sugeridas. Gratuito ate a cota do YouTube."
+            "A cada rodada, em qualquer intensidade, busca 5 videos de ate 6 sementes: as "
+            "perguntas dos comentarios viram sinais, e os videos vao para Documentos > "
+            "Fontes sugeridas. Gratuito; o PubliBot para antes de acabar a cota diaria."
         ),
     )
     usar_search_console = models.BooleanField(_("Search Console"), default=False)

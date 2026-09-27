@@ -191,7 +191,7 @@ Rode `--listar` para os tamanhos atuais. Em linhas gerais:
 | `inferencia` | Conexoes de modelo, reserva de capacidade, adaptadores. |
 | `conteudo-modelos` | As tabelas de artigo, secao, autor, pergunta e resposta. |
 | `publicacao` | Payload, assinatura, idempotencia, cadencia. |
-| `contrato` | O que um site precisa implementar, e o no de referencia. |
+| `contrato` | O que um site precisa implementar, e os testes contra o lado do site. |
 | `orquestracao` | O motor de trabalhos e o painel de operacao. |
 | `tenancy` | Multi-tenancy, cadastro, isolamento. |
 | `fundacao` | Settings, rotas, layout, deploy. |

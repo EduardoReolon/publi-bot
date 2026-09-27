@@ -1,6 +1,6 @@
 """Configuracao dos testes de contrato.
 
-Isolados do resto da suite porque rodam com outro settings: o no de referencia
+Isolados do resto da suite porque rodam com outro settings: o publibot_core
 e um site comum, sem multi-tenancy. O `tests/conftest.py` importa os models de
 tenancy no nivel do modulo, o que quebraria aqui.
 """

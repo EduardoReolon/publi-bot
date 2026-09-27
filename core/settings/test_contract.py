@@ -1,9 +1,9 @@
-"""Configuracao para exercitar o contrato contra a implementacao de referencia.
+"""Configuracao para exercitar o contrato contra o lado do site.
 
-O no de referencia (`docs/contrato/reference/django/publibot_node`) e um projeto
-independente: quem for implementar o contrato instala aquele app no proprio
-site, nao neste. Para testar os dois lados conversando de verdade, ele e
-hospedado aqui temporariamente.
+O lado do site e o pacote `publi-bot-core-django` (app `publibot_core`,
+repositorio EduardoReolon/publi-bot-core-django), instalado pelo
+requirements-dev. Para testar os dois lados conversando de verdade, ele e
+hospedado aqui durante os testes.
 
 Isso e o que permite verificar a classe de defeito que mais importa neste
 contrato: os dois lados calcularem a assinatura de forma diferente, ou
@@ -22,16 +22,11 @@ Uso:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+from core import env
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
-CAMINHO_DA_REFERENCIA = BASE_DIR / "docs" / "contrato" / "reference" / "django"
-if str(CAMINHO_DA_REFERENCIA) not in sys.path:
-    sys.path.insert(0, str(CAMINHO_DA_REFERENCIA))
-
-from core import env  # noqa: E402
 
 env.load_env_file(BASE_DIR)
 
@@ -42,7 +37,7 @@ ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
-    "publibot_node",
+    "publibot_core",
 ]
 
 MIDDLEWARE = [
@@ -87,9 +82,11 @@ TIME_ZONE = "UTC"
 # Credenciais do teste.
 PUBLIBOT_API_KEY = "chave-de-api-do-teste"
 PUBLIBOT_SIGNING_SECRET = "segredo-de-assinatura-do-teste"
-PUBLIBOT_NODE_SITE_TITLE = "Site de teste"
-PUBLIBOT_NODE_PUBLIC_URL = "https://exemplo.com.br"
-PUBLIBOT_NODE_HOME_TEXT = "Texto da home do site de teste."
+PUBLIBOT_SITE_TITLE = "Site de teste"
+PUBLIBOT_PUBLIC_URL = "https://exemplo.com.br"
+PUBLIBOT_HOME_TEXT = "Texto da home do site de teste."
+# O cliente de teste fala HTTPS (ClienteSeguro): a exigencia fica ligada.
+PUBLIBOT_REQUIRE_HTTPS = True
 
 # O nonce so pode ser aceito uma vez. Com cache em memoria do processo, o
 # comportamento e o mesmo do Redis para o que este teste verifica.

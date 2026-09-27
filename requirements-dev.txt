@@ -13,6 +13,10 @@
 SQLAlchemy==2.0.52
 
 # --- Testes ----------------------------------------------------------------
+# O lado do site no contrato (tests_contrato/ fala com ele por HTTP). Pela main:
+# os dois repositorios mudam juntos, e o teste de contrato e quem acusa quando
+# um lado anda sem o outro.
+publi-bot-core-django @ git+https://github.com/EduardoReolon/publi-bot-core-django@main
 pytest==8.4.2
 pytest-django==4.11.1
 pytest-cov==6.2.1

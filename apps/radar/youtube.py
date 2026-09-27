@@ -17,7 +17,6 @@ para o livro-caixa com custo zero.
 from __future__ import annotations
 
 import logging
-import math
 import re
 import unicodedata
 
@@ -30,6 +29,16 @@ from apps.radar.provedores import ProvedorIndisponivel
 logger = logging.getLogger("publibot.radar")
 
 API = "https://www.googleapis.com/youtube/v3"
+
+# Por rodada, em qualquer intensidade: o YouTube nao cobra, so tem cota. Uma
+# busca gasta 100 unidades e cada pagina de comentarios 1, de 10 mil por dia
+# (por chave). 6 sementes x 5 videos = ~630 unidades: da para rodar o radar
+# varias vezes no dia. A trava abaixo guarda uma folga para nunca estourar.
+SEMENTES_POR_RODADA = 6
+VIDEOS_POR_SEMENTE = 5
+COTA_DIARIA = 10_000
+FOLGA_DA_COTA = 2_000
+UNIDADES_DA_BUSCA = 100
 
 _INTERROGATIVAS = (
     "como ",
@@ -213,20 +222,46 @@ def _registrar_candidato(video: dict, *, consulta: str):
     return candidato
 
 
-def colher_sinais(sementes: list[str], *, rodada, videos: int) -> list[SinalDeDemanda]:
-    """Busca videos das sementes, colhe as perguntas dos comentarios.
+def unidades_nas_ultimas_24h() -> int:
+    """A cota gasta, pelo livro-caixa: busca = 100, o resto = 1.
 
-    `videos` e o total da rodada, dividido entre as sementes.
+    A cota do Google vira a meia-noite do Pacifico; 24 horas corridas sao uma
+    aproximacao conservadora.
+    """
+    import datetime
+
+    from django.db.models import Count, Q
+    from django.utils import timezone
+
+    contagem = ChamadaExterna.objects.filter(
+        provedor=ChamadaExterna.Provedor.YOUTUBE,
+        criado_em__gte=timezone.now() - datetime.timedelta(hours=24),
+    ).aggregate(buscas=Count("pk", filter=Q(endpoint="search")), total=Count("pk"))
+    return contagem["buscas"] * UNIDADES_DA_BUSCA + (contagem["total"] - contagem["buscas"])
+
+
+def colher_sinais(
+    sementes: list[str], *, rodada, videos: int = VIDEOS_POR_SEMENTE
+) -> list[SinalDeDemanda]:
+    """Busca `videos` videos por semente e colhe as perguntas dos comentarios.
+
+    So as sementes cuja busca cabe na cota do dia, com folga.
     """
     from apps.radar.coleta import _novo_sinal
     from apps.radar.models import ConfiguracaoDoRadar
 
     contas = ContasExternas.carregar()
     config = ConfiguracaoDoRadar.carregar()
-    sementes = sementes[:3]
     if not sementes or videos <= 0:
         return []
-    por_semente = max(1, math.ceil(videos / len(sementes)))
+    por_semente = min(videos, 25)
+    livre = COTA_DIARIA - FOLGA_DA_COTA - unidades_nas_ultimas_24h()
+    cabem = max(0, livre // (UNIDADES_DA_BUSCA + por_semente))
+    if cabem == 0:
+        raise ProvedorIndisponivel(
+            "a cota diaria do YouTube esta quase no fim; a proxima rodada busca de novo."
+        )
+    sementes = sementes[: min(SEMENTES_POR_RODADA, cabem)]
 
     novos: list[SinalDeDemanda] = []
     for semente in sementes:

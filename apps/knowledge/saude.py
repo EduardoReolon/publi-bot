@@ -320,9 +320,12 @@ def alertas_da_busca(resumo: ResumoDaBusca) -> list[str]:
         avisos.append(
             str(
                 _(
-                    "O limiar ainda e o valor de fabrica, medido em outro acervo. "
-                    "Teste uma consulta real na tela de qualidade da busca antes "
-                    "de confiar no filtro."
+                    "O filtro que decide se um trecho do seu acervo serve de fonte "
+                    "ainda usa o valor de fabrica. Ele e um corte de distancia: "
+                    "folgado demais, o artigo cita texto que so tangencia o tema; "
+                    "apertado demais, a pauta fica sem fonte. Faca uma vez: em "
+                    "Documentos > Qualidade da busca, teste um tema do seu site e "
+                    "clique em Cortar aqui na ultima linha que ainda faz sentido."
                 )
             )
         )

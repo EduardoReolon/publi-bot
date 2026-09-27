@@ -34,6 +34,7 @@ from apps.content.services import (
     aplicar_plano,
     aplicar_rascunho,
     esqueleto_do_artigo,
+    fontes_da_pauta,
     interpretar_plano,
     interpretar_tese,
     montar_contexto_das_fontes,
@@ -85,20 +86,7 @@ def passo_recuperar_fontes(job: GenerationJob) -> dict:
     if topic is None:
         raise ValueError(f"pauta {job.target_object_id} nao existe")
 
-    consulta = " ".join(filter(None, [topic.title, topic.target_keyword, topic.briefing]))
-
-    _, trechos = recuperar(consulta=consulta, origem=RetrievalQuery.Origin.ARTICLE)
-
-    if not trechos:
-        from apps.knowledge.tasks import pauta_sem_fontes
-
-        pauta_sem_fontes(topic)
-        raise SemFontesSuficientes(
-            f"nenhum trecho do acervo ficou abaixo do limiar de distancia para "
-            f"a pauta {topic.title!r}. Envie documentos sobre o tema (ou aprove "
-            f"as fontes sugeridas em Documentos > Fontes sugeridas), ou ajuste "
-            f"a pauta para algo que o acervo sustente."
-        )
+    trechos = fontes_da_pauta(topic)
 
     return {
         "chunk_ids": [str(t.chunk.pk) for t in trechos],

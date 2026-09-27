@@ -61,29 +61,25 @@ def artigo_em_espera(pauta):
     return None
 
 
-@transaction.atomic
 def preparar(pauta):
     """Busca as fontes no acervo e cria o artigo que espera o texto de fora.
 
-    Sem fonte acima do limiar, nao ha artigo: levanta `SemFontesSuficientes`,
-    como o caminho de sempre.
+    Sem fonte que sustente a pauta, nao ha artigo: `fontes_da_pauta` levanta
+    `SemFontesSuficientes`, exatamente como no caminho de sempre.
     """
+    from apps.content.services import fontes_da_pauta
+
+    # A mesma regra do caminho de sempre: sem fonte que sustente a pauta, para.
+    # Fora da transacao: a pauta marcada "aguardando fontes" tem de ficar.
+    trechos = fontes_da_pauta(pauta)
+    with transaction.atomic():
+        return _criar_artigo(pauta, trechos)
+
+
+def _criar_artigo(pauta, trechos):
     from apps.content.chamada import aplicar_decisao
     from apps.content.models import Article, Author, Topic
-    from apps.content.services import SemFontesSuficientes, registrar_citacoes
-    from apps.knowledge.models import RetrievalQuery
-    from apps.knowledge.services import recuperar
-
-    consulta = " ".join(filter(None, [pauta.title, pauta.target_keyword, pauta.briefing]))
-    _, trechos = recuperar(consulta=consulta, origem=RetrievalQuery.Origin.ARTICLE)
-    if not trechos:
-        from apps.knowledge.tasks import pauta_sem_fontes
-
-        pauta_sem_fontes(pauta)
-        raise SemFontesSuficientes(
-            "nenhum trecho do acervo sustenta esta pauta. Envie documentos sobre o "
-            "tema ou aprove fontes sugeridas antes."
-        )
+    from apps.content.services import registrar_citacoes
 
     padrao = Author.do_site()
     artigo = Article.objects.create(

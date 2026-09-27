@@ -127,6 +127,39 @@ class ResultadoDaTese:
     bruto: dict
 
 
+def fontes_da_pauta(topic) -> list:
+    """Os trechos do acervo que sustentam a pauta, ou a geracao para aqui.
+
+    A mesma regra para o artigo do modelo local e para o de outra IA: sem
+    trecho abaixo do limiar, ou sem nenhum que possa sustentar a ideia
+    central, nao ha artigo. A pauta fica "aguardando fontes" e, se ligado, a
+    busca de fontes na web vai para a fila.
+    """
+    from apps.knowledge.models import RetrievalQuery
+    from apps.knowledge.services import recuperar
+    from apps.knowledge.tasks import pauta_sem_fontes
+
+    consulta = " ".join(filter(None, [topic.title, topic.target_keyword, topic.briefing]))
+    _, trechos = recuperar(consulta=consulta, origem=RetrievalQuery.Origin.ARTICLE)
+
+    if not trechos:
+        pauta_sem_fontes(topic)
+        raise SemFontesSuficientes(
+            f"nenhum trecho do acervo ficou abaixo do limiar de distancia para "
+            f"a pauta {topic.title!r}. Envie documentos sobre o tema (ou aprove "
+            f"as fontes sugeridas em Documentos > Fontes sugeridas), ou ajuste "
+            f"a pauta para algo que o acervo sustente."
+        )
+    if not any(getattr(_chunk_de(t), "supports_central_idea", True) for t in trechos):
+        pauta_sem_fontes(topic)
+        raise SemEmbasamentoCentral(
+            f"o acervo tem {len(trechos)} trecho(s) perto da pauta {topic.title!r}, "
+            f"mas todos de categorias que so dao contexto (nenhum pode sustentar "
+            f"a ideia central). Acrescente um artigo de referencia sobre o tema."
+        )
+    return trechos
+
+
 def montar_contexto_das_fontes(trechos) -> str:
     """Monta o bloco de fontes para o prompt, com delimitadores explicitos.
 

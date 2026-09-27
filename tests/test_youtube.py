@@ -405,3 +405,33 @@ def test_rodada_com_youtube_ligado_colhe_os_comentarios(tenant, monkeypatch, set
 
     assert rodada.situacao == "concluida", rodada.erro
     assert SinalDeDemanda.objects.filter(fonte="youtube").count() == 2
+
+
+@pytest.mark.django_db
+def test_cota_do_dia_quase_no_fim_nao_busca(tenant, monkeypatch):
+    """O YouTube e gratuito, mas a chave para a cota: a rodada so busca o que
+    cabe, com folga, e diz por que parou."""
+    from apps.radar import youtube
+    from apps.radar.provedores import ProvedorIndisponivel
+
+    _com_youtube()
+    _youtube_responde(monkeypatch)
+    monkeypatch.setattr(youtube, "unidades_nas_ultimas_24h", lambda: 7_950)
+    with pytest.raises(ProvedorIndisponivel, match="cota diaria"):
+        colher_sinais(["a", "b"], rodada=None)
+
+    # Cabe uma busca so: das duas sementes, vai a primeira.
+    monkeypatch.setattr(youtube, "unidades_nas_ultimas_24h", lambda: 7_800)
+    colher_sinais(["a", "b"], rodada=None)
+    buscas = ChamadaExterna.objects.filter(provedor="youtube", endpoint="search")
+    assert list(buscas.values_list("consulta", flat=True)) == ["a"]
+
+
+@pytest.mark.django_db
+def test_livro_caixa_conta_a_cota(tenant):
+    from apps.radar import custos
+    from apps.radar.youtube import unidades_nas_ultimas_24h
+
+    for endpoint in ("search", "commentThreads", "commentThreads"):
+        custos.registrar(provedor="youtube", endpoint=endpoint, finalidade="radar")
+    assert unidades_nas_ultimas_24h() == 102

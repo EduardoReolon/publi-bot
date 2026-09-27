@@ -3,9 +3,10 @@
 Especificacao das rotas que um site precisa implementar para receber conteudo.
 
 **O contrato e agnostico de linguagem e plataforma.** Nada aqui pressupoe
-Django, WordPress ou qualquer outro sistema: sao rotas HTTP com JSON. A
-implementacao de referencia em `reference/django/` existe como exemplo, nao
-como requisito.
+Django, WordPress ou qualquer outro sistema: sao rotas HTTP com JSON. Para
+sites em Django, a implementacao pronta e o pacote
+[`publi-bot-core-django`](https://github.com/EduardoReolon/publi-bot-core-django)
+(app `publibot_core`), que passa nos testes de contrato deste repositorio.
 
 ## Direcao das chamadas
 
@@ -383,8 +384,8 @@ GET /api/v1/insights/?since=2026-09-01&cursor=
 
 ### Medir no navegador
 
-A implementacao de referencia traz um script pronto, sem dependencia, em
-`reference/django/publibot_node/static/publibot_node/leitura.js`. Ele le o id
+O pacote `publi-bot-core-django` traz um script pronto, sem dependencia, em
+`publibot_core/static/publibot/leitura.js`. Ele le o id
 do artigo de `data-publibot-id`, mede o tempo ativo, o fim do texto e a
 chamada, e envia um resumo por abertura (`navigator.sendBeacon`) para uma rota
 do SEU site, que agrega. Serve de modelo para qualquer plataforma.

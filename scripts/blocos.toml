@@ -302,11 +302,12 @@ padroes = [
 
 [[bloco]]
 nome = "contrato"
-titulo = "Contrato /api/v1 e a implementacao de referencia do no"
+titulo = "Contrato /api/v1 e os testes contra o lado do site"
 resumo = """
 O que um site precisa implementar para receber conteudo: as rotas, as regras
-normativas de assinatura e idempotencia, os exemplos, e um no de referencia em
-Django que passa nos testes de contrato.
+normativas de assinatura e idempotencia e os exemplos. O lado do site em
+Django e o pacote publi-bot-core-django (outro repositorio); os testes de
+contrato daqui falam com ele por HTTP.
 
 Este bloco se explica sozinho — e a documentacao voltada para quem esta do
 outro lado.

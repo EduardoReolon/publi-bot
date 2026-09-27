@@ -161,3 +161,19 @@ def test_tela_da_pauta_oferece_o_caminho(ambiente, embedding_falso):  # noqa: F8
     resposta = client.post(url, {"acao": "preparar"})
     assert resposta.status_code == 302  # sem acervo: volta para as pautas, com o aviso
     assert not pauta.articles.exists()
+
+
+@pytest.mark.django_db
+def test_so_fonte_de_contexto_para_como_no_caminho_de_sempre(tenant_com_acervo):
+    """A regra e a do modelo local (fontes_da_pauta): sem trecho que possa
+    sustentar a ideia central, nao ha pedido nem artigo."""
+    from apps.content.services import SemEmbasamentoCentral
+    from apps.knowledge.models import SuperChunk
+
+    SuperChunk.objects.update(supports_central_idea=False)
+    pauta = Topic.objects.create(title="Efeito no metabolismo", status="approved")
+    with pytest.raises(SemEmbasamentoCentral):
+        outra_ia.preparar(pauta)
+    pauta.refresh_from_db()
+    assert pauta.status == Topic.Status.WAITING_SOURCES
+    assert not pauta.articles.exists()
