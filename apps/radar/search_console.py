@@ -226,6 +226,11 @@ def coletar(dias: int = 28) -> ColetaDoConsole:
 
     antigas = ColetaDoConsole.objects.order_by("-coletada_em")[COLETAS_GUARDADAS:]
     ColetaDoConsole.objects.filter(pk__in=[c.pk for c in antigas]).delete()
+
+    # O preco dos cliques: base do "valor do trafego" (comparacao com anuncio).
+    from apps.radar.valor import precificar_consultas
+
+    precificar_consultas(coleta)
     return coleta
 
 

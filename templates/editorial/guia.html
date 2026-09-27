@@ -95,12 +95,8 @@
       {% endfor %}
     </div>
 
-    <h2>{% translate "Oferta, convite e exemplos" %}</h2>
-    <div class="campo">
-      <label for="{{ form.oferta.id_for_label }}">{{ form.oferta.label }}</label>
-      {{ form.oferta }}
-      <div class="ajuda">{{ form.oferta.help_text }}</div>
-    </div>
+    <h2>{% translate "Convite e exemplos" %}</h2>
+    <p class="ajuda">{% blocktranslate trimmed with url=url_negocio %}O que o site vende (a oferta) fica em <a href="{{ url }}">Negocio</a>; aqui, so como o texto convida.{% endblocktranslate %}</p>
     <div class="campo">
       <label for="{{ form.convite.id_for_label }}">{{ form.convite.label }}</label>
       {{ form.convite }}

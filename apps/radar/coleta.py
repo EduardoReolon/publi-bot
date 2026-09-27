@@ -160,10 +160,10 @@ def _sementes(config: ConfiguracaoDoRadar) -> list[str]:
     sementes = config.lista_de_sementes
     if sementes:
         return sementes
-    from apps.integrations.models import Site
+    from apps.editorial.models import perfil_do_negocio
 
-    site = Site.objects.first()
-    return [site.niche] if site and site.niche else []
+    perfil = perfil_do_negocio()
+    return [perfil.tema] if perfil and perfil.tema else []
 
 
 def _sementes_da_vez(config: ConfiguracaoDoRadar, quantas: int) -> list[str]:
@@ -564,7 +564,11 @@ def _processar(tarefa: TarefaNaFila, resultado: dict) -> None:
             if s.fonte not in SEM_PEDIDO_DE_VOLUME
             and (palavra_para_volume(s.texto) in pedidas if pedidas else s.volume is None)
         ]
-        _aplicar_metricas(alvos, ler_metricas(resultado), local=tarefa.contexto.get("local"))
+        from apps.radar.valor import guardar_custos
+
+        metricas = ler_metricas(resultado)
+        guardar_custos(metricas, local=tarefa.contexto.get("local"))
+        _aplicar_metricas(alvos, metricas, local=tarefa.contexto.get("local"))
     elif tarefa.tipo == TarefaNaFila.Tipo.AVALIACOES:
         from apps.radar.concorrentes import ler_avaliacoes
 

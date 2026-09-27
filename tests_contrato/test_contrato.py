@@ -798,6 +798,8 @@ def test_conversao_guarda_a_jornada_sem_duplicar(no_receptor, client):
         "id": str(uuid.uuid4()),
         "kind": "whatsapp<script>",
         "via_cta": True,
+        "first_channel": "organic",
+        "last_channel": "algo-novo",
         "journey": [{"id": str(uuid.uuid4()), "s": 50}, {"id": remote_id, "s": 95}],
     }
     assert _medir(client, "conversao", conversao).status_code == 204
@@ -805,6 +807,7 @@ def test_conversao_guarda_a_jornada_sem_duplicar(no_receptor, client):
 
     guardada = Conversao.objects.get()
     assert guardada.kind == "whatsappscript" and guardada.via_cta
+    assert (guardada.first_channel, guardada.last_channel) == ("organic", "other")
     assert guardada.journey == [{"remote_id": remote_id, "engaged_seconds": 95}]
 
 
@@ -816,7 +819,12 @@ def test_insights_entrega_leitura_e_conversoes_com_assinatura(no_receptor, clien
     _medir(
         client,
         "conversao",
-        {"id": str(uuid.uuid4()), "kind": "whatsapp", "journey": [{"id": remote_id, "s": 40}]},
+        {
+            "id": str(uuid.uuid4()),
+            "kind": "whatsapp",
+            "first_channel": "paid",
+            "journey": [{"id": remote_id, "s": 40}],
+        },
     )
     hoje = timezone.localdate().isoformat()
 
@@ -839,7 +847,49 @@ def test_insights_entrega_leitura_e_conversoes_com_assinatura(no_receptor, clien
         }
     ]
     assert dados["conversions"][0]["journey"] == [{"remote_id": remote_id, "engaged_seconds": 40}]
+    assert dados["conversions"][0]["first_channel"] == "paid"
     assert dados["next_cursor"] is None
 
     sem_data = no_receptor.get("/api/v1/insights/", **_assinar(b""))
     assert sem_data.status_code == 400
+
+
+def test_leitura_js_classifica_o_canal_de_entrada():
+    """O script do navegador separa anuncio de busca organica: e o que permite
+    comparar o PubliBot com anuncio. Roda com node, quando a maquina tem."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node nao instalado")
+    script = Path(__file__).resolve().parent / "leitura_canal.js"
+    # O caminho e o do node do PATH e o de um arquivo deste repositorio.
+    resultado = subprocess.run(  # noqa: S603
+        [node, str(script)], capture_output=True, text=True, timeout=30
+    )
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+
+
+# ---------------------------------------------------------------------------
+# Links internos (recurso `related_articles`)
+# ---------------------------------------------------------------------------
+def test_relacionados_sao_guardados_limpos_e_exibidos(no_receptor):
+    from django.template import Context, Template
+    from publibot_node.models import ReceivedPublication
+
+    relacionados = [
+        {"remote_id": "a1", "title": "Preco do <b>cimento</b>", "url": "https://s.com.br/cimento/"},
+        {"remote_id": "a2", "title": "Falso", "url": "javascript:alert(1)"},
+    ]
+    resposta, _ = _publicar(no_receptor, {**PAYLOAD, "related_articles": relacionados})
+    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
+
+    assert publicacao.related_articles == [
+        {"remote_id": "a1", "title": "Preco do cimento", "url": "https://s.com.br/cimento/"}
+    ]
+    html = Template("{% load publibot_node %}{% leia_tambem p %}").render(
+        Context({"p": publicacao})
+    )
+    assert '<a href="https://s.com.br/cimento/">Preco do cimento</a>' in html

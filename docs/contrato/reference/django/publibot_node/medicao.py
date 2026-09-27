@@ -61,6 +61,13 @@ def _publicacao(valor):
         return None
 
 
+CANAIS = {"organic", "paid", "social", "referral", "email", "direct", "other"}
+
+
+def _canal(valor) -> str:
+    return valor if valor in CANAIS else ("other" if valor else "")
+
+
 def _segundos(valor) -> int:
     try:
         return max(0, min(int(valor), TETO_DE_SEGUNDOS))
@@ -131,6 +138,8 @@ def conversao(request):
             "dia": timezone.localdate(),
             "kind": re.sub(r"[^\w-]", "", str(dados.get("kind") or ""))[:40],
             "via_cta": bool(dados.get("via_cta")),
+            "first_channel": _canal(dados.get("first_channel")),
+            "last_channel": _canal(dados.get("last_channel")),
             "journey": jornada,
         },
     )

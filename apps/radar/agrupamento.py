@@ -17,6 +17,9 @@ roda na CPU e custa nada.
   PIOR);
 * cobertura — se o acervo ja tem fonte para ele. Tema sem fonte nao e
   descartado: vira pauta que espera fonte;
+* comercial — so quando ha custo por clique (DataForSEO): quanto anunciantes
+  pagam por clique naquele tema. Tema caro no anuncio e tema que, ganho no
+  organico, substitui anuncio;
 * conversao — so quando o site envia leitura e conversoes (recurso
   `insights`): tema vizinho de artigo que converte acima da media do site
   sobe; vizinho de artigo que ninguem converte, desce. Sem esse dado, a nota
@@ -46,6 +49,11 @@ PESOS = {
 
 # Quanto a conversao pesa quando existe; e ate onde um artigo e "vizinho".
 PESO_DA_CONVERSAO = 0.15
+# O valor comercial (custo por clique no Google Ads), quando a DataForSEO o
+# trouxe: tema pelo qual anunciantes pagam caro e tema que, ganho no organico,
+# economiza anuncio. Maximo a partir de CPC_ALTO dolares.
+PESO_COMERCIAL = 0.10
+CPC_ALTO = 3.0
 VIZINHANCA = 0.20
 
 
@@ -112,13 +120,14 @@ def _escala(valor: float, perto: float, longe: float) -> float:
 
 
 def _texto_do_negocio() -> str:
-    from apps.integrations.models import Site
+    """A referencia do "perto do tema do site": tema, oferta e sementes (Negocio)."""
+    from apps.editorial.models import perfil_do_negocio
     from apps.radar.models import ConfiguracaoDoRadar
 
-    site = Site.objects.first()
-    partes = [getattr(site, "niche", "") or ""]
+    perfil = perfil_do_negocio()
+    partes = [perfil.tema, perfil.oferta] if perfil else []
     partes += ConfiguracaoDoRadar.carregar().lista_de_sementes
-    return ". ".join(p for p in partes if p)
+    return ". ".join(p.strip() for p in partes if p and p.strip())
 
 
 def vetores_do_que_ja_foi_escrito() -> np.ndarray | None:
@@ -225,6 +234,17 @@ def pontuar(
         + PESOS["canibalizacao"] * (1 - canibalizacao)
         + PESOS["cobertura"] * cobertura
     )
+
+    cpcs = [
+        float(m["cpc"])
+        for s in sinais
+        for m in ((s.extra or {}).get("metricas") or {}).values()
+        if m.get("cpc") is not None
+    ]
+    if cpcs:
+        comercial = min(1.0, max(cpcs) / CPC_ALTO)
+        parcelas["comercial"] = round(comercial, 3)
+        nota = (1 - PESO_COMERCIAL) * nota + 100 * PESO_COMERCIAL * comercial
 
     conversao = _conversao_da_vizinhanca(centroide, que_convertem)
     if conversao is not None:

@@ -8,8 +8,13 @@
  *     nos ultimos 30 s), se chegou ao fim do texto, se viu e se clicou na
  *     chamada;
  *   - na conversao (clique num elemento com data-publibot-conversao), a
- *     jornada: os artigos lidos nos ultimos 30 dias, guardada no proprio
- *     navegador (localStorage) e zerada depois de converter.
+ *     jornada: os artigos lidos nos ultimos 30 dias e o canal de cada entrada
+ *     no site (anuncio, busca organica, rede social...), guardados no proprio
+ *     navegador (localStorage) e zerados depois de converter.
+ *
+ * O canal segue o agrupamento do Google Analytics: gclid, gbraid, wbraid,
+ * msclkid ou utm_medium de midia paga = anuncio. Por isso o anuncio precisa
+ * da marcacao automatica ligada (Google Ads) ou de utm_medium=cpc.
  *
  * Na pagina:
  *   <article data-publibot-id="{{ remote_id }}"> ... </article>
@@ -26,6 +31,7 @@
   var script = document.currentScript;
   var base = (script && script.getAttribute("data-endpoint")) || "/api/v1/";
   var CHAVE = "publibot:jornada";
+  var CANAIS = "publibot:canais";
   var DIAS = 30;
   var INATIVO_APOS = 30000;
   var TETO = 1800;
@@ -67,6 +73,42 @@
     return lista;
   }
 
+  // De onde a pessoa chegou NESTA entrada no site. null = navegacao interna.
+  function canalDaEntrada() {
+    var params = new URLSearchParams(location.search);
+    var meio = (params.get("utm_medium") || "").toLowerCase();
+    if (params.get("gclid") || params.get("gbraid") || params.get("wbraid") || params.get("msclkid") ||
+        /^(cpc|ppc|paid|paidsearch|paid_search|cpm|cpv|display|paid_social|paidsocial)$/.test(meio)) {
+      return "paid";
+    }
+    if (meio === "email") return "email";
+    if (meio.indexOf("social") >= 0) return "social";
+    var referencia = document.referrer;
+    if (!referencia) return "direct";
+    var host;
+    try { host = new URL(referencia).hostname; } catch (e) { return "other"; }
+    if (host === location.hostname) return null;
+    if (/(^|\.)(google|bing|duckduckgo|yahoo|ecosia|yandex|baidu)\.|(^|\.)search\.brave\.com$/.test(host)) return "organic";
+    if (/(facebook|instagram|t\.co$|twitter|x\.com$|linkedin|youtube|tiktok|pinterest|reddit|whatsapp)/.test(host)) return "social";
+    return "referral";
+  }
+
+  function lerCanais() {
+    try {
+      var limite = Date.now() - DIAS * 86400000;
+      return (JSON.parse(localStorage.getItem(CANAIS)) || []).filter(function (item) {
+        return item && item.c && item.d > limite;
+      });
+    } catch (e) { return []; }
+  }
+
+  function gravarCanais(lista) {
+    try { localStorage.setItem(CANAIS, JSON.stringify(lista.slice(-20))); } catch (e) { /* bloqueado */ }
+  }
+
+  var entrada = canalDaEntrada();
+  if (entrada) gravarCanais(lerCanais().concat([{ c: entrada, d: Date.now() }]));
+
   function novoId() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, function () {
@@ -87,13 +129,17 @@
     if (!alvo) return;
     var jornada = lerJornada();
     if (id) jornada = acrescentar(jornada, id, ativo);
+    var canais = lerCanais();
     enviar("conversao/", {
       id: novoId(),
       kind: alvo.getAttribute("data-publibot-conversao") || "",
       via_cta: !!(bloco && id),
+      first_channel: canais.length ? canais[0].c : "direct",
+      last_channel: canais.length ? canais[canais.length - 1].c : "direct",
       journey: jornada.map(function (item) { return { id: item.id, s: item.s }; })
     });
     gravarJornada([]);
+    gravarCanais([]);
     converteu = true;
   }, true);
 

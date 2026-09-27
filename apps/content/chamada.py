@@ -61,12 +61,15 @@ def _distancia(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def texto_da_oferta() -> str:
+    """A oferta do Negocio; sem ela, o convite do Guia editorial."""
+    from apps.editorial.models import perfil_do_negocio
     from apps.editorial.services import perfil_atual
 
-    perfil = perfil_atual()
-    if perfil is None:
-        return ""
-    return (perfil.oferta or perfil.convite or "").strip()
+    negocio = perfil_do_negocio()
+    if negocio is not None and negocio.oferta.strip():
+        return negocio.oferta.strip()
+    guia = perfil_atual()
+    return (guia.convite or "").strip() if guia else ""
 
 
 def decidir(article) -> dict:

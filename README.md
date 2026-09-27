@@ -6,7 +6,7 @@
 [![pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791?logo=postgresql)](https://github.com/pgvector/pgvector)
 [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama-white?logo=ollama)](https://ollama.com/)
 
-> **A multi-tenant SaaS that finds what people are actually searching for, grounds every claim in curated real sources, and publishes SEO content only after a human approves it — then measures the result in Google Search Console.**
+> **A multi-tenant SaaS that finds what people are actually searching for, grounds every claim in curated real sources, and publishes SEO content only after a human approves it — then measures it the way you measure paid search: clicks, conversions and cost per conversion, side by side with your ads.**
 
 ## 🎯 The Problem It Solves
 
@@ -15,6 +15,7 @@ Most AI content generators produce generic, hallucinated text that search engine
 * **Parsing:** standard PDF extractors scramble dual-column scientific layouts.
 * **Coherence:** injecting random chunks into a prompt causes the **"Frankenstein Effect"** — paragraphs that contradict each other.
 * **Direction:** even a well-grounded article is wasted if nobody searches for its topic, and most tools never check whether it ranked.
+* **Accountability:** paid search reports cost per conversion down to the cent; content marketing usually reports "traffic". Without the same yardstick, content never gets the budget it would earn.
 
 ## 💡 The PubliBot Solution
 
@@ -26,6 +27,17 @@ PubliBot closes the whole loop — **demand → sources → writing → human re
 4. **Anti-Frankenstein Thesis:** before drafting, the model reads the retrieved passages and builds a single "consensus thesis", explicitly recording where sources disagree. The article is written from that thesis, with citations that point back to real, verifiable sources.
 5. **Human-in-the-Loop, enforced:** nothing is published without approval by an identified author. An editorial guide checks tone, forbidden terms and telltale AI phrasing before approval.
 6. **Closed Feedback Loop:** Google Search Console shows impressions, clicks and position for every published article; the client site reports who actually read and who became a customer. Both feed the radar back.
+
+## 💰 An Organic Alternative to Paid Search, on the Same Scoreboard
+
+Google Ads charges for every click, forever. An article that ranks keeps bringing the same visitors for free. PubliBot makes the comparison explicit instead of asking for faith:
+
+* **Traffic value:** for every Search Console query that brought clicks to an article, clicks × the Google Ads cost per click for that query (DataForSEO) — what those visitors would have cost as ads. The industry-standard "traffic value" metric, per article and in total.
+* **Channel-aware attribution:** the client site records how each converting visitor first arrived — paid (gclid / paid UTM), organic, social, referral, direct — following Google Analytics' channel grouping. Conversions of readers who did not come from an ad count for PubliBot; ad visitors who read an article on the way are shown apart.
+* **Cost per conversion, both sides:** the monthly investment in PubliBot (plus the API costs from the ledger) against the ad spend, each divided by its own conversions, plus return in currency from the value of a conversion.
+* **The radar learns what pays:** topics that advertisers pay a high cost per click for, and topics next to articles that actually convert, score higher. Both only kick in when the data exists, so a new site is never penalized for missing numbers.
+
+Organic takes months to rank and ads are instant. The honest pitch is not "turn ads off tomorrow", but "move budget from ads to content as the scoreboard proves it".
 
 ## 🏗️ System Architecture
 
@@ -74,6 +86,8 @@ flowchart TB
 * **Opportunity discovery:** a separate lens over the same demand signals finds what the audience searches for and the business doesn't offer yet — scored by novelty, closeness to the audience's pain points, year-over-year growth (Mann-Kendall trend test, seasonality-aware) and commercial value (Google Ads cost per click). Themes are labeled by c-TF-IDF; an LLM, when available, only describes them.
 * **Content refresh, not just creation:** once a niche is covered, PubliBot points at which published article should answer new questions, which page is almost on page one, which lost positions — and which cites a price table or standard that has expired. A new version of the source re-points the article's citations automatically (nearest passage by embedding), and the update keeps the same URL.
 * **Calls to action that fit, not everywhere:** each article gets *none*, *end* or *inline* by embedding proximity between the section and the site's offer — no LLM. The call-to-action block itself belongs to the site (one component, tracked, changed in one place); the article only carries a placeholder the reviewer can move.
+* **One business profile as the yardstick:** the site's topic, audience, offer, audience pain points and money values live on a single screen, and every score says what it compares against ("close to the site's topic", "close to the offer") instead of an opaque "relevance".
+* **Internal links chosen with context:** each article is published with up to three "read next" links to published articles on the same subject, preferring the ones that convert. The site renders plain links; sitemaps, canonical tags and structured data stay with the site, following a documented checklist.
 * **Conversion attribution without tracking people:** client sites report engaged reading (active time, ≥10 s, GA4-style) and conversions per article. The reading journey lives in the reader's own browser and only travels at conversion, with no visitor ID. PubliBot shows last-article, assisted and linear attribution — and the demand radar starts favoring topics next to articles that convert.
 * **Local SEO:** searches and search volume per city or state, summed across several regions, with overlap detection.
 * **Seed suggestions:** KeyBERT + MMR over the site's own homepage (no LLM), strong themes the radar found on its own, and optional LLM suggestions of audience pain points.

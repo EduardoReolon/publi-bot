@@ -141,3 +141,91 @@ def test_conversao_da_vizinhanca():
     assert _conversao_da_vizinhanca(centroide, ([(perto, 0.04)], 0.02)) == 1.0
     assert _conversao_da_vizinhanca(centroide, ([(perto, 0.02)], 0.02)) == pytest.approx(0.5)
     assert _conversao_da_vizinhanca(centroide, ([(perto, 0.0)], 0.02)) == 0.0
+
+
+@pytest.mark.django_db
+def test_origem_separa_publibot_de_anuncio_e_compara_custo(site):  # noqa: F811
+    from apps.content.desempenho import painel
+    from apps.editorial.models import PerfilDoNegocio
+
+    PerfilDoNegocio.objects.update_or_create(
+        pk=1,
+        defaults={
+            "valor_da_conversao": 100,
+            "investimento_publibot": 300,
+            "investimento_anuncios": 600,
+            "cotacao_do_dolar": 5,
+        },
+    )
+    gravar(
+        site,
+        {
+            "conversions": [
+                _conversao("o1", [("a", 30)], first_channel="organic"),
+                _conversao("o2", [("a", 30)], first_channel="social"),
+                _conversao("p1", [], first_channel="paid"),
+                _conversao("p2", [("a", 40)], first_channel="paid"),
+                _conversao("d1", [], first_channel="direct"),
+                _conversao("x1", [], first_channel="canal-novo"),
+            ]
+        },
+    )
+
+    resultado = painel(30)
+
+    assert resultado.origem == {"publibot": 2, "anuncio_com_artigo": 1, "anuncio": 1, "outras": 2}
+    assert resultado.por_canal["other"] == 1
+    c = resultado.comparacao
+    assert c.conversoes_publibot == 2 and c.conversoes_anuncio == 2
+    assert c.custo_por_conversao_publibot == pytest.approx(150)
+    assert c.custo_por_conversao_anuncio == pytest.approx(300)
+    assert c.retorno_publibot == 200
+
+
+@pytest.mark.django_db
+def test_valor_do_trafego_e_cliques_vezes_custo_por_clique(site):  # noqa: F811
+    from apps.content.desempenho import painel
+    from apps.radar.models import ColetaDoConsole, CustoDaPalavra, LinhaDoConsole
+    from apps.radar.valor import guardar_custos, valor_do_trafego
+
+    Article.objects.create(
+        title="Preco do cimento",
+        remote_id="a",
+        status=Article.Status.PUBLISHED,
+        published_url="https://exemplo.com.br/cimento/",
+    )
+    guardar_custos(
+        {"preco do cimento": {"cpc": 2.0, "volume": 900}, "sem preco": {"cpc": None}},
+        local=2076,
+    )
+    assert CustoDaPalavra.objects.count() == 1
+    coleta = ColetaDoConsole.objects.create(
+        propriedade="sc-domain:exemplo.com.br", inicio=HOJE, fim=HOJE
+    )
+    for consulta, cliques in [("Preço do cimento", 10), ("cimento barato", 5)]:
+        LinhaDoConsole.objects.create(
+            coleta=coleta,
+            consulta=consulta.replace("ç", "c"),
+            pagina="https://www.exemplo.com.br/cimento",
+            cliques=cliques,
+            impressoes=100,
+            posicao=3,
+        )
+
+    por_pagina = valor_do_trafego()
+    pagina = next(iter(por_pagina.values()))
+    assert pagina == {"cliques": 15, "cliques_com_preco": 10, "valor_usd": 20.0}
+
+    linha = next(d for d in painel(28).linhas if d.remote_id == "a")
+    assert (linha.cliques_organicos, linha.valor_usd) == (15, 20.0)
+
+
+@pytest.mark.django_db
+def test_precificar_so_sem_dataforseo_nao_chama_nada(site, monkeypatch):  # noqa: F811
+    from apps.radar import provedores
+    from apps.radar.models import ColetaDoConsole
+    from apps.radar.valor import precificar_consultas
+
+    monkeypatch.setattr(provedores, "metricas_dataforseo", lambda *a, **k: 1 / 0)
+    coleta = ColetaDoConsole.objects.create(propriedade="x", inicio=HOJE, fim=HOJE)
+    assert precificar_consultas(coleta) == 0

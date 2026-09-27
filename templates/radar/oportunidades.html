@@ -11,7 +11,7 @@
     pautas, e sim possiveis servicos ou produtos. Saem dos mesmos sinais do
     radar (buscas, perguntas do site, YouTube, concorrentes), com outra nota:
     <strong>novidade</strong> (longe do que voce ja faz), <strong>perto do
-    publico</strong> (das dores abaixo), <strong>crescimento</strong> (ano a
+    publico</strong> (das dores, definidas em Negocio), <strong>crescimento</strong> (ano a
     ano, sem se enganar com sazonalidade) e <strong>valor comercial</strong>
     (quanto empresas pagam por clique no Google para alcancar quem busca).
   {% endblocktranslate %}
@@ -26,12 +26,10 @@
       "equipe desmotivada" ainda nao, e e ai que aparece o que ninguem oferece.
     {% endblocktranslate %}
   </p>
-  <form method="post">
-    {% csrf_token %}
-    {{ form.dores }}
-    {% for erro in form.dores.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
-    <div class="acoes"><button type="submit">{% translate "Salvar dores" %}</button></div>
-  </form>
+  {% if dores %}
+    <ul class="sinais">{% for dor in dores %}<li>{{ dor }}</li>{% endfor %}</ul>
+  {% endif %}
+  <p><a href="{% url 'editorial:negocio' %}">{% translate "Editar em Negocio" %}</a></p>
 </section>
 
 <nav class="abas">

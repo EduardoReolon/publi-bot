@@ -290,15 +290,9 @@ def coletar_console(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 @login_required
 def oportunidades(request: HttpRequest) -> HttpResponse:
-    from apps.radar.forms import DoresForm
     from apps.radar.models import Oportunidade
 
     config = ConfiguracaoDoRadar.carregar()
-    form = DoresForm(request.POST or None, instance=config)
-    if request.method == "POST" and form.is_valid():
-        form.save()
-        messages.success(request, _("Dores salvas. Elas entram na proxima rodada do radar."))
-        return redirect("radar:oportunidades")
     ver = request.GET.get("ver", "nova")
     situacoes = {s.value for s in Oportunidade.Situacao}
     ver = ver if ver in situacoes else "nova"
@@ -308,7 +302,7 @@ def oportunidades(request: HttpRequest) -> HttpResponse:
         {
             "aba": "radar",
             "subaba": "oportunidades",
-            "form": form,
+            "dores": config.lista_de_dores,
             "ver": ver,
             "situacoes": Oportunidade.Situacao.choices,
             "contagens": {s: Oportunidade.objects.filter(situacao=s).count() for s in situacoes},

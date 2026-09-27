@@ -210,11 +210,21 @@ def sugerir_pelo_modelo() -> int:
     """Levanta `PassoAdiado`/`SemModeloConfigurado` sem placa: quem chama
     decide tentar depois."""
     from apps.content.inference import executar_prompt
+    from apps.editorial.models import perfil_do_negocio
     from apps.integrations.models import Site
 
     pagina, titulos = _texto_do_site()
     site = Site.objects.first()
-    nicho = getattr(site, "niche", "") or ""
+    perfil = perfil_do_negocio()
+    nicho = ". ".join(
+        p
+        for p in [
+            perfil.tema if perfil else "",
+            f"Publico: {perfil.publico}" if perfil and perfil.publico else "",
+            f"Oferta: {perfil.oferta}" if perfil and perfil.oferta else "",
+        ]
+        if p
+    )
     if not (pagina or titulos or nicho):
         return 0
     resultado = executar_prompt(

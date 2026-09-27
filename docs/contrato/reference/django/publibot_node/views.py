@@ -237,6 +237,7 @@ def _campos_do_conteudo(dados: dict) -> dict:
         "cover_image_alt": sanitizar_texto(capa.get("alt_text", "")),
         "faq": _faq_sanitizado(dados.get("faq")),
         "call_to_action": _chamada(dados.get("call_to_action")),
+        "related_articles": _relacionados(dados.get("related_articles")),
         "post_status": dados.get("status", "published")[:20],
     }
 
@@ -300,6 +301,27 @@ def update_publication(request, remote_id):
 
 
 MAXIMO_DE_PERGUNTAS = 20
+
+
+def _relacionados(bruto) -> list[dict]:
+    """Ate 5 links internos, com titulo como texto puro e so http(s)."""
+    if not isinstance(bruto, list):
+        return []
+    itens = []
+    for item in bruto[:5]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "")
+        if not url.startswith(("https://", "http://")):
+            continue
+        itens.append(
+            {
+                "remote_id": str(item.get("remote_id") or "")[:120],
+                "title": sanitizar_texto(str(item.get("title") or "")),
+                "url": url[:500],
+            }
+        )
+    return itens
 
 
 def _chamada(valor) -> str:
@@ -567,6 +589,8 @@ def insights(request):
                     "date": c.dia.isoformat(),
                     "kind": c.kind,
                     "via_cta": c.via_cta,
+                    "first_channel": c.first_channel,
+                    "last_channel": c.last_channel,
                     "journey": c.journey,
                 }
                 for c in conversoes

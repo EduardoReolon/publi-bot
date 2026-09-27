@@ -58,6 +58,10 @@ class ReceivedPublication(models.Model):
     # `call_to_action`): "none", "end" ou "inline". Ver `html_com_chamada`.
     call_to_action = models.CharField(max_length=8, default="end")
 
+    # Links internos que o PubliBot escolheu ("Leia tambem"): lista de
+    # {"remote_id", "title", "url"}, ja conferida. Ver a tag `leia_tambem`.
+    related_articles = models.JSONField(default=list, blank=True)
+
     question_id = models.CharField(max_length=120, blank=True, db_index=True)
 
     post_status = models.CharField(max_length=20, default="published")
@@ -202,6 +206,10 @@ class Conversao(models.Model):
     dia = models.DateField(db_index=True)
     kind = models.CharField(max_length=40, blank=True)
     via_cta = models.BooleanField(default=False)
+    # Primeira e ultima entrada no site nos 30 dias: "paid" (anuncio),
+    # "organic", "social", "referral", "email", "direct" ou "other".
+    first_channel = models.CharField(max_length=10, blank=True)
+    last_channel = models.CharField(max_length=10, blank=True)
     journey = models.JSONField(default=list, blank=True)
     criada_em = models.DateTimeField(default=timezone.now)
 

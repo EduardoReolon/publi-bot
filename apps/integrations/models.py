@@ -74,7 +74,6 @@ class Site(models.Model):
     # sombrearia `django.utils.timezone`, e `default=timezone.now` passaria a
     # resolver para o CharField. O erro aparece no import, longe da causa.
     site_timezone = models.CharField(_("fuso horario"), max_length=64, default="America/Sao_Paulo")
-    niche = models.CharField(_("nicho"), max_length=200, blank=True)
     # O texto da pagina inicial, como o site devolve em /seo-context/. Serve
     # para sugerir as palavras-semente do radar.
     home_content_text = models.TextField(_("texto da pagina inicial"), blank=True)
@@ -497,8 +496,28 @@ class ConversaoDoSite(models.Model):
     external_id = models.CharField(_("id no site"), max_length=120)
     dia = models.DateField(_("dia"), db_index=True)
     tipo = models.CharField(_("tipo"), max_length=40, blank=True)
+
+    class Canal(models.TextChoices):
+        """De onde a pessoa chegou ao site. O agrupamento do Google Analytics."""
+
+        ORGANIC = "organic", _("Busca organica")
+        PAID = "paid", _("Anuncio")
+        SOCIAL = "social", _("Rede social")
+        REFERRAL = "referral", _("Outro site")
+        EMAIL = "email", _("E-mail")
+        DIRECT = "direct", _("Direto")
+        OTHER = "other", _("Outro")
+
     # O clique foi no bloco da chamada de um artigo (e nao no menu do site).
     via_cta = models.BooleanField(_("pela chamada do artigo"), default=False)
+    # Primeira e ultima entrada no site na jornada (30 dias). E o que separa a
+    # conversao que comecou num anuncio da que comecou numa busca organica.
+    canal_de_entrada = models.CharField(
+        _("primeira entrada"), max_length=10, choices=Canal.choices, blank=True
+    )
+    canal_final = models.CharField(
+        _("ultima entrada"), max_length=10, choices=Canal.choices, blank=True
+    )
     # Em ordem, do primeiro ao ultimo: [{"remote_id": ..., "engaged_seconds": ...}].
     jornada = models.JSONField(_("artigos lidos antes"), default=list, blank=True)
 

@@ -381,10 +381,10 @@
     {% if sem_oferta %}
       <p class="aviso">
         {% blocktranslate trimmed %}
-          O Guia editorial nao tem a <strong>oferta do site</strong>: sem ela nao
+          A tela Negocio nao tem a <strong>oferta</strong>: sem ela nao
           ha como medir se o tema pede chamada, e todo artigo fica com "so no fim".
         {% endblocktranslate %}
-        <a href="{% url 'editorial:guia' %}">{% translate "Preencher" %}</a>
+        <a href="{% url 'editorial:negocio' %}">{% translate "Preencher" %}</a>
       </p>
     {% endif %}
     {% if site_sem_chamada %}

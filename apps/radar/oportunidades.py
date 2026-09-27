@@ -329,9 +329,7 @@ def descrever_oportunidade(oportunidade: Oportunidade) -> None:
     resultado = executar_prompt(
         key="opportunity_brief",
         variaveis={
-            "negocio": (getattr(site, "niche", "") or "")
-            + "\n"
-            + ", ".join(ConfiguracaoDoRadar.carregar().lista_de_sementes[:30]),
+            "negocio": _descricao_do_negocio(),
             "tema": oportunidade.grupo.rotulo,
             "termos": ", ".join(oportunidade.termos),
             "sinais": linhas,
@@ -373,3 +371,19 @@ def descrever_pendentes(limite: int = 5, nota_minima: float = 40) -> int:
             break
         feitas += 1
     return feitas
+
+
+def _descricao_do_negocio() -> str:
+    """Tema, oferta e sementes, para o modelo saber o que o site ja faz."""
+    from apps.editorial.models import perfil_do_negocio
+
+    perfil = perfil_do_negocio()
+    linhas = []
+    if perfil and perfil.tema:
+        linhas.append(f"Tema do site: {perfil.tema}")
+    if perfil and perfil.oferta:
+        linhas.append(f"Oferta: {perfil.oferta}")
+    sementes = ConfiguracaoDoRadar.carregar().lista_de_sementes[:30]
+    if sementes:
+        linhas.append("Sementes: " + ", ".join(sementes))
+    return "\n".join(linhas)

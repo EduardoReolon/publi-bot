@@ -46,10 +46,12 @@ def vetores(monkeypatch):
 
 
 def _perfil(oferta=OFERTA):
-    from apps.editorial.models import EditorialProfile
+    from apps.editorial.models import EditorialProfile, PerfilDoNegocio
 
+    negocio = PerfilDoNegocio.carregar()
+    negocio.oferta = oferta
+    negocio.save()
     perfil = EditorialProfile.carregar()
-    perfil.oferta = oferta
     perfil.convite = "Convide para mandar a nota pelo WhatsApp."
     perfil.save()
     return perfil

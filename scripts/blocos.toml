@@ -144,6 +144,7 @@ padroes = [
   "tests/test_flows.py",
   "tests/test_content.py",
   "tests/test_chamada.py",
+  "tests/test_relacionados.py",
 ]
 
 [[bloco]]
@@ -229,7 +230,12 @@ antes da aprovacao: termo proibido bloqueia, marca de texto de maquina avisa.
 """
 entrada = ["apps/editorial/services.py", "apps/editorial/models.py"]
 relacionados = ["geracao-texto", "revisao-telas"]
-padroes = ["apps/editorial/**", "templates/editorial/**", "tests/test_editorial.py"]
+padroes = [
+  "apps/editorial/**",
+  "templates/editorial/**",
+  "tests/test_editorial.py",
+  "tests/test_negocio.py",
+]
 
 
 # ---------------------------------------------------------------------------

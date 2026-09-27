@@ -4,6 +4,7 @@
     <article data-publibot-id="{{ publicacao.id }}">
       {% corpo_com_chamada publicacao %}
       {% chamada_no_fim publicacao %}
+      {% leia_tambem publicacao %}
     </article>
 
 O bloco vem de `publibot_node/chamada.html`. Sobrescreva esse template no seu
@@ -28,6 +29,12 @@ def corpo_com_chamada(publicacao):
     """O corpo, com o bloco no lugar da marca quando o artigo pede (inline)."""
     # O html_content ja foi sanitizado ao ser recebido.
     return mark_safe(publicacao.html_com_chamada(_bloco(publicacao, "meio")))  # noqa: S308
+
+
+@register.inclusion_tag("publibot_node/relacionados.html")
+def leia_tambem(publicacao):
+    """Os links internos escolhidos pelo PubliBot, se houver."""
+    return {"relacionados": publicacao.related_articles or []}
 
 
 @register.simple_tag

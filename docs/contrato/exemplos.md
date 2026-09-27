@@ -25,7 +25,7 @@ X-API-KEY: ...
 {
   "contract_versions": ["v1"],
   "implementation": "publibot-django 1.0.0",
-  "capabilities": ["idempotency", "hmac_signature", "author_photo", "qa", "reconciliation", "faq", "update", "call_to_action", "insights"],
+  "capabilities": ["idempotency", "hmac_signature", "author_photo", "qa", "reconciliation", "faq", "update", "call_to_action", "insights", "related_articles"],
   "server_time": "2026-08-29T14:02:11Z"
 }
 ```
@@ -338,6 +338,7 @@ GET /api/v1/insights/?since=2026-09-18 HTTP/1.1
   "conversions": [
     {"id": "5f0c1a7e-2b1d-4c55-9a44-0d7e8f6a1b2c", "date": "2026-09-20",
      "kind": "whatsapp", "via_cta": true,
+     "first_channel": "organic", "last_channel": "direct",
      "journey": [{"remote_id": "7e2a", "engaged_seconds": 40},
                  {"remote_id": "9c1d", "engaged_seconds": 95}]}
   ],

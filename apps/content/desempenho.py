@@ -42,6 +42,10 @@ class Desempenho:
     ultimo: int = 0
     participou: int = 0
     atribuidas: float = 0.0
+    # Search Console (ultimo retrato, 28 dias): cliques e quanto custariam
+    # em anuncio.
+    cliques_organicos: int = 0
+    valor_usd: float = 0.0
 
     @property
     def titulo(self) -> str:
@@ -83,6 +87,68 @@ class Painel:
     conversoes: int = 0
     sem_artigo: int = 0
     pela_chamada: int = 0
+    # Por origem: "publibot" (artigo na jornada, sem anuncio na entrada),
+    # "anuncio_com_artigo" (entrou por anuncio e leu artigo), "anuncio" (entrou
+    # por anuncio, nenhum artigo) e "outras".
+    origem: dict = field(
+        default_factory=lambda: {
+            "publibot": 0,
+            "anuncio_com_artigo": 0,
+            "anuncio": 0,
+            "outras": 0,
+        }
+    )
+    por_canal: dict = field(default_factory=dict)
+    cliques_organicos: int = 0
+    valor_usd: float = 0.0
+    comparacao: Comparacao | None = None
+
+
+@dataclass
+class Comparacao:
+    """PubliBot x anuncios, em reais, no periodo do painel."""
+
+    dias: int
+    cotacao: float
+    valor_do_trafego: float
+    cliques_organicos: int
+    conversoes_publibot: int
+    conversoes_anuncio: int
+    investimento_publibot: float | None
+    investimento_anuncios: float | None
+    custo_das_apis: float
+    valor_da_conversao: float | None
+
+    @staticmethod
+    def _por(total, n):
+        return total / n if total is not None and n else None
+
+    @property
+    def custo_por_conversao_publibot(self):
+        if self.investimento_publibot is None:
+            return None
+        return self._por(self.investimento_publibot + self.custo_das_apis, self.conversoes_publibot)
+
+    @property
+    def custo_por_conversao_anuncio(self):
+        return self._por(self.investimento_anuncios, self.conversoes_anuncio)
+
+    @property
+    def custo_equivalente_em_anuncio(self):
+        """O que os mesmos cliques custariam em anuncio, por conversao do PubliBot."""
+        return self._por(self.valor_do_trafego, self.conversoes_publibot)
+
+    @property
+    def retorno_publibot(self):
+        if self.valor_da_conversao is None:
+            return None
+        return self.conversoes_publibot * self.valor_da_conversao
+
+    @property
+    def retorno_anuncio(self):
+        if self.valor_da_conversao is None:
+            return None
+        return self.conversoes_anuncio * self.valor_da_conversao
 
 
 def _jornada_lida(jornada: list[dict]) -> list[str]:
@@ -139,7 +205,14 @@ def painel(dias: int = 28) -> Painel:
     for conversao in ConversaoDoSite.objects.filter(dia__gte=desde):
         resultado.conversoes += 1
         resultado.pela_chamada += int(conversao.via_cta)
+        canal = conversao.canal_de_entrada or "sem_dado"
+        resultado.por_canal[canal] = resultado.por_canal.get(canal, 0) + 1
         lidos = _jornada_lida(conversao.jornada)
+        anuncio = conversao.canal_de_entrada == ConversaoDoSite.Canal.PAID
+        if anuncio:
+            resultado.origem["anuncio_com_artigo" if lidos else "anuncio"] += 1
+        else:
+            resultado.origem["publibot" if lidos else "outras"] += 1
         if not lidos:
             resultado.sem_artigo += 1
             continue
@@ -152,10 +225,74 @@ def painel(dias: int = 28) -> Painel:
     artigos = _artigos_por_id(linhas)
     for remote_id, linha in linhas.items():
         linha.artigo = artigos.get(remote_id)
+
+    _somar_valor_do_trafego(linhas, resultado)
     resultado.linhas = sorted(
-        linhas.values(), key=lambda d: (-d.atribuidas, -d.engaged_views, d.titulo)
+        linhas.values(),
+        key=lambda d: (-d.atribuidas, -d.engaged_views, -d.cliques_organicos, d.titulo),
     )
+    resultado.comparacao = _comparar(resultado, desde)
     return resultado
+
+
+def _somar_valor_do_trafego(linhas: dict, resultado: Painel) -> None:
+    """Cliques organicos e o valor deles em anuncio, nos artigos do PubliBot."""
+    from apps.content.models import Article
+    from apps.radar.atualizacoes import _chave
+    from apps.radar.valor import valor_do_trafego
+
+    por_pagina = valor_do_trafego()
+    if not por_pagina:
+        return
+    no_ar = Article.objects.filter(status=Article.Status.PUBLISHED).exclude(published_url="")
+    for artigo in no_ar:
+        valor = por_pagina.get(_chave(artigo.published_url))
+        if not valor:
+            continue
+        chave = artigo.remote_id or artigo.published_url
+        linha = linhas.setdefault(chave, Desempenho(chave))
+        linha.artigo = linha.artigo or artigo
+        linha.cliques_organicos = valor["cliques"]
+        linha.valor_usd = valor["valor_usd"]
+        resultado.cliques_organicos += valor["cliques"]
+        resultado.valor_usd += valor["valor_usd"]
+
+
+def _comparar(resultado: Painel, desde) -> Comparacao | None:
+    from django.db.models import Sum as Soma
+
+    from apps.editorial.models import perfil_do_negocio
+    from apps.radar.models import ChamadaExterna
+
+    perfil = perfil_do_negocio()
+    if perfil is None:
+        return None
+    cotacao = float(perfil.cotacao_do_dolar or 0)
+    fracao = resultado.dias / 30
+
+    def no_periodo(valor):
+        return float(valor) * fracao if valor is not None else None
+
+    apis = (
+        ChamadaExterna.objects.filter(criado_em__date__gte=desde).aggregate(
+            total=Soma("custo_usd")
+        )["total"]
+        or 0
+    )
+    return Comparacao(
+        dias=resultado.dias,
+        cotacao=cotacao,
+        valor_do_trafego=resultado.valor_usd * cotacao,
+        cliques_organicos=resultado.cliques_organicos,
+        conversoes_publibot=resultado.origem["publibot"],
+        conversoes_anuncio=resultado.origem["anuncio"] + resultado.origem["anuncio_com_artigo"],
+        investimento_publibot=no_periodo(perfil.investimento_publibot),
+        investimento_anuncios=no_periodo(perfil.investimento_anuncios),
+        custo_das_apis=float(apis) * cotacao,
+        valor_da_conversao=(
+            float(perfil.valor_da_conversao) if perfil.valor_da_conversao is not None else None
+        ),
+    )
 
 
 def que_convertem(dias: int = 90):

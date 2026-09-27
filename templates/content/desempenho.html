@@ -33,6 +33,56 @@
     {% endfor %}
   </nav>
 
+  {% with c=painel.comparacao o=painel.origem %}
+  <section class="secao">
+    <h2>{% translate "PubliBot x anuncios" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        <strong>PubliBot</strong> e a conversao de quem leu pelo menos um
+        artigo e NAO entrou no site por anuncio. Quem entrou por anuncio e leu
+        artigo conta para o anuncio (o artigo ajudou, aparece a parte). Os
+        valores em reais usam a tela Negocio.
+      {% endblocktranslate %}
+    </p>
+    <div class="cartoes">
+      <div class="cartao-numero"><div class="numero-grande">{{ o.publibot }}</div><div>{% translate "conversoes pelo PubliBot" %}</div></div>
+      <div class="cartao-numero"><div class="numero-grande">{{ o.anuncio }}{% if o.anuncio_com_artigo %} + {{ o.anuncio_com_artigo }}{% endif %}</div><div>{% translate "por anuncio" %}{% if o.anuncio_com_artigo %} <span class="ajuda">({% translate "a segunda parte leu artigo antes de converter" %})</span>{% endif %}</div></div>
+      <div class="cartao-numero"><div class="numero-grande">{{ o.outras }}</div><div>{% translate "outras (sem artigo nem anuncio)" %}</div></div>
+      {% if c %}
+        <div class="cartao-numero"><div class="numero-grande">R$ {{ c.valor_do_trafego|floatformat:2 }}</div><div>{% blocktranslate with n=c.cliques_organicos trimmed %}o que {{ n }} cliques organicos nos artigos custariam em anuncio (Search Console, ultimos 28 dias){% endblocktranslate %}</div></div>
+      {% endif %}
+    </div>
+    {% if c %}
+      <div class="rolagem">
+        <table>
+          <thead><tr><th></th><th class="numero">{% translate "PubliBot" %}</th><th class="numero">{% translate "Anuncios" %}</th></tr></thead>
+          <tbody>
+            <tr><td>{% blocktranslate with d=c.dias %}Investimento no periodo ({{ d }} dias){% endblocktranslate %}</td>
+              <td class="numero">{% if c.investimento_publibot is not None %}R$ {{ c.investimento_publibot|floatformat:2 }} <span class="ajuda">+ R$ {{ c.custo_das_apis|floatformat:2 }} {% translate "de APIs" %}</span>{% else %}—{% endif %}</td>
+              <td class="numero">{% if c.investimento_anuncios is not None %}R$ {{ c.investimento_anuncios|floatformat:2 }}{% else %}—{% endif %}</td></tr>
+            <tr><td>{% translate "Conversoes" %}</td><td class="numero">{{ c.conversoes_publibot }}</td><td class="numero">{{ c.conversoes_anuncio }}</td></tr>
+            <tr><td><strong>{% translate "Custo por conversao" %}</strong></td>
+              <td class="numero"><strong>{% if c.custo_por_conversao_publibot is not None %}R$ {{ c.custo_por_conversao_publibot|floatformat:2 }}{% else %}—{% endif %}</strong></td>
+              <td class="numero"><strong>{% if c.custo_por_conversao_anuncio is not None %}R$ {{ c.custo_por_conversao_anuncio|floatformat:2 }}{% else %}—{% endif %}</strong></td></tr>
+            <tr><td>{% translate "Retorno (conversoes x valor de uma conversao)" %}</td>
+              <td class="numero">{% if c.retorno_publibot is not None %}R$ {{ c.retorno_publibot|floatformat:2 }}{% else %}—{% endif %}</td>
+              <td class="numero">{% if c.retorno_anuncio is not None %}R$ {{ c.retorno_anuncio|floatformat:2 }}{% else %}—{% endif %}</td></tr>
+            <tr><td>{% translate "Os cliques do PubliBot, comprados em anuncio, por conversao" %}</td>
+              <td class="numero">{% if c.custo_equivalente_em_anuncio is not None %}R$ {{ c.custo_equivalente_em_anuncio|floatformat:2 }}{% else %}—{% endif %}</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% if c.investimento_publibot is None or c.valor_da_conversao is None %}
+        <p class="ajuda">{% translate "Preencha os valores em Negocio para ver custo por conversao e retorno." %} <a href="{% url 'editorial:negocio' %}">{% translate "Negocio" %}</a></p>
+      {% endif %}
+    {% endif %}
+    {% if painel.por_canal %}
+      <p class="ajuda">{% translate "Primeira entrada no site, por conversao" %}:
+        {% for canal, n in painel.por_canal.items %}{{ canal }} {{ n }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+    {% endif %}
+  </section>
+  {% endwith %}
+
   <p class="pre-visualizacao">
     {% blocktranslate trimmed with n=painel.conversoes c=painel.pela_chamada s=painel.sem_artigo %}
       {{ n }} conversao(oes) no periodo; {{ c }} pelo bloco da chamada de um
@@ -47,6 +97,8 @@
         <thead>
           <tr>
             <th>{% translate "Artigo" %}</th>
+            <th class="numero">{% translate "Cliques no Google" %}</th>
+            <th class="numero">{% translate "Valor em anuncio" %}</th>
             <th class="numero">{% translate "Aberturas" %}</th>
             <th class="numero">{% translate "Leituras" %}</th>
             <th class="numero">{% translate "Tempo ativo" %}</th>
@@ -65,6 +117,8 @@
                 {% if d.artigo %}<a href="{% url 'content:revisar' d.artigo.pk %}">{{ d.titulo }}</a>{% else %}<span class="ajuda">{{ d.titulo }}</span>{% endif %}
                 {% if d.url %}<a class="ajuda" href="{{ d.url }}" target="_blank" rel="noopener noreferrer">↗</a>{% endif %}
               </td>
+              <td class="numero">{{ d.cliques_organicos|default:"—" }}</td>
+              <td class="numero">{% if d.valor_usd %}US$ {{ d.valor_usd|floatformat:2 }}{% else %}—{% endif %}</td>
               <td class="numero">{{ d.views }}</td>
               <td class="numero">{{ d.engaged_views }}{% if d.taxa_de_leitura is not None %} <span class="ajuda">{% widthratio d.taxa_de_leitura 1 100 %}%</span>{% endif %}</td>
               <td class="numero">{% if d.tempo_medio is not None %}{{ d.tempo_medio|floatformat:0 }} s{% else %}—{% endif %}</td>

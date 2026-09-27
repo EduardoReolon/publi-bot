@@ -9,6 +9,9 @@
     <a href="{% url 'accounts:painel' %}" class="{% if aba == 'painel' %}ativo{% endif %}">
       {% translate "Painel" %}
     </a>
+    <a href="{% url 'editorial:negocio' %}" class="{% if aba == 'negocio' %}ativo{% endif %}">
+      {% translate "Negocio" %}
+    </a>
     <a href="{% url 'knowledge:documentos' %}" class="{% if aba == 'documentos' %}ativo{% endif %}">
       {% translate "Documentos" %}
       {% if pendencias.curadoria %}<span class="contagem">{{ pendencias.curadoria }}</span>{% endif %}

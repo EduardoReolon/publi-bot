@@ -9,6 +9,8 @@ mudar o guia vale para a proxima chamada sem publicar versao nova de prompt.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -81,16 +83,6 @@ class EditorialProfile(models.Model):
             "uma avaliacao na clinica, sem pressao'. Vazio: o texto termina sem convite."
         ),
     )
-    oferta = models.TextField(
-        _("oferta do site"),
-        blank=True,
-        help_text=_(
-            "O que o site vende, em uma ou duas frases, como o cliente diria. Ex.: "
-            "'Assinatura mensal: voce manda as notas de material pelo WhatsApp e um "
-            "engenheiro planilha os custos e diz se voce pagou caro'. E por ela que "
-            "o PubliBot decide se um artigo leva chamada, e em que secao."
-        ),
-    )
     exemplos = models.TextField(
         _("paragrafos de exemplo"),
         blank=True,
@@ -121,3 +113,104 @@ class EditorialProfile(models.Model):
     def estrutura_de(self, tipo: str) -> list[str]:
         estruturas = self.estruturas or {}
         return list(estruturas.get(tipo) or ESTRUTURAS_PADRAO.get(tipo) or [])
+
+
+class PerfilDoNegocio(models.Model):
+    """O que o site e e o que ele vende: a referencia de tudo que o PubliBot mede.
+
+    Uma linha por tenant. Antes, isto estava espalhado (o "nicho" no cadastro
+    do site, a oferta no guia editorial, as dores no radar), e ficava dificil
+    responder "perto do QUE?" quando a tela falava em aderencia. Cada campo
+    tem um uso so, descrito na tela Negocio:
+
+    * `tema` (+ sementes do radar): o "perto do tema do site" do radar;
+    * `oferta`: onde cabe a chamada no artigo, e o "perto da oferta";
+    * `publico`: para quem o artigo e escrito, no planejamento;
+    * valores: a comparacao com anuncios (custo por conversao, retorno).
+
+    As dores do publico continuam guardadas na configuracao do radar (sao
+    buscadas como consultas), mas sao editadas aqui, junto do resto.
+    """
+
+    id = models.SmallAutoField(primary_key=True)
+    tema = models.CharField(
+        _("tema do site"),
+        max_length=300,
+        blank=True,
+        help_text=_(
+            "Sobre o que o site escreve, numa frase. Ex.: 'Custos e orcamento de obra "
+            "para quem constroi ou reforma a casa'."
+        ),
+    )
+    publico = models.CharField(
+        _("publico"),
+        max_length=300,
+        blank=True,
+        help_text=_(
+            "Quem le e quem compra, numa frase. Ex.: 'Donos de obra de casa propria, "
+            "sem formacao tecnica, que compram o material por conta'."
+        ),
+    )
+    oferta = models.TextField(
+        _("oferta"),
+        blank=True,
+        help_text=_(
+            "O que o site vende, como o cliente diria. Ex.: 'Assinatura mensal: voce "
+            "manda as notas de material pelo WhatsApp e um engenheiro planilha os "
+            "custos e diz se voce pagou caro'."
+        ),
+    )
+    valor_da_conversao = models.DecimalField(
+        _("valor de uma conversao (R$)"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Quanto vale, em media, um contato que vira cliente (a primeira "
+            "mensalidade, o ticket medio). Para calcular o retorno."
+        ),
+    )
+    investimento_publibot = models.DecimalField(
+        _("investimento mensal no PubliBot (R$)"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    investimento_anuncios = models.DecimalField(
+        _("investimento mensal em anuncios (R$)"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("O que vai para Google Ads e afins. Vazio: sem comparacao de custo."),
+    )
+    cotacao_do_dolar = models.DecimalField(
+        _("cotacao do dolar (R$)"),
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("5.40"),
+        help_text=_("O custo por clique vem em dolar da DataForSEO."),
+    )
+
+    class Meta:
+        verbose_name = _("perfil do negocio")
+        verbose_name_plural = _("perfil do negocio")
+
+    def __str__(self) -> str:
+        return self.tema or "Negocio"
+
+    @classmethod
+    def carregar(cls) -> PerfilDoNegocio:
+        objeto, _criado = cls.objects.get_or_create(pk=1)
+        return objeto
+
+
+def perfil_do_negocio() -> PerfilDoNegocio | None:
+    """O perfil do tenant em uso, ou None fora de um tenant."""
+    from django.db import connection
+
+    if getattr(connection, "schema_name", "public") == "public":
+        return None
+    return PerfilDoNegocio.carregar()

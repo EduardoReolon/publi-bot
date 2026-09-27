@@ -28,7 +28,8 @@ sudo systemctl restart publibot celery-publibot celery-beat-publibot
       novos. Confira no log do beat (`journalctl -u celery-beat-publibot -n 50`)
       que aparecem `colher-fila-do-radar` (5 min), `descrever-oportunidades`
       (1 h), `atualizar-contexto-dos-sites`, `conferir-fontes-vencidas` e
-      `coletar-metricas-dos-sites` (1 dia cada).
+      `coletar-metricas-dos-sites` (1 dia cada). A migração copia o "nicho"
+      do site para o tema do Negócio.
 - [ ] **Sem o beat, nada acontece sozinho** — nem a rodada com fila termina.
 
 Variáveis novas no `.env`: nenhuma obrigatória. `MEDIA_ROOT` só se quiser a
@@ -299,10 +300,10 @@ O caso da página de preço: o endereço fica, o dado muda todo mês.
 
 ## 8. Chamada para a oferta (a landing page)
 
-- [ ] **Onde:** Guia editorial › "Oferta, convite e exemplos". **Faça:**
-      preencha a **Oferta do site** como o cliente diria. Ex.: "Assinatura
-      mensal: você manda as notas de material pelo WhatsApp e um engenheiro
-      planilha os custos e diz se você pagou caro".
+- [ ] **Onde:** menu **Negócio** (item 10). **Faça:** preencha a **Oferta**
+      como o cliente diria. Ex.: "Assinatura mensal: você manda as notas de
+      material pelo WhatsApp e um engenheiro planilha os custos e diz se você
+      pagou caro".
 - [ ] **Faça:** gere um artigo de custo (ex.: "Como saber se o orçamento da
       obra está caro"). **Espere, na revisão, o bloco "Chamada para a
       oferta":**
@@ -319,7 +320,7 @@ O caso da página de preço: o endereço fica, o dado muda todo mês.
       Apague a marca: vira "Só no fim".
 - [ ] **Faça:** em Pautas › Nova pauta, o campo "Chamada para a oferta" força
       o modo. **Espere:** na revisão, "escolhida na pauta".
-- [ ] **Sem oferta no Guia:** aviso amarelo na revisão, e todo artigo fica
+- [ ] **Sem oferta no Negócio:** aviso amarelo na revisão, e todo artigo fica
       "só no fim".
 - [ ] **No site** (precisa do recurso `call_to_action`, ver
       `docs/contrato/README.md`, "Chamada para a oferta do site"): o bloco
@@ -345,6 +346,10 @@ conversões"). O nó de referência em Django já traz os dois.
       **Espere:** `POST /api/v1/conversao/` com `via_cta: true` e a jornada com
       os dois artigos. No DevTools › Aplicação › Armazenamento local,
       `publibot:jornada` volta vazia.
+- [ ] **Faça:** abra a landing page com `?gclid=teste` no fim do endereço e
+      clique no WhatsApp. **Espere:** a conversão com `first_channel: "paid"`.
+      Chegando por uma busca no Google, `"organic"`; digitando o endereço,
+      `"direct"`.
 - [ ] **Espere:** nenhuma requisição leva IP, cookie de identificação ou
       endereço completo de quem leu.
 
@@ -363,6 +368,60 @@ venv/bin/python manage.py shell -c "from apps.integrations.tasks import coletar_
 - [ ] **Espere, com algumas semanas de dado:** no Radar, os temas perto de
       artigos que convertem ganham a barra **conversao**. Sem dado de
       conversão, a nota é exatamente a de antes.
+
+---
+
+---
+
+## 10. Negócio: a referência de tudo que é medido
+
+- [ ] **Onde:** menu **Negócio**. **Espere:** tema do site, público, dores
+      do público, oferta e valores, mais a tabela "Como o PubliBot usa cada
+      informação".
+- [ ] **Espere, depois de atualizar o servidor:** o antigo "nicho" do cadastro
+      do site aparece como **tema**, e a oferta que estava no Guia editorial
+      aparece aqui. O Guia agora só tem o convite.
+- [ ] **Faça:** preencha o **público**. **Espere:** no próximo artigo gerado,
+      o planejamento usa esse público (antes usava o nicho, por engano).
+- [ ] **Espere:** em Radar › Oportunidades, as dores aparecem só para leitura,
+      com o link "Editar em Negócio".
+- [ ] **Espere:** as barras da nota no Radar dizem a referência: "perto do
+      tema do site", "perto do que já foi escrito", "fonte no acervo" — e não
+      mais "aderencia".
+
+---
+
+## 11. PubliBot × anúncios
+
+- [ ] **Onde:** Negócio › Valores. **Faça:** preencha valor de uma conversão,
+      investimento mensal no PubliBot e em anúncios, e a cotação do dólar.
+- [ ] **Valor do tráfego** (precisa de Search Console e DataForSEO). **Faça:**
+      Radar › Search Console › *Coletar agora*. **Espere:** em Configuração e
+      custos › Últimas chamadas externas, uma chamada de volume com a
+      finalidade "Valor do tráfego" (só para as consultas que ainda não têm
+      preço; repete a cada 90 dias).
+- [ ] **Onde:** Artigos › Desempenho no site. **Espere:**
+  - o quadro "PubliBot × anúncios": conversões pelo PubliBot, por anúncio
+    (com a parte que leu artigo), outras;
+  - "o que N cliques orgânicos nos artigos custariam em anúncio", em reais;
+  - a tabela de custo por conversão, retorno e "os cliques do PubliBot,
+    comprados em anúncio, por conversão";
+  - por artigo, as colunas "Cliques no Google" e "Valor em anúncio".
+- [ ] **Espere, no Radar:** temas cujos sinais têm custo por clique ganham a
+      barra **valor comercial**; sem custo por clique, a nota não muda.
+
+---
+
+## 12. Links internos ("Leia também")
+
+- [ ] **Faça:** com dois ou mais artigos publicados do mesmo assunto, publique
+      outro. **Espere:** a publicação recebida pelo site traz
+      `related_articles` com até 3 artigos vizinhos (no nó de referência, o
+      bloco "Leia também" da tag `leia_tambem`).
+- [ ] **Espere:** artigo de assunto diferente não entra; a própria página
+      (outra versão do mesmo artigo) nunca entra.
+- [ ] **No site** (recurso `related_articles`): um bloco "Leia também" com
+      links comuns.
 
 ---
 

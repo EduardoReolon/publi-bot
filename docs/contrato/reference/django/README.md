@@ -38,6 +38,7 @@ Os recursos `call_to_action` e `insights` pedem trabalho no template do site:
   <h1>{{ publicacao.title }}</h1>
   {% corpo_com_chamada publicacao %}   {# o bloco no lugar da marca, se o artigo pedir #}
   {% chamada_no_fim publicacao %}      {# o bloco no fim, para "end" e "inline" #}
+  {% leia_tambem publicacao %}         {# os links internos escolhidos pelo PubliBot #}
 </article>
 <script src="{% static 'publibot_node/leitura.js' %}" data-endpoint="/api/v1/" defer></script>
 ```
@@ -50,6 +51,9 @@ Os recursos `call_to_action` e `insights` pedem trabalho no template do site:
   um resumo por abertura para `leitura/`; no clique de conversao, manda a
   jornada (guardada no proprio navegador) para `conversao/`. Coloque-o tambem
   na landing page, para contar conversao que acontece fora do artigo.
+- **Anuncio:** o script tambem vai na landing page. O canal de entrada
+  (anuncio, busca organica, social...) sai do `gclid`/`utm_medium` e da
+  referencia, e e o que separa a conversao do PubliBot da do anuncio.
 - **Consentimento:** defina `window.publibotMedir = false` antes do script
   enquanto a pessoa nao aceitar medicao, se o seu banner exigir.
 - `leitura/` e `conversao/` sao publicas (o navegador nao assina): corpo
@@ -71,7 +75,8 @@ Os recursos `call_to_action` e `insights` pedem trabalho no template do site:
 | Receber arquivo por multipart, com assinatura | `views.py::author_photos` |
 | Guardar a foto pela referencia estavel do autor | `models.py::AuthorPhoto` |
 | `aside` da chamada aceito so vazio e com o marcador | `sanitize.py::sanitizar` |
-| Bloco da chamada no meio e no fim | `templatetags/publibot_node.py` |
+| Bloco da chamada no meio e no fim, e "Leia tambem" | `templatetags/publibot_node.py` |
+| Canal de entrada (anuncio x organico) | `static/publibot_node/leitura.js::canalDaEntrada` |
 | Tempo ativo, fim, chamada e jornada no navegador | `static/publibot_node/leitura.js` |
 | Medicao publica sem identificar ninguem | `medicao.py` |
 | Leitura por dia e conversoes, assinado | `views.py::insights` |

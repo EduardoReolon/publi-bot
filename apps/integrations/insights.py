@@ -45,6 +45,13 @@ def _dia(valor) -> date | None:
         return None
 
 
+def _canal(valor) -> str:
+    """Valor desconhecido (versao futura do site) vira "outro", e vazio, vazio."""
+    if not valor:
+        return ""
+    return valor if valor in ConversaoDoSite.Canal.values else ConversaoDoSite.Canal.OTHER
+
+
 def _jornada(bruta) -> list[dict]:
     if not isinstance(bruta, list):
         return []
@@ -91,6 +98,8 @@ def gravar(site: Site, dados: dict) -> tuple[int, int]:
                 "tipo": str(conversao.get("kind") or "")[:40],
                 "via_cta": bool(conversao.get("via_cta")),
                 "jornada": _jornada(conversao.get("journey")),
+                "canal_de_entrada": _canal(conversao.get("first_channel")),
+                "canal_final": _canal(conversao.get("last_channel")),
             },
         )
         novas += int(criada)

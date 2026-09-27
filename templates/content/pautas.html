@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n radar %}
 {% block titulo %}{% translate "Pautas" %} — PubliBot{% endblock %}
 {% block largura %}largo{% endblock %}
 {% block menu %}{% include "_menu.html" %}{% endblock %}
@@ -39,7 +39,7 @@
                         <li>{{ sinal.texto }} <span class="selo">{{ sinal.fonte }}</span>{% if sinal.volume is not None %} {{ sinal.volume }}/{% translate "mes" %}{% endif %}</li>
                       {% endfor %}
                     </ul>
-                    <div>{% for nome, valor in pauta.evidence.parcelas.items %}{{ nome }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+                    <div>{% for nome, valor in pauta.evidence.parcelas.items %}{{ nome|rotulo_da_parcela }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
                   </details>
                 {% elif pauta.briefing %}
                   <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>

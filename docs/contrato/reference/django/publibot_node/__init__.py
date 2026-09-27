@@ -1,6 +1,6 @@
 """Implementacao de referencia do contrato PubliBot /api/v1 para Django."""
 
-VERSAO = "1.3.0"
+VERSAO = "1.4.0"
 VERSOES_DO_CONTRATO = ["v1"]
 
 RECURSOS = [
@@ -15,4 +15,5 @@ RECURSOS = [
     "update",
     "call_to_action",
     "insights",
+    "related_articles",
 ]

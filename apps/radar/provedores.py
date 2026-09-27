@@ -292,6 +292,9 @@ def metricas_dataforseo(
         raise
 
     metricas = ler_metricas(dados["tasks"][0])
+    from apps.radar.valor import guardar_custos
+
+    guardar_custos(metricas, local=local or config.local_principal)
 
     custos.registrar(
         provedor=ChamadaExterna.Provedor.DATAFORSEO,

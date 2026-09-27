@@ -40,7 +40,6 @@ class SiteForm(forms.ModelForm):
             "platform",
             "content_language",
             "site_timezone",
-            "niche",
             "default_author",
             "default_author_credentials",
             "is_sensitive",

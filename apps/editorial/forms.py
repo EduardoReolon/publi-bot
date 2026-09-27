@@ -11,7 +11,7 @@ from __future__ import annotations
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from apps.editorial.models import EditorialProfile
+from apps.editorial.models import EditorialProfile, PerfilDoNegocio
 from apps.editorial.presets import TIPOS_DE_CONTEUDO
 
 
@@ -71,7 +71,6 @@ class PerfilEditorialForm(forms.ModelForm):
             "pessoa",
             "regra_de_ouro",
             "tipo_padrao",
-            "oferta",
             "convite",
             "exemplos",
         ]
@@ -80,7 +79,6 @@ class PerfilEditorialForm(forms.ModelForm):
             for campo in ("tom_humor", "tom_formalidade", "tom_respeito", "tom_entusiasmo")
         } | {
             "convite": forms.Textarea(attrs={"rows": 3}),
-            "oferta": forms.Textarea(attrs={"rows": 3}),
             "exemplos": forms.Textarea(attrs={"rows": 6}),
         }
 
@@ -125,4 +123,45 @@ class PerfilEditorialForm(forms.ModelForm):
         }
         if commit:
             perfil.save()
+        return perfil
+
+
+class PerfilDoNegocioForm(forms.ModelForm):
+    """O perfil do negocio, e as dores do publico (guardadas no radar)."""
+
+    dores = forms.CharField(
+        label=_("Dores do publico"),
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 6}),
+        help_text=_(
+            "Uma por linha: o problema nas palavras de quem sente, nao o seu servico. "
+            "Quem busca 'consultoria de custos' ja sabe o que quer; quem busca 'obra "
+            "estourou o orcamento' ainda nao."
+        ),
+    )
+
+    class Meta:
+        model = PerfilDoNegocio
+        fields = [
+            "tema",
+            "publico",
+            "oferta",
+            "valor_da_conversao",
+            "investimento_publibot",
+            "investimento_anuncios",
+            "cotacao_do_dolar",
+        ]
+        widgets = {"oferta": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, config=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._config = config
+        if config is not None:
+            self.fields["dores"].initial = config.dores
+
+    def save(self, commit: bool = True):
+        perfil = super().save(commit=commit)
+        if commit and self._config is not None:
+            self._config.dores = self.cleaned_data.get("dores", "")
+            self._config.save(update_fields=["dores"])
         return perfil

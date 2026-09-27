@@ -11,4 +11,5 @@ app_name = "editorial"
 urlpatterns = [
     path("", views.guia, name="guia"),
     path("modo/", views.aplicar, name="aplicar_modo"),
+    path("negocio/", views.negocio, name="negocio"),
 ]

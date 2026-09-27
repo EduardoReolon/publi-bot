@@ -79,6 +79,18 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
     if faq:
         payload["faq"] = faq
 
+    # Links internos ("Leia tambem"). Como o FAQ, so viaja quando existe; e
+    # nunca derruba a publicacao (sem o modelo de embedding, sai sem a lista).
+    try:
+        from apps.content.relacionados import relacionados
+
+        vizinhos = relacionados(article)
+    except Exception:
+        logger.exception("Falha ao escolher artigos relacionados de %s.", article.pk)
+        vizinhos = []
+    if vizinhos:
+        payload["related_articles"] = vizinhos
+
     return payload
 
 

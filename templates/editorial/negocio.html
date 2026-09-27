@@ -1,0 +1,91 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Negocio" %} · PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+<h1>{% translate "Negocio" %}</h1>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    O que o site e, para quem, e o que vende. E a referencia de tudo que o
+    PubliBot mede: quando uma tela diz que um tema esta "perto do tema do site"
+    ou "perto da oferta", e com o que esta escrito aqui que ele compara (por
+    significado, nao por palavra igual). Frases curtas e concretas funcionam
+    melhor que um texto longo.
+  {% endblocktranslate %}
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <section class="secao">
+    <h2>{% translate "O site" %}</h2>
+    {% include "_campo.html" with campo=form.tema %}
+    {% include "_campo.html" with campo=form.publico %}
+    {% include "_campo.html" with campo=form.dores %}
+  </section>
+
+  <section class="secao">
+    <h2>{% translate "O que vende" %}</h2>
+    {% include "_campo.html" with campo=form.oferta %}
+  </section>
+
+  <section class="secao">
+    <h2>{% translate "Valores (para comparar com anuncios)" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Opcionais. Com eles, Artigos › Desempenho no site mostra o custo por
+        conversao do PubliBot ao lado do dos anuncios, e o retorno em reais.
+      {% endblocktranslate %}
+    </p>
+    <div class="cartoes">
+      {% for campo in form %}
+        {% if campo.name == "valor_da_conversao" or campo.name == "investimento_publibot" or campo.name == "investimento_anuncios" or campo.name == "cotacao_do_dolar" %}
+          <div>{% include "_campo.html" %}</div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="acoes"><button type="submit">{% translate "Salvar" %}</button></div>
+</form>
+
+<section class="secao">
+  <h2>{% translate "Onde mais o negocio e descrito" %}</h2>
+  <ul>
+    <li>
+      <strong>{% translate "Palavras-semente" %}</strong> ({{ sementes|length }}) —
+      {% translate "por onde o radar comeca a procurar. Tambem entram no 'perto do tema do site'." %}
+      <a href="{% url 'radar:configuracao' %}">{% translate "Radar › Configuracao" %}</a>
+    </li>
+    <li>
+      <strong>{% translate "Regioes" %}</strong> ({% if regioes %}{{ regioes|join:", " }}{% else %}{% translate "o pais inteiro" %}{% endif %}) —
+      {% translate "onde o volume de busca e o custo por clique sao medidos." %}
+      <a href="{% url 'radar:configuracao' %}">{% translate "Radar › Configuracao" %}</a>
+    </li>
+    <li>
+      <strong>{% translate "Concorrentes" %}</strong> ({{ concorrentes|length }}) —
+      {% translate "o que eles publicam, as buscas em que aparecem e as reclamacoes nas avaliacoes." %}
+      <a href="{% url 'radar:configuracao' %}">{% translate "Radar › Configuracao" %}</a>
+    </li>
+    <li>
+      <strong>{% translate "Voz e convite" %}</strong> —
+      {% translate "como o texto fala e como convida; nao muda o que e medido." %}
+      <a href="{% url 'editorial:guia' %}">{% translate "Guia editorial" %}</a>
+    </li>
+  </ul>
+</section>
+
+<section class="secao">
+  <h2>{% translate "Como o PubliBot usa cada informacao" %}</h2>
+  <div class="rolagem">
+    <table>
+      <thead><tr><th>{% translate "Informacao" %}</th><th>{% translate "Onde entra" %}</th></tr></thead>
+      <tbody>
+        <tr><td>{% translate "Tema do site + sementes" %}</td><td>{% translate "Radar: a parcela 'perto do tema do site' da nota de cada tema. Oportunidades: o contrario (novidade = longe do tema). Sugestao de sementes e descricao de oportunidades pelo modelo." %}</td></tr>
+        <tr><td>{% translate "Publico" %}</td><td>{% translate "Planejamento do artigo: para quem ele e escrito, quando a pauta nao diz." %}</td></tr>
+        <tr><td>{% translate "Dores do publico" %}</td><td>{% translate "Radar: buscadas como consultas, com cota propria. Oportunidades: a parcela 'perto do publico'." %}</td></tr>
+        <tr><td>{% translate "Oferta" %}</td><td>{% translate "Artigo: se cabe chamada e em que secao ('perto da oferta'). Radar: entra no 'perto do tema do site', junto com o tema." %}</td></tr>
+        <tr><td>{% translate "Valores" %}</td><td>{% translate "Desempenho no site: custo por conversao, valor do trafego organico em reais, retorno." %}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

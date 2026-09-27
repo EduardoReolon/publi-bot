@@ -625,7 +625,11 @@ def _idioma(site) -> str:
 
 
 def _publico_padrao(site) -> str:
-    return getattr(site, "niche", "") or "leitores nao especialistas"
+    """Para quem o artigo e escrito quando a pauta nao diz: o publico do Negocio."""
+    from apps.editorial.models import perfil_do_negocio
+
+    perfil = perfil_do_negocio()
+    return (perfil.publico if perfil else "") or "leitores nao especialistas"
 
 
 def _ler_json(texto: str, *, contexto: str) -> dict:

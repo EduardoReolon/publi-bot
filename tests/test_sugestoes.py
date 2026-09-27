@@ -95,11 +95,13 @@ def test_tema_forte_longe_das_sementes_vira_sugestao(radar):  # noqa: F811
 @pytest.mark.django_db
 def test_modelo_sugere_sementes_e_dores(radar, monkeypatch):  # noqa: F811
     from apps.content import inference
+    from apps.editorial.models import PerfilDoNegocio
     from apps.integrations.models import Site
     from apps.ops.orchestrator import PassoAdiado
     from apps.radar.sugestoes import sugerir_pelo_modelo
 
-    Site.objects.create(name="S", slug="s", base_url="https://s.exemplo.org", niche="clinica")
+    Site.objects.create(name="S", slug="s", base_url="https://s.exemplo.org")
+    PerfilDoNegocio.objects.update_or_create(pk=1, defaults={"tema": "clinica"})
     pedidos = []
 
     class Resultado:

@@ -192,10 +192,3 @@ class BuscaManualForm(forms.Form):
     com_volume = forms.BooleanField(
         label=_("Trazer volume de busca (uma chamada paga a mais)"), required=False
     )
-
-
-class DoresForm(forms.ModelForm):
-    class Meta:
-        model = ConfiguracaoDoRadar
-        fields = ["dores"]
-        widgets = {"dores": forms.Textarea(attrs={"rows": 6})}

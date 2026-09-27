@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Contrato de Integracao PubliBot
-  version: "1.3.0"
+  version: "1.4.0"
   description: |
     Rotas que um site implementa para receber conteudo do PubliBot.
 
@@ -136,7 +136,29 @@ components:
         content_disclosure:
           type: string
           description: Renderize visivelmente junto ao conteudo.
-        canonical_source: { type: string, format: uri }
+        canonical_source:
+          type: string
+          format: uri
+          description: |
+            A FONTE principal do artigo (o estudo, a tabela citada) — o destino
+            do link de referencia. NUNCA use como `<link rel="canonical">`: o
+            canonical do artigo e o endereco dele no SEU site. Apontar o
+            canonical para a fonte diz ao Google que o artigo e copia dela, e
+            ele sai da busca.
+        related_articles:
+          type: array
+          maxItems: 5
+          description: |
+            Recurso `related_articles`. Links internos escolhidos pelo PubliBot
+            ("Leia tambem"): artigos ja publicados do mesmo assunto, os que
+            convertem primeiro. So vem quando ha algum.
+          items:
+            type: object
+            required: [remote_id, title, url]
+            properties:
+              remote_id: { type: string }
+              title: { type: string }
+              url: { type: string, format: uri }
         cover_image: { $ref: "#/components/schemas/ImagemPorReferencia" }
         faq:
           type: array
@@ -191,6 +213,18 @@ components:
         via_cta:
           type: boolean
           description: O clique foi no bloco da chamada de um artigo.
+        first_channel:
+          type: string
+          enum: [organic, paid, social, referral, email, direct, other]
+          description: |
+            Por onde a pessoa ENTROU no site pela primeira vez nos 30 dias da
+            jornada. `paid` = anuncio (gclid, gbraid, wbraid, msclkid ou
+            utm_medium de midia paga). E o que separa a conversao do PubliBot
+            da do anuncio.
+        last_channel:
+          type: string
+          enum: [organic, paid, social, referral, email, direct, other]
+          description: A ultima entrada antes de converter.
         journey:
           type: array
           maxItems: 20
@@ -292,7 +326,7 @@ paths:
                       enum: [idempotency, hmac_signature, cursor_pagination,
                              image_by_url, author_photo, qa, reconciliation,
                              faq, update, call_to_action, insights,
-                             unpublish]
+                             related_articles, unpublish]
                   server_time: { type: string, format: date-time }
 
   /seo-context/:

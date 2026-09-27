@@ -25,8 +25,9 @@ guardar, nem rota de callback para expor.
 | `PUT` | `/api/v1/publications/{remote_id}/` | Nao | `update` |
 | `GET` | `/api/v1/insights/` | Nao | `insights` |
 
-Dois recursos nao tem rota do PubliBot, e sim trabalho no seu template:
-`call_to_action` (onde mostrar a chamada para a sua oferta) e, para alimentar
+Tres recursos nao tem rota do PubliBot, e sim trabalho no seu template:
+`call_to_action` (onde mostrar a chamada para a sua oferta),
+`related_articles` (os links "Leia tambem") e, para alimentar
 `insights`, a medicao de leitura no navegador — que fala com o SEU servidor,
 nunca com o PubliBot.
 
@@ -319,7 +320,32 @@ formulario, assinatura. Marque o elemento com `data-publibot-conversao="<tipo>"`
 - `journey` — os artigos lidos nos 30 dias anteriores, em ordem, com o tempo
   ativo de cada um: `[{"remote_id": "...", "engaged_seconds": 95}, ...]`.
   Todos, nao so o ultimo: e isso que permite ver que um artigo apresentou o
-  problema e outro fechou a venda. Depois de converter, a jornada recomeca.
+  problema e outro fechou a venda. Depois de converter, a jornada recomeca;
+- `first_channel` e `last_channel` — por onde a pessoa entrou no site na
+  primeira e na ultima visita dos 30 dias: `paid` (anuncio), `organic` (busca),
+  `social`, `referral` (outro site), `email`, `direct` ou `other`.
+
+### Anuncio e PubliBot na mesma conta
+
+O canal e o que permite comparar o PubliBot com o Google Ads no mesmo site.
+Conversao de quem leu artigo e **nao** entrou por anuncio conta para o
+PubliBot; quem entrou por anuncio conta para o anuncio (se leu artigo no
+caminho, aparece a parte, como "anuncio com artigo").
+
+Para a separacao funcionar:
+
+- **Anuncio aponta para a landing page, nao para artigo.** Artigo e para quem
+  chega pela busca organica; misturar os dois embaralha a conta e faz o
+  anuncio competir com a propria pagina organica.
+- **Marcacao automatica ligada no Google Ads** (o parametro `gclid` na URL), ou
+  `utm_medium=cpc` em todo link pago. E por ela que o script reconhece o
+  anuncio. Nao remova parametros da URL da landing page por redirecionamento.
+- **O script tambem na landing page e em toda pagina com botao de conversao**,
+  nao so nos artigos: a entrada por anuncio acontece la.
+- A classificacao segue o agrupamento de canais do Google Analytics
+  (`gclid`, `gbraid`, `wbraid`, `msclkid`, `utm_medium` pago = anuncio;
+  referencia de buscador = organico; rede social = social; sem referencia =
+  direto).
 
 O PubliBot descarta da jornada o que foi lido por menos de 10 s e mostra tres
 atribuicoes: **ultimo artigo**, **participou** e **atribuida** (cada conversao
@@ -339,6 +365,7 @@ GET /api/v1/insights/?since=2026-09-01&cursor=
   ],
   "conversions": [
     {"id": "5f0c...", "date": "2026-09-20", "kind": "whatsapp", "via_cta": true,
+     "first_channel": "organic", "last_channel": "direct",
      "journey": [{"remote_id": "c3d4", "engaged_seconds": 40},
                  {"remote_id": "a1b2", "engaged_seconds": 95}]}
   ],
@@ -374,6 +401,59 @@ Cuidados:
   sao indicativos, nao auditaveis.
 - **Nao dependa de script de terceiro.** Bloqueador de anuncio derruba script
   de analytics conhecido; o seu, servido do seu dominio, passa.
+
+## Artigos relacionados (links internos)
+
+Recurso `related_articles`. O artigo pode trazer ate 5 links internos
+escolhidos pelo PubliBot: artigos ja publicados do mesmo assunto, e entre
+eles os que convertem primeiro.
+
+```json
+"related_articles": [
+  {"remote_id": "7e2a", "title": "Preco do cimento em 2026", "url": "https://exemplo.com.br/blog/preco-do-cimento"}
+]
+```
+
+Link interno e das poucas alavancas de SEO que dependem de conhecer o
+conteudo inteiro: ele leva o leitor e o Google ao vizinho do mesmo assunto. O
+PubliBot sabe o assunto de cada artigo e quais convertem; o site nao.
+
+- Exiba como links comuns (`<a href>`), perto do fim do artigo ("Leia tambem").
+  Link carregado por script depois, o Google pode nao seguir.
+- O campo so vem quando ha algum. `title` e texto puro; aceite so `http(s)`.
+- A lista vale para a publicacao: artigos publicados depois so entram quando
+  este for atualizado (recurso `update`).
+
+## SEO tecnico da pagina do artigo
+
+O que o PubliBot manda vira pagina pelo template do SEU site. O que o Google
+olha, e de onde sai cada coisa:
+
+| Na pagina | De onde |
+|---|---|
+| `<title>` | `title` (ate uns 60 caracteres aparecem no resultado) |
+| `<meta name="description">` | `meta_description` |
+| `<link rel="canonical">` | o endereco do proprio artigo no seu site |
+| `<h1>` unico | `title`; o `html_content` ja comeca em `h2` |
+| Autor visivel, com credencial | `author` |
+| Datas visiveis | publicacao e, depois de `update`, a data da atualizacao |
+| JSON-LD `Article` (ou `BlogPosting`) | `headline`, `author` (Person, com `url` da pagina do autor), `datePublished`, `dateModified`, `image` (a capa) |
+| Open Graph (`og:title`, `og:description`, `og:image`) | os mesmos campos: e o que aparece quando alguem compartilha no WhatsApp |
+
+Tres avisos:
+
+- **`canonical_source` NAO e o canonical.** E a fonte principal do artigo (o
+  estudo, a tabela citada), destino do link de referencia. Usa-la em
+  `<link rel="canonical">` diz ao Google que o artigo e copia da fonte, e ele
+  sai da busca. O canonical e sempre o endereco do artigo no seu site.
+- **Nao existe tag de palavra-chave.** `<meta name="keywords">` e ignorada pelo
+  Google desde 2009. `focus_keyword` serve para voce conferir titulo e endereco
+  (`slug`), nao para virar tag.
+- **O sitemap e do site.** Ele e um indice: o Google ignora `priority` e
+  `changefreq`, e usa `lastmod` quando ele e confiavel. Gere-o no site, com
+  TODAS as paginas (inclusive as que nao vieram do PubliBot), e com `lastmod`
+  = data da ultima atualizacao real do conteudo — a de um `update`, nao a de
+  qualquer salvamento. Envie o endereco dele no Search Console.
 
 ## Imagens: sempre WebP
 
@@ -552,13 +632,28 @@ funcionar.
       aceita so com esse atributo e sem conteudo.
 - [ ] O bloco tem `data-publibot-bloco`, e o botao, `data-publibot-conversao`.
 
+**Se voce declarar `related_articles`**
+
+- [ ] Os links aparecem como `<a href>` comuns, no HTML da pagina.
+- [ ] `title` e texto puro e so `http(s)` e aceito.
+
+**SEO tecnico (vale para todo site)**
+
+- [ ] `<link rel="canonical">` e o endereco do proprio artigo, nunca o
+      `canonical_source`.
+- [ ] JSON-LD `Article` com autor, `datePublished` e `dateModified`.
+- [ ] Sitemap gerado pelo site, com `lastmod` da ultima atualizacao real.
+
 **Se voce declarar `insights`**
 
 - [ ] A pagina do artigo tem `data-publibot-id` com o `remote_id`.
 - [ ] Leitura = pelo menos 10 s de tempo ATIVO (aba visivel e interacao nos
       ultimos 30 s), nao tempo com a aba aberta.
 - [ ] `GET /insights/` devolve uma linha por publicacao e dia, com o total.
-- [ ] Cada conversao tem `id` estavel e a jornada inteira dos 30 dias.
+- [ ] Cada conversao tem `id` estavel, a jornada inteira dos 30 dias e o canal
+      da primeira e da ultima entrada.
+- [ ] O script esta tambem na landing page, e o anuncio aponta para ela com
+      `gclid` (marcacao automatica) ou `utm_medium=cpc`.
 - [ ] Nada que identifique a pessoa sai do navegador; a rota que recebe as
       medicoes tem limite por IP e descarta robos.
 

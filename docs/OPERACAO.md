@@ -543,6 +543,13 @@ chamada da oferta no meio do artigo) esta em
 site" e "Leitura e conversoes"; o no de referencia em Django ja traz o script
 de medicao e as tags de template.
 
+**Negocio primeiro.** Antes da primeira rodada do radar, preencha a tela
+**Negocio** (tema, publico, oferta, dores, valores): e a referencia de tudo que
+o PubliBot mede, e o que permite comparar o resultado com anuncios em Artigos >
+Desempenho no site. Com Search Console e DataForSEO, cada coleta do Search
+Console tambem busca o custo por clique das consultas com clique que ainda nao
+tem preco (uma chamada, ate 300 palavras, valida por 90 dias).
+
 **Buscador gratuito (SearXNG).** Suba uma instancia propria com a saida JSON
 ligada (`search: formats: [html, json]` no `settings.yml` dele) e informe
 `SEARXNG_URL` no `.env`. Cada site pode apontar outra na tela do Radar.

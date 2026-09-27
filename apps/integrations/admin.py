@@ -48,7 +48,6 @@ class SiteForm(forms.ModelForm):
             "platform",
             "content_language",
             "site_timezone",
-            "niche",
             "is_sensitive",
             "responsible_professional",
             "default_author",
@@ -131,7 +130,6 @@ class SiteAdmin(admin.ModelAdmin):
                 "fields": (
                     "content_language",
                     "site_timezone",
-                    "niche",
                     "default_author",
                     "default_author_credentials",
                     "model_overrides",

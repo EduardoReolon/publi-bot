@@ -206,7 +206,10 @@ def test_tela_e_decisoes(ambiente, settings):  # noqa: F811
     _, _, client = ambiente
     url = reverse("radar:oportunidades", urlconf="core.urls_tenants")
 
-    client.post(url, {"dores": "equipe desmotivada\nturnover alto"})
+    client.post(
+        reverse("editorial:negocio", urlconf="core.urls_tenants"),
+        {"dores": "equipe desmotivada\nturnover alto", "cotacao_do_dolar": "5.40"},
+    )
     assert ConfiguracaoDoRadar.carregar().lista_de_dores == ["equipe desmotivada", "turnover alto"]
 
     agrupar([_sinal("equipe desmotivada", volume=300), _sinal("turnover alto", volume=90)])

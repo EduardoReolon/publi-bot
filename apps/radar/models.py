@@ -332,6 +332,7 @@ class ChamadaExterna(models.Model):
         FONTES = "fontes", _("Busca de fontes")
         CONCORRENTES = "concorrentes", _("Concorrentes")
         TRANSCRICAO = "transcricao", _("Transcricao")
+        VALOR = "valor", _("Valor do trafego")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     provedor = models.CharField(_("provedor"), max_length=16, choices=Provedor.choices)
@@ -526,6 +527,24 @@ class GrupoDeDemanda(models.Model):
 
     def __str__(self) -> str:
         return self.rotulo
+
+    # O que cada parcela mede, com a referencia dita (Negocio). "Aderencia"
+    # sozinha nao diz a que.
+    ROTULOS_DAS_PARCELAS = {
+        "demanda": _("demanda"),
+        "diversidade": _("fontes diferentes"),
+        "aderencia": _("perto do tema do site"),
+        "canibalizacao": _("perto do que ja foi escrito"),
+        "cobertura": _("fonte no acervo"),
+        "comercial": _("valor comercial"),
+        "conversao": _("vizinho de artigo que converte"),
+    }
+
+    @property
+    def parcelas_rotuladas(self) -> list[tuple[str, float]]:
+        return [
+            (str(self.ROTULOS_DAS_PARCELAS.get(k, k)), v) for k, v in (self.parcelas or {}).items()
+        ]
 
 
 class BuscaManual(models.Model):
@@ -792,8 +811,8 @@ class Oportunidade(models.Model):
             "demanda": _("demanda"),
             "crescimento": _("crescimento"),
             "comercial": _("valor comercial"),
-            "novidade": _("novidade"),
-            "publico": _("perto do publico"),
+            "novidade": _("novidade (longe do tema do site)"),
+            "publico": _("perto das dores do publico"),
             "diversidade": _("fontes diferentes"),
         }
         return [
@@ -961,3 +980,30 @@ class ResultadoOrganico(models.Model):
 
     def __str__(self) -> str:
         return f"{self.posicao}. {self.url}"
+
+
+class CustoDaPalavra(models.Model):
+    """O custo por clique de uma palavra no Google Ads, por regiao.
+
+    Vem de toda chamada de volume (fila ou ao vivo), sem custo a mais: e o que
+    permite dizer quanto os cliques organicos de um artigo custariam se fossem
+    comprados em anuncio (o "valor do trafego" das ferramentas de SEO).
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    palavra = models.CharField(_("palavra"), max_length=200)
+    local = models.PositiveIntegerField(_("regiao"), default=0)
+    cpc = models.FloatField(_("custo por clique (US$)"), null=True, blank=True)
+    volume = models.PositiveIntegerField(_("volume mensal"), null=True, blank=True)
+    competicao = models.FloatField(_("competicao"), null=True, blank=True)
+    atualizado_em = models.DateTimeField(_("atualizado em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("custo da palavra")
+        verbose_name_plural = _("custos das palavras")
+        constraints = [
+            models.UniqueConstraint(fields=["palavra", "local"], name="uniq_custo_por_regiao")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.palavra} ({self.local})"
