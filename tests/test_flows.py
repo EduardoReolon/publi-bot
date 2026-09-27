@@ -320,11 +320,11 @@ def test_fluxo_da_resposta_produz_resposta_aguardando_revisao(
     tenant_com_acervo, conexao, monkeypatch
 ):
     """Uma resposta publicada tem o mesmo peso de um artigo: mesma revisao."""
+    from apps.content.models import Author
     from apps.integrations.models import Site
 
-    site = Site.objects.create(
-        name="Site", slug="site", base_url="https://site.exemplo.org", default_author="Dra. Souza"
-    )
+    Author.objects.create(name="Dra. Souza", padrao=True)
+    site = Site.objects.create(name="Site", slug="site", base_url="https://site.exemplo.org")
     resposta_do_modelo = "O que os estudos mostram sobre isso [[FONTE_1]] e consistente."
     modelo = ModeloFalso([resposta_do_modelo])
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)

@@ -570,8 +570,12 @@ def aplicar_rascunho_de_resposta(question, markdown_bruto: str, *, trechos, site
         answer.outbound_link_url = chunk_primario.source_url
         answer.anchor_text = _texto_ancora(chunk_primario)
     if not answer.author_name:
-        answer.author_name = getattr(site, "default_author", "") or ""
-        answer.author_credentials = getattr(site, "default_author_credentials", "") or ""
+        from apps.content.models import Author
+
+        padrao = Author.do_site()
+        answer.author = padrao
+        answer.author_name = getattr(padrao, "name", "") or ""
+        answer.author_credentials = getattr(padrao, "credentials", "") or ""
     answer.status = Answer.Status.PENDING_REVIEW
     answer.save()
     return answer

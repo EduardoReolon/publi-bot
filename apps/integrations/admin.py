@@ -50,8 +50,6 @@ class SiteForm(forms.ModelForm):
             "site_timezone",
             "is_sensitive",
             "responsible_professional",
-            "default_author",
-            "default_author_credentials",
             "model_overrides",
             "contract_version",
             "capabilities",
@@ -130,8 +128,6 @@ class SiteAdmin(admin.ModelAdmin):
                 "fields": (
                     "content_language",
                     "site_timezone",
-                    "default_author",
-                    "default_author_credentials",
                     "model_overrides",
                 )
             },

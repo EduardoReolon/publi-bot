@@ -151,7 +151,7 @@ class CadastroDeAutor(forms.ModelForm):
 
     class Meta:
         model = Author
-        fields = ["name", "credentials", "bio", "email", "phone", "photo", "is_active"]
+        fields = ["name", "credentials", "bio", "email", "phone", "photo", "is_active", "padrao"]
         labels = {"photo": _("Foto de perfil")}
         help_texts = {
             "name": _("Aparece como assinatura no site. E o unico campo obrigatorio."),

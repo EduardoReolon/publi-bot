@@ -54,7 +54,11 @@
               <td>
                 {% if pauta.artigos %}
                   {% for artigo in pauta.articles.all %}
-                    <a href="{% url 'content:revisar' artigo.pk %}">{% translate "ver artigo" %}</a>
+                    {% if artigo.status == 'drafting' and artigo.thesis_json.origem == 'outra_ia' %}
+                      <a href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "esperando o texto da outra IA" %}</a>
+                    {% else %}
+                      <a href="{% url 'content:revisar' artigo.pk %}">{% translate "ver artigo" %}</a>
+                    {% endif %}
                   {% endfor %}
                 {% elif pauta.status != 'rejected' %}
                   <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
@@ -66,6 +70,8 @@
                     <button type="submit" class="botao secundario">{% translate "Buscar fontes na web" %}</button>
                   </form>
                   <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
+                  <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA" %}</a>
+                  {% if pauta.de_peso %}<div class="ajuda"><span class="selo ok">{% translate "vale o modelo grande" %}</span> {{ pauta.de_peso|join:", " }}</div>{% endif %}
                   <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">
                     {% csrf_token %}
                     <button type="submit" class="botao secundario">{% translate "Rejeitar" %}</button>

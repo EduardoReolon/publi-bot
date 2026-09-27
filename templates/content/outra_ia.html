@@ -1,0 +1,58 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Artigo com outra IA" %} · PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+<h1>{% translate "Artigo com outra IA" %}</h1>
+<p class="sub"><strong>{{ pauta.title }}</strong>{% if pauta.target_keyword %} · {{ pauta.target_keyword }}{% endif %}
+  {% if motivos %}<span class="selo ok">{% translate "vale o modelo grande" %}: {{ motivos|join:", " }}</span>{% endif %}</p>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    O caminho de sempre (Gerar artigo, com o modelo local) continua. Este e para
+    a pauta que vale mais: o PubliBot separa as fontes do acervo e monta um
+    pedido fechado — com as fontes dentro, proibindo busca na web e numero
+    inventado. Voce cola a resposta e ela passa pelas mesmas travas: endereco
+    escrito pelo modelo recusa o texto, e os links saem das fontes aprovadas,
+    nunca do que o modelo escreveu. Depois, a revisao de sempre.
+  {% endblocktranslate %}
+</div>
+
+{% if not artigo %}
+  <section class="secao">
+    <h2>{% translate "1. Separar as fontes" %}</h2>
+    <p class="pre-visualizacao">{% translate "Busca no acervo o que sustenta a pauta e cria o artigo em espera. A pauta sai da lista de sugeridas (volta se voce desistir)." %}</p>
+    <form method="post" class="acoes">
+      {% csrf_token %}<input type="hidden" name="acao" value="preparar">
+      <button type="submit">{% translate "Separar as fontes e montar o pedido" %}</button>
+      <a class="botao discreto" href="{% url 'content:pautas' %}">{% translate "Voltar" %}</a>
+    </form>
+  </section>
+{% else %}
+  <section class="secao">
+    <h2>{% translate "1. Copie o pedido" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed count n=artigo.citations.count %}
+        {{ n }} fonte do acervo vai dentro do pedido.
+      {% plural %}
+        {{ n }} fontes do acervo vao dentro do pedido.
+      {% endblocktranslate %}
+      {% translate "Chamada para a oferta" %}: {{ artigo.get_call_to_action_display }}.
+    </p>
+    <div class="acoes"><button type="button" class="botao" data-copiar="pedido-artigo">{% translate "Copiar pedido" %}</button></div>
+    <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-artigo" readonly rows="20" style="width:100%">{{ pedido }}</textarea></details>
+    <p class="ajuda">{% translate "Use um modelo grande sem a busca na web ligada. Se ele pedir para pesquisar, responda que nao: so as fontes do pedido." %}</p>
+  </section>
+
+  <section class="secao">
+    <h2>{% translate "2. Cole a resposta inteira" %}</h2>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="acao" value="colar">
+      <textarea name="resposta" rows="16" style="width:100%" aria-label="{% translate 'Resposta do modelo' %}">{{ colado }}</textarea>
+      <div class="acoes"><button type="submit">{% translate "Gravar e ir para a revisao" %}</button></div>
+    </form>
+    <form method="post" class="acoes">
+      {% csrf_token %}<input type="hidden" name="acao" value="desistir">
+      <button type="submit" class="botao discreto">{% translate "Desistir (a pauta volta para a lista)" %}</button>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

@@ -138,14 +138,17 @@ def test_aceitar_poe_na_configuracao_e_recusar_nao_volta(ambiente):  # noqa: F81
     outra = SementeSugerida.objects.create(
         texto="odontologia", chave="odontologia", tipo="semente", origem="pagina"
     )
-    url = reverse("radar:radar", urlconf="core.urls_tenants")
+    # Ficam na Configuracao, ao lado do campo de sementes.
+    url = reverse("radar:configuracao", urlconf="core.urls_tenants")
     assert "clareamento dental" in client.get(url).content.decode()
 
     decidir = "radar:decidir_semente_sugerida"
     for item, decisao in ((semente, "aceitar"), (dor, "aceitar"), (outra, "recusar")):
-        client.post(
-            reverse(decidir, args=[item.pk], urlconf="core.urls_tenants"), {"decisao": decisao}
+        resposta = client.post(
+            reverse(decidir, args=[item.pk], urlconf="core.urls_tenants"),
+            {"decisao": decisao, "voltar": "https://fora.com/"},
         )
+        assert resposta.url == url + "#sementes-sugeridas"
 
     config = ConfiguracaoDoRadar.carregar()
     assert config.lista_de_sementes == ["clareamento dental"]

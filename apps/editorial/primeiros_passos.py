@@ -169,3 +169,111 @@ def sugerir_sementes(resposta: str) -> int:
         ):
             criadas += 1
     return criadas
+
+
+# ---------------------------------------------------------------------------
+# Guia editorial
+# ---------------------------------------------------------------------------
+ROTULOS_DO_GUIA = [
+    "HUMOR",
+    "FORMALIDADE",
+    "RESPEITO",
+    "ENTUSIASMO",
+    "PESSOA",
+    "REGRA DE OURO",
+    "SOMOS",
+    "TERMOS",
+    "CONVITE",
+    "EXEMPLOS",
+]
+
+
+def pedido_do_guia(perfil_do_negocio, config) -> str:
+    """Voz, vocabulario e exemplos a partir do Negocio e da pagina do site."""
+    negocio = perfil_do_negocio
+    return f"""\
+Voce e um editor-chefe que monta guias de estilo para sites de empresas. Monte
+o guia de voz do meu site, para um sistema que escreve artigos com revisao
+humana. O guia e sobre COMO o texto fala, nao sobre o que ele diz.
+
+Tema do site: {negocio.tema or "(nao preenchido)"}
+Publico: {negocio.publico or "(nao preenchido)"}
+Oferta: {negocio.oferta or "(nao preenchida)"}
+Dores do publico: {"; ".join(config.lista_de_dores) or "(nenhuma)"}
+{_contexto_do_site()}
+
+Regras:
+- As quatro notas de tom vao de 1 a 5 (as dimensoes de tom da Nielsen Norman
+  Group): HUMOR 1 serio a 5 engracado; FORMALIDADE 1 formal a 5 casual;
+  RESPEITO 1 respeitoso a 5 irreverente; ENTUSIASMO 1 objetivo a 5 entusiasmado.
+  Escolha pelo publico e pelo assunto, nao pelo que soa moderno.
+- TERMOS: palavras que este site NAO deve usar (jargao que afasta o publico,
+  promessa que o negocio nao pode fazer, termos que posicionam errado), com a
+  troca sugerida e o motivo. Nada de palavrao obvio.
+- EXEMPLOS: dois paragrafos curtos no tom certo, sobre o tema do site, sem
+  numeros inventados.
+
+Responda EXATAMENTE neste formato, sem nada antes, e termine com a linha FIM:
+
+HUMOR: numero de 1 a 5
+FORMALIDADE: numero de 1 a 5
+RESPEITO: numero de 1 a 5
+ENTUSIASMO: numero de 1 a 5
+PESSOA: como falar com o leitor (voce, o senhor, a gente...)
+REGRA DE OURO: uma frase que resume como o site escreve
+SOMOS:
+- somos X | nao somos Y
+TERMOS:
+- termo | troca sugerida | motivo
+CONVITE: como o fim do artigo convida para a oferta, sem pressao
+EXEMPLOS:
+paragrafo 1
+
+paragrafo 2
+FIM
+"""
+
+
+def _nota(texto: str) -> int | None:
+    import re
+
+    achado = re.search(r"[1-5]", texto or "")
+    return int(achado.group()) if achado else None
+
+
+def ler_guia(resposta: str) -> dict:
+    """Os campos do formulario do Guia editorial a partir da resposta colada."""
+    blocos = ler_blocos(resposta, ROTULOS_DO_GUIA)
+    saida: dict = {}
+    for campo, rotulo in (
+        ("tom_humor", "HUMOR"),
+        ("tom_formalidade", "FORMALIDADE"),
+        ("tom_respeito", "RESPEITO"),
+        ("tom_entusiasmo", "ENTUSIASMO"),
+    ):
+        nota = _nota(blocos.get(rotulo, ""))
+        if nota is not None:
+            saida[campo] = nota
+    for campo, rotulo, limite in (
+        ("pessoa", "PESSOA", 40),
+        ("regra_de_ouro", "REGRA DE OURO", 300),
+        ("convite", "CONVITE", 2000),
+    ):
+        texto = " ".join(blocos.get(rotulo, "").split())
+        if texto:
+            saida[campo] = texto[:limite]
+    somos = [
+        linha.replace("nao somos", "").replace("não somos", "").replace("somos", "", 1).strip()
+        for linha in itens(blocos.get("SOMOS", ""))
+    ]
+    if somos:
+        saida["somos_texto"] = "\n".join(
+            " | ".join(parte.strip() for parte in linha.split("|")) for linha in somos
+        )
+    termos = itens(blocos.get("TERMOS", ""))
+    if termos:
+        saida["termos_texto"] = "\n".join(termos)
+    exemplos = blocos.get("EXEMPLOS", "").strip()
+    if exemplos:
+        saida["exemplos"] = exemplos
+    return saida

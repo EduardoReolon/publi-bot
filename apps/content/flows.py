@@ -26,7 +26,7 @@ import logging
 from django.utils.text import slugify
 
 from apps.content.inference import executar_prompt
-from apps.content.models import Article, ArticleSection, Question, Topic
+from apps.content.models import Article, ArticleSection, Author, Question, Topic
 from apps.content.rendering import validar_saida_do_modelo
 from apps.content.services import (
     SemEmbasamentoCentral,
@@ -129,6 +129,7 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
 
     from apps.content.services import MAPA_DE_CONCORDANCIA
 
+    padrao = Author.do_site()
     article = Article.objects.create(
         topic=topic,
         title=topic.title,
@@ -138,8 +139,9 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
         thesis_json=tese.bruto,
         consensus=MAPA_DE_CONCORDANCIA[tese.concordancia],
         single_source=len(trechos) == 1,
-        author_name=getattr(site, "default_author", "") or "",
-        author_credentials=getattr(site, "default_author_credentials", "") or "",
+        author=padrao,
+        author_name=getattr(padrao, "name", "") or "",
+        author_credentials=getattr(padrao, "credentials", "") or "",
         status=Article.Status.DRAFTING,
     )
     registrar_citacoes(article, trechos)

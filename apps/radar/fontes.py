@@ -94,6 +94,7 @@ def sugerir_fontes(rodada, *, cota: int) -> int:
     """Candidatas a fonte das buscas desta rodada. Devolve quantas."""
     from apps.knowledge.fontes_web import _ja_conhecida, aprovar, caminho_de, confiavel
     from apps.knowledge.models import CaminhoConfiavel, CandidatoDeFonte
+    from apps.knowledge.web import TEXTO_MAXIMO
     from apps.radar.concorrentes import _dominio_proprio
 
     ResultadoOrganico.objects.filter(criado_em__lt=timezone.now() - GUARDAR_RESULTADOS_POR).delete()
@@ -140,6 +141,7 @@ def sugerir_fontes(rodada, *, cota: int) -> int:
             preferido=confiavel(caminho),
             origem=CandidatoDeFonte.Origem.RADAR,
             classificacao=classificacao.motivo[:200],
+            texto_extraido=classificacao.texto[:TEXTO_MAXIMO],
         )
         if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
             aprovar(candidato, categoria=caminho.categoria, automatico=True)

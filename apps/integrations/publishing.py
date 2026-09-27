@@ -154,9 +154,14 @@ def montar_dados_do_autor(conteudo, site: Site) -> dict:
     if conteudo.author_id is not None:
         return conteudo.author.como_payload()
 
+    from apps.content.models import Author
+
+    padrao = Author.do_site()
+    if not conteudo.author_name and padrao is not None:
+        return padrao.como_payload()
     return {
-        "name": conteudo.author_name or site.default_author,
-        "credentials": conteudo.author_credentials or site.default_author_credentials,
+        "name": conteudo.author_name,
+        "credentials": conteudo.author_credentials,
         "has_photo": False,
     }
 
@@ -164,7 +169,10 @@ def montar_dados_do_autor(conteudo, site: Site) -> dict:
 def _credencial_do_conteudo(conteudo, site: Site) -> str:
     if conteudo.author_id is not None and conteudo.author.credentials:
         return conteudo.author.credentials
-    return conteudo.author_credentials or site.default_author_credentials
+    from apps.content.models import Author
+
+    padrao = Author.do_site()
+    return conteudo.author_credentials or getattr(padrao, "credentials", "") or ""
 
 
 def _montar_divulgacao(conteudo, site: Site) -> str:

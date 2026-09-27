@@ -22,9 +22,11 @@ class Site(models.Model):
     """Um site que recebe conteudo publicado."""
 
     class Platform(models.TextChoices):
-        DJANGO = "django", _("Django")
-        WORDPRESS = "wordpress", _("WordPress")
-        OTHER = "other", _("Outra")
+        """Como o PubliBot entrega o conteudo. A tecnologia do site nao importa:
+        o que importa e quem implementa as rotas."""
+
+        CONTRATO = "contrato", _("Rotas do contrato PubliBot (qualquer tecnologia)")
+        WORDPRESS = "wordpress", _("WordPress, pela API do proprio WordPress (futuro)")
 
     class Health(models.TextChoices):
         UNKNOWN = "unknown", _("Desconhecida")
@@ -43,7 +45,15 @@ class Site(models.Model):
         help_text=_("Somente https. Enderecos internos sao recusados."),
     )
     platform = models.CharField(
-        _("plataforma"), max_length=16, choices=Platform.choices, default=Platform.OTHER
+        _("integracao"),
+        max_length=16,
+        choices=Platform.choices,
+        default=Platform.CONTRATO,
+        help_text=_(
+            "Rotas do contrato: o site (Django, Laravel, Node, o que for) implementa as "
+            "rotas /api/v1 e o PubliBot chama. WordPress: o PubliBot publicaria pela API "
+            "que o WordPress ja tem, sem instalar nada — ainda nao implementado."
+        ),
     )
 
     # --- Credencial --------------------------------------------------------
@@ -90,11 +100,6 @@ class Site(models.Model):
         blank=True,
         help_text=_("Nome, registro no conselho e especialidade."),
     )
-    default_author = models.CharField(_("autor padrao"), max_length=150, blank=True)
-    default_author_credentials = models.CharField(
-        _("credenciais do autor"), max_length=200, blank=True
-    )
-
     # Sobrescreve o modelo de LLM por chave de prompt. Permite que um site em
     # italiano use um modelo melhor em italiano apenas na redacao.
     model_overrides = models.JSONField(_("modelos por prompt"), default=dict, blank=True)

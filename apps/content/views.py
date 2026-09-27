@@ -69,12 +69,17 @@ def pautas(request: HttpRequest) -> HttpResponse:
     if situacao:
         consulta = consulta.filter(status=situacao)
 
+    from apps.content.outra_ia import motivos_de_peso
+
+    lista = list(consulta.prefetch_related("articles")[:200])
+    for pauta in lista:
+        pauta.de_peso = motivos_de_peso(pauta)
     return render(
         request,
         "content/pautas.html",
         {
             "aba": "pautas",
-            "pautas": consulta[:200],
+            "pautas": lista,
             "situacao": situacao,
             "form": PautaForm(),
         },
@@ -103,6 +108,60 @@ def intencao_da_pauta(request: HttpRequest, pk) -> HttpResponse:
         request,
         "content/intencao.html",
         {"aba": "pautas", "pauta": pauta, "pedido": intencao.pedido(pauta)},
+    )
+
+
+@login_required
+def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
+    """O artigo escrito por um modelo grande de fora: prepara, copia, cola."""
+    from apps.content import outra_ia
+    from apps.content.rendering import LinkAlucinado
+    from apps.content.services import SemFontesSuficientes
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    artigo = outra_ia.artigo_em_espera(pauta)
+    if artigo is None and pauta.articles.exists():
+        return redirect("content:revisar", pauta.articles.first().pk)
+
+    colado = ""
+    if request.method == "POST":
+        acao = request.POST.get("acao")
+        if acao == "preparar" and artigo is None:
+            if pauta.status == Topic.Status.REJECTED:
+                messages.error(request, _("Pauta rejeitada nao vira artigo."))
+                return redirect("content:pautas")
+            try:
+                outra_ia.preparar(pauta)
+            except SemFontesSuficientes as exc:
+                messages.error(request, str(exc))
+                return redirect("content:pautas")
+            return redirect("content:artigo_por_outra_ia", pauta.pk)
+        if acao == "desistir" and artigo is not None:
+            outra_ia.desistir(artigo)
+            messages.success(request, _("Pronto: a pauta voltou para a lista, sem artigo."))
+            return redirect("content:pautas")
+        if acao == "colar" and artigo is not None:
+            colado = request.POST.get("resposta", "")
+            try:
+                outra_ia.aplicar(artigo, colado)
+            except (ValueError, LinkAlucinado) as exc:
+                messages.error(request, _("O texto nao foi aceito: %(m)s") % {"m": exc})
+            else:
+                messages.success(request, _("Artigo gravado. Revise antes de aprovar."))
+                return redirect("content:revisar", artigo.pk)
+
+    return render(
+        request,
+        "content/outra_ia.html",
+        {
+            "aba": "pautas",
+            "pauta": pauta,
+            "artigo": artigo,
+            "pedido": outra_ia.pedido(artigo) if artigo else "",
+            "motivos": outra_ia.motivos_de_peso(pauta),
+            "colado": colado,
+        },
+        status=400 if colado else 200,
     )
 
 

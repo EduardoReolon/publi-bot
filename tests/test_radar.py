@@ -566,3 +566,17 @@ def test_tick_so_roda_onde_esta_devido(radar, monkeypatch):
     config.intensidade = "minimo"
     config.save()
     assert _rodar_se_devido() == 1
+
+
+@pytest.mark.django_db
+def test_listas_longas_recolhem_e_paginam(ambiente):  # noqa: F811
+    _, _, client = ambiente
+    for _ in range(12):
+        RodadaDoRadar.objects.create(origem="manual")
+    url = reverse("radar:radar", urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert 'data-recolher="3"' in html and 'id="paginas-rodadas"' in html
+    assert '" data-expandido>' not in html  # recolhida ate a pessoa pedir
+
+    segunda = client.get(url + "?rodadas=2").content.decode()
+    assert '" data-expandido>' in segunda  # vindo da paginacao, ja aberta

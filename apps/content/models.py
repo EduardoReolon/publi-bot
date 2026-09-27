@@ -200,6 +200,12 @@ class Author(models.Model):
     social_links = models.JSONField(_("links sociais"), default=list, blank=True)
 
     is_active = models.BooleanField(_("ativo"), default=True)
+    # Quem assina quando o artigo ou a resposta nao escolheu ninguem. Um so.
+    padrao = models.BooleanField(
+        _("autor padrao"),
+        default=False,
+        help_text=_("Assina o que for gerado sem autor escolhido. So um autor e o padrao."),
+    )
     created_at = models.DateTimeField(_("criado em"), default=timezone.now)
 
     class Meta:
@@ -209,6 +215,16 @@ class Author(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.padrao:
+            Author.objects.exclude(pk=self.pk).filter(padrao=True).update(padrao=False)
+
+    @classmethod
+    def do_site(cls) -> Author | None:
+        """O autor padrao ativo, ou None."""
+        return cls.objects.filter(padrao=True, is_active=True).first()
 
     @property
     def tem_foto(self) -> bool:

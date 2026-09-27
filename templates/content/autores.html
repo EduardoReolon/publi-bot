@@ -27,6 +27,7 @@
             {% endif %}
             <div style="flex:1">
               <strong><a href="{% url 'content:editar_autor' autor.pk %}">{{ autor.name }}</a></strong>
+              {% if autor.padrao %}<span class="selo ok">{% translate "padrao" %}</span>{% endif %}
               {% if not autor.is_active %}
                 <span class="selo">{% translate "inativo" %}</span>
               {% endif %}

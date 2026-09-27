@@ -40,7 +40,7 @@
   </div>
 </div>
 
-<section class="secao">
+<section class="secao" id="temas">
   <h2>{% translate "Temas em observacao" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
@@ -59,7 +59,7 @@
       <th>{% translate "Buscas/mes" %}</th><th>{% translate "Sinais" %}</th>
       <th>{% translate "Por que essa nota" %}</th><th></th>
     </tr></thead>
-    <tbody>
+    <tbody data-recolher="3" data-recolher-junto="paginas-temas" data-total="{{ grupos.paginator.count }}" {% if paginando %}data-expandido{% endif %}>
       {% for grupo in grupos %}
         <tr>
           <td><strong>{{ grupo.rotulo }}</strong></td>
@@ -90,43 +90,11 @@
     </tbody>
   </table>
   </div>
+  {% include "_paginas.html" with pagina=grupos parametro="temas" ancora="temas" id="paginas-temas" %}
 </section>
 
 <div class="grade-2">
-  <section class="secao">
-    <h2>{% translate "Sementes sugeridas" %}</h2>
-    <p class="pre-visualizacao">
-      {% blocktranslate trimmed %}
-        Da pagina inicial e dos artigos do site (por algoritmo), dos temas fortes
-        que nenhuma semente cobre e do modelo de linguagem, quando ha um no ar —
-        que sugere tambem dores do publico. Nada entra sozinho.
-      {% endblocktranslate %}
-    </p>
-    {% for sugestao in sementes_sugeridas %}
-      <div class="sugestao">
-        <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}">
-          {% csrf_token %}<input type="hidden" name="decisao" value="aceitar">
-          <button type="submit" class="botao secundario pequeno">{% translate "Aceitar" %}</button>
-        </form>
-        <div class="texto">
-          <strong>{{ sugestao.texto }}</strong>
-          <span class="selo {% if sugestao.tipo == 'dor' %}alerta{% else %}espera{% endif %}">{{ sugestao.get_tipo_display }}</span>
-          {% if sugestao.evidencia.prioritaria %}<span class="selo ok">{% translate "testar primeiro" %}</span>{% endif %}
-          <span class="ajuda">{{ sugestao.get_origem_display }}{% if sugestao.evidencia.volume %} · {{ sugestao.evidencia.volume }}/{% translate "mes" %}{% endif %}{% if sugestao.evidencia.pilar %} · {% translate "pilar" %}: {{ sugestao.evidencia.pilar }}{% endif %}</span>
-        </div>
-        <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}">
-          {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
-          <button type="submit" class="botao discreto pequeno">{% translate "Recusar" %}</button>
-        </form>
-      </div>
-    {% empty %}
-      <p class="vazio">{% translate "Nenhuma sugestao esperando." %}</p>
-    {% endfor %}
-    <form method="post" action="{% url 'radar:sugerir_sementes' %}" class="acoes">
-      {% csrf_token %}
-      <button type="submit" class="botao secundario">{% translate "Sugerir a partir do site" %}</button>
-    </form>
-  </section>
+
 
   <section class="secao">
     <h2>{% translate "Busca manual" %}</h2>
@@ -142,6 +110,7 @@
       {% for campo in busca_form %}{% include "_campo.html" %}{% endfor %}
       <div class="acoes"><button type="submit" class="botao secundario">{% translate "Buscar" %}</button></div>
     </form>
+    <div data-recolher="3">
     {% for busca in buscas_pendentes %}
       <div class="aviso">
         <strong>{{ busca.consulta }}</strong> — {{ busca.criado_em|date:"d/m H:i" }}
@@ -158,6 +127,7 @@
         </form>
       </div>
     {% endfor %}
+    </div>
   </section>
 </div>
 
@@ -182,7 +152,7 @@
           <th class="numero">{% translate "Pautas" %}</th>
           <th>{% translate "Melhor sinal" %}</th>
         </tr></thead>
-        <tbody>
+        <tbody data-recolher="3">
           {% for r in rendimento %}
             <tr>
               <td>{{ r.semente }}{% if not r.configurada %} <span class="ajuda">({% translate "fora da lista" %})</span>{% endif %}</td>
@@ -237,7 +207,7 @@
       <th>{% translate "Site" %}</th><th>{% translate "Buscas" %}</th>
       <th>{% translate "Melhor posicao" %}</th><th>{% translate "Exemplos" %}</th><th></th>
     </tr></thead>
-    <tbody>
+    <tbody data-recolher="3">
       {% for sugerido in concorrentes_sugeridos %}
         <tr>
           <td><strong>{{ sugerido.dominio }}</strong></td>
@@ -255,6 +225,7 @@
               <input type="text" name="nome" placeholder="{% translate 'nome no Google (opcional)' %}" maxlength="200">
               <div class="acoes" style="margin-top:.4rem">
                 <button type="submit" class="pequeno">{% translate "E concorrente" %}</button>
+                <button type="submit" name="decisao" value="parceiro" class="botao secundario pequeno" title="{% translate 'Complementa em vez de disputar: candidato a artigo convidado ou conteudo em conjunto' %}">{% translate "Pode ser parceiro" %}</button>
                 <button type="submit" name="decisao" value="recusar" class="botao discreto pequeno">{% translate "Nao e" %}</button>
               </div>
             </form>
@@ -265,6 +236,40 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
+</section>
+
+<section class="secao" id="parceiros">
+  <h2>{% translate "Possiveis parceiros" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Sites que aparecem nas mesmas buscas mas complementam o seu. A ideia nao
+      e trocar links — em quantidade, o Google trata isso como esquema de links
+      —, e sim conteudo que sirva aos dois publicos: artigo convidado, conteudo
+      em conjunto, estudo com dados dos dois. Os links que vem disso contam, e
+      contam mais por serem de um site do mesmo assunto. Copie a proposta para
+      um modelo grande: ela leva as buscas em comum e pede formatos, o que
+      conferir antes e um primeiro e-mail. O PubliBot nao mede a autoridade de
+      um dominio (DA/DR); isso e de ferramenta paga.
+    {% endblocktranslate %}
+  </p>
+  <div data-recolher="3">
+  {% for parceiro in parceiros %}
+    <div class="sugestao">
+      <div class="texto">
+        <strong>{{ parceiro.dominio }}</strong>
+        <span class="ajuda">{% blocktranslate trimmed count n=parceiro.aparicoes %}{{ n }} busca em comum{% plural %}{{ n }} buscas em comum{% endblocktranslate %}</span>
+        <details><summary>{% translate "Ver a proposta" %}</summary><textarea id="proposta-{{ parceiro.pk }}" readonly rows="14" style="width:100%">{{ parceiro.proposta }}</textarea></details>
+      </div>
+      <button type="button" class="botao secundario pequeno" data-copiar="proposta-{{ parceiro.pk }}">{% translate "Copiar proposta" %}</button>
+      <form method="post" action="{% url 'radar:decidir_concorrente' parceiro.pk %}">
+        {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
+        <button type="submit" class="botao discreto pequeno">{% translate "Tirar da lista" %}</button>
+      </form>
+    </div>
+  {% empty %}
+    <p class="vazio">{% translate "Nenhum. Em Possiveis concorrentes, marque Pode ser parceiro no site que complementa o seu." %}</p>
+  {% endfor %}
   </div>
 </section>
 
@@ -300,7 +305,7 @@
           <div class="rolagem">
           <table>
             <thead><tr><th>{% translate "Consulta" %}</th><th>{% translate "Posicao" %}</th><th>{% translate "Impressoes" %}</th></tr></thead>
-            <tbody>
+            <tbody data-recolher="3">
               {% for linha in console_quase_la %}
                 <tr><td>{{ linha.consulta }}<div class="ajuda">{{ linha.pagina|truncatechars:60 }}</div></td><td>{{ linha.posicao|floatformat:1 }}</td><td>{{ linha.impressoes }}</td></tr>
               {% empty %}
@@ -315,7 +320,7 @@
           <div class="rolagem">
           <table>
             <thead><tr><th>{% translate "Artigo" %}</th><th>{% translate "Cliques" %}</th><th>{% translate "Posicao" %}</th></tr></thead>
-            <tbody>
+            <tbody data-recolher="3">
               {% for item in console_artigos %}
                 <tr>
                   <td><a href="{% url 'content:revisar' item.artigo.pk %}">{{ item.artigo.title|truncatechars:60 }}</a>
@@ -336,7 +341,7 @@
 </section>
 
 {% if rodadas %}
-<section class="secao">
+<section class="secao" id="rodadas">
   <h2>{% translate "Rodadas" %}</h2>
   <div class="rolagem">
   <table>
@@ -344,7 +349,7 @@
       <th>{% translate "Quando" %}</th><th>{% translate "Situacao" %}</th>
       <th>{% translate "Sinais" %}</th><th>{% translate "Pautas" %}</th><th>{% translate "Custo" %}</th>
     </tr></thead>
-    <tbody>
+    <tbody data-recolher="3" data-recolher-junto="paginas-rodadas" data-total="{{ rodadas.paginator.count }}" {% if paginando %}data-expandido{% endif %}>
       {% for rodada in rodadas %}
         <tr>
           <td>{{ rodada.iniciada_em|date:"d/m H:i" }}<div class="ajuda">{{ rodada.get_origem_display }}</div></td>
@@ -361,6 +366,7 @@
     </tbody>
   </table>
   </div>
+  {% include "_paginas.html" with pagina=rodadas parametro="rodadas" ancora="rodadas" id="paginas-rodadas" %}
 </section>
 {% endif %}
 {% endblock %}

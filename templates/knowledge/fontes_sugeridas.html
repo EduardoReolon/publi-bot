@@ -14,12 +14,25 @@
   </p>
 
   {% for candidato in pendentes %}
-    <div class="aviso">
+    <div class="aviso" id="candidato-{{ candidato.pk }}">
       <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
       {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %} · {{ candidato.canal_nome }}</span>{% endif %}
       {% if candidato.preferido %}<span class="selo ok">{% if candidato.tipo == 'video' %}{% translate "canal preferido" %}{% else %}{% translate "caminho preferido" %}{% endif %}</span>{% endif %}
       <div class="pre-visualizacao">{{ candidato.url }}</div>
       {% if candidato.trecho %}<div class="pre-visualizacao">{{ candidato.trecho|truncatechars:300 }}</div>{% endif %}
+      {% if candidato.tipo == 'pagina' %}
+        {% if candidato.texto_extraido %}
+          <details>
+            <summary>{% blocktranslate trimmed with n=candidato.texto_extraido|wordcount %}Ver o texto capturado ({{ n }} palavras){% endblocktranslate %}</summary>
+            <div class="ajuda">{% translate "E este texto que vai para o acervo. Se aparecer menu, rodape, propaganda ou comentarios no meio, recuse ou corte na curadoria." %}</div>
+            <pre class="texto-capturado">{{ candidato.texto_extraido }}</pre>
+          </details>
+        {% else %}
+          <form method="post" action="{% url 'knowledge:capturar_texto_do_candidato' candidato.pk %}">
+            {% csrf_token %}<button type="submit" class="botao discreto pequeno">{% translate "Ver o texto que seria capturado" %}</button>
+          </form>
+        {% endif %}
+      {% endif %}
       {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
 
       <form method="post" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">

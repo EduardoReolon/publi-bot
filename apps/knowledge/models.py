@@ -789,6 +789,9 @@ class CandidatoDeFonte(models.Model):
     tipo = models.CharField(_("tipo"), max_length=8, choices=Tipo.choices, default=Tipo.PAGINA)
     titulo = models.CharField(_("titulo"), max_length=500, blank=True)
     trecho = models.TextField(_("trecho"), blank=True)
+    # O texto principal que a extracao tirou da pagina, para conferir se veio
+    # o artigo e nao menu, rodape ou propaganda. Cortado em TEXTO_MAXIMO.
+    texto_extraido = models.TextField(_("texto extraido"), blank=True)
     # Videos: o canal e o que a curadoria aprova como confiavel, e nao o video.
     canal_id = models.CharField(_("canal"), max_length=100, blank=True)
     canal_nome = models.CharField(_("nome do canal"), max_length=200, blank=True)

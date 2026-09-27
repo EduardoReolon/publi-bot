@@ -175,7 +175,7 @@ The in-depth documentation is written in Portuguese.
 * [`docs/adr/`](docs/adr/) — every architectural decision, with its reasoning and consequences.
 * [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md) — real failures, their literal symptoms, and where each one is handled.
 * [`docs/contrato/`](docs/contrato/) — what a website must implement to receive content.
-* [`docs/CONFERENCIA.md`](docs/CONFERENCIA.md) — a hands-on checklist to verify each feature in the UI, ordered by which external accounts it needs.
+* [`docs/CONFERENCIA.md`](docs/CONFERENCIA.md) — after updating: run `manage.py conferir_instalacao` (database, queue, beat, media, external accounts, the site), then a short list of what only a person can judge.
 * [`docs/EXTRACAO.md`](docs/EXTRACAO.md) — PDF extraction heuristics and how to calibrate them.
 * [`docs/BLOCOS.md`](docs/BLOCOS.md) — packing each capability into a self-contained file for small-context AI assistants.
 

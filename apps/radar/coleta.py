@@ -76,7 +76,9 @@ class Plano:
 
 
 INTENSIDADES = {
-    "minimo": Plano(rodadas_por_semana=1, buscas=5, pautas=2, videos=0),
+    # Videos: o YouTube e gratuito ate a cota (uma busca = 100 de 10 mil
+    # unidades por dia); no minimo, 3 por rodada ja trazem comentarios e fontes.
+    "minimo": Plano(rodadas_por_semana=1, buscas=5, pautas=2, videos=3),
     "normal": Plano(
         rodadas_por_semana=2,
         buscas=10,

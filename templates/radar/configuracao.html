@@ -25,6 +25,45 @@
   </section>
 
   <div>
+    <section class="secao" id="sementes-sugeridas">
+      <h2>{% translate "Sementes sugeridas" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Da pagina inicial e dos artigos do site (por algoritmo), dos temas fortes
+        que nenhuma semente cobre e do modelo de linguagem, quando ha um no ar —
+        que sugere tambem dores do publico — e das respostas coladas no passo 4
+        da tela Negocio. Aceitar acrescenta a lista de sementes ao lado. Nada
+        entra sozinho.
+      {% endblocktranslate %}
+    </p>
+    <div data-recolher="3">
+    {% for sugestao in sementes_sugeridas %}
+      <div class="sugestao">
+        <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}">
+          {% csrf_token %}<input type="hidden" name="decisao" value="aceitar">
+          <button type="submit" class="botao secundario pequeno">{% translate "Aceitar" %}</button>
+        </form>
+        <div class="texto">
+          <strong>{{ sugestao.texto }}</strong>
+          <span class="selo {% if sugestao.tipo == 'dor' %}alerta{% else %}espera{% endif %}">{{ sugestao.get_tipo_display }}</span>
+          {% if sugestao.evidencia.prioritaria %}<span class="selo ok">{% translate "testar primeiro" %}</span>{% endif %}
+          <span class="ajuda">{{ sugestao.get_origem_display }}{% if sugestao.evidencia.volume %} · {{ sugestao.evidencia.volume }}/{% translate "mes" %}{% endif %}{% if sugestao.evidencia.pilar %} · {% translate "pilar" %}: {{ sugestao.evidencia.pilar }}{% endif %}</span>
+        </div>
+        <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}">
+          {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
+          <button type="submit" class="botao discreto pequeno">{% translate "Recusar" %}</button>
+        </form>
+      </div>
+    {% empty %}
+      <p class="vazio">{% translate "Nenhuma sugestao esperando." %}</p>
+    {% endfor %}
+    </div>
+    <form method="post" action="{% url 'radar:sugerir_sementes' %}" class="acoes">
+      {% csrf_token %}
+      <button type="submit" class="botao secundario">{% translate "Sugerir a partir do site" %}</button>
+    </form>
+  </section>
+
     <section class="secao">
       <h2>{% translate "Contas externas" %}</h2>
       <p class="pre-visualizacao">
@@ -91,12 +130,12 @@
   </div>
 </div>
 
-<section class="secao">
+<section class="secao" id="chamadas">
   <h2>{% translate "Ultimas chamadas externas" %}</h2>
   <div class="rolagem">
   <table>
     <thead><tr><th>{% translate "Quando" %}</th><th>{% translate "Provedor" %}</th><th>{% translate "Consulta" %}</th><th>{% translate "Custo" %}</th><th></th></tr></thead>
-    <tbody>
+    <tbody data-recolher="3" data-recolher-junto="paginas-chamadas" data-total="{{ chamadas.paginator.count }}" {% if paginando %}data-expandido{% endif %}>
       {% for chamada in chamadas %}
         <tr>
           <td>{{ chamada.criado_em|date:"d/m H:i" }}</td>
@@ -111,5 +150,6 @@
     </tbody>
   </table>
   </div>
+  {% include "_paginas.html" with pagina=chamadas parametro="chamadas" ancora="chamadas" id="paginas-chamadas" %}
 </section>
 {% endblock %}

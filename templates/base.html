@@ -293,6 +293,14 @@
     .passos { border-left: 4px solid var(--realce); }
     .passos > summary { cursor: pointer; font-size: 1.05rem; }
     .lista-de-passos > li { margin: .9rem 0; }
+    .texto-capturado { white-space: pre-wrap; max-height: 28rem; overflow-y: auto; font-size: .85rem; background: var(--superficie-2); padding: .6rem; border-radius: 6px; }
+    .passo { border-left: 4px solid var(--realce); }
+    .numero-do-passo {
+      display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem;
+      border-radius: 50%; background: var(--realce); color: #fff; font-size: .95rem; margin-right: .4rem;
+    }
+    .paginas { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0; }
+    .paginas a, .paginas strong { padding: .15rem .5rem; border-radius: .35rem; border: 1px solid var(--borda); }
     /* Numero de destaque (PubliBot x anuncios). */
     .cartao-numero { border: 1px solid var(--borda); border-radius: .6rem; padding: .8rem 1rem; background: var(--superficie); }
     .numero-grande { font-size: 1.6rem; font-weight: 700; color: var(--realce-texto); }
@@ -352,6 +360,33 @@
     {% block conteudo %}{% endblock %}
   </main>
 <script>
+  /* Listas longas: <tbody data-recolher="3"> (ou <ul>, <div>) mostra so os 3
+     primeiros e um "Ver mais". data-recolher-junto="id" esconde junto o bloco
+     de paginas, que so aparece depois de expandir; data-expandido (quem ja
+     navegou pelas paginas) comeca aberta. */
+  document.querySelectorAll("[data-recolher]").forEach(function (lista) {
+    var quantos = parseInt(lista.getAttribute("data-recolher"), 10) || 3;
+    var itens = Array.prototype.slice.call(lista.children);
+    var juntoId = lista.getAttribute("data-recolher-junto");
+    var junto = juntoId ? document.getElementById(juntoId) : null;
+    if (lista.hasAttribute("data-expandido") || (itens.length <= quantos && !junto)) return;
+    var escondidos = itens.slice(quantos);
+    escondidos.forEach(function (item) { item.hidden = true; });
+    if (junto) junto.hidden = true;
+    var botao = document.createElement("button");
+    botao.type = "button";
+    botao.className = "botao discreto pequeno";
+    var total = lista.getAttribute("data-total");
+    botao.textContent = "Ver mais" + (total ? " (" + total + " no total)" : escondidos.length ? " (" + escondidos.length + ")" : "");
+    botao.addEventListener("click", function () {
+      escondidos.forEach(function (item) { item.hidden = false; });
+      if (junto) junto.hidden = false;
+      botao.remove();
+    });
+    var ancora = lista.closest(".rolagem") || lista.closest("table") || lista;
+    ancora.insertAdjacentElement("afterend", botao);
+  });
+
   /* Botao de copiar: <button data-copiar="id-do-campo">. Sem HTTPS (desenvolvimento)
      nao ha API de area de transferencia; o campo fica selecionado para Ctrl+C. */
   document.addEventListener("click", function (evento) {

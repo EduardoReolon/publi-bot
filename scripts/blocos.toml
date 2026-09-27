@@ -140,11 +140,14 @@ padroes = [
   "apps/content/prompts_iniciais.py",
   "apps/content/rendering.py",
   "apps/content/tasks.py",
+  "apps/content/outra_ia.py",
+  "templates/content/outra_ia.html",
   "docs/adr/ADR-0018-embasamento-da-ideia-central.md",
   "tests/test_flows.py",
   "tests/test_content.py",
   "tests/test_chamada.py",
   "tests/test_relacionados.py",
+  "tests/test_outra_ia.py",
 ]
 
 [[bloco]]
@@ -339,6 +342,8 @@ padroes = [
   "tests/test_broker_backend.py",
   "tests/test_comandos_dev.py",
   "tests/test_check_db.py",
+  "tests/test_conferir_instalacao.py",
+  "docs/CONFERENCIA.md",
 ]
 
 

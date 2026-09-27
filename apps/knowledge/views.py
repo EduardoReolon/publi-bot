@@ -763,6 +763,28 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
 
 
 @login_required
+@require_POST
+def capturar_texto_do_candidato(request: HttpRequest, pk) -> HttpResponse:
+    """Baixa a pagina e guarda o texto que a extracao tira, so para conferir."""
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.web import PaginaIndisponivel, texto_da_pagina
+
+    candidato = get_object_or_404(
+        CandidatoDeFonte,
+        pk=pk,
+        situacao=CandidatoDeFonte.Situacao.PENDENTE,
+        tipo=CandidatoDeFonte.Tipo.PAGINA,
+    )
+    try:
+        candidato.texto_extraido = texto_da_pagina(candidato.url)
+    except PaginaIndisponivel as exc:
+        messages.error(request, _("Nao foi possivel ler a pagina: %(m)s") % {"m": exc})
+    else:
+        candidato.save(update_fields=["texto_extraido"])
+    return redirect(reverse("knowledge:fontes_sugeridas") + f"#candidato-{candidato.pk}")
+
+
+@login_required
 def caminhos_confiaveis(request: HttpRequest) -> HttpResponse:
     """Lista e cadastro dos caminhos em que a pessoa confia."""
     from apps.knowledge.fontes_web import CaminhoRecusado, conferir_caminho

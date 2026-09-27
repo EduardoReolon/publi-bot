@@ -11,6 +11,29 @@
     {% endblocktranslate %}
   </p>
 
+  <details class="secao passo" {% if not perfil.regra_de_ouro and not perfil.exemplos %}open{% endif %}>
+    <summary><strong>{% translate "Preencher com a ajuda de outra IA" %}</strong></summary>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed with url=url_negocio %}
+        Depende da tela <a href="{{ url }}">Negocio</a> preenchida. Copie o pedido,
+        cole num modelo grande e traga a resposta inteira: tom, pessoa, regra de
+        ouro, somos/nao somos, termos proibidos, convite e exemplos se preenchem
+        abaixo, sem salvar. Estruturas por tipo ficam como estao.
+      {% endblocktranslate %}
+    </p>
+    <div class="acoes"><button type="button" class="botao secundario" data-copiar="pedido-guia">{% translate "Copiar pedido" %}</button></div>
+    <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-guia" readonly rows="12" style="width:100%">{{ pedido_do_guia }}</textarea></details>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="acao" value="colar_guia">
+      <label for="resposta-guia">{% translate "Cole aqui a resposta inteira" %}</label>
+      <textarea id="resposta-guia" name="resposta" rows="5" style="width:100%"></textarea>
+      <div class="acoes"><button type="submit">{% translate "Preencher a tela" %}</button></div>
+    </form>
+  </details>
+  {% if colado %}
+    <p class="aviso">{% translate "Preenchido com a resposta colada. Nada foi salvo ainda: revise e clique em Salvar no fim da pagina." %}</p>
+  {% endif %}
+
   <h2>{% translate "Ponto de partida" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed with modo=perfil.get_mode_display %}

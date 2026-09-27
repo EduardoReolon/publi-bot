@@ -15,6 +15,7 @@ import pytest
 from apps.knowledge.models import CaminhoConfiavel, CandidatoDeFonte
 from apps.knowledge.web import Classificacao, classificar_pagina
 from apps.radar.models import ConfiguracaoDoRadar, ResultadoOrganico, RodadaDoRadar
+from tests.test_interface import ambiente  # noqa: F401
 from tests.test_radar import radar  # noqa: F401
 
 ARTIGO_JSONLD = """<html><head><script type="application/ld+json">
@@ -41,7 +42,9 @@ def test_sem_declaracao_decide_o_tamanho_do_texto():
 
     longo = f"<html><body><article>{paragrafos(10)}</article></body></html>"
     curto = f"<html><body><article>{paragrafos(3)}</article></body></html>"
-    assert classificar_pagina(longo).e_artigo
+    classificacao = classificar_pagina(longo)
+    assert classificacao.e_artigo
+    assert "termo9x59" in classificacao.texto  # o texto vai junto, para conferir
     assert not classificar_pagina(curto).e_artigo
 
 
@@ -72,7 +75,7 @@ def test_sugere_so_artigo_e_so_o_que_pode(radar, monkeypatch):  # noqa: F811
 
     def classificar(url):
         classificadas.append(url)
-        return Classificacao("loja" not in url, "teste")
+        return Classificacao("loja" not in url, "teste", "o corpo do artigo")
 
     monkeypatch.setattr(fontes, "_classificar", classificar)
     rodada = _rodada_com(
@@ -97,6 +100,7 @@ def test_sugere_so_artigo_e_so_o_que_pode(radar, monkeypatch):  # noqa: F811
     }
     candidato = CandidatoDeFonte.objects.get(url__endswith="obra-publica")
     assert candidato.origem == "radar" and candidato.consulta == "como calcular bdi"
+    assert candidato.texto_extraido == "o corpo do artigo"
     assert "https://loja.com.br/planilha-bdi" in classificadas
 
 
@@ -172,3 +176,29 @@ def test_rodada_guarda_os_resultados_e_sugere(radar, monkeypatch):  # noqa: F811
     assert ResultadoOrganico.objects.filter(rodada=rodada).count() == 1
     assert rodada.resumo["fontes_sugeridas"] == 1
     assert CandidatoDeFonte.objects.get().classificacao == "texto corrido"
+
+
+@pytest.mark.django_db
+def test_tela_mostra_o_texto_capturado_e_captura_quando_falta(ambiente, monkeypatch):  # noqa: F811
+    from django.urls import reverse
+
+    from apps.knowledge import web
+
+    _, _, client = ambiente
+    CandidatoDeFonte.objects.create(url="https://a.com.br/post", texto_extraido="Menu Home corpo")
+    sem_texto = CandidatoDeFonte.objects.create(url="https://b.com.br/post")
+    url = reverse("knowledge:fontes_sugeridas", urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert "Menu Home corpo" in html
+    assert "Ver o texto que seria capturado" in html
+
+    monkeypatch.setattr(web, "texto_da_pagina", lambda u: "texto de " + u)
+    client.post(
+        reverse(
+            "knowledge:capturar_texto_do_candidato",
+            args=[sem_texto.pk],
+            urlconf="core.urls_tenants",
+        )
+    )
+    sem_texto.refresh_from_db()
+    assert sem_texto.texto_extraido == "texto de https://b.com.br/post"

@@ -142,16 +142,7 @@ class PerfilDoNegocioForm(forms.ModelForm):
 
     class Meta:
         model = PerfilDoNegocio
-        fields = [
-            "tema",
-            "publico",
-            "oferta",
-            "frentes",
-            "valor_da_conversao",
-            "investimento_publibot",
-            "investimento_anuncios",
-            "cotacao_do_dolar",
-        ]
+        fields = ["tema", "publico", "oferta", "frentes"]
         widgets = {
             "oferta": forms.Textarea(attrs={"rows": 3}),
             "frentes": forms.Textarea(attrs={"rows": 4}),
@@ -169,3 +160,30 @@ class PerfilDoNegocioForm(forms.ModelForm):
             self._config.dores = self.cleaned_data.get("dores", "")
             self._config.save(update_fields=["dores"])
         return perfil
+
+
+class BasicoDoNegocioForm(forms.ModelForm):
+    """Passo 1: so o que vende e para quem, do jeito da pessoa."""
+
+    class Meta:
+        model = PerfilDoNegocio
+        fields = ["oferta", "publico"]
+        labels = {
+            "oferta": _("O que voce vende, do seu jeito"),
+            "publico": _("Para quem"),
+        }
+        help_texts = {"oferta": "", "publico": ""}
+        widgets = {"oferta": forms.Textarea(attrs={"rows": 2})}
+
+
+class ValoresDoNegocioForm(forms.ModelForm):
+    """Os valores da comparacao com anuncios, salvos a parte."""
+
+    class Meta:
+        model = PerfilDoNegocio
+        fields = [
+            "valor_da_conversao",
+            "investimento_publibot",
+            "investimento_anuncios",
+            "cotacao_do_dolar",
+        ]

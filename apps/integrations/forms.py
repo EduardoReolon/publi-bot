@@ -40,8 +40,6 @@ class SiteForm(forms.ModelForm):
             "platform",
             "content_language",
             "site_timezone",
-            "default_author",
-            "default_author_credentials",
             "is_sensitive",
             "publishing_paused",
             "max_articles_per_month",

@@ -13,110 +13,112 @@
   {% endblocktranslate %}
 </div>
 
-<details class="secao passos" {% if comecando %}open{% endif %}>
-  <summary><strong>{% translate "Primeiros passos, com a ajuda de outra IA" %}</strong></summary>
+<section class="secao passo">
+  <h2><span class="numero-do-passo">1</span> {% translate "O basico do basico" %}</h2>
+  <details {% if comecando %}open{% endif %}>
+    <summary>{% translate "Escreva do seu jeito o que vende e para quem" %}</summary>
+    <p class="pre-visualizacao">{% translate "Uma ou duas frases cada, sem se preocupar com as palavras certas: o passo 2 cuida disso." %}</p>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="acao" value="basico">
+      {% include "_campo.html" with campo=basico.oferta %}
+      {% include "_campo.html" with campo=basico.publico %}
+      <div class="acoes"><button type="submit">{% translate "Salvar e seguir para o passo 2" %}</button></div>
+    </form>
+  </details>
+</section>
+
+<section class="secao passo" id="passo-2">
+  <h2><span class="numero-do-passo">2</span> {% translate "Pedido 1 para outra IA: o negocio" %}</h2>
+  <details {% if comecando %}open{% endif %}>
+    <summary>{% translate "Copie, cole num modelo grande e traga a resposta de volta" %}</summary>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Cole num modelo grande (Claude, ChatGPT, Gemini). Ele devolve tema,
+        publico, oferta na lingua do cliente, dores e frentes. Cole a resposta
+        inteira abaixo: os campos do passo 3 se preenchem, sem salvar. Nada e
+        enviado pelo PubliBot.
+      {% endblocktranslate %}
+    </p>
+    <div class="acoes"><button type="button" class="botao secundario" data-copiar="pedido-negocio">{% translate "Copiar pedido 1" %}</button></div>
+    <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-negocio" readonly rows="12" style="width:100%">{{ pedido_do_negocio }}</textarea></details>
+    <form method="post" action="#passo-3">
+      {% csrf_token %}<input type="hidden" name="acao" value="colar_negocio">
+      <label for="resposta-negocio">{% translate "Cole aqui a resposta inteira" %}</label>
+      <textarea id="resposta-negocio" name="resposta" rows="5" style="width:100%"></textarea>
+      <div class="acoes"><button type="submit">{% translate "Preencher o passo 3" %}</button></div>
+    </form>
+  </details>
+</section>
+
+<section class="secao passo" id="passo-3">
+  <h2><span class="numero-do-passo">3</span> {% translate "Revise e salve: o que o site e e o que vende" %}</h2>
+  {% if colado %}
+    <p class="aviso">{% translate "Preenchido com a resposta colada. Nada foi salvo ainda: ajuste o que nao soar como voce e clique em Salvar." %}</p>
+  {% endif %}
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
-      Um caminho para preencher esta tela sem saber SEO. Voce escreve o basico
-      do seu jeito, um modelo grande (Claude, ChatGPT, Gemini) traduz para o que
-      o radar precisa, e voce so cola a resposta de volta. Nada e enviado pelo
-      PubliBot; voce revisa tudo antes de salvar.
+      A <strong>oferta</strong> e a porta de entrada: o que e mais facil de
+      vender, e para onde vai a chamada dos artigos. As <strong>frentes</strong>
+      sao o resto do que voce faz, e crescem quando uma oportunidade testada se
+      confirma.
     {% endblocktranslate %}
   </p>
-
-  <ol class="lista-de-passos">
-    <li>
-      <strong>{% translate "O basico do basico." %}</strong>
-      {% blocktranslate trimmed %}
-        Em <em>O que vende</em> (oferta) e em <em>Publico</em>, abaixo, escreva
-        do seu jeito, uma ou duas frases cada. Salve.
-      {% endblocktranslate %}
-    </li>
-    <li>
-      <strong>{% translate "Pedido 1: o negocio." %}</strong>
-      {% translate "Copie e cole num modelo grande. Ele devolve tema, publico, oferta na lingua do cliente, dores e frentes." %}
-      <div class="acoes"><button type="button" class="botao secundario" data-copiar="pedido-negocio">{% translate "Copiar pedido 1" %}</button></div>
-      <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-negocio" readonly rows="12" style="width:100%">{{ pedido_do_negocio }}</textarea></details>
-      <form method="post">
-        {% csrf_token %}<input type="hidden" name="acao" value="colar_negocio">
-        <label for="resposta-negocio">{% translate "Cole aqui a resposta inteira" %}</label>
-        <textarea id="resposta-negocio" name="resposta" rows="5" style="width:100%"></textarea>
-        <div class="acoes"><button type="submit">{% translate "Preencher os campos" %}</button></div>
-      </form>
-    </li>
-    <li>
-      <strong>{% translate "Revise e salve." %}</strong>
-      {% translate "Os campos abaixo ficam preenchidos com a resposta, sem salvar. Ajuste o que nao soar como voce e clique em Salvar." %}
-    </li>
-    <li>
-      <strong>{% translate "Pedido 2: pilares e sementes." %}</strong>
-      {% translate "Depois de salvar. As sementes vao para Radar > Sementes sugeridas, para voce aceitar ou recusar uma a uma." %}
-      <div class="acoes"><button type="button" class="botao secundario" data-copiar="pedido-sementes">{% translate "Copiar pedido 2" %}</button></div>
-      <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-sementes" readonly rows="12" style="width:100%">{{ pedido_das_sementes }}</textarea></details>
-      <form method="post">
-        {% csrf_token %}<input type="hidden" name="acao" value="colar_sementes">
-        <label for="resposta-sementes">{% translate "Cole aqui a resposta inteira" %}</label>
-        <textarea id="resposta-sementes" name="resposta" rows="5" style="width:100%"></textarea>
-        <div class="acoes"><button type="submit">{% translate "Mandar para Sementes sugeridas" %}</button></div>
-      </form>
-    </li>
-    <li>
-      <strong>{% translate "Rode o radar e repita." %}</strong>
-      {% blocktranslate trimmed %}
-        Depois de cada rodada, <em>Radar › Analisar com outra IA</em> mostra o
-        que cada semente rendeu, e o modelo diz o que manter, trocar e descartar.
-      {% endblocktranslate %}
-      <a href="{% url 'radar:radar' %}">{% translate "Ir para o Radar" %}</a>
-    </li>
-  </ol>
-</details>
-
-{% if colado %}
-  <p class="aviso">{% translate "Campos preenchidos com a resposta colada. Nada foi salvo ainda: revise e clique em Salvar no fim da pagina." %}</p>
-{% endif %}
-
-<form method="post">
-  {% csrf_token %}
-  <section class="secao">
-    <h2>{% translate "O site" %}</h2>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="acao" value="salvar">
     {% include "_campo.html" with campo=form.tema %}
     {% include "_campo.html" with campo=form.publico %}
-    {% include "_campo.html" with campo=form.dores %}
-  </section>
-
-  <section class="secao">
-    <h2>{% translate "O que vende" %}</h2>
-    <p class="pre-visualizacao">
-      {% blocktranslate trimmed %}
-        A <strong>oferta</strong> e a porta de entrada: o que e mais facil de
-        vender, e para onde vai a chamada dos artigos. As <strong>frentes</strong>
-        sao o resto do que voce faz, e crescem quando uma oportunidade testada
-        se confirma.
-      {% endblocktranslate %}
-    </p>
     {% include "_campo.html" with campo=form.oferta %}
+    {% include "_campo.html" with campo=form.dores %}
     {% include "_campo.html" with campo=form.frentes %}
-  </section>
+    <div class="acoes"><button type="submit">{% translate "Salvar" %}</button></div>
+  </form>
+</section>
 
-  <section class="secao">
-    <h2>{% translate "Valores (para comparar com anuncios)" %}</h2>
-    <p class="pre-visualizacao">
-      {% blocktranslate trimmed %}
-        Opcionais. Com eles, Artigos › Desempenho no site mostra o custo por
-        conversao do PubliBot ao lado do dos anuncios, e o retorno em reais.
-      {% endblocktranslate %}
-    </p>
+<section class="secao passo">
+  <h2><span class="numero-do-passo">4</span> {% translate "Pedido 2 para outra IA: pilares e sementes" %}</h2>
+  <details {% if pronto_para_sementes %}open{% endif %}>
+    <summary>{% translate "Depois de salvar o passo 3" %}</summary>
+    <p class="pre-visualizacao">{% translate "As sementes vao para Radar > Configuracao > Sementes sugeridas, para voce aceitar ou recusar uma a uma." %}</p>
+    <div class="acoes"><button type="button" class="botao secundario" data-copiar="pedido-sementes">{% translate "Copiar pedido 2" %}</button></div>
+    <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-sementes" readonly rows="12" style="width:100%">{{ pedido_das_sementes }}</textarea></details>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="acao" value="colar_sementes">
+      <label for="resposta-sementes">{% translate "Cole aqui a resposta inteira" %}</label>
+      <textarea id="resposta-sementes" name="resposta" rows="5" style="width:100%"></textarea>
+      <div class="acoes"><button type="submit">{% translate "Mandar para Sementes sugeridas" %}</button></div>
+    </form>
+  </details>
+</section>
+
+<section class="secao passo">
+  <h2><span class="numero-do-passo">5</span> {% translate "Rode o radar e repita" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Aceite as sementes, rode o radar e, depois de cada rodada, use
+      <em>Radar › Analisar com outra IA</em>: ele mostra o que cada semente
+      rendeu, e o modelo diz o que manter, trocar e descartar.
+    {% endblocktranslate %}
+    <a href="{% url 'radar:configuracao' %}">{% translate "Ir para as sementes" %}</a> ·
+    <a href="{% url 'radar:radar' %}">{% translate "Ir para o Radar" %}</a>
+  </p>
+</section>
+
+<section class="secao">
+  <h2>{% translate "Valores (para comparar com anuncios)" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Opcionais. Com eles, Artigos › Desempenho no site mostra o custo por
+      conversao do PubliBot ao lado do dos anuncios, e o retorno em reais.
+    {% endblocktranslate %}
+  </p>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="acao" value="valores">
     <div class="cartoes">
-      {% for campo in form %}
-        {% if campo.name == "valor_da_conversao" or campo.name == "investimento_publibot" or campo.name == "investimento_anuncios" or campo.name == "cotacao_do_dolar" %}
-          <div>{% include "_campo.html" %}</div>
-        {% endif %}
-      {% endfor %}
+      {% for campo in valores %}<div>{% include "_campo.html" %}</div>{% endfor %}
     </div>
-  </section>
-
-  <div class="acoes"><button type="submit">{% translate "Salvar" %}</button></div>
-</form>
+    <div class="acoes"><button type="submit" class="botao secundario">{% translate "Salvar valores" %}</button></div>
+  </form>
+</section>
 
 <section class="secao">
   <h2>{% translate "Onde mais o negocio e descrito" %}</h2>

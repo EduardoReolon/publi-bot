@@ -96,7 +96,15 @@ class ConfiguracaoDoRadar(models.Model):
         help_text=_("O mesmo dado do Planejador de palavras-chave do Google Ads."),
     )
     usar_perguntas_do_site = models.BooleanField(_("perguntas dos visitantes"), default=True)
-    usar_youtube = models.BooleanField(_("comentarios do YouTube"), default=False)
+    usar_youtube = models.BooleanField(
+        _("comentarios do YouTube"),
+        default=False,
+        help_text=_(
+            "A cada rodada, busca videos das primeiras sementes (minimo: 3, normal: 5, "
+            "intenso: 10): as perguntas dos comentarios viram sinais, e os videos vao para "
+            "Documentos > Fontes sugeridas. Gratuito ate a cota do YouTube."
+        ),
+    )
     usar_search_console = models.BooleanField(_("Search Console"), default=False)
 
     # --- Fontes -------------------------------------------------------------
@@ -192,8 +200,11 @@ class ConfiguracaoDoRadar(models.Model):
         default=0,
         validators=[MaxValueValidator(100)],
         help_text=_(
-            "Com o buscador gratuito, esta fracao das buscas e repetida na "
-            "DataForSEO e os resultados sao comparados no painel."
+            "So vale com o buscador gratuito (SearXNG). Serve para decidir se o "
+            "gratuito basta: nesta porcentagem das buscas do radar, a mesma busca "
+            "tambem e feita na DataForSEO (paga), e o painel mostra quanto do "
+            "resultado pago o gratuito acertou. Ex.: 10% = 1 busca paga a cada 10. "
+            "Com o buscador DataForSEO, deixe 0."
         ),
     )
 
@@ -690,6 +701,9 @@ class ConcorrenteSugerido(models.Model):
         SUGERIDO = "sugerido", _("Sugerido")
         CONFIRMADO = "confirmado", _("Confirmado")
         RECUSADO = "recusado", _("Nao e concorrente")
+        # Aparece nas mesmas buscas mas complementa, em vez de disputar: um
+        # candidato a artigo convidado, conteudo em conjunto, estudo de dados.
+        PARCEIRO = "parceiro", _("Possivel parceiro")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     dominio = models.CharField(_("dominio"), max_length=255, unique=True)

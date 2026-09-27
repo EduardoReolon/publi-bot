@@ -7,6 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Avg, Count, Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
@@ -26,10 +27,18 @@ from apps.radar.models import (
     SinalDeDemanda,
     TarefaNaFila,
 )
+from apps.radar.parceiros import parceiros_com_proposta
 from apps.radar.provedores import buscador_efetivo
 
 
-def _contexto(config=None, contas=None, busca_form=None) -> dict:
+def _pagina(consulta, request, parametro: str, por_pagina: int):
+    from django.core.paginator import Paginator
+
+    numero = request.GET.get(parametro, 1) if request is not None else 1
+    return Paginator(consulta, por_pagina).get_page(numero)
+
+
+def _contexto(config=None, contas=None, busca_form=None, request=None) -> dict:
     config_obj = ConfiguracaoDoRadar.carregar()
     contas_obj = ContasExternas.carregar()
     comparacoes = ComparacaoDeBusca.objects.order_by("-criado_em")[:30]
@@ -52,10 +61,17 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         ).label,
         "busca_form": busca_form or BuscaManualForm(),
         "resumo": resumo,
-        "grupos": GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO)
-        .annotate(total=Count("sinais", filter=~Q(sinais__situacao="descartado")))
-        .order_by("-nota")[:30],
-        "rodadas": RodadaDoRadar.objects.order_by("-iniciada_em")[:8],
+        "grupos": _pagina(
+            GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO)
+            .annotate(total=Count("sinais", filter=~Q(sinais__situacao="descartado")))
+            .order_by("-nota"),
+            request,
+            "temas",
+            30,
+        ),
+        "rodadas": _pagina(RodadaDoRadar.objects.order_by("-iniciada_em"), request, "rodadas", 10),
+        "paginando": request is not None
+        and any(p in request.GET for p in ("temas", "rodadas", "chamadas")),
         "buscas_pendentes": BuscaManual.objects.filter(decisao=BuscaManual.Decisao.PENDENTE)
         .prefetch_related("sinais")
         .order_by("-criado_em")[:10],
@@ -63,8 +79,9 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
         "comparacao_media": medias,
         "comparacoes_total": len(comparacoes),
         "comparacoes_falhas": sum(1 for c in comparacoes if c.gratuito_falhou),
-        "chamadas": ChamadaExterna.objects.order_by("-criado_em")[:15],
+        "chamadas": _pagina(ChamadaExterna.objects.order_by("-criado_em"), request, "chamadas", 15),
         "concorrentes_sugeridos": sugeridos_para_a_tela(),
+        "parceiros": parceiros_com_proposta(),
         "sementes_sugeridas": SementeSugerida.objects.filter(
             situacao=SementeSugerida.Situacao.SUGERIDA
         ).order_by("tipo", "origem", "-criada_em")[:40],
@@ -96,7 +113,7 @@ def radar(request: HttpRequest) -> HttpResponse:
         request,
         "radar/radar.html",
         {
-            **_contexto(),
+            **_contexto(request=request),
             "rendimento": rendimento_das_sementes(),
             "texto_para_ia": texto_para_ia(),
         },
@@ -105,7 +122,9 @@ def radar(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def configuracao(request: HttpRequest) -> HttpResponse:
-    return render(request, "radar/configuracao.html", {**_contexto(), "subaba": "configuracao"})
+    return render(
+        request, "radar/configuracao.html", {**_contexto(request=request), "subaba": "configuracao"}
+    )
 
 
 @login_required
@@ -260,6 +279,13 @@ def decidir_concorrente(request: HttpRequest, pk) -> HttpResponse:
     from apps.radar.models import ConcorrenteSugerido
 
     sugerido = get_object_or_404(ConcorrenteSugerido, pk=pk)
+    if request.POST.get("decisao") == "parceiro":
+        sugerido.situacao = ConcorrenteSugerido.Situacao.PARCEIRO
+        sugerido.save(update_fields=["situacao"])
+        messages.success(
+            request, _("%(d)s foi para Possiveis parceiros.") % {"d": sugerido.dominio}
+        )
+        return redirect(reverse("radar:radar") + "#parceiros")
     if request.POST.get("decisao") == "confirmar":
         confirmar(sugerido, nome=request.POST.get("nome", "")[:200])
         messages.success(
@@ -430,7 +456,7 @@ def sugerir_sementes(request: HttpRequest) -> HttpResponse:
             "modelo de linguagem, quando a placa estiver livre."
         ),
     )
-    return redirect("radar:radar")
+    return redirect(reverse("radar:configuracao") + "#sementes-sugeridas")
 
 
 @login_required
@@ -445,7 +471,7 @@ def decidir_semente_sugerida(request: HttpRequest, pk) -> HttpResponse:
     else:
         sugestao.situacao = SementeSugerida.Situacao.RECUSADA
         sugestao.save(update_fields=["situacao"])
-    return redirect(request.POST.get("voltar") or "radar:radar")
+    return redirect(reverse("radar:configuracao") + "#sementes-sugeridas")
 
 
 # ---------------------------------------------------------------------------

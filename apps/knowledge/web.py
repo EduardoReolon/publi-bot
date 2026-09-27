@@ -185,6 +185,7 @@ PALAVRAS_MINIMAS = 400
 class Classificacao:
     e_artigo: bool
     motivo: str
+    texto: str = ""
 
 
 def _tipos_declarados(html: str) -> set[str]:
@@ -231,16 +232,29 @@ def classificar_pagina(html: bytes | str, *, url: str = "") -> Classificacao:
         html = html.decode("utf-8", errors="replace")
     tipos = _tipos_declarados(html)
     artigo = tipos & (TIPOS_DE_ARTIGO | {"og:article"})
-    if artigo:
-        return Classificacao(True, f"a pagina se declara {sorted(artigo)[0]}")
     nao_artigo = tipos & TIPOS_DE_NAO_ARTIGO
     if nao_artigo and not artigo:
         return Classificacao(False, f"a pagina se declara {sorted(nao_artigo)[0]}")
     try:
-        pagina = extrair_pagina(html, url=url)
+        texto = extrair_pagina(html, url=url).markdown
     except PaginaIndisponivel as exc:
+        if artigo:
+            return Classificacao(True, f"a pagina se declara {sorted(artigo)[0]}")
         return Classificacao(False, str(exc))
-    palavras = len(pagina.markdown.split())
+    if artigo:
+        return Classificacao(True, f"a pagina se declara {sorted(artigo)[0]}", texto)
+    palavras = len(texto.split())
     if palavras < PALAVRAS_MINIMAS:
         return Classificacao(False, f"so {palavras} palavras de texto principal")
-    return Classificacao(True, f"{palavras} palavras de texto corrido")
+    return Classificacao(True, f"{palavras} palavras de texto corrido", texto)
+
+
+TEXTO_MAXIMO = 20_000
+
+
+def texto_da_pagina(url: str) -> str:
+    """O texto principal que a extracao tira da pagina, para a pessoa conferir."""
+    conteudo, url_final, tipo = baixar(url)
+    if "pdf" in (tipo or "").lower() or url.lower().endswith(".pdf"):
+        raise PaginaIndisponivel("PDF: o texto so e extraido ao aprovar.")
+    return extrair_pagina(conteudo, url=url_final).markdown[:TEXTO_MAXIMO]

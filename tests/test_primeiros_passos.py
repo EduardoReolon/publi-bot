@@ -62,7 +62,7 @@ def test_pedido_1_preenche_sem_salvar(ambiente):  # noqa: F811
     url = reverse("editorial:negocio", urlconf="core.urls_tenants")
 
     pagina = client.get(url).content.decode()
-    assert "Primeiros passos" in pagina and "Copiar pedido 1" in pagina
+    assert "O basico do basico" in pagina and "Copiar pedido 1" in pagina
 
     resposta = client.post(url, {"acao": "colar_negocio", "resposta": RESPOSTA_DO_NEGOCIO})
     html = resposta.content.decode()
@@ -164,3 +164,42 @@ def test_texto_do_radar_leva_os_concorrentes_da_tela(ambiente):  # noqa: F811
     assert "- salesforce.com | 2 | 2 | 5 dicas [busca: cross-sell]" in texto
     assert "uma-vez.com" not in texto
     assert "concorrente de NEGOCIO" in texto and "possivel PARCEIRO" in texto
+
+
+@pytest.mark.django_db
+def test_guia_editorial_pela_resposta_colada(ambiente):  # noqa: F811
+    from apps.editorial.models import EditorialProfile
+
+    _, _, client = ambiente
+    url = reverse("editorial:guia", urlconf="core.urls_tenants")
+    assert "Preencher com a ajuda de outra IA" in client.get(url).content.decode()
+
+    html = client.post(
+        url,
+        {
+            "acao": "colar_guia",
+            "resposta": """\
+**HUMOR:** 2
+FORMALIDADE: 3 (equilibrado)
+RESPEITO: 1
+ENTUSIASMO: 2
+PESSOA: voce
+REGRA DE OURO: Explicar com dado, sem jargao.
+SOMOS:
+- somos diretos | nao somos frios
+TERMOS:
+- growth hacking | crescimento | jargao
+CONVITE: Convide para uma conversa sobre os dados da empresa.
+EXEMPLOS:
+Primeiro paragrafo.
+
+Segundo paragrafo.
+FIM""",
+        },
+    ).content.decode()
+
+    assert "Nada foi salvo ainda" in html
+    assert "Explicar com dado, sem jargao." in html
+    assert "diretos | frios" in html
+    assert "growth hacking | crescimento | jargao" in html
+    assert EditorialProfile.carregar().regra_de_ouro == ""

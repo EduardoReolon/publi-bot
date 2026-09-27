@@ -693,6 +693,38 @@ def test_confirmar_poe_na_lista_e_recusar_nao_volta(ambiente):  # noqa: F811
 
 
 @pytest.mark.django_db
+def test_parceiro_ganha_proposta_sem_troca_de_links(ambiente):  # noqa: F811
+    from apps.editorial.models import PerfilDoNegocio
+    from apps.radar.models import ConcorrenteSugerido
+
+    _, _, client = ambiente
+    PerfilDoNegocio.objects.update_or_create(pk=1, defaults={"tema": "Analise de clientes"})
+    vizinho = ConcorrenteSugerido.objects.create(
+        dominio="blogdecrm.com.br",
+        consultas={"churn": 3, "ltv": 7},
+        exemplos=[
+            {"url": "https://blogdecrm.com.br/churn", "titulo": "Churn", "consulta": "churn"}
+        ],
+    )
+    resposta = client.post(
+        reverse("radar:decidir_concorrente", args=[vizinho.pk], urlconf="core.urls_tenants"),
+        {"decisao": "parceiro"},
+    )
+    assert resposta.url.endswith("#parceiros")
+    vizinho.refresh_from_db()
+    assert vizinho.situacao == ConcorrenteSugerido.Situacao.PARCEIRO
+    assert ConfiguracaoDoRadar.carregar().lista_de_concorrentes == []
+
+    pagina = client.get(reverse("radar:radar", urlconf="core.urls_tenants")).content.decode()
+    assert 'id="proposta-' in pagina and "Copiar proposta" in pagina
+    from apps.radar.parceiros import proposta
+
+    texto = proposta(vizinho)
+    assert "- churn (3)" in texto and "Analise de clientes" in texto
+    assert "sponsored" in texto and "Nao invente numeros" in texto
+
+
+@pytest.mark.django_db
 def test_virar_pauta_na_tela_vale_para_grupo_so_de_sementes(ambiente, settings):  # noqa: F811
     from apps.content.models import Topic
     from apps.radar.models import SinalDeDemanda

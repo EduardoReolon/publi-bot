@@ -15,6 +15,11 @@ urlpatterns = [
     path("nota/", views.nota_do_especialista, name="nota"),
     path("fontes-sugeridas/", views.fontes_sugeridas, name="fontes_sugeridas"),
     path("fontes-sugeridas/<uuid:pk>/", views.decidir_candidato, name="decidir_candidato"),
+    path(
+        "fontes-sugeridas/<uuid:pk>/texto/",
+        views.capturar_texto_do_candidato,
+        name="capturar_texto_do_candidato",
+    ),
     path("fontes-sugeridas/<uuid:pk>/audio/", views.enviar_audio, name="enviar_audio"),
     path("caminhos/", views.caminhos_confiaveis, name="caminhos"),
     path("categorias/", views.categorias, name="categorias"),

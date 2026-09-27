@@ -40,14 +40,16 @@ def tenant_integracoes(tenant_factory):
 
 @pytest.fixture
 def site(tenant_integracoes):
+    from apps.content.models import Author
+
+    # Quem assina o que nao tem autor escolhido (antes era um campo do site).
+    Author.objects.create(name="Ana Enfermeira", credentials="COREN-SP 123456", padrao=True)
     return Site.objects.create(
         name="Site do cliente",
         slug="cliente",
         base_url="https://exemplo.com.br",
         api_key_ciphertext=cifrar("chave-de-api-do-site"),
         signing_secret_ciphertext=cifrar("segredo-de-assinatura"),
-        default_author="Ana Enfermeira",
-        default_author_credentials="COREN-SP 123456",
     )
 
 
