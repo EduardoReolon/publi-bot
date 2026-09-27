@@ -198,6 +198,17 @@ class ConfiguracaoDoRadar(models.Model):
         ),
     )
 
+    dores = models.TextField(
+        _("dores do publico"),
+        blank=True,
+        help_text=_(
+            "Uma por linha: problemas que o seu publico sente, nas palavras dele, "
+            "e NAO os seus servicos. Ex.: 'manchas no rosto', 'clientes somem "
+            "depois da primeira compra'. Alimentam as Oportunidades: temas que o "
+            "publico procura e que o site ainda nao oferece."
+        ),
+    )
+
     sementes = models.TextField(
         _("palavras-semente"),
         blank=True,
@@ -245,6 +256,10 @@ class ConfiguracaoDoRadar(models.Model):
     @property
     def lista_de_sementes(self) -> list[str]:
         return [s.strip() for s in self.sementes.splitlines() if s.strip()]
+
+    @property
+    def lista_de_dores(self) -> list[str]:
+        return [s.strip() for s in self.dores.splitlines() if s.strip()]
 
     def locais(self) -> list[tuple[int, str]]:
         """(codigo, nome) de onde buscar: as regioes, ou o pais inteiro."""
@@ -397,6 +412,7 @@ class SinalDeDemanda(models.Model):
         CONCORRENTE_CONTEUDO = "conc_conteudo", _("Publicado por concorrente")
         CONCORRENTE_BUSCA = "conc_busca", _("Busca em que o concorrente aparece")
         AVALIACAO = "avaliacao", _("Avaliacao de concorrente")
+        DOR = "dor", _("Dor do publico")
 
     class Situacao(models.TextChoices):
         # Da busca manual: espera a pessoa dizer se e do segmento.
@@ -686,3 +702,80 @@ class LocalDisponivel(models.Model):
 
     def __str__(self) -> str:
         return self.nome
+
+
+class Oportunidade(models.Model):
+    """Um tema que o publico procura e o site ainda nao oferece.
+
+    E uma LENTE sobre os mesmos grupos do radar, com outra nota: em vez de
+    aderencia ao negocio (que derruba o que esta longe do que o site faz),
+    novidade, crescimento e valor comercial. A saida nao e pauta: e uma
+    decisao de negocio, que a pessoa toma na tela.
+    """
+
+    class Situacao(models.TextChoices):
+        NOVA = "nova", _("Nova")
+        ACOMPANHANDO = "acompanhando", _("Virou semente")
+        EM_TESTE = "em_teste", _("Em teste com artigo")
+        ARQUIVADA = "arquivada", _("Arquivada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    grupo = models.OneToOneField(
+        GrupoDeDemanda,
+        on_delete=models.CASCADE,
+        related_name="oportunidade",
+        verbose_name=_("grupo"),
+    )
+    situacao = models.CharField(
+        _("situacao"), max_length=12, choices=Situacao.choices, default=Situacao.NOVA
+    )
+    nota = models.FloatField(_("nota"), default=0)
+    parcelas = models.JSONField(_("parcelas"), default=dict, blank=True)
+    # Termos que distinguem o tema dos outros (c-TF-IDF).
+    termos = models.JSONField(_("termos"), default=list, blank=True)
+    # {"yoy": 0.42, "z": 2.1, "significativo": true, "meses": [[a, m, v], ...]}
+    crescimento = models.JSONField(_("crescimento"), default=dict, blank=True)
+    cpc = models.FloatField(_("custo por clique (US$)"), null=True, blank=True)
+    # Escrita pelo modelo de linguagem, quando ha um no ar. Opcional: a
+    # oportunidade existe e e decidida sem ela.
+    descricao = models.JSONField(_("descricao"), default=dict, blank=True)
+    descricao_em = models.DateTimeField(_("descrita em"), null=True, blank=True)
+    criada_em = models.DateTimeField(_("criada em"), default=timezone.now)
+    atualizada_em = models.DateTimeField(_("atualizada em"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("oportunidade")
+        verbose_name_plural = _("oportunidades")
+        ordering = ["-nota"]
+
+    def __str__(self) -> str:
+        return self.grupo.rotulo
+
+    @property
+    def serie_em_barras(self) -> list[dict]:
+        """Os meses do historico em % do maior, para o minigrafico da tela."""
+        meses = (self.crescimento or {}).get("meses") or []
+        maior = max((v for _a, _m, v in meses), default=0) or 1
+        return [
+            {"rotulo": f"{m:02d}/{a % 100:02d}", "volume": v, "altura": round(100 * v / maior)}
+            for a, m, v in meses
+        ]
+
+    @property
+    def volume_total(self) -> int | None:
+        return self.grupo.volume_total or None
+
+    @property
+    def parcelas_em_barras(self) -> list[dict]:
+        rotulos = {
+            "demanda": _("demanda"),
+            "crescimento": _("crescimento"),
+            "comercial": _("valor comercial"),
+            "novidade": _("novidade"),
+            "publico": _("perto do publico"),
+            "diversidade": _("fontes diferentes"),
+        }
+        return [
+            {"nome": rotulos.get(k, k), "valor": v, "pct": round(100 * float(v or 0))}
+            for k, v in (self.parcelas or {}).items()
+        ]

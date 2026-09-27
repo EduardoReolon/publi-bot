@@ -435,6 +435,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 3600.0,
         "options": {"expires": 3000},
     },
+    "descrever-oportunidades": {
+        "task": "apps.radar.tasks.descrever_oportunidades",
+        # De hora em hora; sem placa no ar, tenta na proxima.
+        "schedule": 3600.0,
+        "options": {"expires": 3000},
+    },
     "colher-fila-do-radar": {
         "task": "apps.radar.tasks.colher_fila",
         # A fila padrao da DataForSEO devolve em minutos; colher e gratuito.

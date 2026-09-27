@@ -43,6 +43,8 @@ class PromptTemplate(models.Model):
         # mantido porque instalacoes existentes tem a linha no banco.
         SEO_DRAFT = "seo_draft", _("Redacao (caminho antigo)")
         QA_ANSWER = "qa_answer", _("Resposta a pergunta")
+        OPPORTUNITY_BRIEF = "opportunity_brief", _("Descricao de oportunidade")
+        SEED_SUGGESTION = "seed_suggestion", _("Sugestao de sementes e dores")
         IMAGE_PROMPT = "image_prompt", _("Prompt de imagem")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

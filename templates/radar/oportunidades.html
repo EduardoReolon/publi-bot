@@ -1,0 +1,124 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Oportunidades" %} · PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+<h1>{% translate "Oportunidades" %}</h1>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    Temas que o seu publico procura e que o site ainda nao oferece — nao
+    pautas, e sim possiveis servicos ou produtos. Saem dos mesmos sinais do
+    radar (buscas, perguntas do site, YouTube, concorrentes), com outra nota:
+    <strong>novidade</strong> (longe do que voce ja faz), <strong>perto do
+    publico</strong> (das dores abaixo), <strong>crescimento</strong> (ano a
+    ano, sem se enganar com sazonalidade) e <strong>valor comercial</strong>
+    (quanto empresas pagam por clique no Google para alcancar quem busca).
+  {% endblocktranslate %}
+</div>
+
+<section class="secao">
+  <h2>{% translate "Dores do publico" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      O problema, nas palavras de quem sente — nao o seu servico. Quem busca
+      "consultoria de clima organizacional" ja sabe o que quer; quem busca
+      "equipe desmotivada" ainda nao, e e ai que aparece o que ninguem oferece.
+    {% endblocktranslate %}
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.dores }}
+    {% for erro in form.dores.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+    <div class="acoes"><button type="submit">{% translate "Salvar dores" %}</button></div>
+  </form>
+</section>
+
+<nav class="abas">
+  {% for valor, rotulo in situacoes %}
+    <a href="?ver={{ valor }}" class="{% if ver == valor %}ativo{% endif %}">
+      {{ rotulo }} <span class="contagem-aba">{% for k, n in contagens.items %}{% if k == valor %}{{ n }}{% endif %}{% endfor %}</span>
+    </a>
+  {% endfor %}
+</nav>
+
+{% for op in oportunidades %}
+  <article class="secao oportunidade">
+    <header class="cabeca-oportunidade">
+      <div>
+        <h3>{{ op.grupo.rotulo }}</h3>
+        <div class="chips">{% for termo in op.termos %}<span class="chip neutro">{{ termo }}</span>{% endfor %}</div>
+      </div>
+      <div class="nota-grande" title="{% translate 'nota de 0 a 100' %}">{{ op.nota|floatformat:0 }}</div>
+    </header>
+
+    <div class="metricas">
+      <div><span class="rotulo">{% translate "Buscas/mes" %}</span><strong>{{ op.volume_total|default:"—" }}</strong></div>
+      <div><span class="rotulo">{% translate "Ano a ano" %}</span>
+        {% if op.crescimento.yoy is not None %}
+          <strong class="{% if op.crescimento.yoy > 0 %}sobe{% else %}desce{% endif %}">{% widthratio op.crescimento.yoy 1 100 %}%</strong>
+          {% if op.crescimento.significativo %}<span class="selo ok">{% translate "tendencia" %}</span>{% endif %}
+        {% else %}<strong>—</strong> <span class="ajuda">{% translate "sem historico" %}</span>{% endif %}
+      </div>
+      <div><span class="rotulo">{% translate "Custo por clique" %}</span><strong>{% if op.cpc is not None %}US$ {{ op.cpc|floatformat:2 }}{% else %}—{% endif %}</strong></div>
+    </div>
+
+    {% if op.serie_em_barras %}
+      <div class="mini-serie" aria-label="{% translate 'buscas por mes' %}">
+        {% for barra in op.serie_em_barras %}<span style="height: {{ barra.altura }}%" title="{{ barra.rotulo }}: {{ barra.volume }}"></span>{% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="parcelas">
+      {% for p in op.parcelas_em_barras %}
+        <div class="parcela"><span>{{ p.nome }}</span><div class="trilho"><div style="width: {{ p.pct }}%"></div></div></div>
+      {% endfor %}
+    </div>
+
+    {% if op.descricao %}
+      <div class="descricao">
+        <p><strong>{% translate "O problema" %}.</strong> {{ op.descricao.problema }}</p>
+        <p><strong>{% translate "O que poderia atender" %}.</strong> {{ op.descricao.servico }}</p>
+        {% if op.descricao.perguntas %}
+          <p><strong>{% translate "Antes de investir, responda" %}:</strong></p>
+          <ul>{% for pergunta in op.descricao.perguntas %}<li>{{ pergunta }}</li>{% endfor %}</ul>
+        {% endif %}
+        <div class="ajuda">{% translate "Texto do modelo de linguagem, a partir dos sinais abaixo. Os numeros acima sao do algoritmo." %}</div>
+      </div>
+    {% endif %}
+
+    <details>
+      <summary>{% blocktranslate count n=op.grupo.sinais.count %}{{ n }} sinal{% plural %}{{ n }} sinais{% endblocktranslate %}</summary>
+      <ul class="sinais">
+        {% for sinal in op.grupo.sinais.all|slice:":15" %}
+          <li><span class="selo">{{ sinal.get_fonte_display }}</span> {{ sinal.texto }}{% if sinal.volume is not None %} <span class="ajuda">{{ sinal.volume }}/{% translate "mes" %}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    <div class="acoes">
+      {% if op.situacao == "nova" %}
+        <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="testar"><button type="submit">{% translate "Testar com um artigo" %}</button></form>
+        <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="semente"><button type="submit" class="botao secundario">{% translate "Acompanhar (virar semente)" %}</button></form>
+        {% if not op.descricao %}
+          <form method="post" action="{% url 'radar:descrever_oportunidade' op.pk %}">{% csrf_token %}<button type="submit" class="botao secundario">{% translate "Pedir descricao ao modelo" %}</button></form>
+        {% endif %}
+        <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="arquivar"><button type="submit" class="botao discreto">{% translate "Arquivar" %}</button></form>
+      {% else %}
+        <form method="post" action="{% url 'radar:decidir_oportunidade' op.pk %}">{% csrf_token %}<input type="hidden" name="decisao" value="reabrir"><button type="submit" class="botao secundario">{% translate "Voltar para novas" %}</button></form>
+      {% endif %}
+    </div>
+  </article>
+{% empty %}
+  <div class="vazio-grande">
+    {% if ver == "nova" %}
+      {% if tem_dores %}
+        {% translate "Nenhuma oportunidade ainda. Elas aparecem depois das rodadas do radar, conforme os sinais chegam." %}
+      {% else %}
+        {% translate "Escreva algumas dores do publico acima: elas sao o ponto de partida. Os sinais das outras fontes (perguntas do site, YouTube, concorrentes) tambem entram." %}
+      {% endif %}
+    {% else %}
+      {% translate "Nada aqui." %}
+    {% endif %}
+  </div>
+{% endfor %}
+{% endblock %}

@@ -65,6 +65,8 @@ class Plano:
     buscas: int
     pautas: int
     videos: int
+    # Dores do publico buscadas por rodada (as Oportunidades).
+    dores: int = 3
     # Por concorrente: paginas do sitemap, buscas do Labs e avaliacoes.
     paginas_de_concorrente: int = 50
     buscas_de_concorrente: int = 50
@@ -78,6 +80,7 @@ INTENSIDADES = {
         buscas=10,
         pautas=4,
         videos=5,
+        dores=5,
         paginas_de_concorrente=100,
         buscas_de_concorrente=100,
         avaliacoes=40,
@@ -87,6 +90,7 @@ INTENSIDADES = {
         buscas=20,
         pautas=6,
         videos=10,
+        dores=10,
         paginas_de_concorrente=200,
         buscas_de_concorrente=200,
         avaliacoes=60,
@@ -94,7 +98,11 @@ INTENSIDADES = {
 }
 
 # Fontes que, sozinhas, nao fazem um grupo virar pauta automaticamente.
-SO_REFORCAM = {SinalDeDemanda.Fonte.SEMENTE, SinalDeDemanda.Fonte.AVALIACAO}
+SO_REFORCAM = {
+    SinalDeDemanda.Fonte.SEMENTE,
+    SinalDeDemanda.Fonte.DOR,
+    SinalDeDemanda.Fonte.AVALIACAO,
+}
 
 # Fontes que nao vao para o pedido de volume: a do site e a avaliacao sao
 # frases, nao buscas; Search Console e Labs ja trazem o numero.
@@ -160,16 +168,17 @@ def _sementes_da_vez(config: ConfiguracaoDoRadar, quantas: int) -> list[str]:
     Com 23 sementes e 5 buscas por rodada, pegar sempre as 5 primeiras deixaria
     18 para sempre de fora. Assim a lista inteira roda em poucas rodadas.
     """
-    sementes = _sementes(config)
+    return _da_vez(_sementes(config), quantas, chave="sementes")
+
+
+def _da_vez(lista: list[str], quantas: int, *, chave: str) -> list[str]:
     ultima_vez: dict[str, int] = {}
     rodadas = RodadaDoRadar.objects.order_by("-iniciada_em").values_list("resumo", flat=True)
     for idade, resumo in enumerate(rodadas[:200]):
-        for semente in (resumo or {}).get("sementes", []):
-            ultima_vez.setdefault(semente.lower(), idade)
+        for item in (resumo or {}).get(chave, []):
+            ultima_vez.setdefault(item.lower(), idade)
     # Nunca buscada = idade infinita; empate mantem a ordem da lista.
-    ordenadas = sorted(
-        enumerate(sementes), key=lambda p: (-ultima_vez.get(p[1].lower(), 10**9), p[0])
-    )
+    ordenadas = sorted(enumerate(lista), key=lambda p: (-ultima_vez.get(p[1].lower(), 10**9), p[0]))
     return [s for _, s in ordenadas[:quantas]]
 
 
@@ -303,6 +312,14 @@ def executar_rodada(origem: str = RodadaDoRadar.Origem.AGENDADA) -> RodadaDoRada
         for semente in sementes:
             resumo["sementes"].append(semente)
             _novo_sinal(semente, SinalDeDemanda.Fonte.SEMENTE, rodada=rodada)
+        # As dores do publico sao buscadas do mesmo jeito, com cota propria: o
+        # que volta delas alimenta as Oportunidades (e, se tiver a ver com o
+        # negocio, as pautas tambem).
+        dores = _da_vez(config.lista_de_dores, plano.dores, chave="dores")
+        resumo["dores"] = dores
+        for dor in dores:
+            _novo_sinal(dor, SinalDeDemanda.Fonte.DOR, rodada=rodada)
+        sementes = sementes + [d for d in dores if d.lower() not in {s.lower() for s in sementes}]
 
         if config.usar_serp and sementes:
             pago = buscador_efetivo(config, contas) == ConfiguracaoDoRadar.Buscador.DATAFORSEO
@@ -412,6 +429,9 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
         resumo["sinais"] = len(sinais)
         grupos = agrupar(sinais)
         resumo["pautas"] = propor_pautas(grupos, limite=plano.pautas)
+        from apps.radar.oportunidades import atualizar_oportunidades
+
+        resumo["oportunidades"] = atualizar_oportunidades()
     except custos.TetoAtingido as exc:
         return _encerrar(rodada, RodadaDoRadar.Situacao.PARADA_NO_TETO, str(exc))
     except Exception as exc:

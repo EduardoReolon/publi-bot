@@ -257,3 +257,101 @@ def coletar_console(request: HttpRequest) -> HttpResponse:
             % {"n": coleta.linhas, "i": coleta.inicio, "f": coleta.fim},
         )
     return redirect("radar:radar")
+
+
+# ---------------------------------------------------------------------------
+# Oportunidades
+# ---------------------------------------------------------------------------
+@login_required
+def oportunidades(request: HttpRequest) -> HttpResponse:
+    from apps.radar.forms import DoresForm
+    from apps.radar.models import Oportunidade
+
+    config = ConfiguracaoDoRadar.carregar()
+    form = DoresForm(request.POST or None, instance=config)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, _("Dores salvas. Elas entram na proxima rodada do radar."))
+        return redirect("radar:oportunidades")
+    ver = request.GET.get("ver", "nova")
+    situacoes = {s.value for s in Oportunidade.Situacao}
+    ver = ver if ver in situacoes else "nova"
+    return render(
+        request,
+        "radar/oportunidades.html",
+        {
+            "aba": "oportunidades",
+            "form": form,
+            "ver": ver,
+            "situacoes": Oportunidade.Situacao.choices,
+            "contagens": {s: Oportunidade.objects.filter(situacao=s).count() for s in situacoes},
+            "oportunidades": Oportunidade.objects.filter(situacao=ver)
+            .select_related("grupo")
+            .prefetch_related("grupo__sinais")
+            .order_by("-nota")[:50],
+            "tem_dores": bool(config.lista_de_dores),
+        },
+    )
+
+
+@login_required
+@require_POST
+def decidir_oportunidade(request: HttpRequest, pk) -> HttpResponse:
+    """Arquivar, virar semente (o radar passa a buscar o tema) ou testar com
+    um artigo (vira pauta sugerida; o Search Console mede o interesse)."""
+    from apps.radar.coleta import propor_pautas
+    from apps.radar.models import Oportunidade
+
+    oportunidade = get_object_or_404(Oportunidade.objects.select_related("grupo"), pk=pk)
+    decisao = request.POST.get("decisao")
+    tema = oportunidade.grupo.rotulo
+    if decisao == "semente":
+        config = ConfiguracaoDoRadar.carregar()
+        if tema.lower() not in {s.lower() for s in config.lista_de_sementes}:
+            config.sementes = (config.sementes.rstrip() + "\n" + tema[:200]).strip()
+            config.save(update_fields=["sementes"])
+        oportunidade.situacao = Oportunidade.Situacao.ACOMPANHANDO
+        messages.success(request, _("'%(t)s' virou palavra-semente.") % {"t": tema})
+    elif decisao == "testar":
+        criadas = propor_pautas(
+            {oportunidade.grupo_id}, limite=1, nota_minima=0, pedido_pela_pessoa=True
+        )
+        if not criadas:
+            messages.error(request, _("Nao virou pauta: o tema esta perto do que ja foi escrito."))
+            return redirect("radar:oportunidades")
+        oportunidade.situacao = Oportunidade.Situacao.EM_TESTE
+        messages.success(
+            request,
+            _(
+                "Pauta criada: %(t)s. Publicado o artigo, o Search Console mostra em "
+                "algumas semanas se ha interesse."
+            )
+            % {"t": criadas[0]},
+        )
+    elif decisao == "arquivar":
+        oportunidade.situacao = Oportunidade.Situacao.ARQUIVADA
+        messages.success(request, _("Oportunidade arquivada."))
+    elif decisao == "reabrir":
+        oportunidade.situacao = Oportunidade.Situacao.NOVA
+    oportunidade.save(update_fields=["situacao", "atualizada_em"])
+    return redirect("radar:oportunidades")
+
+
+@login_required
+@require_POST
+def descrever_oportunidade(request: HttpRequest, pk) -> HttpResponse:
+    from django.db import transaction
+
+    from apps.radar.models import Oportunidade
+    from apps.radar.tasks import descrever_uma_oportunidade
+
+    oportunidade = get_object_or_404(Oportunidade, pk=pk)
+    transaction.on_commit(lambda: descrever_uma_oportunidade.delay(str(oportunidade.pk)))
+    messages.success(
+        request,
+        _(
+            "Descricao pedida ao modelo. Aparece aqui quando ficar pronta; com a "
+            "placa ocupada ou fora do ar, a tentativa se repete de hora em hora."
+        ),
+    )
+    return redirect("radar:oportunidades")

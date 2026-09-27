@@ -60,3 +60,35 @@ def rodar_radar() -> str:
 
     rodada = executar_rodada(origem=RodadaDoRadar.Origem.MANUAL)
     return rodada.situacao
+
+
+@shared_task
+def descrever_oportunidades() -> int:
+    """Pede ao modelo a descricao das melhores oportunidades ainda sem ela.
+
+    De hora em hora: com a placa fora do ar ou ocupada, simplesmente tenta na
+    proxima. A oportunidade existe e e decidida sem a descricao.
+    """
+    from apps.accounts.varredura import para_cada_tenant
+    from apps.radar.oportunidades import descrever_pendentes
+
+    return para_cada_tenant(descrever_pendentes, "descrever_oportunidades")
+
+
+@shared_task
+def descrever_uma_oportunidade(pk: str) -> bool:
+    """Pedida na tela. Despachada de dentro do tenant."""
+    from apps.content.inference import SemModeloConfigurado
+    from apps.ops.orchestrator import PassoAdiado
+    from apps.radar.models import Oportunidade
+    from apps.radar.oportunidades import descrever_oportunidade
+
+    oportunidade = Oportunidade.objects.filter(pk=pk).first()
+    if oportunidade is None:
+        return False
+    try:
+        descrever_oportunidade(oportunidade)
+    except (PassoAdiado, SemModeloConfigurado) as exc:
+        logger.info("Descricao adiada: %s", exc)
+        return False
+    return True

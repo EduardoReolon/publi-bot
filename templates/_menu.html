@@ -16,6 +16,9 @@
     <a href="{% url 'radar:radar' %}" class="{% if aba == 'radar' %}ativo{% endif %}">
       {% translate "Radar" %}
     </a>
+    <a href="{% url 'radar:oportunidades' %}" class="{% if aba == 'oportunidades' %}ativo{% endif %}">
+      {% translate "Oportunidades" %}
+    </a>
     <a href="{% url 'content:pautas' %}" class="{% if aba == 'pautas' %}ativo{% endif %}">
       {% translate "Pautas" %}
     </a>

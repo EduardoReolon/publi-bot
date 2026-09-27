@@ -24,5 +24,16 @@ urlpatterns = [
     ),
     path("locais/", views.procurar_locais, name="procurar_locais"),
     path("locais/atualizar/", views.atualizar_locais, name="atualizar_locais"),
+    path("oportunidades/", views.oportunidades, name="oportunidades"),
+    path(
+        "oportunidades/<uuid:pk>/decidir/",
+        views.decidir_oportunidade,
+        name="decidir_oportunidade",
+    ),
+    path(
+        "oportunidades/<uuid:pk>/descrever/",
+        views.descrever_oportunidade,
+        name="descrever_oportunidade",
+    ),
     path("search-console/", views.coletar_console, name="coletar_console"),
 ]

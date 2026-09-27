@@ -349,6 +349,70 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Sugira 5 pautas."
         ),
     },
+    "opportunity_brief": {
+        "descricao": "Descreve uma oportunidade do radar: o problema e o servico possivel.",
+        "variaveis": ["negocio", "tema", "termos", "sinais", "tendencia", "cpc", "idioma"],
+        "temperatura": 0.3,
+        "sistema": (
+            "Voce ajuda o dono de um negocio a entender uma demanda que o radar "
+            "de buscas encontrou: um tema que o publico procura e que o negocio "
+            "ainda nao oferece.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "problema": 2 a 3 frases sobre o problema que as pessoas descrevem '
+            "nas buscas e comentarios, nas palavras delas;\n"
+            '  "servico": 2 a 3 frases sobre que tipo de servico ou produto '
+            "atenderia essa demanda, e como ele se liga (ou nao) ao negocio atual;\n"
+            '  "perguntas": ate 4 perguntas que o dono deveria responder ANTES de '
+            "investir (quem paga, com que frequencia, quem ja atende, o que "
+            "diferencia).\n\n"
+            "Regras:\n"
+            "- Baseie-se SO nos sinais. Nao invente numero, tamanho de mercado, "
+            "preco nem tendencia: os numeros que existem ja estao no pedido.\n"
+            "- Se os sinais forem vagos ou contraditorios, diga isso no problema.\n"
+            "- Tom direto, sem entusiasmo de venda."
+        ),
+        "usuario": (
+            "Negocio atual (nicho e temas):\n{negocio}\n\n"
+            "Tema encontrado: {tema}\n"
+            "Termos que o distinguem: {termos}\n"
+            "Tendencia de busca: {tendencia}\n"
+            "Custo por clique no Google Ads: {cpc}\n"
+            "Idioma da resposta: {idioma}\n\n"
+            "Sinais (buscas, perguntas e comentarios reais):\n"
+            "<fonte>\n{sinais}\n</fonte>\n\n"
+            "Produza o JSON."
+        ),
+    },
+    "seed_suggestion": {
+        "descricao": "Sugere palavras-semente e dores do publico a partir do site.",
+        "variaveis": ["nicho", "pagina", "publicados", "idioma"],
+        "temperatura": 0.4,
+        "sistema": (
+            "Voce ajuda a configurar um radar de pautas de SEO para um site.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "sementes": ate 15 temas centrais do negocio, como alguem os '
+            "digitaria numa busca (2 a 5 palavras, sem marca, sem cidade);\n"
+            '  "dores": ate 10 problemas que o PUBLICO do negocio sente, nas '
+            "palavras de quem sente e NAO nas do negocio (ex.: 'manchas no rosto', "
+            "e nao 'tratamento dermatologico').\n\n"
+            "Regras:\n"
+            "- Tire os temas da pagina e dos artigos; nao invente servico que o "
+            "site nao menciona.\n"
+            "- Nada de termo generico demais ('saude', 'negocios') nem de frase "
+            "longa.\n"
+            "- Sem repeticao: dois temas que responderiam a mesma busca contam "
+            "como um."
+        ),
+        "usuario": (
+            "Nicho declarado: {nicho}\n"
+            "Idioma das sugestoes: {idioma}\n\n"
+            "Pagina inicial do site:\n<fonte>\n{pagina}\n</fonte>\n\n"
+            "Titulos ja publicados:\n<fonte>\n{publicados}\n</fonte>\n\n"
+            "Produza o JSON."
+        ),
+    },
     "qa_answer": {
         "descricao": "Responde a duvida de um visitante com base no acervo.",
         "variaveis": ["pergunta", "fontes", "idioma"],
