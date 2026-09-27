@@ -521,6 +521,14 @@ preco ao vivo): a rodada fica "aguardando" e o batimento `colher-fila-do-radar`
 do celery beat colhe os resultados a cada 5 minutos. Sem o beat rodando, a
 rodada nao termina.
 
+**Outros batimentos do radar.** `atualizar-contexto-dos-sites` (uma vez por
+dia) busca a pagina inicial e as publicacoes de cada site, base da sugestao de
+sementes e da canibalizacao. `descrever-oportunidades` (de hora em hora) pede
+ao modelo a descricao das melhores oportunidades; sem placa no ar, tenta na
+hora seguinte. Para usar o modelo de 30B so nessa descricao, escolha-o na
+versao do prompt `opportunity_brief` (e em `seed_suggestion`, para as
+sementes sugeridas).
+
 **Buscador gratuito (SearXNG).** Suba uma instancia propria com a saida JSON
 ligada (`search: formats: [html, json]` no `settings.yml` dele) e informe
 `SEARXNG_URL` no `.env`. Cada site pode apontar outra na tela do Radar.

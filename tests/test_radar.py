@@ -525,8 +525,8 @@ def test_descartar_mantem_o_custo(radar, monkeypatch):
 def test_tela_do_radar_e_contas_cifradas(ambiente, settings):  # noqa: F811
     settings.EMBEDDING_CLIENT = "tests.test_radar.EmbeddingPorPalavras"
     _, _, client = ambiente
-    url = reverse("radar:radar", urlconf="core.urls_tenants")
-
+    assert client.get(reverse("radar:radar", urlconf="core.urls_tenants")).status_code == 200
+    url = reverse("radar:configuracao", urlconf="core.urls_tenants")
     assert client.get(url).status_code == 200
 
     client.post(

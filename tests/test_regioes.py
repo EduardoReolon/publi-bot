@@ -166,8 +166,8 @@ def test_tela_tem_o_seletor_e_a_busca_responde(ambiente):  # noqa: F811
     LocalDisponivel.objects.create(
         codigo=1001773, nome="Curitiba, Parana", tipo="City", busca="curitiba, parana"
     )
-    pagina = client.get(reverse("radar:radar", urlconf="core.urls_tenants")).content.decode()
-    assert 'id="seletor-regioes"' in pagina
+    url = reverse("radar:configuracao", urlconf="core.urls_tenants")
+    assert 'id="seletor-regioes"' in client.get(url).content.decode()
 
     resposta = client.get(
         reverse("radar:procurar_locais", urlconf="core.urls_tenants"), {"q": "Curitiba"}

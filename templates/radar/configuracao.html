@@ -1,0 +1,115 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Configuracao do radar" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+{% include "radar/_abas.html" %}
+<h1>{% translate "Configuracao e custos" %}</h1>
+
+<div class="duas-colunas">
+  <section class="secao">
+    <h2>{% translate "Configuracao" %}</h2>
+    <form method="post" action="{% url 'radar:salvar_configuracao' %}">
+      {% csrf_token %}
+      {% for titulo, campos in config.grupos %}
+        <fieldset>
+          <legend>{{ titulo }}</legend>
+          {% for campo in campos %}
+            {% if campo.name == "regioes" %}{% include "radar/_regioes.html" %}{% else %}{% include "_campo.html" %}{% endif %}
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
+      <div class="acoes"><button type="submit">{% translate "Salvar configuracao" %}</button></div>
+    </form>
+    <form id="form-locais" method="post" action="{% url 'radar:atualizar_locais' %}">{% csrf_token %}</form>
+  </section>
+
+  <div>
+    <section class="secao">
+      <h2>{% translate "Contas externas" %}</h2>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          As contas sao deste site: o custo cai direto na conta dele. As chaves
+          ficam cifradas e nunca voltam para a tela. Onde criar cada uma e como
+          testar: docs/CONTAS_EXTERNAS.md.
+        {% endblocktranslate %}
+      </p>
+      <div class="chips">
+        <span class="selo {% if contas_obj.tem_dataforseo %}ok{% endif %}">DataForSEO: {% if contas_obj.tem_dataforseo %}{% translate "configurada" %}{% else %}{% translate "nao configurada" %}{% endif %}</span>
+        <span class="selo {% if contas_obj.tem_youtube %}ok{% endif %}">YouTube: {% if contas_obj.tem_youtube %}{% translate "configurada" %}{% else %}{% translate "nao configurada" %}{% endif %}</span>
+      </div>
+      <form method="post" action="{% url 'radar:salvar_contas' %}">
+        {% csrf_token %}
+        {% for campo in contas %}{% include "_campo.html" %}{% endfor %}
+        <div class="acoes"><button type="submit">{% translate "Salvar contas" %}</button></div>
+      </form>
+    </section>
+
+    <section class="secao">
+      <h2>{% translate "Uso do mes" %}</h2>
+      <p class="pre-visualizacao">US$ {{ resumo.gasto|floatformat:4 }} {% translate "de" %} US$ {{ resumo.teto }}</p>
+      <div class="barra-de-uso {% if uso_do_teto > 80 %}alto{% endif %}"><div style="width: {{ uso_do_teto }}%"></div></div>
+      <table style="margin-top:.8rem">
+        <thead><tr><th>{% translate "Provedor" %}</th><th>{% translate "Para que" %}</th><th>{% translate "Chamadas" %}</th><th>{% translate "Custo" %}</th></tr></thead>
+        <tbody>
+          {% for linha in resumo.linhas %}
+            <tr><td>{{ linha.provedor }}</td><td>{{ linha.finalidade }}</td><td>{{ linha.chamadas }}</td><td>US$ {{ linha.total|floatformat:4 }}</td></tr>
+          {% empty %}
+            <tr><td colspan="4" class="vazio">{% translate "Nenhuma chamada neste mes." %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="secao">
+      <h2>{% translate "Buscador gratuito x pago" %}</h2>
+      {% if comparacoes_total %}
+        <p class="pre-visualizacao">
+          {% blocktranslate trimmed with n=comparacoes_total falhas=comparacoes_falhas %}
+            Ultimas {{ n }} comparacoes ({{ falhas }} com o gratuito fora do ar).
+          {% endblocktranslate %}
+          {% translate "Do top 10 pago, o gratuito trouxe em media" %}
+          <strong>{{ comparacao_media.urls|default:0|floatformat:2 }}</strong> {% translate "das URLs e" %}
+          <strong>{{ comparacao_media.dominios|default:0|floatformat:2 }}</strong> {% translate "dos dominios." %}
+        </p>
+        <table>
+          <thead><tr><th>{% translate "Consulta" %}</th><th>URLs</th><th>{% translate "Dominios" %}</th></tr></thead>
+          <tbody>
+            {% for c in comparacoes %}
+              <tr>
+                <td>{{ c.consulta }}<div class="ajuda">{{ c.so_no_pago|join:", " }}</div></td>
+                <td>{% if c.gratuito_falhou %}{% translate "gratuito falhou" %}{% else %}{{ c.sobreposicao_urls|floatformat:2 }}{% endif %}</td>
+                <td>{% if not c.gratuito_falhou %}{{ c.sobreposicao_dominios|floatformat:2 }}{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="vazio">{% translate "Sem comparacoes. So existem com o SearXNG configurado e uma taxa de comparacao." %}</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+
+<section class="secao">
+  <h2>{% translate "Ultimas chamadas externas" %}</h2>
+  <div class="rolagem">
+  <table>
+    <thead><tr><th>{% translate "Quando" %}</th><th>{% translate "Provedor" %}</th><th>{% translate "Consulta" %}</th><th>{% translate "Custo" %}</th><th></th></tr></thead>
+    <tbody>
+      {% for chamada in chamadas %}
+        <tr>
+          <td>{{ chamada.criado_em|date:"d/m H:i" }}</td>
+          <td>{{ chamada.get_provedor_display }}<div class="ajuda">{{ chamada.get_finalidade_display }}</div></td>
+          <td>{{ chamada.consulta|truncatechars:80 }}</td>
+          <td>US$ {{ chamada.custo_usd|floatformat:4 }}</td>
+          <td>{% if not chamada.sucesso %}<span class="selo ruim">{% translate "falhou" %}</span><div class="ajuda">{{ chamada.erro|truncatechars:200 }}</div>{% else %}<span class="selo ok">ok</span>{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="vazio">{% translate "Nenhuma chamada ainda." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

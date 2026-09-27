@@ -1,0 +1,16 @@
+{# Um campo de formulario. Caixa de marcar vai ao lado do rotulo, e nao abaixo. #}
+{% if campo.field.widget.input_type == "checkbox" %}
+  <div class="campo caixa">
+    {{ campo }}
+    <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+    {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+    {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+  </div>
+{% else %}
+  <div class="campo">
+    <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+    {{ campo }}
+    {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
+    {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
+  </div>
+{% endif %}

@@ -10,7 +10,8 @@ app_name = "radar"
 
 urlpatterns = [
     path("", views.radar, name="radar"),
-    path("configuracao/", views.salvar_configuracao, name="salvar_configuracao"),
+    path("configuracao/", views.configuracao, name="configuracao"),
+    path("configuracao/salvar/", views.salvar_configuracao, name="salvar_configuracao"),
     path("contas/", views.salvar_contas, name="salvar_contas"),
     path("rodar/", views.rodar_agora, name="rodar_agora"),
     path("buscar/", views.busca_manual, name="busca_manual"),

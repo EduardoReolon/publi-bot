@@ -490,7 +490,8 @@ def test_avaliacoes_so_reclamacao_e_pergunta_e_so_para_quem_tem_nome(radar, monk
 @pytest.mark.django_db
 def test_tela_mostra_os_campos_de_concorrentes(ambiente):  # noqa: F811
     _, _, client = ambiente
-    pagina = client.get(reverse("radar:radar", urlconf="core.urls_tenants")).content.decode()
+    url = reverse("radar:configuracao", urlconf="core.urls_tenants")
+    pagina = client.get(url).content.decode()
     assert 'name="concorrentes"' in pagina
     assert 'name="modo_dataforseo"' in pagina
 

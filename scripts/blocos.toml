@@ -253,6 +253,10 @@ padroes = [
   "docs/CONTAS_EXTERNAS.md",
   "tests/test_radar.py",
   "tests/test_fila_e_concorrentes.py",
+  "tests/test_regioes.py",
+  "tests/test_oportunidades.py",
+  "tests/test_sugestoes.py",
+  "tests/test_atualizacoes.py",
 ]
 
 

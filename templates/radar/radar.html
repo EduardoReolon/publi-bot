@@ -4,96 +4,81 @@
 {% block menu %}{% include "_menu.html" %}{% endblock %}
 {% block conteudo %}
 {% include "radar/_abas.html" %}
-  <h1>{% translate "Radar de pautas" %}</h1>
-  <p class="sub">
-    {% blocktranslate trimmed %}
-      Descobre sobre o que vale escrever: perguntas que as pessoas fazem, volume
-      de busca, duvidas dos visitantes. Tudo aqui e sinal de DEMANDA — nunca fato
-      para o texto, que continua saindo do acervo curado.
-    {% endblocktranslate %}
-  </p>
+<h1>{% translate "Radar de pautas" %}</h1>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    Descobre sobre o que vale escrever: perguntas que as pessoas fazem, volume
+    de busca, duvidas dos visitantes, o que os concorrentes publicam. Tudo aqui
+    e sinal de <strong>demanda</strong> — nunca fato para o texto, que continua
+    saindo do acervo curado.
+  {% endblocktranslate %}
+</div>
 
-  <div class="cartoes">
-    <div>
-      <label>{% translate "Gasto no mes" %}</label>
-      <strong>US$ {{ resumo.gasto|floatformat:4 }}</strong>
-      <div class="ajuda">{% translate "teto" %}: US$ {{ resumo.teto }}</div>
-    </div>
-    <div>
-      <label>{% translate "Intensidade" %}</label>
-      <strong>{{ config_obj.get_intensidade_display }}</strong>
-      <div class="ajuda">{% translate "buscador" %}: {{ buscador_efetivo }}</div>
-    </div>
-    <div>
-      <label>{% translate "Ultima rodada" %}</label>
-      <strong>{{ config_obj.ultima_rodada_em|date:"d/m H:i"|default:"—" }}</strong>
-      {% if tarefas_na_fila %}<div class="ajuda">{% blocktranslate count n=tarefas_na_fila %}{{ n }} tarefa na fila da DataForSEO{% plural %}{{ n }} tarefas na fila da DataForSEO{% endblocktranslate %}</div>{% endif %}
-    </div>
+<div class="cartoes">
+  <div class="cartao">
+    <label>{% translate "Gasto no mes" %}</label>
+    <strong>US$ {{ resumo.gasto|floatformat:2 }}</strong>
+    <div class="barra-de-uso {% if uso_do_teto > 80 %}alto{% endif %}"><div style="width: {{ uso_do_teto }}%"></div></div>
+    <div class="ajuda">{% translate "teto" %}: US$ {{ resumo.teto }}</div>
   </div>
+  <div class="cartao">
+    <label>{% translate "Intensidade" %}</label>
+    <strong>{{ config_obj.get_intensidade_display }}</strong>
+    <div class="ajuda">{% translate "buscador" %}: {{ buscador_efetivo }}</div>
+  </div>
+  <div class="cartao">
+    <label>{% translate "Ultima rodada" %}</label>
+    <strong>{{ config_obj.ultima_rodada_em|date:"d/m H:i"|default:"—" }}</strong>
+    {% if tarefas_na_fila %}<div class="ajuda">{% blocktranslate count n=tarefas_na_fila %}{{ n }} tarefa na fila da DataForSEO{% plural %}{{ n }} tarefas na fila da DataForSEO{% endblocktranslate %}</div>{% endif %}
+  </div>
+  <div class="cartao acao">
+    <label>{% translate "Agora" %}</label>
+    <form method="post" action="{% url 'radar:rodar_agora' %}">
+      {% csrf_token %}
+      <button type="submit">{% translate "Rodar o radar" %}</button>
+    </form>
+  </div>
+</div>
 
-  <form method="post" action="{% url 'radar:rodar_agora' %}">
-    {% csrf_token %}
-    <div class="acoes">
-      <button type="submit">{% translate "Rodar o radar agora" %}</button>
-    </div>
-  </form>
-
-  {% if rodadas %}
-    <h2>{% translate "Rodadas" %}</h2>
-    <table>
-      <thead><tr>
-        <th>{% translate "Quando" %}</th><th>{% translate "Origem" %}</th>
-        <th>{% translate "Situacao" %}</th><th>{% translate "Sinais" %}</th>
-        <th>{% translate "Pautas" %}</th><th>{% translate "Custo" %}</th>
-      </tr></thead>
-      <tbody>
-        {% for rodada in rodadas %}
-          <tr>
-            <td>{{ rodada.iniciada_em|date:"d/m H:i" }}</td>
-            <td>{{ rodada.get_origem_display }}</td>
-            <td>{{ rodada.get_situacao_display }}{% if rodada.situacao == "concluida" and rodada.resumo.erros %} <span class="selo">{% translate "com erros" %}</span>{% endif %}{% if rodada.erro %}<div class="ajuda">{{ rodada.erro|truncatechars:300 }}</div>{% endif %}
-              {% for erro in rodada.resumo.erros %}<div class="ajuda">{{ erro|truncatechars:300 }}</div>{% endfor %}</td>
-            <td>{{ rodada.resumo.sinais|default:0 }}</td>
-            <td>{{ rodada.resumo.pautas|length }}</td>
-            <td>US$ {{ rodada.custo_usd|floatformat:4 }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-
+<section class="secao">
   <h2>{% translate "Temas em observacao" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
-      Sinais parecidos viram um tema. A nota combina demanda (volume), diversidade
-      de fontes, aderencia ao negocio, canibalizacao (quanto mais perto do que ja
-      foi escrito, pior) e cobertura do acervo. Os melhores viram pauta sugerida
-      sozinhos a cada rodada; aqui voce pode adiantar ou descartar.
+      Sinais parecidos viram um tema. Os melhores viram pauta sozinhos a cada
+      rodada; aqui voce pode adiantar ou descartar. As barras mostram de onde vem
+      a nota (canibalizacao alta e ruim: perto do que ja foi escrito).
     {% endblocktranslate %}
   </p>
+  <div class="rolagem">
   <table>
     <thead><tr>
       <th>{% translate "Tema" %}</th><th>{% translate "Nota" %}</th>
-      <th>{% translate "Volume" %}</th><th>{% translate "Sinais" %}</th>
-      <th>{% translate "Parcelas" %}</th><th></th>
+      <th>{% translate "Buscas/mes" %}</th><th>{% translate "Sinais" %}</th>
+      <th>{% translate "Por que essa nota" %}</th><th></th>
     </tr></thead>
     <tbody>
       {% for grupo in grupos %}
         <tr>
-          <td>{{ grupo.rotulo }}</td>
-          <td><strong>{{ grupo.nota|floatformat:0 }}</strong></td>
+          <td><strong>{{ grupo.rotulo }}</strong></td>
+          <td><span class="nota {% if grupo.nota >= 60 %}alta{% elif grupo.nota >= 40 %}media{% endif %}">{{ grupo.nota|floatformat:0 }}</span></td>
           <td>{{ grupo.volume_total|default:"—" }}</td>
           <td>{{ grupo.total }}</td>
-          <td class="pre-visualizacao">
-            {% for nome, valor in grupo.parcelas.items %}{{ nome }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}
+          <td>
+            <div class="parcelas compacta">
+              {% for nome, valor in grupo.parcelas.items %}
+                <div class="parcela"><span>{{ nome }}</span><div class="trilho"><div style="width: {% widthratio valor 1 100 %}%"></div></div></div>
+              {% endfor %}
+            </div>
           </td>
           <td>
-            <form method="post" action="{% url 'radar:grupo_para_pauta' grupo.pk %}" style="display:inline">
-              {% csrf_token %}<button type="submit" class="botao secundario">{% translate "Virar pauta" %}</button>
-            </form>
-            <form method="post" action="{% url 'radar:descartar_grupo' grupo.pk %}" style="display:inline">
-              {% csrf_token %}<button type="submit" class="botao perigo">{% translate "Descartar" %}</button>
-            </form>
+            <div class="acoes" style="margin:0">
+              <form method="post" action="{% url 'radar:grupo_para_pauta' grupo.pk %}">
+                {% csrf_token %}<button type="submit" class="botao secundario pequeno">{% translate "Virar pauta" %}</button>
+              </form>
+              <form method="post" action="{% url 'radar:descartar_grupo' grupo.pk %}">
+                {% csrf_token %}<button type="submit" class="botao discreto pequeno">{% translate "Descartar" %}</button>
+              </form>
+            </div>
           </td>
         </tr>
       {% empty %}
@@ -101,54 +86,88 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
+</section>
 
-  <h2>{% translate "Sementes sugeridas" %}</h2>
-  <p class="pre-visualizacao">
-    {% blocktranslate trimmed %}
-      De tres lugares: os temas centrais da pagina inicial e dos artigos do site
-      (por algoritmo, sem modelo de linguagem), os temas fortes que o radar achou
-      e nenhuma semente cobre, e o modelo de linguagem, quando ha um no ar — que
-      sugere tambem dores do publico. Nada entra sozinho: aceite ou recuse.
-    {% endblocktranslate %}
-  </p>
-  <form method="post" action="{% url 'radar:sugerir_sementes' %}">
-    {% csrf_token %}
-    <button type="submit" class="botao secundario">{% translate "Sugerir a partir do site" %}</button>
-  </form>
-  {% if sementes_sugeridas %}
-    <table>
-      <thead><tr><th>{% translate "Sugestao" %}</th><th>{% translate "Tipo" %}</th><th>{% translate "De onde" %}</th><th></th></tr></thead>
-      <tbody>
-        {% for sugestao in sementes_sugeridas %}
-          <tr>
-            <td><strong>{{ sugestao.texto }}</strong>{% if sugestao.evidencia.volume %} <span class="ajuda">{{ sugestao.evidencia.volume }}/{% translate "mes" %}</span>{% endif %}</td>
-            <td><span class="selo {% if sugestao.tipo == 'dor' %}espera{% endif %}">{{ sugestao.get_tipo_display }}</span></td>
-            <td class="pre-visualizacao">{{ sugestao.get_origem_display }}</td>
-            <td>
-              <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}" style="display:inline">
-                {% csrf_token %}<input type="hidden" name="decisao" value="aceitar">
-                <button type="submit" class="botao secundario pequeno">{% translate "Aceitar" %}</button>
-              </form>
-              <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}" style="display:inline">
-                {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
-                <button type="submit" class="botao discreto pequeno">{% translate "Recusar" %}</button>
-              </form>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
+<div class="grade-2">
+  <section class="secao">
+    <h2>{% translate "Sementes sugeridas" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Da pagina inicial e dos artigos do site (por algoritmo), dos temas fortes
+        que nenhuma semente cobre e do modelo de linguagem, quando ha um no ar —
+        que sugere tambem dores do publico. Nada entra sozinho.
+      {% endblocktranslate %}
+    </p>
+    {% for sugestao in sementes_sugeridas %}
+      <div class="sugestao">
+        <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}">
+          {% csrf_token %}<input type="hidden" name="decisao" value="aceitar">
+          <button type="submit" class="botao secundario pequeno">{% translate "Aceitar" %}</button>
+        </form>
+        <div class="texto">
+          <strong>{{ sugestao.texto }}</strong>
+          <span class="selo {% if sugestao.tipo == 'dor' %}alerta{% else %}espera{% endif %}">{{ sugestao.get_tipo_display }}</span>
+          <span class="ajuda">{{ sugestao.get_origem_display }}{% if sugestao.evidencia.volume %} · {{ sugestao.evidencia.volume }}/{% translate "mes" %}{% endif %}</span>
+        </div>
+        <form method="post" action="{% url 'radar:decidir_semente_sugerida' sugestao.pk %}">
+          {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
+          <button type="submit" class="botao discreto pequeno">{% translate "Recusar" %}</button>
+        </form>
+      </div>
+    {% empty %}
+      <p class="vazio">{% translate "Nenhuma sugestao esperando." %}</p>
+    {% endfor %}
+    <form method="post" action="{% url 'radar:sugerir_sementes' %}" class="acoes">
+      {% csrf_token %}
+      <button type="submit" class="botao secundario">{% translate "Sugerir a partir do site" %}</button>
+    </form>
+  </section>
 
+  <section class="secao">
+    <h2>{% translate "Busca manual" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Para pesquisar um tema por curiosidade. O resultado espera a sua decisao:
+        guardar (e do seu segmento, entra no radar) ou descartar. O custo e
+        registrado nos dois casos.
+      {% endblocktranslate %}
+    </p>
+    <form method="post" action="{% url 'radar:busca_manual' %}">
+      {% csrf_token %}
+      {% for campo in busca_form %}{% include "_campo.html" %}{% endfor %}
+      <div class="acoes"><button type="submit" class="botao secundario">{% translate "Buscar" %}</button></div>
+    </form>
+    {% for busca in buscas_pendentes %}
+      <div class="aviso">
+        <strong>{{ busca.consulta }}</strong> — {{ busca.criado_em|date:"d/m H:i" }}
+        {% if busca.erro %}<div class="erro">{{ busca.erro }}</div>{% endif %}
+        <ul class="sinais">
+          {% for sinal in busca.sinais.all %}
+            <li>{{ sinal.texto }} <span class="selo">{{ sinal.get_fonte_display }}</span>{% if sinal.volume is not None %} <span class="ajuda">{{ sinal.volume }}/{% translate "mes" %}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        <form method="post" action="{% url 'radar:decidir_busca' busca.pk %}" class="acoes">
+          {% csrf_token %}
+          <button type="submit" name="decisao" value="guardar" class="pequeno">{% translate "E do mesmo segmento: guardar" %}</button>
+          <button type="submit" name="decisao" value="descartar" class="botao discreto pequeno">{% translate "Descartar" %}</button>
+        </form>
+      </div>
+    {% endfor %}
+  </section>
+</div>
+
+<section class="secao" style="margin-top:1.2rem">
   <h2>{% translate "Possiveis concorrentes" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
-      Sites que aparecem na primeira pagina de buscas diferentes do radar — quem
-      disputa as mesmas buscas que voce. Abra os exemplos e decida: confirmado,
-      ele entra na lista de concorrentes da configuracao (o nome do negocio no
-      Google e opcional, e so e usado para as avaliacoes). Recusado, nao volta.
+      Sites na primeira pagina de buscas diferentes do radar — quem disputa as
+      mesmas buscas que voce. Abra os exemplos e decida. Confirmado, entra na lista
+      de concorrentes (o nome no Google e opcional, e so e usado para as
+      avaliacoes). Recusado, nao volta.
     {% endblocktranslate %}
   </p>
+  <div class="rolagem">
   <table>
     <thead><tr>
       <th>{% translate "Site" %}</th><th>{% translate "Buscas" %}</th>
@@ -170,93 +189,29 @@
               {% csrf_token %}
               <input type="hidden" name="decisao" value="confirmar">
               <input type="text" name="nome" placeholder="{% translate 'nome no Google (opcional)' %}" maxlength="200">
-              <button type="submit" class="botao secundario">{% translate "E concorrente" %}</button>
-            </form>
-            <form method="post" action="{% url 'radar:decidir_concorrente' sugerido.pk %}" style="display:inline">
-              {% csrf_token %}
-              <input type="hidden" name="decisao" value="recusar">
-              <button type="submit" class="botao perigo">{% translate "Nao e" %}</button>
+              <div class="acoes" style="margin-top:.4rem">
+                <button type="submit" class="pequeno">{% translate "E concorrente" %}</button>
+                <button type="submit" name="decisao" value="recusar" class="botao discreto pequeno">{% translate "Nao e" %}</button>
+              </div>
             </form>
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="5" class="vazio">{% translate "Nenhum ainda. Eles aparecem conforme o radar busca: um site precisa estar na primeira pagina de pelo menos duas buscas diferentes." %}</td></tr>
+        <tr><td colspan="5" class="vazio">{% translate "Nenhum ainda. Um site precisa estar na primeira pagina de pelo menos duas buscas diferentes do radar." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
+</section>
 
-  <h2>{% translate "Busca manual" %}</h2>
-  <p class="pre-visualizacao">
-    {% blocktranslate trimmed %}
-      Para pesquisar um tema por curiosidade. O resultado espera a sua decisao:
-      guardar (e do seu segmento, entra no radar) ou descartar. O custo e
-      registrado nos dois casos.
-    {% endblocktranslate %}
-  </p>
-  <form method="post" action="{% url 'radar:busca_manual' %}">
-    {% csrf_token %}
-    {% for campo in busca_form %}
-      <div class="campo">
-        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
-        {{ campo }}
-        {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
-      </div>
-    {% endfor %}
-    <div class="acoes"><button type="submit" class="botao secundario">{% translate "Buscar" %}</button></div>
-  </form>
-
-  {% for busca in buscas_pendentes %}
-    <div class="aviso">
-      <strong>{{ busca.consulta }}</strong> — {{ busca.criado_em|date:"d/m H:i" }}
-      {% if busca.erro %}<div class="erro">{{ busca.erro }}</div>{% endif %}
-      <ul>
-        {% for sinal in busca.sinais.all %}
-          <li>{{ sinal.texto }} <span class="selo">{{ sinal.get_fonte_display }}</span>{% if sinal.volume is not None %} {{ sinal.volume }}/{% translate "mes" %}{% endif %}</li>
-        {% endfor %}
-      </ul>
-      <form method="post" action="{% url 'radar:decidir_busca' busca.pk %}" class="acoes">
-        {% csrf_token %}
-        <button type="submit" name="decisao" value="guardar">{% translate "E do mesmo segmento: guardar" %}</button>
-        <button type="submit" name="decisao" value="descartar" class="botao secundario">{% translate "Descartar" %}</button>
-      </form>
-    </div>
-  {% endfor %}
-
-  <h2>{% translate "Buscador gratuito x pago" %}</h2>
-  {% if comparacoes_total %}
-    <p class="pre-visualizacao">
-      {% blocktranslate trimmed with n=comparacoes_total falhas=comparacoes_falhas %}
-        Ultimas {{ n }} comparacoes ({{ falhas }} com o gratuito fora do ar).
-      {% endblocktranslate %}
-      {% translate "Do top 10 pago, o gratuito trouxe em media" %}
-      <strong>{{ comparacao_media.urls|default:0|floatformat:2 }}</strong> {% translate "das URLs e" %}
-      <strong>{{ comparacao_media.dominios|default:0|floatformat:2 }}</strong> {% translate "dos dominios." %}
-    </p>
-    <table>
-      <thead><tr><th>{% translate "Consulta" %}</th><th>URLs</th><th>{% translate "Dominios" %}</th><th>{% translate "So no pago" %}</th></tr></thead>
-      <tbody>
-        {% for c in comparacoes %}
-          <tr>
-            <td>{{ c.consulta }}</td>
-            <td>{% if c.gratuito_falhou %}{% translate "gratuito falhou" %}{% else %}{{ c.sobreposicao_urls|floatformat:2 }}{% endif %}</td>
-            <td>{% if not c.gratuito_falhou %}{{ c.sobreposicao_dominios|floatformat:2 }}{% endif %}</td>
-            <td class="pre-visualizacao">{{ c.so_no_pago|join:", " }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p class="vazio">
-      {% translate "Sem comparacoes ainda. Com o buscador gratuito e uma conta DataForSEO, defina a taxa de comparacao abaixo." %}
-    </p>
-  {% endif %}
-
+<section class="secao ok">
   <h2>{% translate "Search Console" %}</h2>
   {% if not console_email %}
     <p class="vazio">
       {% blocktranslate trimmed %}
         Desligado nesta instalacao: falta a conta de servico do Google
-        (GSC_CONTA_DE_SERVICO_ARQUIVO no .env).
+        (GSC_CONTA_DE_SERVICO_ARQUIVO no .env). Passo a passo em
+        docs/CONTAS_EXTERNAS.md.
       {% endblocktranslate %}
     </p>
   {% else %}
@@ -264,120 +219,84 @@
       {% blocktranslate trimmed with email=console_email %}
         Para ligar: no Search Console do site, va em Configuracoes > Usuarios e
         permissoes > Adicionar usuario, informe <code>{{ email }}</code> com
-        permissao Restrita (so leitura), e preencha a propriedade abaixo, na
-        configuracao do radar.
+        permissao Restrita, e preencha a propriedade na aba Configuracao e custos.
       {% endblocktranslate %}
     </p>
     <form method="post" action="{% url 'radar:coletar_console' %}">
       {% csrf_token %}
-      <div class="acoes"><button type="submit" class="botao secundario">{% translate "Coletar agora" %}</button></div>
+      <button type="submit" class="botao secundario">{% translate "Coletar agora" %}</button>
     </form>
     {% if console_coleta %}
       <p class="pre-visualizacao">
         {% translate "Ultimo retrato:" %} {{ console_coleta.inicio|date:"d/m" }} {% translate "a" %} {{ console_coleta.fim|date:"d/m/Y" }} · {{ console_coleta.linhas }} {% translate "linhas" %}
       </p>
-      <h3>{% translate "Quase la (posicao 8 a 20)" %}</h3>
-      <table>
-        <thead><tr><th>{% translate "Consulta" %}</th><th>{% translate "Posicao" %}</th><th>{% translate "Impressoes" %}</th><th>{% translate "Cliques" %}</th><th>{% translate "Pagina" %}</th></tr></thead>
-        <tbody>
-          {% for linha in console_quase_la %}
-            <tr><td>{{ linha.consulta }}</td><td>{{ linha.posicao|floatformat:1 }}</td><td>{{ linha.impressoes }}</td><td>{{ linha.cliques }}</td><td class="pre-visualizacao">{{ linha.pagina|truncatechars:60 }}</td></tr>
-          {% empty %}
-            <tr><td colspan="5" class="vazio">{% translate "Nenhuma consulta nessa faixa." %}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <h3>{% translate "Artigos publicados" %}</h3>
-      <table>
-        <thead><tr><th>{% translate "Artigo" %}</th><th>{% translate "Cliques" %}</th><th>{% translate "Impressoes" %}</th><th>{% translate "Posicao" %}</th><th>{% translate "Principais buscas" %}</th></tr></thead>
-        <tbody>
-          {% for item in console_artigos %}
-            <tr>
-              <td><a href="{% url 'content:revisar' item.artigo.pk %}">{{ item.artigo.title|truncatechars:70 }}</a></td>
-              <td>{{ item.cliques }}</td>
-              <td>{{ item.impressoes }}</td>
-              <td>{{ item.posicao|floatformat:1|default:"—" }}{% if item.posicao_anterior %} <span class="ajuda">({% translate "antes" %} {{ item.posicao_anterior|floatformat:1 }})</span>{% endif %}</td>
-              <td class="pre-visualizacao">{% for c in item.consultas %}{{ c.consulta }}{% if not forloop.last %} · {% endif %}{% endfor %}</td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="5" class="vazio">{% translate "Nenhum artigo publicado ainda." %}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="grade-2">
+        <div>
+          <h3>{% translate "Quase la (posicao 8 a 20)" %}</h3>
+          <div class="rolagem">
+          <table>
+            <thead><tr><th>{% translate "Consulta" %}</th><th>{% translate "Posicao" %}</th><th>{% translate "Impressoes" %}</th></tr></thead>
+            <tbody>
+              {% for linha in console_quase_la %}
+                <tr><td>{{ linha.consulta }}<div class="ajuda">{{ linha.pagina|truncatechars:60 }}</div></td><td>{{ linha.posicao|floatformat:1 }}</td><td>{{ linha.impressoes }}</td></tr>
+              {% empty %}
+                <tr><td colspan="3" class="vazio">{% translate "Nenhuma consulta nessa faixa." %}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </div>
+        <div>
+          <h3>{% translate "Artigos publicados" %}</h3>
+          <div class="rolagem">
+          <table>
+            <thead><tr><th>{% translate "Artigo" %}</th><th>{% translate "Cliques" %}</th><th>{% translate "Posicao" %}</th></tr></thead>
+            <tbody>
+              {% for item in console_artigos %}
+                <tr>
+                  <td><a href="{% url 'content:revisar' item.artigo.pk %}">{{ item.artigo.title|truncatechars:60 }}</a>
+                    <div class="ajuda">{% for c in item.consultas %}{{ c.consulta }}{% if not forloop.last %} · {% endif %}{% endfor %}</div></td>
+                  <td>{{ item.cliques }} <span class="ajuda">/ {{ item.impressoes }}</span></td>
+                  <td>{{ item.posicao|floatformat:1|default:"—" }}{% if item.posicao_anterior %} <span class="ajuda">({% translate "antes" %} {{ item.posicao_anterior|floatformat:1 }})</span>{% endif %}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="3" class="vazio">{% translate "Nenhum artigo publicado ainda." %}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
     {% endif %}
   {% endif %}
+</section>
 
-  <div class="duas-colunas">
-    <div>
-      <h2>{% translate "Configuracao" %}</h2>
-      <form method="post" action="{% url 'radar:salvar_configuracao' %}">
-        {% csrf_token %}
-        {% for campo in config %}
-          {% if campo.name == "regioes" %}{% include "radar/_regioes.html" %}{% else %}
-          <div class="campo">
-            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
-            {{ campo }}
-            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
-            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
-          </div>
-          {% endif %}
-        {% endfor %}
-        <div class="acoes"><button type="submit">{% translate "Salvar configuracao" %}</button></div>
-      </form>
-      <form id="form-locais" method="post" action="{% url 'radar:atualizar_locais' %}">{% csrf_token %}</form>
-    </div>
-    <div>
-      <h2>{% translate "Contas externas" %}</h2>
-      <p class="pre-visualizacao">
-        {% blocktranslate trimmed %}
-          As contas sao deste site: o custo cai direto na conta dele. As chaves
-          ficam cifradas e nunca voltam para a tela.
-        {% endblocktranslate %}
-      </p>
-      <ul class="lista">
-        <li>DataForSEO: {% if contas_obj.tem_dataforseo %}<span class="selo ok">{% translate "configurada" %}</span>{% else %}<span class="selo">{% translate "nao configurada" %}</span>{% endif %}</li>
-        <li>YouTube: {% if contas_obj.tem_youtube %}<span class="selo ok">{% translate "configurada" %}</span>{% else %}<span class="selo">{% translate "nao configurada" %}</span>{% endif %}</li>
-      </ul>
-      <form method="post" action="{% url 'radar:salvar_contas' %}">
-        {% csrf_token %}
-        {% for campo in contas %}
-          <div class="campo">
-            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
-            {{ campo }}
-            {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
-            {% for erro in campo.errors %}<div class="erro">{{ erro }}</div>{% endfor %}
-          </div>
-        {% endfor %}
-        <div class="acoes"><button type="submit">{% translate "Salvar contas" %}</button></div>
-      </form>
-    </div>
-  </div>
-
-  <h2>{% translate "Uso do mes" %}</h2>
+{% if rodadas %}
+<section class="secao">
+  <h2>{% translate "Rodadas" %}</h2>
+  <div class="rolagem">
   <table>
-    <thead><tr><th>{% translate "Provedor" %}</th><th>{% translate "Finalidade" %}</th><th>{% translate "Chamadas" %}</th><th>{% translate "Custo" %}</th></tr></thead>
+    <thead><tr>
+      <th>{% translate "Quando" %}</th><th>{% translate "Situacao" %}</th>
+      <th>{% translate "Sinais" %}</th><th>{% translate "Pautas" %}</th><th>{% translate "Custo" %}</th>
+    </tr></thead>
     <tbody>
-      {% for linha in resumo.linhas %}
-        <tr><td>{{ linha.provedor }}</td><td>{{ linha.finalidade }}</td><td>{{ linha.chamadas }}</td><td>US$ {{ linha.total|floatformat:4 }}</td></tr>
-      {% empty %}
-        <tr><td colspan="4" class="vazio">{% translate "Nenhuma chamada neste mes." %}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <h2>{% translate "Ultimas chamadas" %}</h2>
-  <table>
-    <thead><tr><th>{% translate "Quando" %}</th><th>{% translate "Provedor" %}</th><th>{% translate "Consulta" %}</th><th>{% translate "Custo" %}</th><th></th></tr></thead>
-    <tbody>
-      {% for chamada in chamadas %}
+      {% for rodada in rodadas %}
         <tr>
-          <td>{{ chamada.criado_em|date:"d/m H:i" }}</td>
-          <td>{{ chamada.get_provedor_display }} <span class="pre-visualizacao">{{ chamada.get_finalidade_display }}</span></td>
-          <td>{{ chamada.consulta|truncatechars:80 }}</td>
-          <td>US$ {{ chamada.custo_usd|floatformat:4 }}</td>
-          <td>{% if not chamada.sucesso %}<span class="selo">{% translate "falhou" %}</span> <span class="ajuda">{{ chamada.erro|truncatechars:120 }}</span>{% endif %}</td>
+          <td>{{ rodada.iniciada_em|date:"d/m H:i" }}<div class="ajuda">{{ rodada.get_origem_display }}</div></td>
+          <td>
+            <span class="selo {% if rodada.situacao == 'concluida' and not rodada.resumo.erros %}ok{% elif rodada.situacao == 'falhou' or rodada.situacao == 'teto' %}ruim{% elif rodada.situacao == 'concluida' %}alerta{% else %}espera{% endif %}">{{ rodada.get_situacao_display }}{% if rodada.situacao == "concluida" and rodada.resumo.erros %} · {% translate "com erros" %}{% endif %}</span>
+            {% if rodada.erro %}<div class="erro">{{ rodada.erro|truncatechars:300 }}</div>{% endif %}
+            {% for erro in rodada.resumo.erros %}<div class="ajuda">{{ erro|truncatechars:300 }}</div>{% endfor %}
+          </td>
+          <td>{{ rodada.resumo.sinais|default:0 }}</td>
+          <td>{{ rodada.resumo.pautas|length }}</td>
+          <td>US$ {{ rodada.custo_usd|floatformat:4 }}</td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

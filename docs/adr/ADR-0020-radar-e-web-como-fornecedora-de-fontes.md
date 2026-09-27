@@ -89,6 +89,42 @@ agrupamento e a nota que ja existem fazem o resto: a canibalizacao derruba o
 que o site ja cobriu, e o que sobra e a lacuna. Avaliacao reforca um tema,
 mas sozinha nao vira pauta nem da titulo.
 
+### 4d. Regioes somadas, e nunca sobrepostas
+
+Um site local (clinicas em Curitiba) quer a pagina de resultados e o volume
+da cidade, nao do pais; e as vezes de mais de uma cidade. Cada busca e feita
+em cada regiao, e o volume das regioes e SOMADO — por isso regiao dentro de
+outra (Curitiba e Parana) e recusada: contaria a mesma busca duas vezes. O
+volume guarda o de cada regiao, com dois anos de historico mensal e o custo por
+clique, que vem na mesma chamada.
+
+### 4e. Oportunidades: outra nota sobre os mesmos grupos
+
+"O que o publico procura e o site nao oferece" nao e pauta: e decisao de
+negocio. Em vez de um condicional no fluxo de pautas, uma lente separada sobre
+os mesmos sinais e grupos, com nota propria — novidade (o inverso da
+aderencia), proximidade das dores do publico, crescimento ano a ano nos mesmos
+meses (Mann-Kendall para separar tendencia de ruido) e valor comercial (custo
+por clique). Os termos de cada tema saem do c-TF-IDF. O LLM, quando ha placa,
+so descreve; nunca pontua nem decide. A saida e testar com um artigo (o Search
+Console mede o interesse), acompanhar, ou arquivar.
+
+### 4f. Sugerir, nunca configurar sozinho
+
+Sementes sugeridas vem da pagina do site (KeyBERT + MMR, sem LLM), dos temas
+fortes do radar que nenhuma semente cobre e, opcionalmente, do LLM — o unico
+que sugere bem DORES, porque a pagina fala na voz do negocio. Tudo espera a
+pessoa aceitar. Parte das buscas de cada rodada vai para os temas fortes
+(expansao em profundidade): e o que alcanca a cauda longa.
+
+### 4g. Quando o nicho amadurece, atualizar
+
+Tema com demanda barrado pela canibalizacao nao e descartado: aponta o artigo
+que deveria responde-lo. Pagina quase na primeira pagina e pagina que perdeu
+posicao (Search Console) tambem viram sugestao. A atualizacao e feita pela
+pessoa no site: o contrato nao tem republicacao — o proximo passo natural, e
+uma mudanca dos dois lados.
+
 ### 7. Nota do especialista, e nao "gerar sem fonte"
 
 Para o tema sem artigo, a saida e a pessoa escrever o que sabe — e isso vira

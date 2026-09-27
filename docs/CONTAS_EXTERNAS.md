@@ -94,10 +94,19 @@ resposta):
 | Avaliações no Google | a conferir | só existe na fila |
 
 **Precisa ser conferido no primeiro uso real** (foi escrito pela
-documentação, sem acesso à API durante o desenvolvimento): as rotas da fila
-(`task_post`/`task_get`), a do Labs (`ranked_keywords/live`, com o filtro por
-posição) e a das avaliações (`business_data/google/reviews`). Se alguma
-responder erro, o livro-caixa guarda a mensagem da DataForSEO.
+documentação, sem acesso à API durante o desenvolvimento):
+
+- as rotas da fila (`task_post`/`task_get`);
+- a do Labs (`ranked_keywords/live`, com o filtro por posição);
+- a das avaliações (`business_data/google/reviews`);
+- a lista de locais (`keywords_data/google_ads/locations/br`), usada pelo
+  seletor de regiões;
+- o campo `date_from` no volume de busca, que pede dois anos de histórico
+  mensal (base do crescimento das Oportunidades);
+- se o volume do Google Ads aceita todo código de cidade.
+
+Se alguma responder erro, a mensagem da DataForSEO aparece na rodada e em
+"Últimas chamadas externas" (Radar › Configuração e custos).
 
 ---
 

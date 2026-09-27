@@ -40,6 +40,42 @@ class ConfiguracaoForm(forms.ModelForm):
             "concorrentes": forms.Textarea(attrs={"rows": 4}),
         }
 
+    # Os campos em blocos, na ordem em que a pessoa pensa: o que buscar, onde,
+    # de que fontes, contra quem, com que provedor, e quanto gastar.
+    GRUPOS = [
+        (_("Ritmo e temas"), ["intensidade", "sementes"]),
+        (_("Onde"), ["regioes", "codigo_de_local", "codigo_de_idioma"]),
+        (
+            _("Fontes de demanda"),
+            [
+                "usar_serp",
+                "usar_volume",
+                "usar_perguntas_do_site",
+                "usar_youtube",
+                "usar_search_console",
+                "propriedade_search_console",
+            ],
+        ),
+        (_("Fontes para os artigos"), ["buscar_fontes", "fontes_por_pauta"]),
+        (
+            _("Concorrentes"),
+            [
+                "concorrentes",
+                "usar_concorrentes_conteudo",
+                "usar_concorrentes_buscas",
+                "usar_avaliacoes",
+            ],
+        ),
+        (
+            _("Buscador e custo"),
+            ["buscador", "modo_dataforseo", "taxa_de_comparacao", "teto_mensal_usd"],
+        ),
+    ]
+
+    def grupos(self):
+        """[(titulo, [campos])] para o template."""
+        return [(titulo, [self[nome] for nome in nomes]) for titulo, nomes in self.GRUPOS]
+
     MAXIMO_DE_REGIOES = 10
 
     def clean_regioes(self):

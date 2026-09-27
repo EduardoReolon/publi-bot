@@ -36,9 +36,12 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
     medias = ComparacaoDeBusca.objects.filter(
         pk__in=[c.pk for c in comparacoes], gratuito_falhou=False
     ).aggregate(urls=Avg("sobreposicao_urls"), dominios=Avg("sobreposicao_dominios"))
+    resumo = custos.resumo_do_mes()
+    teto = float(resumo["teto"] or 0)
     return {
         "aba": "radar",
         "subaba": "radar",
+        "uso_do_teto": min(100, round(100 * float(resumo["gasto"]) / teto)) if teto else 0,
         "config": config or ConfiguracaoForm(instance=config_obj),
         "contas": contas or ContasForm(instance=contas_obj),
         "contas_obj": contas_obj,
@@ -48,7 +51,7 @@ def _contexto(config=None, contas=None, busca_form=None) -> dict:
             buscador_efetivo(config_obj, contas_obj)
         ).label,
         "busca_form": busca_form or BuscaManualForm(),
-        "resumo": custos.resumo_do_mes(),
+        "resumo": resumo,
         "grupos": GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO)
         .annotate(total=Count("sinais", filter=~Q(sinais__situacao="descartado")))
         .order_by("-nota")[:30],
@@ -91,14 +94,24 @@ def radar(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+def configuracao(request: HttpRequest) -> HttpResponse:
+    return render(request, "radar/configuracao.html", {**_contexto(), "subaba": "configuracao"})
+
+
+@login_required
 @require_POST
 def salvar_configuracao(request: HttpRequest) -> HttpResponse:
     form = ConfiguracaoForm(request.POST, instance=ConfiguracaoDoRadar.carregar())
     if not form.is_valid():
-        return render(request, "radar/radar.html", _contexto(config=form), status=400)
+        return render(
+            request,
+            "radar/configuracao.html",
+            {**_contexto(config=form), "subaba": "configuracao"},
+            status=400,
+        )
     form.save()
     messages.success(request, _("Configuracao do radar salva."))
-    return redirect("radar:radar")
+    return redirect("radar:configuracao")
 
 
 @login_required
@@ -106,10 +119,15 @@ def salvar_configuracao(request: HttpRequest) -> HttpResponse:
 def salvar_contas(request: HttpRequest) -> HttpResponse:
     form = ContasForm(request.POST, instance=ContasExternas.carregar())
     if not form.is_valid():
-        return render(request, "radar/radar.html", _contexto(contas=form), status=400)
+        return render(
+            request,
+            "radar/configuracao.html",
+            {**_contexto(contas=form), "subaba": "configuracao"},
+            status=400,
+        )
     form.save()
     messages.success(request, _("Contas salvas."))
-    return redirect("radar:radar")
+    return redirect("radar:configuracao")
 
 
 @login_required
@@ -221,7 +239,7 @@ def atualizar_locais(request: HttpRequest) -> HttpResponse:
         messages.error(request, _("Nao foi possivel baixar a lista de locais: %(e)s") % {"e": exc})
     else:
         messages.success(request, _("%(n)s locais disponiveis para escolher.") % {"n": total})
-    return redirect("radar:radar")
+    return redirect("radar:configuracao")
 
 
 @login_required
