@@ -700,3 +700,146 @@ def test_atualizacao_sem_assinatura_e_recusada(no_receptor):
     )
 
     assert recusada.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Chamada para a oferta (recurso `call_to_action`)
+# ---------------------------------------------------------------------------
+CORPO_COM_CHAMADA = (
+    '<h2>Um</h2><p>A.</p><aside data-publibot="chamada"></aside><h2>Dois</h2><p>B.</p>'
+)
+
+
+def test_chamada_no_meio_e_trocada_pelo_bloco_do_site(no_receptor):
+    from django.template import Context, Template
+    from publibot_node.models import ReceivedPublication
+
+    resposta, _ = _publicar(
+        no_receptor, {**PAYLOAD, "html_content": CORPO_COM_CHAMADA, "call_to_action": "inline"}
+    )
+    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
+    assert publicacao.call_to_action == "inline"
+    assert '<aside data-publibot="chamada"></aside>' in publicacao.html_content
+
+    pagina = Template(
+        "{% load publibot_node %}{% corpo_com_chamada p %}|{% chamada_no_fim p %}"
+    ).render(Context({"p": publicacao}))
+    meio, fim = pagina.split("|")
+    assert "data-publibot-bloco" in meio and 'data-publibot="chamada"' not in meio
+    assert meio.index("A.") < meio.index("data-publibot-bloco") < meio.index("B.")
+    assert "data-publibot-bloco" in fim
+
+
+def test_sem_chamada_nao_ha_bloco_nem_marca(no_receptor):
+    from django.template import Context, Template
+    from publibot_node.models import ReceivedPublication
+
+    resposta, _ = _publicar(
+        no_receptor, {**PAYLOAD, "html_content": CORPO_COM_CHAMADA, "call_to_action": "none"}
+    )
+    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
+    pagina = Template("{% load publibot_node %}{% corpo_com_chamada p %}{% chamada_no_fim p %}")
+    html = pagina.render(Context({"p": publicacao}))
+    assert "aside" not in html
+
+
+def test_aside_so_passa_vazio_e_com_o_marcador(no_receptor):
+    from publibot_node.models import ReceivedPublication
+
+    sujo = (
+        '<p>A.</p><aside data-publibot="chamada" onclick="x()"><b>falso</b></aside>'
+        '<aside class="anuncio">texto</aside><aside data-publibot="chamada"></aside>'
+    )
+    resposta, _ = _publicar(no_receptor, {**PAYLOAD, "html_content": sujo, "call_to_action": "x"})
+    publicacao = ReceivedPublication.objects.get(pk=resposta.json()["remote_id"])
+
+    assert publicacao.html_content.count("<aside") == 1
+    assert "falso" not in publicacao.html_content and "onclick" not in publicacao.html_content
+    assert "texto" in publicacao.html_content
+    # Valor desconhecido cai no comportamento de sempre.
+    assert publicacao.call_to_action == "end"
+
+
+# ---------------------------------------------------------------------------
+# Leitura e conversoes (recurso `insights`)
+# ---------------------------------------------------------------------------
+def _publicacao(no_receptor) -> str:
+    resposta, _ = _publicar(no_receptor, PAYLOAD)
+    return resposta.json()["remote_id"]
+
+
+def _medir(client, rota: str, dados: dict, **extra):
+    return client.post(
+        f"/api/v1/{rota}/", data=json.dumps(dados), content_type="application/json", **extra
+    )
+
+
+def test_leitura_conta_so_tempo_ativo_de_verdade(no_receptor, client):
+    from publibot_node.models import LeituraDoDia
+
+    remote_id = _publicacao(no_receptor)
+    _medir(client, "leitura", {"id": remote_id, "active": 3})
+    _medir(client, "leitura", {"id": remote_id, "active": 95, "end": True, "cta_seen": True})
+    _medir(client, "leitura", {"id": remote_id, "active": 99999, "cta_click": True})
+    _medir(client, "leitura", {"id": remote_id, "active": 60}, HTTP_USER_AGENT="Googlebot/2.1")
+    _medir(client, "leitura", {"id": str(uuid.uuid4()), "active": 60})
+
+    linha = LeituraDoDia.objects.get()
+    assert (linha.views, linha.engaged_views) == (3, 2)
+    assert linha.engaged_seconds == 3 + 95 + 1800
+    assert (linha.read_to_end, linha.cta_views, linha.cta_clicks) == (1, 1, 1)
+
+
+def test_conversao_guarda_a_jornada_sem_duplicar(no_receptor, client):
+    from publibot_node.models import Conversao
+
+    remote_id = _publicacao(no_receptor)
+    conversao = {
+        "id": str(uuid.uuid4()),
+        "kind": "whatsapp<script>",
+        "via_cta": True,
+        "journey": [{"id": str(uuid.uuid4()), "s": 50}, {"id": remote_id, "s": 95}],
+    }
+    assert _medir(client, "conversao", conversao).status_code == 204
+    _medir(client, "conversao", conversao)
+
+    guardada = Conversao.objects.get()
+    assert guardada.kind == "whatsappscript" and guardada.via_cta
+    assert guardada.journey == [{"remote_id": remote_id, "engaged_seconds": 95}]
+
+
+def test_insights_entrega_leitura_e_conversoes_com_assinatura(no_receptor, client):
+    from django.utils import timezone
+
+    remote_id = _publicacao(no_receptor)
+    _medir(client, "leitura", {"id": remote_id, "active": 40, "end": True})
+    _medir(
+        client,
+        "conversao",
+        {"id": str(uuid.uuid4()), "kind": "whatsapp", "journey": [{"id": remote_id, "s": 40}]},
+    )
+    hoje = timezone.localdate().isoformat()
+
+    sem_assinatura = no_receptor.get(f"/api/v1/insights/?since={hoje}")
+    assert sem_assinatura.status_code == 401
+
+    resposta = no_receptor.get(f"/api/v1/insights/?since={hoje}", **_assinar(b""))
+    assert resposta.status_code == 200
+    dados = resposta.json()
+    assert dados["reading"] == [
+        {
+            "remote_id": remote_id,
+            "date": hoje,
+            "views": 1,
+            "engaged_views": 1,
+            "engaged_seconds": 40,
+            "read_to_end": 1,
+            "cta_views": 0,
+            "cta_clicks": 0,
+        }
+    ]
+    assert dados["conversions"][0]["journey"] == [{"remote_id": remote_id, "engaged_seconds": 40}]
+    assert dados["next_cursor"] is None
+
+    sem_data = no_receptor.get("/api/v1/insights/", **_assinar(b""))
+    assert sem_data.status_code == 400

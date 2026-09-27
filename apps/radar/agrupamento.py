@@ -16,7 +16,11 @@ roda na CPU e custa nada.
 * canibalizacao — quao perto esta do que ja foi escrito (quanto MAIS perto,
   PIOR);
 * cobertura — se o acervo ja tem fonte para ele. Tema sem fonte nao e
-  descartado: vira pauta que espera fonte.
+  descartado: vira pauta que espera fonte;
+* conversao — so quando o site envia leitura e conversoes (recurso
+  `insights`): tema vizinho de artigo que converte acima da media do site
+  sobe; vizinho de artigo que ninguem converte, desce. Sem esse dado, a nota
+  e a de sempre.
 """
 
 from __future__ import annotations
@@ -38,6 +42,11 @@ PESOS = {
     "canibalizacao": 0.15,
     "cobertura": 0.15,
 }
+
+
+# Quanto a conversao pesa quando existe; e ate onde um artigo e "vizinho".
+PESO_DA_CONVERSAO = 0.15
+VIZINHANCA = 0.20
 
 
 def _vetor(texto: str) -> np.ndarray:
@@ -159,6 +168,7 @@ def pontuar(
     *,
     vetor_do_negocio: np.ndarray | None = None,
     ja_escrito: np.ndarray | None = None,
+    que_convertem=None,
 ) -> float:
     from apps.knowledge.models import RetrievalSettings
 
@@ -216,12 +226,39 @@ def pontuar(
         + PESOS["cobertura"] * cobertura
     )
 
+    conversao = _conversao_da_vizinhanca(centroide, que_convertem)
+    if conversao is not None:
+        parcelas["conversao"] = round(conversao, 3)
+        nota = (1 - PESO_DA_CONVERSAO) * nota + 100 * PESO_DA_CONVERSAO * conversao
+
     grupo.rotulo = principal.texto[:500]
     grupo.volume_total = volume
     grupo.nota = round(nota, 1)
     grupo.parcelas = parcelas
     grupo.save(update_fields=["rotulo", "volume_total", "nota", "parcelas", "atualizado_em"])
     return grupo.nota
+
+
+def _conversao_da_vizinhanca(centroide: np.ndarray, que_convertem) -> float | None:
+    """De 0 a 1: 0,5 e a media do site, 1 e o dobro dela ou mais.
+
+    Media ponderada pela proximidade das taxas dos artigos vizinhos (ver
+    `apps/content/desempenho.py::que_convertem`). Sem vizinho com dado, None:
+    o tema nao ganha nem perde.
+    """
+    if not que_convertem:
+        return None
+    vizinhos, media = que_convertem
+    perto = [
+        (d, taxa)
+        for vetor, taxa in vizinhos
+        if taxa is not None and (d := _distancia(centroide, vetor)) <= VIZINHANCA
+    ]
+    if not perto or not media:
+        return None
+    pesos = [1 / (d + 0.02) for d, _taxa in perto]
+    taxa = sum(p * t for p, (_d, t) in zip(pesos, perto, strict=True)) / sum(pesos)
+    return min(1.0, taxa / media / 2)
 
 
 def vetor_do_negocio() -> np.ndarray | None:

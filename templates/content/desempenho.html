@@ -1,0 +1,85 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Desempenho no site" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Desempenho no site" %}</h1>
+  <div class="explica">
+    {% blocktranslate trimmed %}
+      O que cada artigo fez depois de publicado, contado pelo proprio site e
+      sem identificar ninguem. <strong>Leituras</strong> sao aberturas com pelo
+      menos 10 segundos de tempo ativo: quem so abriu e fechou fica de fora.
+      <strong>Conversao</strong> e o que o site define (clique no WhatsApp,
+      assinatura). Ela aparece de tres jeitos, como no Google Ads: no
+      <strong>ultimo artigo</strong> lido antes de converter, em todos os que
+      <strong>participaram</strong> da jornada, e <strong>atribuida</strong> em
+      partes iguais entre eles — a coluna que ordena a tabela.
+    {% endblocktranslate %}
+  </div>
+
+  {% if site_sem_insights %}
+    <p class="aviso">
+      {% blocktranslate trimmed %}
+        O site conectado nao declara o recurso <code>insights</code>: ainda nao
+        ha de onde tirar estes numeros. Veja "Leitura e conversoes" no contrato
+        (docs/contrato/README.md).
+      {% endblocktranslate %}
+    </p>
+  {% endif %}
+
+  <nav class="abas">
+    {% for p in periodos %}
+      <a href="?dias={{ p }}" class="{% if p == dias %}ativo{% endif %}">{% blocktranslate %}{{ p }} dias{% endblocktranslate %}</a>
+    {% endfor %}
+  </nav>
+
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed with n=painel.conversoes c=painel.pela_chamada s=painel.sem_artigo %}
+      {{ n }} conversao(oes) no periodo; {{ c }} pelo bloco da chamada de um
+      artigo; {{ s }} sem nenhum artigo lido antes.
+    {% endblocktranslate %}
+    {% if site.insights_synced_at %}{% translate "Coletado em" %} {{ site.insights_synced_at|date:"d/m H:i" }}.{% endif %}
+  </p>
+
+  {% if painel.linhas %}
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Artigo" %}</th>
+            <th class="numero">{% translate "Aberturas" %}</th>
+            <th class="numero">{% translate "Leituras" %}</th>
+            <th class="numero">{% translate "Tempo ativo" %}</th>
+            <th class="numero">{% translate "Ate o fim" %}</th>
+            <th class="numero">{% translate "Chamada: viram / clicaram" %}</th>
+            <th class="numero">{% translate "Ultimo artigo" %}</th>
+            <th class="numero">{% translate "Participou" %}</th>
+            <th class="numero">{% translate "Atribuidas" %}</th>
+            <th class="numero">{% translate "Por 100 leituras" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in painel.linhas %}
+            <tr>
+              <td>
+                {% if d.artigo %}<a href="{% url 'content:revisar' d.artigo.pk %}">{{ d.titulo }}</a>{% else %}<span class="ajuda">{{ d.titulo }}</span>{% endif %}
+                {% if d.url %}<a class="ajuda" href="{{ d.url }}" target="_blank" rel="noopener noreferrer">↗</a>{% endif %}
+              </td>
+              <td class="numero">{{ d.views }}</td>
+              <td class="numero">{{ d.engaged_views }}{% if d.taxa_de_leitura is not None %} <span class="ajuda">{% widthratio d.taxa_de_leitura 1 100 %}%</span>{% endif %}</td>
+              <td class="numero">{% if d.tempo_medio is not None %}{{ d.tempo_medio|floatformat:0 }} s{% else %}—{% endif %}</td>
+              <td class="numero">{% if d.taxa_do_fim is not None %}{% widthratio d.taxa_do_fim 1 100 %}%{% else %}—{% endif %}</td>
+              <td class="numero">{{ d.cta_views }} / {{ d.cta_clicks }}{% if d.taxa_de_clique is not None %} <span class="ajuda">{% widthratio d.taxa_de_clique 1 100 %}%</span>{% endif %}</td>
+              <td class="numero">{{ d.ultimo }}</td>
+              <td class="numero">{{ d.participou }}</td>
+              <td class="numero"><strong>{{ d.atribuidas|floatformat:1 }}</strong></td>
+              <td class="numero">{% if d.taxa_de_conversao is not None %}{% widthratio d.taxa_de_conversao 1 100 %}{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="vazio">{% translate "Nenhum dado de leitura no periodo." %}</p>
+  {% endif %}
+{% endblock %}

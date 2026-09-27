@@ -62,7 +62,9 @@ def _tenant_atual():
     return Tenant.objects.filter(schema_name=schema).first()
 
 
-def _sistema_com_guia(sistema: str, chave: str, tipo_de_conteudo: str) -> str:
+def _sistema_com_guia(
+    sistema: str, chave: str, tipo_de_conteudo: str, *, com_convite: bool = True
+) -> str:
     """O prompt de sistema, com o guia editorial do site anexado quando cabe.
 
     Anexado na chamada, e nao gravado no prompt: o guia muda pela tela de
@@ -75,7 +77,7 @@ def _sistema_com_guia(sistema: str, chave: str, tipo_de_conteudo: str) -> str:
     if perfil is None:
         return sistema
     tipo = tipo_de_conteudo or perfil.tipo_padrao
-    guia = texto_do_guia(perfil, chave=chave, tipo_de_conteudo=tipo)
+    guia = texto_do_guia(perfil, chave=chave, tipo_de_conteudo=tipo, com_convite=com_convite)
     return f"{sistema}\n\n{guia}" if guia else sistema
 
 
@@ -104,6 +106,7 @@ def executar_prompt(
     json_schema: dict | None = None,
     workload: str = InferenceConnection.Workload.TEXT,
     tipo_de_conteudo: str = "",
+    com_convite: bool = True,
 ) -> ResultadoDoPrompt:
     """Roda um prompt e devolve o texto cru do modelo.
 
@@ -145,7 +148,9 @@ def executar_prompt(
 
     cliente = get_provider(conexao)
     corpo = versao.user_prompt_template.format(**variaveis)
-    sistema = _sistema_com_guia(versao.system_prompt, key, tipo_de_conteudo)
+    sistema = _sistema_com_guia(
+        versao.system_prompt, key, tipo_de_conteudo, com_convite=com_convite
+    )
 
     try:
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):

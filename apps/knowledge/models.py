@@ -196,6 +196,17 @@ class Document(models.Model):
     published_on = models.DateField(_("publicada em"), null=True, blank=True)
     fetched_at = models.DateTimeField(_("buscada em"), null=True, blank=True)
     valid_until = models.DateField(_("valida ate"), null=True, blank=True, db_index=True)
+    # A versao anterior desta mesma fonte: a planilha de precos do mes passado,
+    # a norma antes da revisao. Ao concluir a curadoria desta, a anterior vence
+    # (sai da busca) e os artigos que a citam entram em "Atualizar artigos".
+    replaces = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="replaced_by",
+        verbose_name=_("substitui"),
+    )
     # Veio de um caminho que a pessoa marcou como "aprovar automaticamente":
     # a conversao ja indexa todos os blocos e conclui a curadoria sozinha.
     auto_curate = models.BooleanField(_("curadoria automatica"), default=False)

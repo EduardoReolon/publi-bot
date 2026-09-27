@@ -54,6 +54,10 @@ class ReceivedPublication(models.Model):
     # do template do site. Lista de {"question", "answer_html"}, ja sanitizada.
     faq = models.JSONField(default=list, blank=True)
 
+    # Onde o template mostra o bloco da chamada para a oferta do site (recurso
+    # `call_to_action`): "none", "end" ou "inline". Ver `html_com_chamada`.
+    call_to_action = models.CharField(max_length=8, default="end")
+
     question_id = models.CharField(max_length=120, blank=True, db_index=True)
 
     post_status = models.CharField(max_length=20, default="published")
@@ -76,6 +80,18 @@ class ReceivedPublication(models.Model):
 
     def __str__(self) -> str:
         return self.title or f"{self.kind} {self.pk}"
+
+    @property
+    def chamada_no_fim(self) -> bool:
+        return self.call_to_action in {"end", "inline"}
+
+    def html_com_chamada(self, bloco: str) -> str:
+        """O corpo, com o bloco do site no lugar da marca (so no modo inline)."""
+        from publibot_node.sanitize import ELEMENTO_DA_CHAMADA
+
+        if self.call_to_action != "inline":
+            return self.html_content.replace(ELEMENTO_DA_CHAMADA, "")
+        return self.html_content.replace(ELEMENTO_DA_CHAMADA, bloco, 1)
 
     @property
     def url(self) -> str:
@@ -145,3 +161,54 @@ class AuthorPhoto(models.Model):
 
     def __str__(self) -> str:
         return str(self.author_reference)
+
+
+class LeituraDoDia(models.Model):
+    """Leitura de uma publicacao num dia (recurso `insights`).
+
+    Contadores, e nada mais: nenhum identificador de quem leu. Cada abertura
+    da pagina manda um resumo (`leitura.js`) que so incrementa esta linha.
+    """
+
+    publicacao = models.ForeignKey(
+        ReceivedPublication, on_delete=models.CASCADE, related_name="leituras"
+    )
+    dia = models.DateField()
+    views = models.PositiveIntegerField(default=0)
+    engaged_views = models.PositiveIntegerField(default=0)
+    engaged_seconds = models.PositiveIntegerField(default=0)
+    read_to_end = models.PositiveIntegerField(default=0)
+    cta_views = models.PositiveIntegerField(default=0)
+    cta_clicks = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "leitura do dia"
+        verbose_name_plural = "leituras do dia"
+        constraints = [
+            models.UniqueConstraint(fields=["publicacao", "dia"], name="uniq_leitura_do_dia")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.publicacao_id} {self.dia}"
+
+
+class Conversao(models.Model):
+    """Uma conversao e os artigos lidos antes dela, vindos do navegador.
+
+    `id` e gerado no navegador: reenviar (rede instavel) nao duplica.
+    """
+
+    id = models.UUIDField(primary_key=True)
+    dia = models.DateField(db_index=True)
+    kind = models.CharField(max_length=40, blank=True)
+    via_cta = models.BooleanField(default=False)
+    journey = models.JSONField(default=list, blank=True)
+    criada_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "conversao"
+        verbose_name_plural = "conversoes"
+        ordering = ["dia"]
+
+    def __str__(self) -> str:
+        return f"{self.kind or 'conversao'} {self.dia}"

@@ -28,6 +28,33 @@ urlpatterns = [..., path("api/v1/", include("publibot_node.urls"))]
 python manage.py migrate publibot_node
 ```
 
+## Chamada para a oferta e medicao de leitura
+
+Os recursos `call_to_action` e `insights` pedem trabalho no template do site:
+
+```django
+{% load static publibot_node %}
+<article data-publibot-id="{{ publicacao.id }}">
+  <h1>{{ publicacao.title }}</h1>
+  {% corpo_com_chamada publicacao %}   {# o bloco no lugar da marca, se o artigo pedir #}
+  {% chamada_no_fim publicacao %}      {# o bloco no fim, para "end" e "inline" #}
+</article>
+<script src="{% static 'publibot_node/leitura.js' %}" data-endpoint="/api/v1/" defer></script>
+```
+
+- **O bloco e seu.** Sobrescreva `publibot_node/chamada.html` numa pasta de
+  templates do seu projeto (listada antes deste app). Mantenha
+  `data-publibot-bloco` no elemento de fora e `data-publibot-conversao="<tipo>"`
+  no botao.
+- **O script** mede tempo ativo, fim do texto, chamada vista e clicada, e manda
+  um resumo por abertura para `leitura/`; no clique de conversao, manda a
+  jornada (guardada no proprio navegador) para `conversao/`. Coloque-o tambem
+  na landing page, para contar conversao que acontece fora do artigo.
+- **Consentimento:** defina `window.publibotMedir = false` antes do script
+  enquanto a pessoa nao aceitar medicao, se o seu banner exigir.
+- `leitura/` e `conversao/` sao publicas (o navegador nao assina): corpo
+  pequeno, limite por IP, robo descartado, teto nos numeros. Ver `medicao.py`.
+
 ## O que este codigo demonstra
 
 | Regra | Onde |
@@ -43,6 +70,11 @@ python manage.py migrate publibot_node
 | Pedir a foto do autor so quando falta | `views.py::_precisa_da_foto` |
 | Receber arquivo por multipart, com assinatura | `views.py::author_photos` |
 | Guardar a foto pela referencia estavel do autor | `models.py::AuthorPhoto` |
+| `aside` da chamada aceito so vazio e com o marcador | `sanitize.py::sanitizar` |
+| Bloco da chamada no meio e no fim | `templatetags/publibot_node.py` |
+| Tempo ativo, fim, chamada e jornada no navegador | `static/publibot_node/leitura.js` |
+| Medicao publica sem identificar ninguem | `medicao.py` |
+| Leitura por dia e conversoes, assinado | `views.py::insights` |
 
 ## Duas armadilhas ao implementar a rota de fotos
 

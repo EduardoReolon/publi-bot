@@ -130,12 +130,19 @@ class CuradoriaDeDocumento(forms.ModelForm):
             "language",
             "license",
             "authority_score",
+            "replaces",
         ]
         labels = {
             "authority_score": _("Autoridade (0-100)"),
         }
         widgets = {"published_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")}
         help_texts = {
+            "replaces": _(
+                "Se este documento e a versao nova de outro (a planilha deste mes, "
+                "a norma revisada), escolha o anterior. Ao concluir a curadoria, o "
+                "anterior sai da busca e os artigos que o citam aparecem em Radar > "
+                "Atualizar artigos."
+            ),
             "authority_score": _(
                 "Entre as fontes recuperadas, a de maior autoridade e a que "
                 "recebe o link de saida do artigo."
@@ -154,6 +161,16 @@ class CuradoriaDeDocumento(forms.ModelForm):
                 "vazia por padrao."
             ),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        campo = self.fields["replaces"]
+        campo.queryset = (
+            Document.objects.filter(status=Document.Status.CURATED)
+            .exclude(pk=self.instance.pk)
+            .order_by("-created_at")
+        )
+        campo.empty_label = _("(nenhum: e uma fonte nova)")
 
     def clean(self):
         dados = super().clean()

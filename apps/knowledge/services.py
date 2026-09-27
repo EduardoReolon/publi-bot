@@ -413,7 +413,33 @@ def marcar_curado(*, document: Document, revisado_por, segundos: int = 0) -> Doc
 
     document.valid_until = calcular_validade(document)
     document.save()
+    aposentar_anterior(document)
     return document
+
+
+def aposentar_anterior(document: Document) -> bool:
+    """A versao anterior da fonte vence hoje, e os artigos que a citam sao avisados.
+
+    So depois da curadoria da nova: antes disso a anterior continua sendo a
+    melhor que o acervo tem.
+    """
+    from datetime import timedelta
+
+    anterior = document.replaces
+    if anterior is None:
+        return False
+    ontem = timezone.localdate() - timedelta(days=1)
+    if anterior.valid_until is None or anterior.valid_until > ontem:
+        anterior.valid_until = ontem
+        anterior.save(update_fields=["valid_until"])
+    try:
+        from apps.radar.atualizacoes import pelas_fontes
+
+        pelas_fontes()
+    except Exception:
+        # O aviso tambem sai na conferencia diaria; a curadoria nao falha por ele.
+        logger.exception("Falha ao sugerir atualizacao pela fonte substituida.")
+    return True
 
 
 def calcular_validade(document: Document):

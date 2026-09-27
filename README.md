@@ -25,7 +25,7 @@ PubliBot closes the whole loop — **demand → sources → writing → human re
 3. **Curated Summary Indexing:** a human selects the high-value passages (abstracts, conclusions); only those are embedded, one vector per paragraph. Each source category carries a profile: how to cite it, whether it can back the article's central claim, and when it expires.
 4. **Anti-Frankenstein Thesis:** before drafting, the model reads the retrieved passages and builds a single "consensus thesis", explicitly recording where sources disagree. The article is written from that thesis, with citations that point back to real, verifiable sources.
 5. **Human-in-the-Loop, enforced:** nothing is published without approval by an identified author. An editorial guide checks tone, forbidden terms and telltale AI phrasing before approval.
-6. **Closed Feedback Loop:** Google Search Console shows impressions, clicks and position for every published article, and feeds new opportunities back into the radar.
+6. **Closed Feedback Loop:** Google Search Console shows impressions, clicks and position for every published article; the client site reports who actually read and who became a customer. Both feed the radar back.
 
 ## 🏗️ System Architecture
 
@@ -58,7 +58,7 @@ flowchart TB
 
     cloud -- "inference over Tailscale" --> gpu
     cloud -- "demand and results" --> ext
-    cloud -- "HMAC-signed publishing<br/>visitor questions" --> sites
+    cloud -- "HMAC-signed publishing<br/>questions, reading, conversions" --> sites
 ```
 
 * **The cloud never runs heavy models.** It talks HTTP to inference endpoints — a local GPU over Tailscale, or any OpenAI-compatible API — each with its own concurrency limit. Swapping providers is a row in the admin panel, not a deploy (no LangChain, no CrewAI).
@@ -72,7 +72,9 @@ flowchart TB
 * **The web as a supplier, not an author:** when the library can't support a topic, PubliBot proposes candidate pages and videos — they still go through human curation. Trust is granted per *path*, not per domain, in two levels (prefer in search / auto-approve), because user-generated areas live on reputable domains too.
 * **Competitor gap analysis:** competitors' public sitemaps (free), the keywords they rank for, and complaints in their Google reviews become demand signals; the cannibalization score removes what the site already covers, leaving the real content gap.
 * **Opportunity discovery:** a separate lens over the same demand signals finds what the audience searches for and the business doesn't offer yet — scored by novelty, closeness to the audience's pain points, year-over-year growth (Mann-Kendall trend test, seasonality-aware) and commercial value (Google Ads cost per click). Themes are labeled by c-TF-IDF; an LLM, when available, only describes them.
-* **Content refresh, not just creation:** once a niche is covered, PubliBot points at which published article should answer new questions, which page is almost on page one, and which lost positions.
+* **Content refresh, not just creation:** once a niche is covered, PubliBot points at which published article should answer new questions, which page is almost on page one, which lost positions — and which cites a price table or standard that has expired. A new version of the source re-points the article's citations automatically (nearest passage by embedding), and the update keeps the same URL.
+* **Calls to action that fit, not everywhere:** each article gets *none*, *end* or *inline* by embedding proximity between the section and the site's offer — no LLM. The call-to-action block itself belongs to the site (one component, tracked, changed in one place); the article only carries a placeholder the reviewer can move.
+* **Conversion attribution without tracking people:** client sites report engaged reading (active time, ≥10 s, GA4-style) and conversions per article. The reading journey lives in the reader's own browser and only travels at conversion, with no visitor ID. PubliBot shows last-article, assisted and linear attribution — and the demand radar starts favoring topics next to articles that convert.
 * **Local SEO:** searches and search volume per city or state, summed across several regions, with overlap detection.
 * **Seed suggestions:** KeyBERT + MMR over the site's own homepage (no LLM), strong themes the radar found on its own, and optional LLM suggestions of audience pain points.
 * **Cost ledger with hard caps:** every external call — paid or free, success or failure — is recorded with the cost the provider reported. Monthly caps are checked *before* each call, per tenant and per installation. Batch rounds use DataForSEO's standard queue (about a third of the live price); only interactive searches pay for live results.

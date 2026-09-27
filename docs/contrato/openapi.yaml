@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Contrato de Integracao PubliBot
-  version: "1.1.0"
+  version: "1.3.0"
   description: |
     Rotas que um site implementa para receber conteudo do PubliBot.
 
@@ -148,11 +148,59 @@ components:
             site. Ausente quando nao ha nenhuma — nunca uma lista vazia.
             Ver a secao "Perguntas frequentes" no README.
           items: { $ref: "#/components/schemas/PerguntaFrequente" }
+        call_to_action:
+          type: string
+          enum: [none, end, inline]
+          description: |
+            Recurso `call_to_action`. Onde o site mostra o bloco da chamada
+            para a oferta dele: `none` em lugar nenhum, `end` no fim, `inline`
+            no fim e no lugar do `<aside data-publibot="chamada"></aside>` que
+            vem no `html_content`. O bloco e do site. Ver o README.
         status: { type: string, enum: [draft, published, scheduled] }
         publish_at:
           type: string
           format: date-time
           description: Obrigatorio quando status = scheduled.
+
+    LeituraDoDia:
+      type: object
+      required: [remote_id, date]
+      properties:
+        remote_id: { type: string, description: "O id devolvido por /publish/." }
+        date: { type: string, format: date }
+        views: { type: integer, minimum: 0 }
+        engaged_views:
+          type: integer
+          minimum: 0
+          description: Aberturas com pelo menos 10 s de tempo ATIVO.
+        engaged_seconds:
+          type: integer
+          minimum: 0
+          description: Soma do tempo ativo (aba visivel e interacao nos ultimos 30 s).
+        read_to_end: { type: integer, minimum: 0 }
+        cta_views: { type: integer, minimum: 0 }
+        cta_clicks: { type: integer, minimum: 0 }
+
+    Conversao:
+      type: object
+      required: [id, date]
+      properties:
+        id: { type: string, description: "Estavel: coletar de novo nao duplica." }
+        date: { type: string, format: date }
+        kind: { type: string, example: whatsapp }
+        via_cta:
+          type: boolean
+          description: O clique foi no bloco da chamada de um artigo.
+        journey:
+          type: array
+          maxItems: 20
+          description: Artigos lidos nos 30 dias anteriores, do primeiro ao ultimo.
+          items:
+            type: object
+            required: [remote_id]
+            properties:
+              remote_id: { type: string }
+              engaged_seconds: { type: integer, minimum: 0 }
 
     PerguntaFrequente:
       type: object
@@ -243,7 +291,8 @@ paths:
                       type: string
                       enum: [idempotency, hmac_signature, cursor_pagination,
                              image_by_url, author_photo, qa, reconciliation,
-                             faq, update, unpublish]
+                             faq, update, call_to_action, insights,
+                             unpublish]
                   server_time: { type: string, format: date-time }
 
   /seo-context/:
@@ -546,6 +595,40 @@ paths:
           description: Limite excedido
           headers:
             Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /insights/:
+    get:
+      summary: Leitura por dia e conversoes
+      description: |
+        Recurso `insights`. Numeros agregados pelo site, sem identificar
+        ninguem. Uma linha por publicacao e dia, com o total do dia: o
+        PubliBot pede os ultimos dias de novo e grava por cima. Ver "Leitura e
+        conversoes" no README.
+      parameters:
+        - { name: since, in: query, required: true,
+            schema: { type: string, format: date },
+            description: "Data mais antiga pedida (ate 90 dias para tras)." }
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reading:
+                    type: array
+                    items: { $ref: "#/components/schemas/LeituraDoDia" }
+                  conversions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Conversao" }
+                  next_cursor: { type: [string, "null"] }
+        "401":
+          description: Chave ou assinatura invalida. Mesmo corpo para todos os casos.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Erro" }

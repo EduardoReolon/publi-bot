@@ -63,6 +63,15 @@ def rodar_radar() -> str:
 
 
 @shared_task
+def conferir_fontes_vencidas() -> int:
+    """Uma vez por dia: artigos no ar que citam fonte vencida."""
+    from apps.accounts.varredura import para_cada_tenant
+    from apps.radar.atualizacoes import pelas_fontes
+
+    return para_cada_tenant(pelas_fontes, "conferir_fontes_vencidas")
+
+
+@shared_task
 def descrever_oportunidades() -> int:
     """Pede ao modelo a descricao das melhores oportunidades ainda sem ela.
 

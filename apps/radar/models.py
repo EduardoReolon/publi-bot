@@ -855,6 +855,7 @@ class SugestaoDeAtualizacao(models.Model):
         ACRESCENTAR = "acrescentar", _("Demanda nova sobre o mesmo tema")
         QUASE_LA = "quase_la", _("Quase na primeira pagina")
         PERDEU_POSICAO = "perdeu", _("Perdeu posicao")
+        FONTE_VENCIDA = "fonte", _("Fonte vencida ou substituida")
 
     class Situacao(models.TextChoices):
         ABERTA = "aberta", _("Aberta")

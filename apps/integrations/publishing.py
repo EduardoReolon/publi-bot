@@ -36,12 +36,17 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
     responde se quer receber; so entao a foto e enviada, pela rota de arquivos.
     Ver `apps/integrations/fotos.py`.
     """
+    from apps.content.chamada import sem_marca_no_html
+
+    html = article.body_html
+    if article.call_to_action != "inline":
+        html = sem_marca_no_html(html)
     payload = {
         "type": "article",
         "idempotency_key": str(article.idempotency_key),
         "title": article.title,
         "slug": article.slug,
-        "html_content": article.body_html,
+        "html_content": html,
         "excerpt": article.excerpt,
         "meta_description": article.meta_description[:160],
         "focus_keyword": article.focus_keyword,
@@ -54,6 +59,9 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
         "content_disclosure": _montar_divulgacao(article, site),
         "status": "published",
         "publish_at": article.scheduled_for.isoformat() if article.scheduled_for else None,
+        # Onde o site mostra a chamada para a oferta dele: "none", "end" ou
+        # "inline" (fim + o elemento <aside data-publibot="chamada"> no corpo).
+        "call_to_action": article.call_to_action,
     }
 
     if article.outbound_link_url:

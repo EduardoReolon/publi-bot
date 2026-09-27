@@ -27,7 +27,8 @@ sudo systemctl restart publibot celery-publibot celery-beat-publibot
 - [ ] **Espere:** as três unidades `active`, e o beat com os agendamentos
       novos. Confira no log do beat (`journalctl -u celery-beat-publibot -n 50`)
       que aparecem `colher-fila-do-radar` (5 min), `descrever-oportunidades`
-      (1 h) e `atualizar-contexto-dos-sites` (1 dia).
+      (1 h), `atualizar-contexto-dos-sites`, `conferir-fontes-vencidas` e
+      `coletar-metricas-dos-sites` (1 dia cada).
 - [ ] **Sem o beat, nada acontece sozinho** — nem a rodada com fila termina.
 
 Variáveis novas no `.env`: nenhuma obrigatória. `MEDIA_ROOT` só se quiser a
@@ -267,6 +268,101 @@ conferência no fim).
       Artigos publicados) passam a receber sugestões "Demanda nova sobre o
       mesmo tema" quando o radar acha um tema com volume tão perto do artigo
       quanto o tema que o originou.
+
+---
+
+## 7. Fonte que vence (tabela de preço do mês)
+
+O caso da página de preço: o endereço fica, o dado muda todo mês.
+
+- [ ] **Onde:** Documentos › Categorias. **Faça:** numa categoria de dado seu
+      (ex.: "Preços próprios"), ponha a **validade** em 30 dias.
+- [ ] **Faça:** envie a planilha de agosto nessa categoria, cure, e gere e
+      publique um artigo que a cite.
+- [ ] **Faça:** envie a planilha de setembro. Na curadoria dela, no campo
+      **Substitui**, escolha a de agosto e conclua. **Espere:**
+  - a de agosto passa a vencida (sai da busca);
+  - em Radar › Atualizar artigos aparece "Fonte vencida ou substituída", com
+    "Preços ago/2026 → Preços set/2026".
+- [ ] **Faça:** *Atualizar no PubliBot*. **Espere:**
+  - a versão nova abre com a mensagem "1 citação(ões) passaram para a fonte
+    nova";
+  - em Fontes citadas, a de setembro;
+  - "O que atualizar" pede para conferir os números e a data do dado no texto.
+- [ ] **Sem planilha nova:** quando a validade passa sozinha, a sugestão
+      aparece no dia seguinte (conferência diária), marcada "sem versão nova
+      no acervo".
+- [ ] **Espere também:** decidida (feita ou dispensada), a mesma sugestão não
+      volta; outra fonte vencendo no mesmo artigo volta.
+
+---
+
+## 8. Chamada para a oferta (a landing page)
+
+- [ ] **Onde:** Guia editorial › "Oferta, convite e exemplos". **Faça:**
+      preencha a **Oferta do site** como o cliente diria. Ex.: "Assinatura
+      mensal: você manda as notas de material pelo WhatsApp e um engenheiro
+      planilha os custos e diz se você pagou caro".
+- [ ] **Faça:** gere um artigo de custo (ex.: "Como saber se o orçamento da
+      obra está caro"). **Espere, na revisão, o bloco "Chamada para a
+      oferta":**
+  - a decisão do planejamento, com a proximidade do tema e da seção (em %);
+  - com uma seção sobre conferir preço, "No meio" depois dela, e na prévia
+    ("Como vai sair") um quadro tracejado "Chamada para a oferta (bloco do
+    site)" no lugar.
+- [ ] **Faça:** gere um artigo conceitual longe da oferta (ex.: "O que é BDI").
+      **Espere:** "Nenhuma" ou "Só no fim"; com "Nenhuma", o fecho **sem**
+      convite.
+- [ ] **Faça:** mude na revisão (Onde / depois da seção › *Aplicar*).
+      **Espere:** a marca `[[CHAMADA]]` muda de lugar no Texto. Mova a marca à
+      mão no Texto e salve: o bloco "Chamada" passa a mostrar a seção nova.
+      Apague a marca: vira "Só no fim".
+- [ ] **Faça:** em Pautas › Nova pauta, o campo "Chamada para a oferta" força
+      o modo. **Espere:** na revisão, "escolhida na pauta".
+- [ ] **Sem oferta no Guia:** aviso amarelo na revisão, e todo artigo fica
+      "só no fim".
+- [ ] **No site** (precisa do recurso `call_to_action`, ver
+      `docs/contrato/README.md`, "Chamada para a oferta do site"): o bloco
+      aparece no meio e no fim, ou só no fim, ou em nenhum lugar. Site sem o
+      recurso: aviso na revisão.
+
+---
+
+## 9. Leitura e conversões (o "Google Ads" dos artigos)
+
+Depende do site implementar o recurso `insights`: o script de medição e a
+rota `GET /api/v1/insights/` (`docs/contrato/README.md`, "Leitura e
+conversões"). O nó de referência em Django já traz os dois.
+
+**No site, antes do PubliBot:**
+
+- [ ] **Faça:** abra um artigo, role, fique uns 20 s, troque de aba.
+      **Espere:** no DevTools › Rede, um `POST /api/v1/leitura/` com `active`
+      perto de 20 e `end` verdadeiro se chegou ao fim.
+- [ ] **Faça:** abra e feche outro artigo em 3 s. **Espere:** conta como
+      abertura, não como leitura (menos de 10 s).
+- [ ] **Faça:** clique no botão do WhatsApp dentro do bloco da chamada.
+      **Espere:** `POST /api/v1/conversao/` com `via_cta: true` e a jornada com
+      os dois artigos. No DevTools › Aplicação › Armazenamento local,
+      `publibot:jornada` volta vazia.
+- [ ] **Espere:** nenhuma requisição leva IP, cookie de identificação ou
+      endereço completo de quem leu.
+
+**No PubliBot (no dia seguinte, ou rode a coleta à mão):**
+
+```bash
+venv/bin/python manage.py shell -c "from apps.integrations.tasks import coletar_metricas_dos_sites as t; print(t())"
+```
+
+- [ ] **Onde:** Artigos › *Desempenho no site*. **Espere:**
+  - por artigo: aberturas, leituras (% das aberturas), tempo ativo médio, até
+    o fim, chamada vista / clicada;
+  - as conversões em três colunas: último artigo, participou e atribuídas
+    (meia para cada, no exemplo acima), ordenado por atribuídas;
+  - em cima: quantas vieram pela chamada e quantas sem artigo nenhum.
+- [ ] **Espere, com algumas semanas de dado:** no Radar, os temas perto de
+      artigos que convertem ganham a barra **conversao**. Sem dado de
+      conversão, a nota é exatamente a de antes.
 
 ---
 

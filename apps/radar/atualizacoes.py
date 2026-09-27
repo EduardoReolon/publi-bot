@@ -9,7 +9,10 @@ Tres motivos, cada um com evidencia na tela:
 * **quase la**: a pagina aparece entre a 8a e a 20a posicao para buscas com
   impressoes (Search Console). E o empurrao mais barato que existe;
 * **perdeu posicao**: a posicao media piorou 3 ou mais de um retrato do
-  Search Console para o outro.
+  Search Console para o outro;
+* **fonte vencida**: o artigo cita uma fonte que venceu (validade da
+  categoria) ou que ganhou versao nova no acervo. Para pagina de preco e o
+  motivo principal: o endereco fica, o dado muda.
 
 A atualizacao em si e feita pela pessoa, no artigo; o contrato com o site
 ainda nao tem republicacao. Marcada como feita, a mesma sugestao nao volta por
@@ -315,10 +318,89 @@ def _posicao(coleta: ColetaDoConsole, url: str) -> float | None:
     return soma / agregado["impressoes"]
 
 
+def pelas_fontes() -> int:
+    """Artigos no ar que citam fonte vencida ou substituida.
+
+    Nao depende do radar nem do Search Console: roda na curadoria da fonte nova
+    e uma vez por dia. A mesma combinacao de fontes nao volta depois de
+    decidida; outra fonte vencendo no mesmo artigo volta.
+    """
+    from apps.content.models import Article, ArticleCitation
+
+    hoje = timezone.localdate()
+    citacoes = (
+        ArticleCitation.objects.filter(
+            article__status=Article.Status.PUBLISHED,
+            super_chunk__document__valid_until__lt=hoje,
+        )
+        .exclude(article__published_url="")
+        .select_related("article", "super_chunk__document")
+    )
+    por_artigo: dict = {}
+    for citacao in citacoes:
+        por_artigo.setdefault(citacao.article, {})[citacao.super_chunk.document.pk] = (
+            citacao.super_chunk.document
+        )
+
+    novas = 0
+    for artigo, documentos in por_artigo.items():
+        fontes = []
+        for doc in sorted(documentos.values(), key=lambda d: str(d.pk)):
+            substituta = (
+                doc.replaced_by.filter(status=doc.Status.CURATED).order_by("-created_at").first()
+            )
+            fontes.append(
+                {
+                    "id": str(doc.pk),
+                    "titulo": doc.rotulo,
+                    "valida_ate": doc.valid_until.isoformat(),
+                    "substituta_id": str(substituta.pk) if substituta else None,
+                    "substituta": substituta.rotulo if substituta else None,
+                }
+            )
+        ids = [f["id"] for f in fontes]
+        tipo = SugestaoDeAtualizacao.Tipo.FONTE_VENCIDA
+        ja_decidida = any(
+            sorted(s.evidencia.get("documentos") or []) == ids
+            for s in SugestaoDeAtualizacao.objects.filter(
+                url=artigo.published_url,
+                tipo=tipo,
+                situacao__in=[
+                    SugestaoDeAtualizacao.Situacao.FEITA,
+                    SugestaoDeAtualizacao.Situacao.DISPENSADA,
+                ],
+            )
+        )
+        if ja_decidida:
+            continue
+        evidencia = {"fontes": fontes, "documentos": ids}
+        # Com a fonte nova ja no acervo, a atualizacao esta pronta para ser
+        # feita: vem antes das que ainda esperam o dado novo.
+        prioridade = 70.0 if any(f["substituta"] for f in fontes) else 50.0
+        aberta = SugestaoDeAtualizacao.objects.filter(
+            url=artigo.published_url, tipo=tipo, situacao=SugestaoDeAtualizacao.Situacao.ABERTA
+        ).first()
+        if aberta:
+            aberta.evidencia, aberta.prioridade, aberta.artigo = evidencia, prioridade, artigo
+            aberta.save(update_fields=["evidencia", "prioridade", "artigo", "atualizada_em"])
+            continue
+        SugestaoDeAtualizacao.objects.create(
+            url=artigo.published_url,
+            titulo=artigo.title[:300],
+            artigo=artigo,
+            tipo=tipo,
+            evidencia=evidencia,
+            prioridade=prioridade,
+        )
+        novas += 1
+    return novas
+
+
 def atualizar_sugestoes() -> int:
     antes = SugestaoDeAtualizacao.objects.count()
     paginas = paginas_publicadas()
     atendidas = pela_proximidade(paginas)
     pela_canibalizacao([p for p in paginas if _chave(p["url"]) not in atendidas])
     pelo_search_console(paginas)
+    pelas_fontes()
     return SugestaoDeAtualizacao.objects.count() - antes

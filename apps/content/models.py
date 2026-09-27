@@ -258,6 +258,14 @@ class Author(models.Model):
         return digest.hexdigest()
 
 
+# Onde cabe a chamada para a oferta do site, do mais discreto ao mais presente.
+CHAMADAS = [
+    ("none", _("Nenhuma: o tema esta longe da oferta")),
+    ("end", _("So no fim do artigo")),
+    ("inline", _("No meio, onde o problema encontra a oferta, e no fim")),
+]
+
+
 class Topic(models.Model):
     """Uma pauta aprovada por um humano antes de virar artigo."""
 
@@ -282,6 +290,14 @@ class Topic(models.Model):
     )
     status = models.CharField(
         _("situacao"), max_length=16, choices=Status.choices, default=Status.SUGGESTED
+    )
+    # Vazio: o PubliBot decide no planejamento, pela proximidade entre o tema
+    # e a oferta do site (Guia editorial). Preenchido: a pessoa decidiu.
+    call_to_action = models.CharField(
+        _("chamada para a oferta"),
+        max_length=8,
+        choices=[("", _("Decidir pelo tema")), *CHAMADAS],
+        blank=True,
     )
 
     # Alto = o tema conflita com conteudo ja publicado. Medido por similaridade
@@ -403,6 +419,17 @@ class Article(models.Model):
         max_length=8,
         choices=LinkPlacement.choices,
         default=LinkPlacement.INLINE,
+    )
+
+    # Chamada para a oferta do site (a landing page). O bloco e do SITE — botao,
+    # desenho, rastreio —, e o artigo so diz se cabe e onde: `inline` deixa a
+    # marca [[CHAMADA]] no texto, depois da secao `call_to_action_after`, e o
+    # site troca a marca pelo componente dele. Ver `apps/content/chamada.py`.
+    call_to_action = models.CharField(
+        _("chamada para a oferta"), max_length=8, choices=CHAMADAS, default="end"
+    )
+    call_to_action_after = models.PositiveSmallIntegerField(
+        _("chamada depois da secao"), null=True, blank=True
     )
 
     # Saida estruturada do filtro de consenso.

@@ -636,12 +636,13 @@ def propor_pautas(
 
     negocio = vetor_do_negocio()
     ja_escrito = vetores_do_que_ja_foi_escrito()
+    convertem = _que_convertem()
     if nota_minima is None:
         nota_minima = float(getattr(settings, "RADAR_NOTA_MINIMA", 40))
 
     candidatos = []
     for grupo in GrupoDeDemanda.objects.filter(pk__in=ids_de_grupos):
-        pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito)
+        pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito, que_convertem=convertem)
         if not pedido_pela_pessoa and not grupo.sinais.exclude(fonte__in=SO_REFORCAM).exists():
             # Semente e o que o dono do site digitou, nao evidencia de que
             # alguem procura; avaliacao e a frase de um cliente, nao um tema.
@@ -754,10 +755,22 @@ def decidir_busca(busca: BuscaManual, *, guardar: bool) -> None:
         grupos = agrupar(mantidos)
         negocio = vetor_do_negocio()
         ja_escrito = vetores_do_que_ja_foi_escrito()
+        convertem = _que_convertem()
         for grupo in GrupoDeDemanda.objects.filter(pk__in=grupos):
-            pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito)
+            pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito, que_convertem=convertem)
         busca.decisao = BuscaManual.Decisao.GUARDADA
     else:
         busca.sinais.update(situacao=SinalDeDemanda.Situacao.DESCARTADO)
         busca.decisao = BuscaManual.Decisao.DESCARTADA
     busca.save(update_fields=["decisao"])
+
+
+def _que_convertem():
+    """Artigos que convertem, para a parcela de conversao. Falha nao para o radar."""
+    from apps.content.desempenho import que_convertem
+
+    try:
+        return que_convertem()
+    except Exception:
+        logger.exception("Falha ao ler as conversoes dos artigos; nota sem essa parcela.")
+        return None

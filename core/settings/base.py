@@ -435,6 +435,18 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 3600.0,
         "options": {"expires": 3000},
     },
+    "conferir-fontes-vencidas": {
+        "task": "apps.radar.tasks.conferir_fontes_vencidas",
+        # Artigo que cita tabela de preco vencida vira sugestao de atualizacao.
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
+    "coletar-metricas-dos-sites": {
+        "task": "apps.integrations.tasks.coletar_metricas_dos_sites",
+        # Leitura e conversoes por artigo, contadas pelo site. Uma vez por dia.
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
     "atualizar-contexto-dos-sites": {
         "task": "apps.integrations.tasks.atualizar_contexto_dos_sites",
         # Pagina inicial e publicacoes de cada site: base da canibalizacao e

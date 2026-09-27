@@ -123,6 +123,8 @@ class Site(models.Model):
     consecutive_failures = models.PositiveSmallIntegerField(_("falhas seguidas"), default=0)
     circuit_open_until = models.DateTimeField(_("circuito aberto ate"), null=True, blank=True)
     last_success_at = models.DateTimeField(_("ultimo sucesso"), null=True, blank=True)
+    # Ultima coleta de leitura e conversoes (recurso `insights`).
+    insights_synced_at = models.DateTimeField(_("metricas coletadas em"), null=True, blank=True)
 
     created_at = models.DateTimeField(_("criado em"), default=django_timezone.now)
 
@@ -441,3 +443,72 @@ class AuthorPhotoDelivery(models.Model):
 
     def __str__(self) -> str:
         return f"{self.author} -> {self.site} ({self.get_status_display()})"
+
+
+class LeituraDoDia(models.Model):
+    """Como uma publicacao foi lida num dia, contado pelo proprio site.
+
+    Agregado no site, por dia: o PubliBot nunca recebe nada que identifique
+    quem leu. `remote_id` e o id que o site devolveu na publicacao — versoes
+    novas de um artigo o herdam, entao a serie continua quando o texto muda.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="leituras")
+    remote_id = models.CharField(_("id remoto"), max_length=120, db_index=True)
+    dia = models.DateField(_("dia"))
+    # Aberturas da pagina.
+    views = models.PositiveIntegerField(_("aberturas"), default=0)
+    # Aberturas com pelo menos 10 s de tempo ativo: quem so abriu e fechou
+    # fica de fora.
+    engaged_views = models.PositiveIntegerField(_("leituras de verdade"), default=0)
+    # Soma do tempo ativo (aba visivel e interacao recente), em segundos.
+    engaged_seconds = models.PositiveIntegerField(_("segundos ativos"), default=0)
+    read_to_end = models.PositiveIntegerField(_("chegaram ao fim"), default=0)
+    cta_views = models.PositiveIntegerField(_("viram a chamada"), default=0)
+    cta_clicks = models.PositiveIntegerField(_("clicaram na chamada"), default=0)
+
+    class Meta:
+        verbose_name = _("leitura do dia")
+        verbose_name_plural = _("leituras do dia")
+        ordering = ["-dia"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["site", "remote_id", "dia"], name="uniq_leitura_por_dia"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.remote_id} {self.dia}"
+
+
+class ConversaoDoSite(models.Model):
+    """Uma conversao (contato, assinatura) e os artigos lidos antes dela.
+
+    A jornada vem do navegador de quem converteu, sem identificador: o site
+    guarda no proprio navegador do leitor os artigos lidos nos ultimos 30 dias
+    e so envia essa lista no momento da conversao. Daqui sai a atribuicao —
+    ultimo artigo, participacao e divisao igual —, como no Google Ads.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="conversoes")
+    # Id da conversao no site: coletar de novo nao duplica.
+    external_id = models.CharField(_("id no site"), max_length=120)
+    dia = models.DateField(_("dia"), db_index=True)
+    tipo = models.CharField(_("tipo"), max_length=40, blank=True)
+    # O clique foi no bloco da chamada de um artigo (e nao no menu do site).
+    via_cta = models.BooleanField(_("pela chamada do artigo"), default=False)
+    # Em ordem, do primeiro ao ultimo: [{"remote_id": ..., "engaged_seconds": ...}].
+    jornada = models.JSONField(_("artigos lidos antes"), default=list, blank=True)
+
+    class Meta:
+        verbose_name = _("conversao")
+        verbose_name_plural = _("conversoes")
+        ordering = ["-dia"]
+        constraints = [
+            models.UniqueConstraint(fields=["site", "external_id"], name="uniq_conversao_por_site")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.tipo or 'conversao'} {self.dia}"

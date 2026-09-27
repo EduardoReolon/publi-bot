@@ -254,6 +254,9 @@ def atualizar_oportunidades() -> int:
     negocio = vetor_do_negocio()
     ja_escrito = vetores_do_que_ja_foi_escrito()
     dores = _vetores_das_dores()
+    from apps.radar.coleta import _que_convertem
+
+    convertem = _que_convertem()
 
     sinais_por_grupo = {
         g.pk: list(g.sinais.exclude(situacao=SinalDeDemanda.Situacao.DESCARTADO)) for g in grupos
@@ -262,7 +265,7 @@ def atualizar_oportunidades() -> int:
 
     vivas = 0
     for grupo in grupos:
-        pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito)
+        pontuar(grupo, vetor_do_negocio=negocio, ja_escrito=ja_escrito, que_convertem=convertem)
         avaliacao = avaliar(grupo, sinais_por_grupo[grupo.pk], dores=dores, negocio=negocio)
         existente = Oportunidade.objects.filter(grupo=grupo).first()
         if avaliacao is None:

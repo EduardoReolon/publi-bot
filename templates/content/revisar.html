@@ -364,6 +364,59 @@
       </div>
     </form>
 
+    <h2>{% translate "Chamada para a oferta" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        O bloco da chamada (botao, WhatsApp) e do site; o artigo diz se cabe e
+        onde. No meio, ela entra depois da secao em que o problema de quem le
+        encontra a oferta, e aparece como uma marca <code>[[CHAMADA]]</code> no
+        texto, que voce tambem pode mover ou apagar a mao.
+      {% endblocktranslate %}
+    </p>
+    {% if chamada.motivo %}
+      <p class="ajuda">
+        {% translate "Decisao do planejamento" %}: <strong>{{ chamada.motivo }}</strong>{% if chamada.aderencia is not None %} · {% translate "proximidade do tema com a oferta" %} {% widthratio chamada.aderencia 1 100 %}%{% endif %}{% if chamada.aderencia_da_secao %} · {% translate "da secao" %} {% widthratio chamada.aderencia_da_secao 1 100 %}%{% endif %}
+      </p>
+    {% endif %}
+    {% if sem_oferta %}
+      <p class="aviso">
+        {% blocktranslate trimmed %}
+          O Guia editorial nao tem a <strong>oferta do site</strong>: sem ela nao
+          ha como medir se o tema pede chamada, e todo artigo fica com "so no fim".
+        {% endblocktranslate %}
+        <a href="{% url 'editorial:guia' %}">{% translate "Preencher" %}</a>
+      </p>
+    {% endif %}
+    {% if site_sem_chamada %}
+      <p class="aviso">
+        {% blocktranslate trimmed %}
+          O site conectado ainda nao mostra o bloco da chamada (recurso
+          <code>call_to_action</code>): ele recebe a indicacao, mas o bloco
+          provavelmente nao aparece.
+        {% endblocktranslate %}
+      </p>
+    {% endif %}
+    <form method="post" action="{% url 'content:mudar_chamada' artigo.pk %}" class="cartoes">
+      {% csrf_token %}
+      <div>
+        <label for="chamada_modo">{% translate "Onde" %}</label>
+        <select name="modo" id="chamada_modo">
+          {% for valor, rotulo in modos_de_chamada %}
+            <option value="{{ valor }}" {% if artigo.call_to_action == valor %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="chamada_secao">{% translate "No meio: depois da secao" %}</label>
+        <select name="secao" id="chamada_secao">
+          {% for secao in secoes %}
+            <option value="{{ secao.order }}" {% if artigo.call_to_action_after == secao.order %}selected{% endif %}>{{ secao.order }}. {{ secao.heading }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="acoes"><button type="submit" class="botao secundario">{% translate "Aplicar" %}</button></div>
+    </form>
+
     <h2>{% translate "Perguntas frequentes" %}</h2>
     <p class="pre-visualizacao">
       {% blocktranslate trimmed %}

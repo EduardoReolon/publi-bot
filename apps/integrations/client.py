@@ -192,6 +192,13 @@ class SiteClient:
             params["cursor"] = cursor
         return self._requisitar("GET", "/pending-questions/", params=params)
 
+    def insights(self, *, desde, cursor: str = "") -> dict:
+        """Leitura por dia e conversoes, a partir de `desde` (recurso `insights`)."""
+        params: dict[str, Any] = {"since": desde.isoformat()}
+        if cursor:
+            params["cursor"] = cursor
+        return self._requisitar("GET", "/insights/", params=params)
+
     def acknowledge_questions(self, remote_ids: list[str]) -> dict:
         """Confirma o recebimento das perguntas importadas."""
         return self._requisitar("POST", "/pending-questions/ack/", json={"ids": remote_ids})

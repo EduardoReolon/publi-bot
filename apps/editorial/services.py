@@ -61,8 +61,14 @@ def _descrever_tom(perfil) -> str:
     return "; ".join(partes)
 
 
-def texto_do_guia(perfil, *, chave: str, tipo_de_conteudo: str = "") -> str:
-    """O bloco de guia editorial para o prompt `chave`, ou vazio."""
+def texto_do_guia(
+    perfil, *, chave: str, tipo_de_conteudo: str = "", com_convite: bool = True
+) -> str:
+    """O bloco de guia editorial para o prompt `chave`, ou vazio.
+
+    `com_convite=False` quando o artigo nao leva chamada (tema longe da
+    oferta): ai o fecho tambem nao convida.
+    """
     if perfil is None or chave not in PROMPTS_COM_GUIA:
         return ""
 
@@ -103,7 +109,7 @@ def texto_do_guia(perfil, *, chave: str, tipo_de_conteudo: str = "") -> str:
             )
             linhas.extend(f"  {n}. {item}" for n, item in enumerate(estrutura, start=1))
 
-    if chave in PROMPTS_COM_CONVITE and perfil.convite:
+    if chave in PROMPTS_COM_CONVITE and perfil.convite and com_convite:
         linhas.append(f"- Convite final (so no fecho, uma vez): {perfil.convite}")
 
     if perfil.exemplos:

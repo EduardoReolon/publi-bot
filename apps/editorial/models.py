@@ -81,6 +81,16 @@ class EditorialProfile(models.Model):
             "uma avaliacao na clinica, sem pressao'. Vazio: o texto termina sem convite."
         ),
     )
+    oferta = models.TextField(
+        _("oferta do site"),
+        blank=True,
+        help_text=_(
+            "O que o site vende, em uma ou duas frases, como o cliente diria. Ex.: "
+            "'Assinatura mensal: voce manda as notas de material pelo WhatsApp e um "
+            "engenheiro planilha os custos e diz se voce pagou caro'. E por ela que "
+            "o PubliBot decide se um artigo leva chamada, e em que secao."
+        ),
+    )
     exemplos = models.TextField(
         _("paragrafos de exemplo"),
         blank=True,

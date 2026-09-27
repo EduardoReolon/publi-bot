@@ -532,6 +532,17 @@ hora seguinte. Para usar o modelo de 30B so nessa descricao, escolha-o na
 versao do prompt `opportunity_brief` (e em `seed_suggestion`, para as
 sementes sugeridas).
 
+**Batimentos diarios de artigo.** `conferir-fontes-vencidas` poe em Radar >
+Atualizar artigos todo artigo no ar que cita fonte vencida (validade da
+categoria) ou substituida por uma versao nova no acervo.
+`coletar-metricas-dos-sites` busca leitura e conversoes nos sites que declaram
+o recurso `insights` e alimenta Artigos > Desempenho no site e a parcela de
+conversao do radar. O que o site precisa implementar para isso (e para a
+chamada da oferta no meio do artigo) esta em
+[`contrato/README.md`](contrato/README.md), secoes "Chamada para a oferta do
+site" e "Leitura e conversoes"; o no de referencia em Django ja traz o script
+de medicao e as tags de template.
+
 **Buscador gratuito (SearXNG).** Suba uma instancia propria com a saida JSON
 ligada (`search: formats: [html, json]` no `settings.yml` dele) e informe
 `SEARXNG_URL` no `.env`. Cada site pode apontar outra na tela do Radar.

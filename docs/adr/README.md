@@ -32,3 +32,4 @@ de quem decidiu com a informacao daquele momento.
 | [0018](ADR-0018-embasamento-da-ideia-central.md) | Embasamento estrito da ideia central, liberdade nos secundarios | Aceito |
 | [0019](ADR-0019-tres-opcoes-de-capa.md) | Tres opcoes de capa, escolhidas por uma pessoa | Aceito |
 | [0020](ADR-0020-radar-e-web-como-fornecedora-de-fontes.md) | Radar de pautas, e a web como fornecedora de fontes | Aceito |
+| [0021](ADR-0021-chamada-medicao-e-fonte-vencida.md) | Chamada para a oferta, leitura e conversao, e fonte que vence | Aceito |

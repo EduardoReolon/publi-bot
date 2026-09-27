@@ -236,6 +236,7 @@ def _campos_do_conteudo(dados: dict) -> dict:
         "cover_image_url": capa.get("url", "")[:500],
         "cover_image_alt": sanitizar_texto(capa.get("alt_text", "")),
         "faq": _faq_sanitizado(dados.get("faq")),
+        "call_to_action": _chamada(dados.get("call_to_action")),
         "post_status": dados.get("status", "published")[:20],
     }
 
@@ -299,6 +300,12 @@ def update_publication(request, remote_id):
 
 
 MAXIMO_DE_PERGUNTAS = 20
+
+
+def _chamada(valor) -> str:
+    # Valor desconhecido (versao futura do contrato) cai no comportamento de
+    # sempre: o bloco so no fim.
+    return valor if valor in {"none", "end", "inline"} else "end"
 
 
 def _faq_sanitizado(bruto) -> list[dict]:
@@ -503,3 +510,67 @@ def publications(request):
 
     achadas = ReceivedPublication.objects.filter(idempotency_key=chave)
     return JsonResponse({"results": [_resposta(p) for p in achadas]})
+
+
+TAMANHO_DA_PAGINA_DE_LEITURA = 500
+JANELA_MAXIMA_EM_DIAS = 90
+
+
+@require_GET
+def insights(request):
+    """Leitura por dia e conversoes, desde `since` (recurso `insights`)."""
+    from datetime import date, timedelta
+
+    from publibot_node.models import Conversao, LeituraDoDia
+
+    bloqueio = _proteger(request)
+    if bloqueio is not None:
+        return bloqueio
+
+    try:
+        desde = date.fromisoformat(request.GET.get("since", ""))
+    except ValueError:
+        return _erro("invalid_payload", "since obrigatorio, no formato AAAA-MM-DD.", 400)
+    desde = max(desde, timezone.localdate() - timedelta(days=JANELA_MAXIMA_EM_DIAS))
+
+    cursor = request.GET.get("cursor", "")
+    inicio = int(cursor) if cursor.isdigit() else 0
+    linhas = list(
+        LeituraDoDia.objects.filter(dia__gte=desde)
+        .select_related("publicacao")
+        .order_by("dia", "id")[inicio : inicio + TAMANHO_DA_PAGINA_DE_LEITURA + 1]
+    )
+    tem_mais = len(linhas) > TAMANHO_DA_PAGINA_DE_LEITURA
+    linhas = linhas[:TAMANHO_DA_PAGINA_DE_LEITURA]
+
+    # As conversoes sao poucas: vao inteiras, so na primeira pagina.
+    conversoes = [] if inicio else list(Conversao.objects.filter(dia__gte=desde))
+
+    return JsonResponse(
+        {
+            "reading": [
+                {
+                    "remote_id": str(linha.publicacao_id),
+                    "date": linha.dia.isoformat(),
+                    "views": linha.views,
+                    "engaged_views": linha.engaged_views,
+                    "engaged_seconds": linha.engaged_seconds,
+                    "read_to_end": linha.read_to_end,
+                    "cta_views": linha.cta_views,
+                    "cta_clicks": linha.cta_clicks,
+                }
+                for linha in linhas
+            ],
+            "conversions": [
+                {
+                    "id": str(c.id),
+                    "date": c.dia.isoformat(),
+                    "kind": c.kind,
+                    "via_cta": c.via_cta,
+                    "journey": c.journey,
+                }
+                for c in conversoes
+            ],
+            "next_cursor": str(inicio + TAMANHO_DA_PAGINA_DE_LEITURA) if tem_mais else None,
+        }
+    )

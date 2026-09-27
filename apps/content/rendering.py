@@ -236,14 +236,20 @@ def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: boo
     return f"{corpo}\n\n## {TITULO_DAS_REFERENCIAS}\n\n" + "\n".join(itens)
 
 
-def markdown_para_html(texto: str) -> str:
-    """Converte e sanitiza. As duas coisas juntas, sempre."""
+def markdown_para_html(texto: str, *, dominios_permitidos: set[str] | None = None) -> str:
+    """Converte e sanitiza. As duas coisas juntas, sempre.
+
+    A marca da chamada (`[[CHAMADA]]`) vira o elemento do site so no fim,
+    depois da sanitizacao — ver `apps/content/chamada.py`.
+    """
+    from apps.content.chamada import marca_no_html
+
     bruto = markdown_lib.markdown(
         texto,
         extensions=["tables", "fenced_code", "attr_list", "sane_lists", "nl2br"],
         output_format="html",
     )
-    return sanitizar_html(bruto)
+    return marca_no_html(sanitizar_html(bruto, dominios_permitidos=dominios_permitidos))
 
 
 def sanitizar_html(html: str, *, dominios_permitidos: set[str] | None = None) -> str:

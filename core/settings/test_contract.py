@@ -52,6 +52,16 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "core.urls_contract_test"
 
+# Para as tags de template do no (bloco da chamada).
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {},
+    }
+]
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",

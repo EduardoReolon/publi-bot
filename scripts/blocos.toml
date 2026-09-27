@@ -143,6 +143,7 @@ padroes = [
   "docs/adr/ADR-0018-embasamento-da-ideia-central.md",
   "tests/test_flows.py",
   "tests/test_content.py",
+  "tests/test_chamada.py",
 ]
 
 [[bloco]]
@@ -260,6 +261,7 @@ padroes = [
   "tests/test_vigia.py",
   "tests/test_fontes_do_radar.py",
   "tests/test_radar_exemplo.py",
+  "tests/test_fonte_vencida.py",
 ]
 
 
@@ -283,6 +285,7 @@ padroes = [
   "tests/test_integrations.py",
   "tests/test_versoes.py",
   "tests/test_scheduling.py",
+  "tests/test_insights.py",
 ]
 
 [[bloco]]

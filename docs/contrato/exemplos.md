@@ -25,7 +25,7 @@ X-API-KEY: ...
 {
   "contract_versions": ["v1"],
   "implementation": "publibot-django 1.0.0",
-  "capabilities": ["idempotency", "hmac_signature", "author_photo", "qa", "reconciliation", "faq"],
+  "capabilities": ["idempotency", "hmac_signature", "author_photo", "qa", "reconciliation", "faq", "update", "call_to_action", "insights"],
   "server_time": "2026-08-29T14:02:11Z"
 }
 ```
@@ -295,7 +295,62 @@ e o `published_at` sao os da publicacao original.
 
 ---
 
-## 8. Erros
+## 8. Chamada no meio do artigo
+
+Recurso `call_to_action`. No corpo de `/publish/` (ou do `PUT`), o modo e o
+lugar:
+
+```json
+{
+  "call_to_action": "inline",
+  "html_content": "<h2>Quanto custa o saco de cimento</h2><p>...</p><h2>Como conferir a nota</h2><p>...</p><aside data-publibot=\"chamada\"></aside><h2>Quando vale comprar a granel</h2><p>...</p>"
+}
+```
+
+O template troca o `aside` pelo bloco do site, e mostra o bloco tambem no fim:
+
+```html
+<aside data-publibot-bloco class="chamada">
+  <p>Mande a nota da sua obra e um engenheiro diz se voce pagou caro.</p>
+  <a data-publibot-conversao="whatsapp" href="https://wa.me/55...">Falar no WhatsApp</a>
+</aside>
+```
+
+---
+
+## 9. Leitura e conversoes: `GET /insights/`
+
+Recurso `insights`. O PubliBot pede uma vez por dia, a partir de alguns dias
+atras.
+
+```http
+GET /api/v1/insights/?since=2026-09-18 HTTP/1.1
+```
+
+```json
+{
+  "reading": [
+    {"remote_id": "9c1d", "date": "2026-09-20", "views": 120, "engaged_views": 71,
+     "engaged_seconds": 6390, "read_to_end": 33, "cta_views": 40, "cta_clicks": 5},
+    {"remote_id": "7e2a", "date": "2026-09-20", "views": 48, "engaged_views": 30,
+     "engaged_seconds": 2110, "read_to_end": 12, "cta_views": 0, "cta_clicks": 0}
+  ],
+  "conversions": [
+    {"id": "5f0c1a7e-2b1d-4c55-9a44-0d7e8f6a1b2c", "date": "2026-09-20",
+     "kind": "whatsapp", "via_cta": true,
+     "journey": [{"remote_id": "7e2a", "engaged_seconds": 40},
+                 {"remote_id": "9c1d", "engaged_seconds": 95}]}
+  ],
+  "next_cursor": null
+}
+```
+
+Nesta conversao, `9c1d` e o ultimo artigo; os dois participaram; cada um
+recebe meia conversao atribuida.
+
+---
+
+## 10. Erros
 
 Todos com o mesmo envelope. O `code` e o que decide se o PubliBot repete —
 ver o [catalogo](README.md#catalogo).

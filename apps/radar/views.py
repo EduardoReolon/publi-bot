@@ -466,7 +466,12 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
     if decisao == "versao" and sugestao.artigo is not None:
         # Atualizar no PubliBot: cria a versao nova com o motivo anotado. A
         # sugestao so e dada como feita quando a versao for ao ar.
-        from apps.content.versoes import VersaoRecusada, criar_nova_versao, notas_da_sugestao
+        from apps.content.versoes import (
+            VersaoRecusada,
+            criar_nova_versao,
+            notas_da_sugestao,
+            trocar_fontes_substituidas,
+        )
 
         artigo = sugestao.artigo
         # O artigo da sugestao pode ja ter sido substituido: parte da versao no ar.
@@ -477,6 +482,14 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
         except VersaoRecusada as exc:
             messages.error(request, str(exc))
             return redirect("radar:atualizacoes")
+        if sugestao.tipo == SugestaoDeAtualizacao.Tipo.FONTE_VENCIDA:
+            trocadas = trocar_fontes_substituidas(nova)
+            if trocadas:
+                messages.info(
+                    request,
+                    _("%(n)s citacao(oes) passaram para a fonte nova. Confira os numeros.")
+                    % {"n": trocadas},
+                )
         sugestao.situacao = SugestaoDeAtualizacao.Situacao.FEITA
         sugestao.decidida_em = timezone.now()
         sugestao.save(update_fields=["situacao", "decidida_em", "atualizada_em"])

@@ -71,6 +71,7 @@ class PerfilEditorialForm(forms.ModelForm):
             "pessoa",
             "regra_de_ouro",
             "tipo_padrao",
+            "oferta",
             "convite",
             "exemplos",
         ]
@@ -79,6 +80,7 @@ class PerfilEditorialForm(forms.ModelForm):
             for campo in ("tom_humor", "tom_formalidade", "tom_respeito", "tom_entusiasmo")
         } | {
             "convite": forms.Textarea(attrs={"rows": 3}),
+            "oferta": forms.Textarea(attrs={"rows": 3}),
             "exemplos": forms.Textarea(attrs={"rows": 6}),
         }
 

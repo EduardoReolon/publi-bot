@@ -359,3 +359,12 @@ def generate_publication_slots() -> int:
         total += len(gerar_horarios(schedule))
 
     return total
+
+
+@shared_task
+def coletar_metricas_dos_sites() -> int:
+    """Uma vez por dia, em cada tenant: leitura e conversoes (recurso `insights`)."""
+    from apps.accounts.varredura import para_cada_tenant
+    from apps.integrations.insights import coletar_de_todos
+
+    return para_cada_tenant(coletar_de_todos, "coletar_metricas_dos_sites")

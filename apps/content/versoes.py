@@ -134,9 +134,79 @@ def notas_da_sugestao(sugestao) -> str:
             for c in evidencia.get("consultas", [])
         ]
         linhas.append("Deixe a resposta a elas mais completa e mais visivel.")
+    elif sugestao.tipo == "fonte":
+        linhas = ["Fontes deste artigo que venceram:"]
+        for f in evidencia.get("fontes", []):
+            if f.get("substituta"):
+                linhas.append(
+                    f"- {f['titulo']} -> trocada por {f['substituta']}. A citacao ja aponta "
+                    "para a nova; confira os numeros do texto contra ela."
+                )
+            else:
+                linhas.append(
+                    f"- {f['titulo']} (valia ate {f['valida_ate']}). Sem versao nova no "
+                    "acervo: envie a fonte atualizada ou confira se o dado ainda vale."
+                )
+        linhas.append('Atualize tambem a data do dado no texto ("precos de setembro/2026").')
     else:
         linhas = [
             f"A posicao media caiu de {evidencia.get('posicao_anterior')} para "
             f"{evidencia.get('posicao')}. Confira se fontes e dados ainda valem."
         ]
     return "\n".join(linhas)
+
+
+def trocar_fontes_substituidas(artigo: Article) -> int:
+    """Aponta as citacoes da versao para a fonte que substituiu a vencida.
+
+    Para cada trecho citado de uma fonte substituida, o trecho mais parecido da
+    fonte nova (menor distancia de cosseno entre os vetores). O link e o nome
+    no texto vem da citacao, entao mudam junto; os numeros, quem confere e a
+    revisao.
+    """
+    from pgvector.django import CosineDistance
+
+    from apps.knowledge.models import SuperChunk
+
+    trocadas = 0
+    for citacao in artigo.citations.select_related("super_chunk__document"):
+        trecho = citacao.super_chunk
+        if trecho is None or trecho.embedding is None:
+            continue
+        nova = trecho.document.replaced_by.filter(status="curated").order_by("-created_at").first()
+        if nova is None:
+            continue
+        parecido = (
+            SuperChunk.objects.filter(document=nova, is_active=True)
+            .exclude(embedding__isnull=True)
+            .order_by(CosineDistance("embedding", trecho.embedding))
+            .first()
+        )
+        if parecido is None:
+            continue
+        from apps.content.services import _texto_ancora
+
+        citacao.super_chunk = parecido
+        citacao.source_title = parecido.source_title
+        citacao.source_url = parecido.source_url
+        citacao.source_label = _texto_ancora(parecido)[:300]
+        citacao.citation_mode = parecido.citation_mode
+        citacao.save(
+            update_fields=[
+                "super_chunk",
+                "source_title",
+                "source_url",
+                "source_label",
+                "citation_mode",
+            ]
+        )
+        trocadas += 1
+    if trocadas and artigo.primary_source_id:
+        primaria = artigo.citations.filter(used_as_primary=True).select_related("super_chunk")
+        primaria = primaria.first()
+        if primaria and primaria.super_chunk:
+            artigo.primary_source = primaria.super_chunk.document
+            artigo.outbound_link_url = primaria.source_url
+            artigo.anchor_text = primaria.source_label
+            artigo.save(update_fields=["primary_source", "outbound_link_url", "anchor_text"])
+    return trocadas

@@ -269,11 +269,7 @@ def aplicar_rascunho(
     )
 
     dominios = _dominios_das_citacoes(article)
-    html = markdown_para_html(markdown_final)
-    if dominios:
-        from apps.content.rendering import sanitizar_html
-
-        html = sanitizar_html(html, dominios_permitidos=dominios)
+    html = markdown_para_html(markdown_final, dominios_permitidos=dominios or None)
 
     proxima_versao = (article.revisions.count() or 0) + 1
     ArticleRevision.objects.create(
@@ -310,6 +306,10 @@ def aplicar_edicao_humana(article: Article, markdown_editado: str, *, editor) ->
         article.revisions.filter(source=ArticleRevision.Source.LLM).order_by("-version").first()
     )
     base = ultima_do_modelo.body_markdown if ultima_do_modelo else ""
+
+    from apps.content.chamada import reconciliar_com_o_texto
+
+    markdown_editado = reconciliar_com_o_texto(article, markdown_editado)
 
     proxima_versao = (article.revisions.count() or 0) + 1
     ArticleRevision.objects.create(
@@ -880,12 +880,18 @@ def montar_markdown_das_secoes(article: Article) -> str:
     if abertura:
         partes.append(abertura)
 
+    from apps.content.chamada import MARCA, tirar_marcas
+
     for secao in article.sections.all():
-        corpo = secao.body_markdown.strip()
+        # A marca da chamada so entra onde o planejamento (ou a pessoa) pos,
+        # nunca porque o modelo a escreveu no meio de uma secao.
+        corpo = tirar_marcas(secao.body_markdown)
         if not corpo:
             continue
         marcas = "#" * max(2, min(secao.level, 4))
         partes.append(f"{marcas} {secao.heading}\n\n{corpo}")
+        if article.call_to_action == "inline" and secao.order == article.call_to_action_after:
+            partes.append(MARCA)
 
     fecho = (moldura.get("fecho") or "").strip()
     if fecho:

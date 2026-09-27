@@ -8,11 +8,12 @@
 <div class="explica">
   {% blocktranslate trimmed %}
     Quando o site ja cobriu um assunto, parte do trabalho passa de criar para
-    atualizar — e pagina que melhora sobe. Tres motivos aparecem aqui:
+    atualizar — e pagina que melhora sobe. Quatro motivos aparecem aqui:
     <strong>demanda nova</strong> sobre um tema que um artigo seu ja trata (o
     radar nao criou pauta para nao competir com ele), <strong>quase na primeira
-    pagina</strong> (posicao 8 a 20 no Search Console) e <strong>perda de
-    posicao</strong> de um retrato para o outro. Artigo feito pelo PubliBot se
+    pagina</strong> (posicao 8 a 20 no Search Console), <strong>perda de
+    posicao</strong> de um retrato para o outro e <strong>fonte vencida</strong>
+    (a tabela de precos do mes passado, a norma revisada). Artigo feito pelo PubliBot se
     atualiza aqui mesmo: vira uma versao nova, com o motivo anotado, que passa
     pela revisao e substitui a pagina no site. Publicacao feita por fora, voce
     atualiza no site e marca como feita. A mesma sugestao so volta em 60 dias, o
@@ -35,7 +36,7 @@
   <article class="secao atualizacao tipo-{{ s.tipo }}">
     <header class="cabeca-oportunidade">
       <div>
-        <span class="selo {% if s.tipo == 'perdeu' %}ruim{% elif s.tipo == 'quase_la' %}ok{% else %}espera{% endif %}">{{ s.get_tipo_display }}</span>
+        <span class="selo {% if s.tipo == 'perdeu' or s.tipo == 'fonte' %}ruim{% elif s.tipo == 'quase_la' %}ok{% else %}espera{% endif %}">{{ s.get_tipo_display }}</span>
         <h3><a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.titulo }}</a></h3>
         {% if s.artigo %}<a class="ajuda" href="{% url 'content:revisar' s.artigo.pk %}">{% translate "abrir no PubliBot" %}</a>{% endif %}
       </div>
@@ -50,6 +51,11 @@
       <p>{% blocktranslate with n=s.evidencia.impressoes trimmed %}A pagina aparece entre a 8a e a 20a posicao para estas buscas ({{ n }} impressoes no periodo). Deixe a resposta a elas mais completa e mais visivel — no titulo de uma secao, no inicio do texto:{% endblocktranslate %}</p>
       <ul class="sinais">
         {% for c in s.evidencia.consultas %}<li>{{ c.consulta }} <span class="ajuda">{% translate "posicao" %} {{ c.posicao }} · {{ c.impressoes }} {% translate "impressoes" %}</span></li>{% endfor %}
+      </ul>
+    {% elif s.tipo == "fonte" %}
+      <p>{% blocktranslate trimmed %}O artigo cita fontes que venceram. Quando ja ha versao nova no acervo, <em>Atualizar no PubliBot</em> troca as citacoes por ela; os numeros do texto voce confere na revisao.{% endblocktranslate %}</p>
+      <ul class="sinais">
+        {% for f in s.evidencia.fontes %}<li>{{ f.titulo }} <span class="ajuda">{% translate "valia ate" %} {{ f.valida_ate }}</span>{% if f.substituta %} → <strong>{{ f.substituta }}</strong>{% else %} <span class="ajuda">· {% translate "sem versao nova no acervo" %}</span>{% endif %}</li>{% endfor %}
       </ul>
     {% else %}
       <p>{% blocktranslate with a=s.evidencia.posicao_anterior b=s.evidencia.posicao trimmed %}A posicao media caiu de <strong>{{ a }}</strong> para <strong>{{ b }}</strong>. Confira se as fontes e os dados ainda valem, e compare com quem passou na frente.{% endblocktranslate %}</p>

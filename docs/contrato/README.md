@@ -23,6 +23,12 @@ guardar, nem rota de callback para expor.
 | `POST` | `/api/v1/pending-questions/ack/` | Nao | `qa` |
 | `GET` | `/api/v1/publications/` | Nao | `reconciliation` |
 | `PUT` | `/api/v1/publications/{remote_id}/` | Nao | `update` |
+| `GET` | `/api/v1/insights/` | Nao | `insights` |
+
+Dois recursos nao tem rota do PubliBot, e sim trabalho no seu template:
+`call_to_action` (onde mostrar a chamada para a sua oferta) e, para alimentar
+`insights`, a medicao de leitura no navegador — que fala com o SEU servidor,
+nunca com o PubliBot.
 
 ## Autenticacao
 
@@ -235,6 +241,140 @@ Regras:
   ignora —, mas usa a declaracao para avisar a quem revisa quando as perguntas
   nao vao aparecer.
 
+## Chamada para a oferta do site
+
+Recurso `call_to_action`. Todo artigo traz o campo `call_to_action`, que diz
+se cabe uma chamada para a oferta do site (a landing page, o WhatsApp, o
+plano) e onde:
+
+| Valor | O que o site mostra |
+|---|---|
+| `none` | Nenhum bloco de chamada. O tema esta longe da oferta; forcar um anuncio ali faz o leitor desconfiar do resto. |
+| `end` | O bloco no fim do artigo. |
+| `inline` | O bloco no fim **e** no meio, no lugar do elemento `<aside data-publibot="chamada"></aside>` que vem dentro do `html_content`. |
+
+```json
+"call_to_action": "inline",
+"html_content": "<h2>Como conferir a nota</h2><p>...</p><aside data-publibot=\"chamada\"></aside><h2>...</h2>"
+```
+
+**O bloco e seu, nao do PubliBot.** Texto, botao, cor, link do WhatsApp e
+rastreio ficam num componente do seu site. O artigo so diz se cabe e onde.
+Trocar a oferta muda um lugar, e nao duzentos artigos. Quem decide o modo e o
+PubliBot, pela proximidade entre o tema e a oferta descrita no Guia editorial;
+a pessoa que revisa pode mudar.
+
+Regras:
+
+- **Aceite o `aside` na sanitizacao so com `data-publibot="chamada"`, sem
+  conteudo.** E o unico `aside` do contrato. Com `nh3`:
+  `tag_attribute_values={"aside": {"data-publibot": {"chamada"}}}` e `aside`
+  na lista de tags.
+- **No maximo um por artigo.** Se vier mais de um, mostre so o primeiro.
+- **Fora de `inline`, o elemento nao vem.** Se vier assim mesmo, ignore.
+- **Marque o bloco** para a medicao saber que o clique foi na chamada de um
+  artigo: `data-publibot-bloco` no elemento do componente (ver
+  [Leitura e conversoes](#leitura-e-conversoes)).
+- **Nada de pop-up cobrindo o texto.** O Google penaliza intersticial
+  intrusivo; o bloco e parte da pagina.
+
+Declare `call_to_action` em `capabilities` quando o template mostrar o bloco.
+Sem a declaracao, o PubliBot envia do mesmo jeito (um `aside` vazio nao aparece
+na pagina), mas avisa na revisao que a chamada nao vai aparecer.
+
+## Leitura e conversoes
+
+Recurso `insights`. E o que permite ao PubliBot saber quais artigos sao lidos
+de verdade e quais trazem cliente — e passar a sugerir mais temas parecidos
+com os que convertem, como o Google Ads faz com palavras-chave.
+
+**O PubliBot nunca recebe dado de pessoa.** O site mede no navegador, agrega
+por dia e entrega numeros. A jornada ate a conversao fica guardada **no
+navegador de quem le** (armazenamento local, 30 dias) e so e enviada ao SEU
+servidor no momento em que a pessoa converte, sem identificador nenhum.
+
+### O que medir, por artigo e por dia
+
+| Campo | Definicao |
+|---|---|
+| `views` | Aberturas da pagina do artigo. |
+| `engaged_views` | Aberturas com pelo menos **10 s de tempo ativo**. Quem so abriu e fechou fica de fora. |
+| `engaged_seconds` | Soma do tempo ativo, em segundos. Ativo = aba visivel **e** alguma interacao (rolagem, toque, tecla, mouse) nos ultimos 30 s. Teto de 30 min por abertura. |
+| `read_to_end` | Aberturas em que o fim do corpo do artigo entrou na tela. |
+| `cta_views` | Aberturas em que o bloco da chamada entrou na tela. |
+| `cta_clicks` | Aberturas com clique no bloco da chamada. |
+
+Tempo ativo, e nao tempo com a aba aberta: uma aba esquecida aberta a noite
+inteira nao e leitura. E o criterio do "tempo de engajamento" do Google
+Analytics 4, com o corte de 10 s da "sessao engajada".
+
+### O que e conversao
+
+O que o seu negocio chamar de conversao: clique no WhatsApp, envio de
+formulario, assinatura. Marque o elemento com `data-publibot-conversao="<tipo>"`
+(`whatsapp`, `assinatura`...). A conversao leva:
+
+- `kind` — o tipo;
+- `via_cta` — se o clique foi dentro do bloco da chamada de um artigo;
+- `journey` — os artigos lidos nos 30 dias anteriores, em ordem, com o tempo
+  ativo de cada um: `[{"remote_id": "...", "engaged_seconds": 95}, ...]`.
+  Todos, nao so o ultimo: e isso que permite ver que um artigo apresentou o
+  problema e outro fechou a venda. Depois de converter, a jornada recomeca.
+
+O PubliBot descarta da jornada o que foi lido por menos de 10 s e mostra tres
+atribuicoes: **ultimo artigo**, **participou** e **atribuida** (cada conversao
+dividida em partes iguais entre os artigos lidos).
+
+### A rota
+
+```http
+GET /api/v1/insights/?since=2026-09-01&cursor=
+```
+
+```json
+{
+  "reading": [
+    {"remote_id": "a1b2", "date": "2026-09-20", "views": 120, "engaged_views": 71,
+     "engaged_seconds": 6390, "read_to_end": 33, "cta_views": 40, "cta_clicks": 5}
+  ],
+  "conversions": [
+    {"id": "5f0c...", "date": "2026-09-20", "kind": "whatsapp", "via_cta": true,
+     "journey": [{"remote_id": "c3d4", "engaged_seconds": 40},
+                 {"remote_id": "a1b2", "engaged_seconds": 95}]}
+  ],
+  "next_cursor": null
+}
+```
+
+- **Uma linha por publicacao e dia**, com o total do dia. O PubliBot pede os
+  ultimos dias de novo a cada coleta e grava por cima: nao some, substitua.
+- **`id` estavel por conversao.** Coletar de novo nao duplica.
+- **`since`** e a data mais antiga pedida (no maximo 90 dias para tras).
+  Pagine por `next_cursor` se a resposta ficar grande.
+- `remote_id` e o `id` que o seu site devolveu na publicacao. Versoes novas do
+  artigo (recurso `update`) mantem o mesmo, e a serie continua.
+
+### Medir no navegador
+
+A implementacao de referencia traz um script pronto, sem dependencia, em
+`reference/django/publibot_node/static/publibot_node/leitura.js`. Ele le o id
+do artigo de `data-publibot-id`, mede o tempo ativo, o fim do texto e a
+chamada, e envia um resumo por abertura (`navigator.sendBeacon`) para uma rota
+do SEU site, que agrega. Serve de modelo para qualquer plataforma.
+
+Cuidados:
+
+- **Privacidade.** Nada de identificador de visitante, IP ou endereco completo
+  de quem le. O armazenamento local guarda so ids de artigo, segundos e data.
+  Mesmo assim, conte na politica de privacidade que o site mede leitura; se o
+  seu banner de consentimento bloqueia medicao, o script respeita
+  `window.publibotMedir = false`.
+- **Robos.** Descarte user-agents de robo e limite por IP a rota que recebe as
+  medicoes: ela e publica, e qualquer um pode enviar numero falso. Os numeros
+  sao indicativos, nao auditaveis.
+- **Nao dependa de script de terceiro.** Bloqueador de anuncio derruba script
+  de analytics conhecido; o seu, servido do seu dominio, passa.
+
 ## Imagens: sempre WebP
 
 **Toda imagem que trafega neste contrato e WebP**, seja por referencia
@@ -290,7 +430,8 @@ enviar, mas a defesa precisa existir dos dois lados: quem grava e o responsavel
 final pelo que sai na propria pagina.
 
 Tags aceitas: `p br hr h2 h3 h4 ul ol li strong em b i u s blockquote code pre
-a img table thead tbody tr th td figure figcaption span div`
+a img table thead tbody tr th td figure figcaption span div`, e `aside` so
+com `data-publibot="chamada"` (ver [Chamada](#chamada-para-a-oferta-do-site)).
 
 - Atributos `on*` (`onclick`, `onerror`, ...): **sempre removidos**.
 - `href` e `src`: apenas `http`, `https` e `mailto`.
@@ -402,6 +543,24 @@ funcionar.
       permissao do `html_content`.
 - [ ] As perguntas sao exibidas no mesmo endereco do artigo, com o texto das
       respostas presente no HTML (mesmo que recolhido).
+
+**Se voce declarar `call_to_action`**
+
+- [ ] O bloco aparece no fim para `end` e `inline`, e em nenhum lugar para
+      `none`.
+- [ ] O `aside data-publibot="chamada"` e trocado pelo bloco; a sanitizacao o
+      aceita so com esse atributo e sem conteudo.
+- [ ] O bloco tem `data-publibot-bloco`, e o botao, `data-publibot-conversao`.
+
+**Se voce declarar `insights`**
+
+- [ ] A pagina do artigo tem `data-publibot-id` com o `remote_id`.
+- [ ] Leitura = pelo menos 10 s de tempo ATIVO (aba visivel e interacao nos
+      ultimos 30 s), nao tempo com a aba aberta.
+- [ ] `GET /insights/` devolve uma linha por publicacao e dia, com o total.
+- [ ] Cada conversao tem `id` estavel e a jornada inteira dos 30 dias.
+- [ ] Nada que identifique a pessoa sai do navegador; a rota que recebe as
+      medicoes tem limite por IP e descarta robos.
 
 **Imagem de capa**
 

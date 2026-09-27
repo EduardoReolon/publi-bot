@@ -12,14 +12,19 @@ from apps.content.models import Article, Author, Topic
 class PautaForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ["title", "target_keyword", "content_type", "briefing"]
+        fields = ["title", "target_keyword", "content_type", "call_to_action", "briefing"]
         labels = {
             "content_type": _("Tipo de conteudo"),
             "title": _("Titulo da pauta"),
             "target_keyword": _("Palavra-chave principal"),
             "briefing": _("Orientacao"),
+            "call_to_action": _("Chamada para a oferta"),
         }
         help_texts = {
+            "call_to_action": _(
+                "Deixe o PubliBot decidir pela proximidade entre o tema e a oferta "
+                "(Guia editorial), ou escolha. Da para mudar na revisao."
+            ),
             "briefing": _(
                 "Entra na busca por fontes junto com o titulo. Quanto mais "
                 "proximo do vocabulario do acervo, melhor a recuperacao."

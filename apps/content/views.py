@@ -14,13 +14,14 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
+from apps.content.chamada import texto_da_oferta
 from apps.content.forms import (
     AgendamentoForm,
     PautaForm,
     RevisaoDeArtigo,
     RevisaoDeResposta,
 )
-from apps.content.models import Answer, Article, Author, Question, Topic
+from apps.content.models import CHAMADAS, Answer, Article, Author, Question, Topic
 from apps.content.services import (
     RevisaoInsuficiente,
     aplicar_edicao_humana,
@@ -209,6 +210,28 @@ def artigos(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+def desempenho(request: HttpRequest) -> HttpResponse:
+    """Leitura de verdade e conversao por artigo, contadas pelo site."""
+    from apps.content.desempenho import painel
+
+    dias = request.GET.get("dias", "28")
+    dias = int(dias) if dias in {"7", "28", "90", "365"} else 28
+    site = _site()
+    return render(
+        request,
+        "content/desempenho.html",
+        {
+            "aba": "artigos",
+            "painel": painel(dias),
+            "dias": dias,
+            "periodos": [7, 28, 90, 365],
+            "site": site,
+            "site_sem_insights": site is not None and not site.suporta("insights"),
+        },
+    )
+
+
+@login_required
 def revisar(request: HttpRequest, pk) -> HttpResponse:
     """A tela central: ler o texto ao lado das fontes que o sustentam."""
     artigo = get_object_or_404(Article.objects.select_related("topic", "primary_source"), pk=pk)
@@ -252,6 +275,10 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         # O FAQ vai num campo proprio, e o site so o exibe se implementou.
         # Sem este aviso, a pessoa revisaria perguntas que ninguem vai ver.
         "site_sem_faq": site is not None and not site.suporta("faq"),
+        "chamada": (artigo.thesis_json or {}).get("chamada") or {},
+        "modos_de_chamada": CHAMADAS,
+        "sem_oferta": not texto_da_oferta(),
+        "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": _proximo_horario(),
     }
 
@@ -539,6 +566,23 @@ def _conferencia_editorial(artigo):
     perfil = perfil_atual()
     texto = "\n".join([artigo.title, artigo.meta_description, artigo.body_markdown])
     return conferir_texto(texto, perfil)
+
+
+@login_required
+@require_POST
+def mudar_chamada(request: HttpRequest, pk) -> HttpResponse:
+    """Onde vai a chamada para a oferta: nenhuma, so no fim, ou tambem no meio."""
+    from apps.content.chamada import mudar
+
+    artigo = get_object_or_404(Article, pk=pk)
+    modo = request.POST.get("modo")
+    if modo not in {valor for valor, _rotulo in CHAMADAS}:
+        messages.error(request, _("Escolha onde vai a chamada."))
+        return redirect("content:revisar", pk=artigo.pk)
+    secao = request.POST.get("secao")
+    mudar(artigo, modo, int(secao) if (secao or "").isdigit() else None, editor=request.user)
+    messages.success(request, _("Chamada atualizada no texto."))
+    return redirect("content:revisar", pk=artigo.pk)
 
 
 @login_required

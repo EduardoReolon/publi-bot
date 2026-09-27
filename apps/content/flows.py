@@ -238,6 +238,9 @@ def passo_planejar(job: GenerationJob) -> dict:
             pauta_sem_fontes(article.topic, marcar=False)
         raise
     secoes = aplicar_plano(article, plano, trechos=trechos)
+    from apps.content.chamada import aplicar_decisao
+
+    chamada = aplicar_decisao(article)
 
     logger.info(
         "Artigo %s planejado com %s secao(oes), palavra-chave %r.",
@@ -250,6 +253,7 @@ def passo_planejar(job: GenerationJob) -> dict:
         "secoes": len(secoes),
         "palavra_chave": plano.palavra_chave,
         "palavras_secundarias": plano.palavras_secundarias,
+        "chamada": chamada["modo"],
     }
 
 
@@ -377,6 +381,7 @@ def passo_abertura_e_fecho(job: GenerationJob) -> dict:
         },
         site=site,
         job=job,
+        com_convite=article.call_to_action != "none",
     )
 
     moldura = _ler_json(resultado.texto, contexto="abertura e fecho")

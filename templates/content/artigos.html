@@ -4,7 +4,8 @@
 {% block menu %}{% include "_menu.html" %}{% endblock %}
 {% block conteudo %}
   <h1>{% translate "Artigos" %}</h1>
-  <p class="sub">{% translate "Nenhum artigo e publicado sem passar pela revisao." %}</p>
+  <p class="sub">{% translate "Nenhum artigo e publicado sem passar pela revisao." %}
+    · <a href="{% url 'content:desempenho' %}">{% translate "Desempenho no site" %}</a></p>
 
   <p class="pre-visualizacao">
     <a href="{% url 'content:artigos' %}">{% translate "Todos" %}</a>
