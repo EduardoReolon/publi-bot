@@ -186,9 +186,13 @@ def _uso_da_fonte(chunk) -> str:
     fonte: no mesmo artigo pode haver um estudo que sustenta a tese e um
     comentario de forum que so mostra como as pessoas falam do assunto.
     """
+    from apps.knowledge.services import fonte_forte
+
     avisos = []
     if not getattr(chunk, "supports_central_idea", True):
         avisos.append("apenas contexto: nunca a use para a ideia central")
+    elif fonte_forte(chunk):
+        avisos.append("fonte primaria: prefira-a para sustentar a ideia central")
     if getattr(chunk, "citation_mode", "link") == "interna":
         avisos.append("citacao interna: ponha o marcador so no fim da frase, sem 'segundo'")
     return f' uso="{"; ".join(avisos)}"' if avisos else ""

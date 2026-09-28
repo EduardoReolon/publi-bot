@@ -779,10 +779,14 @@ class CandidatoDeFonte(models.Model):
         # Video aprovado cuja legenda nao veio (sem legenda, ou o YouTube
         # bloqueou este servidor): espera a pessoa enviar o audio.
         AGUARDANDO_AUDIO = "audio", _("Aguardando o audio")
+        # Artigo cientifico aprovado sem PDF de acesso aberto (ou o site nao
+        # deixou baixar): espera a pessoa enviar o PDF.
+        AGUARDANDO_PDF = "pdf", _("Aguardando o PDF")
 
     class Tipo(models.TextChoices):
         PAGINA = "pagina", _("Pagina")
         VIDEO = "video", _("Video")
+        ARTIGO = "artigo", _("Artigo cientifico")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     url = models.URLField(_("URL"), max_length=500, unique=True)
@@ -796,6 +800,14 @@ class CandidatoDeFonte(models.Model):
     canal_id = models.CharField(_("canal"), max_length=100, blank=True)
     canal_nome = models.CharField(_("nome do canal"), max_length=200, blank=True)
     publicado_em = models.DateField(_("publicado em"), null=True, blank=True)
+    # Artigos cientificos: vindos do OpenAlex (ou completados por ele).
+    doi = models.CharField(_("DOI"), max_length=200, blank=True, db_index=True)
+    autores = models.CharField(_("autores"), max_length=300, blank=True)
+    ano = models.PositiveSmallIntegerField(_("ano"), null=True, blank=True)
+    revista = models.CharField(_("revista"), max_length=300, blank=True)
+    citacoes = models.PositiveIntegerField(_("citacoes"), null=True, blank=True)
+    # PDF de acesso aberto, quando existe. Sem ele, aprovar pede o arquivo.
+    pdf_url = models.URLField(_("PDF de acesso aberto"), max_length=500, blank=True)
     dominio = models.CharField(_("dominio"), max_length=200, blank=True, db_index=True)
     consulta = models.CharField(_("consulta"), max_length=500, blank=True)
     pauta = models.ForeignKey(
@@ -812,9 +824,11 @@ class CandidatoDeFonte(models.Model):
     class Origem(models.TextChoices):
         PAUTA = "pauta", _("Busca de fontes da pauta")
         RADAR = "radar", _("Buscas do radar")
+        OPENALEX = "openalex", _("Busca de artigos (OpenAlex)")
+        SCHOLAR = "scholar", _("Google Academico, nas buscas do radar")
 
     origem = models.CharField(
-        _("origem"), max_length=6, choices=Origem.choices, default=Origem.PAUTA
+        _("origem"), max_length=8, choices=Origem.choices, default=Origem.PAUTA
     )
     # Por que o classificador achou que a pagina e um artigo (JSON-LD, og:type,
     # tamanho do texto). So preenchido quando a pagina foi conferida antes.

@@ -297,6 +297,10 @@ def _sinais_da_serp(resultado, consulta: str, *, rodada) -> list[SinalDeDemanda]
         from apps.radar.fontes import guardar_resultados
 
         guardar_resultados(consulta, resultado.resultados, rodada=rodada)
+        if resultado.academicos and ConfiguracaoDoRadar.carregar().artigos_cientificos:
+            from apps.knowledge.academicos import registrar_do_google
+
+            registrar_do_google(resultado.academicos, consulta=consulta)
     novos = []
     for pergunta in resultado.perguntas:
         novos.append(
@@ -478,6 +482,16 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
 
         resumo["atualizacoes"] = atualizar_sugestoes()
         resumo["fontes_sugeridas"] = sugerir_fontes(rodada, cota=plano.fontes)
+        if config.artigos_cientificos:
+            from apps.knowledge.academicos import BaseIndisponivel
+            from apps.knowledge.academicos import sugerir_pelo_radar as sugerir_artigos
+
+            try:
+                resumo["artigos_sugeridos"] = sugerir_artigos(
+                    rodada, cota=config.artigos_por_rodada
+                )
+            except BaseIndisponivel as exc:
+                resumo.setdefault("erros", []).append(f"openalex: {exc}")
     except custos.TetoAtingido as exc:
         return _encerrar(rodada, RodadaDoRadar.Situacao.PARADA_NO_TETO, str(exc))
     except Exception as exc:

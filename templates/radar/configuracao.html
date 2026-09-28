@@ -76,6 +76,7 @@
       <div class="chips">
         <span class="selo {% if contas_obj.tem_dataforseo %}ok{% endif %}">DataForSEO: {% if contas_obj.tem_dataforseo %}{% translate "configurada" %}{% else %}{% translate "nao configurada" %}{% endif %}</span>
         <span class="selo {% if contas_obj.tem_youtube %}ok{% endif %}">YouTube: {% if contas_obj.tem_youtube %}{% translate "configurada" %}{% else %}{% translate "nao configurada" %}{% endif %}</span>
+        <span class="selo {% if contas_obj.tem_openalex %}ok{% endif %}">OpenAlex: {% if contas_obj.tem_openalex %}{% translate "configurada" %}{% else %}{% translate "nao configurada" %}{% endif %}</span>
       </div>
       <form method="post" action="{% url 'radar:salvar_contas' %}">
         {% csrf_token %}

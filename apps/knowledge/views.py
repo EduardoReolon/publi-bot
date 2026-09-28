@@ -704,10 +704,14 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
             "aguardando_audio": CandidatoDeFonte.objects.filter(
                 situacao=CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO
             ),
+            "aguardando_pdf": CandidatoDeFonte.objects.filter(
+                situacao=CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+            ),
             "recentes": CandidatoDeFonte.objects.exclude(
                 situacao__in=[
                     CandidatoDeFonte.Situacao.PENDENTE,
                     CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
+                    CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
                 ]
             ).select_related("documento")[:20],
             "categorias": DocumentCategory.objects.order_by("name"),
@@ -863,4 +867,27 @@ def enviar_audio(request: HttpRequest, pk) -> HttpResponse:
         request,
         _("Audio recebido. A transcricao roda no worker quando a placa estiver livre."),
     )
+    return redirect("knowledge:fontes_sugeridas")
+
+
+@login_required
+@require_POST
+def enviar_pdf(request: HttpRequest, pk) -> HttpResponse:
+    """O PDF de um artigo cientifico que nao tinha acesso aberto."""
+    from apps.knowledge.academicos import receber_pdf
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.perfis import categoria_da_natureza
+
+    candidato = get_object_or_404(
+        CandidatoDeFonte, pk=pk, situacao=CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+    )
+    arquivo = request.FILES.get("pdf")
+    if arquivo is None or not (arquivo.name or "").lower().endswith(".pdf"):
+        messages.error(request, _("Envie o arquivo PDF do artigo."))
+        return redirect("knowledge:fontes_sugeridas")
+    categoria = DocumentCategory.objects.filter(
+        pk=request.POST.get("categoria")
+    ).first() or categoria_da_natureza("cientifico")
+    receber_pdf(candidato, arquivo, categoria=categoria, por=request.user)
+    messages.success(request, _("PDF recebido. Confira na curadoria quando a leitura terminar."))
     return redirect("knowledge:fontes_sugeridas")

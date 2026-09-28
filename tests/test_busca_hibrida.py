@@ -168,3 +168,54 @@ def test_reordenador_quebrado_nao_derruba_a_busca(acervo, monkeypatch):
     _trecho(acervo, "Outra tabela de custos.", 0.08)
 
     assert _ids("tabela de custos", distancia_maxima=0.2, top_k=1) == [trecho.pk]
+
+
+# ---------------------------------------------------------------------------
+# Autoridade: desempata e tem vaga garantida, mas nao passa pelo limiar
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def veiculo(acervo):
+    return DocumentCategory.objects.create(name="Blog", slug="blog", source_class="veiculo")
+
+
+@pytest.mark.django_db
+def test_fonte_forte_tem_vaga_garantida(acervo, veiculo, settings):
+    settings.RAG_BUSCA_HIBRIDA = False
+    settings.RAG_BONUS_DE_AUTORIDADE = 0
+    a = _trecho(veiculo, "Pagina a sobre o tema.", 0.02)
+    b = _trecho(veiculo, "Pagina b sobre o tema.", 0.03)
+    _trecho(veiculo, "Pagina c sobre o tema.", 0.04)
+    estudo = _trecho(acervo, "Estudo sobre o tema.", 0.08)  # "Norma" nasce cientifica
+
+    assert _ids("tema", top_k=3, distancia_maxima=0.2) == [a.pk, b.pk, estudo.pk]
+
+    # Fora do limiar, a vaga nao vale.
+    assert estudo.pk not in _ids("tema", top_k=3, distancia_maxima=0.05)
+
+    settings.RAG_VAGA_PARA_FONTE_FORTE = False
+    assert estudo.pk not in _ids("tema", top_k=3, distancia_maxima=0.2)
+
+
+@pytest.mark.django_db
+def test_autoridade_sobe_poucas_posicoes(acervo, veiculo, settings):
+    settings.RAG_BUSCA_HIBRIDA = False
+    settings.RAG_BONUS_DE_AUTORIDADE = 2
+    paginas = [_trecho(veiculo, f"Pagina {i} sobre o tema.", 0.02 + i * 0.01) for i in range(5)]
+    estudo = _trecho(acervo, "Estudo sobre o tema.", 0.075)
+
+    ordem = _ids("tema", top_k=6, distancia_maxima=0.2)
+    # Estava em 6o; sobe duas posicoes, e nao para o topo.
+    assert ordem.index(estudo.pk) == 3
+    assert ordem[0] == paginas[0].pk
+
+
+@pytest.mark.django_db
+def test_nota_alta_de_autoridade_conta_como_forte(acervo, veiculo):
+    from apps.knowledge.services import fonte_forte
+
+    comum = _trecho(veiculo, "Relatorio de mercado.", 0.05)
+    assert not fonte_forte(comum)
+    comum.source_authority = 85
+    assert fonte_forte(comum)
+    comum.supports_central_idea = False
+    assert not fonte_forte(comum)

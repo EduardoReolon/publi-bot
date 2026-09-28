@@ -49,6 +49,10 @@ imagem têm um comando próprio: `manage.py conferir_worker`.
 - [ ] **Fontes sugeridas.** Abra *Ver o texto capturado* em duas ou três
       páginas. Se aparecer menu, rodapé, propaganda ou comentário no meio,
       recuse (ou recuse a área do site).
+- [ ] **Artigos científicos.** Com a chave do OpenAlex cadastrada, rode o
+      radar. Os artigos sugeridos (selo "artigo científico") são do seu tema?
+      Aprove um com "PDF aberto" e um sem: o primeiro vai para a curadoria, o
+      segundo para *Artigos aguardando o PDF*.
 - [ ] **Artigo.** Gere um pelo caminho de sempre e um por *Artigo com outra
       IA* (numa pauta com o selo "vale o modelo grande", se houver). Na
       revisão, olhe:

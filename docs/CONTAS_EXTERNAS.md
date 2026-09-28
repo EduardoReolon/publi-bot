@@ -9,6 +9,7 @@ busca de fontes; sem ele, aquela parte fica desligada e o resto funciona.
 | DataForSEO | pago por chamada | tela do Radar, **por site** | SERP, volume, concorrentes, avaliações |
 | YouTube Data API v3 | gratuito até a cota | tela do Radar, **por site** | comentários e vídeos como fonte |
 | Search Console | gratuito | `.env` (arquivo da conta de serviço) + convite em cada propriedade | "quase lá" e desempenho dos artigos |
+| OpenAlex (+ Unpaywall) | gratuito, com chave | tela do Radar, **por site** | artigos científicos como fonte, e o PDF de acesso aberto |
 | Legendas do YouTube | gratuito, sem conta | — | transcrição de vídeo |
 | Transcrição no worker | sua GPU | worker-gpu | vídeo sem legenda, áudio enviado |
 
@@ -174,7 +175,35 @@ player. Não é API oficial: o YouTube costuma recusar pedidos vindos de IP de
 datacenter. Quando recusa, o vídeo aprovado fica "esperando áudio" e a pessoa
 envia o áudio (item 6). Nada a configurar.
 
-## 6. Transcrição de áudio no worker-gpu
+## 6. OpenAlex e Unpaywall — artigos científicos (gratuito)
+
+OpenAlex é uma base aberta com centenas de milhões de trabalhos científicos:
+título, autores, resumo, citações e o link do PDF quando o acesso é aberto.
+Unpaywall acha o PDF legal pelo DOI. Os dois são da mesma organização
+(OurResearch).
+
+1. Crie a conta em [openalex.org](https://openalex.org) e copie a chave de
+   API (gratuita). Sem ela, a cota diária é mínima.
+2. **No publi-bot:** Radar › Contas externas › chave do OpenAlex e o
+   **e-mail para as bases acadêmicas** (os dois serviços pedem um e-mail de
+   contato; sem ele, o Unpaywall fica de fora).
+3. Configuração do radar › "buscar artigos científicos" (vem ligado).
+
+O que acontece:
+
+- pauta sem fonte: busca artigos no OpenAlex, além da busca na web;
+- rodada do radar: artigos para os temas que o acervo ainda não cobre, até o
+  limite "artigos científicos por rodada";
+- o bloco "Google Acadêmico" que o Google mostra em algumas buscas vem nas
+  páginas de resultado que o radar já paga à DataForSEO; cada artigo dele é
+  completado pelo OpenAlex (DOI, resumo, PDF), sem chamada paga a mais;
+- aprovar um artigo baixa o PDF de acesso aberto. Sem PDF livre, ou com o
+  site recusando o download, ele fica em **Artigos aguardando o PDF**: baixe
+  pelo navegador (ou pela biblioteca da sua instituição) e envie.
+
+**Testar:** `manage.py conferir_instalacao`, linha "OpenAlex".
+
+## 7. Transcrição de áudio no worker-gpu
 
 Rota `/v1/audio/transcriptions` no worker — especificação em
 [`WORKER_TRANSCRICAO.md`](WORKER_TRANSCRICAO.md). Usa o mesmo

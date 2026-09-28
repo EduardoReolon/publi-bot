@@ -152,6 +152,17 @@ def buscar_fontes(pauta, *, limite: int | None = None) -> list[CandidatoDeFonte]
     ]
     consultas.append(termo)
 
+    # Artigos cientificos primeiro: gratuitos, e fonte primaria. Falha aqui
+    # nao impede a busca na web.
+    academicos: list[CandidatoDeFonte] = []
+    if config.artigos_cientificos:
+        from apps.knowledge.academicos import BaseIndisponivel, buscar_para_pauta
+
+        try:
+            academicos = buscar_para_pauta(pauta, limite=limite)
+        except BaseIndisponivel as exc:
+            logger.warning("Pauta %s: artigos cientificos nao buscados: %s", pauta.pk, exc)
+
     novos: list[CandidatoDeFonte] = []
     for consulta in consultas:
         if len(novos) >= limite:
@@ -177,8 +188,13 @@ def buscar_fontes(pauta, *, limite: int | None = None) -> list[CandidatoDeFonte]
                 aprovar(candidato, categoria=caminho.categoria, automatico=True)
             novos.append(candidato)
 
-    logger.info("Pauta %s: %s candidato(s) a fonte.", pauta.pk, len(novos))
-    return novos
+    logger.info(
+        "Pauta %s: %s candidato(s) a fonte, %s artigo(s) cientifico(s).",
+        pauta.pk,
+        len(novos),
+        len(academicos),
+    )
+    return academicos + novos
 
 
 def aprovar(
@@ -202,6 +218,10 @@ def aprovar(
         from apps.knowledge.videos import aprovar_video
 
         return aprovar_video(candidato, categoria=categoria, por=por, automatico=automatico)
+    if candidato.tipo == CandidatoDeFonte.Tipo.ARTIGO:
+        from apps.knowledge.academicos import aprovar_artigo
+
+        return aprovar_artigo(candidato, categoria=categoria, por=por, automatico=automatico)
 
     try:
         resultado = ingerir_url(

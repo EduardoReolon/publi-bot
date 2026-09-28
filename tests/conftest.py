@@ -12,6 +12,22 @@ from django.db import connection
 from apps.accounts.models import Domain, Tenant, User
 
 
+@pytest.fixture(autouse=True)
+def _sem_bases_academicas(request, monkeypatch):
+    """Nenhum teste fala com o OpenAlex ou o Unpaywall de verdade.
+
+    A busca de artigos cientificos vem ligada por padrao e entra na busca de
+    fontes e na rodada do radar; sem isto, esses testes dependeriam da rede.
+    Quem testa as bases pede `bases_academicas` e simula as respostas.
+    """
+    if "bases_academicas" in request.fixturenames:
+        return
+    from apps.knowledge import academicos
+
+    monkeypatch.setattr(academicos, "buscar_openalex", lambda *a, **k: [])
+    monkeypatch.setattr(academicos, "pdf_pelo_unpaywall", lambda *a, **k: "")
+
+
 @pytest.fixture
 def public_tenant(db) -> Tenant:
     tenant, _ = Tenant.objects.get_or_create(

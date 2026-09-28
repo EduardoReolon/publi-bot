@@ -54,6 +54,8 @@ class ResultadoDeBusca:
     resultados: list[ItemDeBusca] = field(default_factory=list)
     perguntas: list[str] = field(default_factory=list)
     relacionadas: list[str] = field(default_factory=list)
+    # Bloco "Google Academico" (so a DataForSEO traz): titulo, url, autor, descricao.
+    academicos: list[dict] = field(default_factory=list)
     custo: Decimal = Decimal("0")
 
 
@@ -190,6 +192,20 @@ def ler_serp(tarefa: dict) -> ResultadoDeBusca:
             for pergunta in bloco.get("items") or []:
                 if pergunta.get("title"):
                     resultado.perguntas.append(pergunta["title"])
+        elif tipo == "scholarly_articles":
+            # O bloco "Google Academico" que o Google poe em buscas de tema de
+            # pesquisa: ate uns 3 artigos, com link para o Scholar. Ja veio
+            # nesta busca paga; aproveitar nao custa nada.
+            for artigo in bloco.get("items") or []:
+                if artigo.get("title"):
+                    resultado.academicos.append(
+                        {
+                            "titulo": artigo["title"],
+                            "url": artigo.get("url") or "",
+                            "autor": (artigo.get("author") or "").strip("\u200e "),
+                            "descricao": artigo.get("description") or "",
+                        }
+                    )
         elif tipo == "related_searches":
             for relacionada in bloco.get("items") or []:
                 texto = relacionada if isinstance(relacionada, str) else relacionada.get("title")

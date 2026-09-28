@@ -17,6 +17,13 @@
     <div class="aviso" id="candidato-{{ candidato.pk }}">
       <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
       {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %} · {{ candidato.canal_nome }}</span>{% endif %}
+      {% if candidato.tipo == 'artigo' %}
+        <span class="selo ok">{% translate "artigo cientifico" %}</span>
+        {% if candidato.pdf_url %}<span class="selo ok">{% translate "PDF aberto" %}</span>{% else %}<span class="selo alerta" title="{% translate 'Ao aprovar, voce envia o PDF' %}">{% translate "sem PDF aberto" %}</span>{% endif %}
+        <div class="ajuda">
+          {% if candidato.autores %}{{ candidato.autores|truncatechars:120 }}{% endif %}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}{% if candidato.revista %} · {{ candidato.revista }}{% endif %}{% if candidato.citacoes is not None %} · {% blocktranslate trimmed count n=candidato.citacoes %}{{ n }} citacao{% plural %}{{ n }} citacoes{% endblocktranslate %}{% endif %}
+        </div>
+      {% endif %}
       {% if candidato.preferido %}<span class="selo ok">{% if candidato.tipo == 'video' %}{% translate "canal preferido" %}{% else %}{% translate "caminho preferido" %}{% endif %}</span>{% endif %}
       <div class="pre-visualizacao">{{ candidato.url }}</div>
       {% if candidato.trecho %}<div class="pre-visualizacao">{{ candidato.trecho|truncatechars:300 }}</div>{% endif %}
@@ -39,7 +46,7 @@
         {% csrf_token %}
         <select name="categoria" style="width:auto">
           {% for categoria in categorias %}
-            <option value="{{ categoria.pk }}" {% if categoria.source_class == 'veiculo' %}selected{% endif %}>{{ categoria.name }}</option>
+            <option value="{{ categoria.pk }}" {% if candidato.tipo == 'artigo' %}{% if categoria.source_class == 'cientifico' %}selected{% endif %}{% elif categoria.source_class == 'veiculo' %}selected{% endif %}>{{ categoria.name }}</option>
           {% endfor %}
         </select>
         <button type="submit" name="decisao" value="aprovar">{% translate "Aprovar e enviar para a curadoria" %}</button>
@@ -47,7 +54,8 @@
         <button type="submit" name="decisao" value="bloquear_caminho" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere paginas desta pasta do site' %}">{% translate "Recusar esta area do site" %}</button>
         <button type="submit" name="decisao" value="bloquear_site" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere nada deste site' %}">{% translate "Recusar o site inteiro" %}</button>
       </form>
-      {% if candidato.origem == 'radar' %}<div class="ajuda">{% translate "Achada nas buscas do radar" %}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}{% if candidato.classificacao %} · {{ candidato.classificacao }}{% endif %}</div>{% endif %}
+      {% if candidato.origem == 'radar' %}<div class="ajuda">{% translate "Achada nas buscas do radar" %}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}{% if candidato.classificacao %} · {{ candidato.classificacao }}{% endif %}</div>
+      {% elif candidato.origem == 'openalex' or candidato.origem == 'scholar' %}<div class="ajuda">{{ candidato.get_origem_display }}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}</div>{% endif %}
 
       <details>
         <summary>{% if candidato.tipo == 'video' %}{% translate "Confiar neste canal" %}{% else %}{% translate "Confiar neste caminho" %}{% endif %}</summary>
@@ -97,6 +105,29 @@
           {% csrf_token %}
           <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
           <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if aguardando_pdf %}
+    <h2>{% translate "Artigos aguardando o PDF" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Aprovados, mas sem PDF de acesso aberto (ou o site recusou o download
+        por robo). Abra o link no navegador — ou pela biblioteca da sua
+        instituicao — baixe o PDF e envie aqui.
+      {% endblocktranslate %}
+    </p>
+    {% for candidato in aguardando_pdf %}
+      <div class="aviso">
+        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
+        {% if candidato.autores %}<span class="ajuda">{{ candidato.autores|truncatechars:80 }}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}</span>{% endif %}
+        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
+        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_pdf' candidato.pk %}" class="acoes">
+          {% csrf_token %}
+          <input type="file" name="pdf" accept="application/pdf,.pdf" required>
+          <button type="submit">{% translate "Enviar o PDF" %}</button>
         </form>
       </div>
     {% endfor %}

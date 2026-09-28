@@ -57,6 +57,7 @@ class Command(BaseCommand):
                 self._rodar("DataForSEO", self._dataforseo)
                 self._rodar("YouTube", self._youtube)
                 self._rodar("SearXNG", self._searxng)
+                self._rodar("OpenAlex (artigos cientificos)", self._openalex)
                 self._rodar("Search Console", self._console)
 
         self.stdout.write("")
@@ -236,6 +237,27 @@ class Command(BaseCommand):
                 "'YouTube Data API v3' e se a API esta ativada no projeto do Google."
             )
         return "chave aceita"
+
+    def _openalex(self) -> str | None:
+        from apps.knowledge.academicos import OPENALEX, _parametros_da_conta
+        from apps.radar.models import ConfiguracaoDoRadar, ContasExternas
+
+        if not ConfiguracaoDoRadar.carregar().artigos_cientificos:
+            return None
+        parametros = {"search": "teste", "per_page": 1, **_parametros_da_conta()}
+        resposta = httpx.get(OPENALEX, params=parametros, timeout=TIMEOUT)
+        if not resposta.is_success:
+            raise RuntimeError(
+                f"HTTP {resposta.status_code}. Cadastre a chave gratuita do OpenAlex "
+                "em Radar > Configuracao > Contas externas."
+            )
+        contas = ContasExternas.carregar()
+        avisos = []
+        if not contas.tem_openalex:
+            avisos.append("sem chave (a cota sem chave e minima)")
+        if not contas.email_para_bases_academicas:
+            avisos.append("sem e-mail (o Unpaywall, que acha o PDF pelo DOI, fica de fora)")
+        return "responde" + (f"; {'; '.join(avisos)}" if avisos else "")
 
     def _searxng(self) -> str | None:
         from apps.radar.models import ContasExternas

@@ -303,6 +303,7 @@ def recuperar(
 
     base = (
         SuperChunk.objects.filter(is_active=True, embedding__isnull=False)
+        .select_related("document__category")
         # Fonte vencida (tabela de preco do mes passado, norma revisada) sai da
         # busca ate alguem atualiza-la. Citar um valor que ja mudou e pior que
         # nao citar nada.
@@ -329,21 +330,21 @@ def recuperar(
 
     candidatos = _fundir([por_vetor, por_texto])
     candidatos = _reordenar(consulta, candidatos)
+    candidatos = _com_peso_da_autoridade(candidatos)
 
-    selecionados: list[TrechoRecuperado] = []
+    elegiveis: list = []
     documentos_vistos: set = set()
-
     for chunk in candidatos:
         if deduplicar_por_documento and chunk.document_id in documentos_vistos:
             continue
         documentos_vistos.add(chunk.document_id)
-        selecionados.append(
-            TrechoRecuperado(
-                chunk=chunk, distancia=float(chunk.distancia), posicao=len(selecionados) + 1
-            )
-        )
-        if len(selecionados) >= top_k:
-            break
+        elegiveis.append(chunk)
+
+    escolhidos = _com_vaga_para_fonte_forte(elegiveis, top_k)
+    selecionados = [
+        TrechoRecuperado(chunk=chunk, distancia=float(chunk.distancia), posicao=posicao)
+        for posicao, chunk in enumerate(escolhidos, start=1)
+    ]
 
     RetrievalHit.objects.bulk_create(
         [
@@ -353,6 +354,54 @@ def recuperar(
     )
 
     return registro, selecionados
+
+
+# Fonte "forte": o que o mercado chama de fonte primaria ou de alta
+# autoridade. Estudo, norma e dado oficial pela natureza da categoria; o resto,
+# pela nota de autoridade que a pessoa deu ao documento.
+NATUREZAS_FORTES = frozenset({"cientifico", "normativo"})
+AUTORIDADE_FORTE = 70
+
+
+def fonte_forte(chunk) -> bool:
+    if not getattr(chunk, "supports_central_idea", True):
+        return False
+    if (getattr(chunk, "source_authority", 0) or 0) >= AUTORIDADE_FORTE:
+        return True
+    categoria = getattr(getattr(chunk, "document", None), "category", None)
+    return getattr(categoria, "source_class", "") in NATUREZAS_FORTES
+
+
+def _com_peso_da_autoridade(candidatos: list) -> list:
+    """Fonte forte sobe ate RAG_BONUS_DE_AUTORIDADE posicoes. Desempata, nao
+    decide: um estudo que so tangencia o tema nao passa de uma pagina que
+    responde a pergunta, e todos ja passaram pelo limiar."""
+    bonus = int(getattr(settings, "RAG_BONUS_DE_AUTORIDADE", 2))
+    if bonus <= 0:
+        return candidatos
+    ordem = sorted(
+        range(len(candidatos)),
+        key=lambda i: (i - (bonus + 0.5 if fonte_forte(candidatos[i]) else 0), i),
+    )
+    return [candidatos[i] for i in ordem]
+
+
+def _com_vaga_para_fonte_forte(elegiveis: list, top_k: int) -> list:
+    """Os `top_k` primeiros, com uma vaga garantida para fonte forte.
+
+    Se nenhum dos escolhidos e forte mas ha um forte entre os que passaram
+    pelo limiar, ele entra no lugar do ultimo. E o "lote" que garante que o
+    artigo se apoie em pelo menos uma fonte primaria quando o acervo tem.
+    """
+    escolhidos = elegiveis[:top_k]
+    if not getattr(settings, "RAG_VAGA_PARA_FONTE_FORTE", True) or not escolhidos:
+        return escolhidos
+    if any(fonte_forte(c) for c in escolhidos):
+        return escolhidos
+    reserva = next((c for c in elegiveis[top_k:] if fonte_forte(c)), None)
+    if reserva is None:
+        return escolhidos
+    return [*escolhidos[:-1], reserva]
 
 
 def _fundir(listas: list[list]) -> list:

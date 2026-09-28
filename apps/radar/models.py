@@ -40,6 +40,16 @@ class ContasExternas(models.Model):
     youtube_chave_ciphertext = models.BinaryField(
         _("chave YouTube (cifrada)"), null=True, blank=True
     )
+    # OpenAlex: chave gratuita (openalex.org); sem ela a cota diaria e minima.
+    openalex_chave_ciphertext = models.BinaryField(
+        _("chave OpenAlex (cifrada)"), null=True, blank=True
+    )
+    # E-mail de contato que OpenAlex e Unpaywall pedem (nao e segredo).
+    email_para_bases_academicas = models.EmailField(
+        _("e-mail para as bases academicas"),
+        blank=True,
+        help_text=_("OpenAlex e Unpaywall pedem um e-mail de contato em cada consulta."),
+    )
     # Instancia propria do SearXNG. Vazio: usa a do `.env` (SEARXNG_URL), se houver.
     searxng_url = models.URLField(_("SearXNG"), max_length=300, blank=True)
 
@@ -64,6 +74,10 @@ class ContasExternas(models.Model):
     @property
     def tem_youtube(self) -> bool:
         return bool(self.youtube_chave_ciphertext)
+
+    @property
+    def tem_openalex(self) -> bool:
+        return bool(self.openalex_chave_ciphertext)
 
 
 class ConfiguracaoDoRadar(models.Model):
@@ -128,6 +142,19 @@ class ConfiguracaoDoRadar(models.Model):
     )
     fontes_por_pauta = models.PositiveSmallIntegerField(
         _("candidatos por pauta"), default=5, validators=[MaxValueValidator(20)]
+    )
+    artigos_cientificos = models.BooleanField(
+        _("buscar artigos cientificos"),
+        default=True,
+        help_text=_(
+            "Gratuito. Busca no OpenAlex (centenas de milhoes de artigos, com resumo "
+            "e PDF de acesso aberto) para pautas sem fonte e para os temas da rodada "
+            "que o acervo nao cobre; e aproveita o bloco 'Google Academico' das "
+            "buscas que o radar ja paga. Tudo espera curadoria em Fontes sugeridas."
+        ),
+    )
+    artigos_por_rodada = models.PositiveSmallIntegerField(
+        _("artigos cientificos por rodada"), default=5, validators=[MaxValueValidator(30)]
     )
 
     # --- Concorrentes ----------------------------------------------------------
@@ -335,6 +362,8 @@ class ChamadaExterna(models.Model):
         YOUTUBE = "youtube", _("YouTube")
         SEARCH_CONSOLE = "search_console", _("Search Console")
         WEB = "web", _("Pagina web")
+        OPENALEX = "openalex", _("OpenAlex")
+        UNPAYWALL = "unpaywall", _("Unpaywall")
 
     class Finalidade(models.TextChoices):
         RADAR = "radar", _("Rodada do radar")

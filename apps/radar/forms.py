@@ -58,7 +58,16 @@ class ConfiguracaoForm(forms.ModelForm):
                 "propriedade_search_console",
             ],
         ),
-        (_("Fontes para os artigos"), ["fontes_pelo_radar", "buscar_fontes", "fontes_por_pauta"]),
+        (
+            _("Fontes para os artigos"),
+            [
+                "fontes_pelo_radar",
+                "buscar_fontes",
+                "fontes_por_pauta",
+                "artigos_cientificos",
+                "artigos_por_rodada",
+            ],
+        ),
         (_("Artigos publicados"), ["idade_para_vigiar"]),
         (
             _("Concorrentes"),
@@ -153,12 +162,18 @@ class ContasForm(forms.ModelForm):
         widget=forms.PasswordInput(render_value=False),
         help_text=_("Google Cloud > APIs > YouTube Data API v3. Deixe vazio para manter."),
     )
+    openalex_chave = forms.CharField(
+        label=_("Chave da API do OpenAlex"),
+        required=False,
+        widget=forms.PasswordInput(render_value=False),
+        help_text=_("Gratuita, em openalex.org (Settings > API). Deixe vazio para manter."),
+    )
     remover_dataforseo = forms.BooleanField(label=_("Remover a conta DataForSEO"), required=False)
     remover_youtube = forms.BooleanField(label=_("Remover a chave do YouTube"), required=False)
 
     class Meta:
         model = ContasExternas
-        fields = ["dataforseo_login", "searxng_url"]
+        fields = ["dataforseo_login", "searxng_url", "email_para_bases_academicas"]
         help_texts = {
             "dataforseo_login": _("O e-mail de login da API (painel DataForSEO > API Access)."),
             "searxng_url": _("Endereco de uma instancia sua, com a saida JSON ligada."),
@@ -178,6 +193,8 @@ class ContasForm(forms.ModelForm):
             contas.youtube_chave_ciphertext = None
         elif dados.get("youtube_chave"):
             contas.youtube_chave_ciphertext = cifrar(dados["youtube_chave"])
+        if dados.get("openalex_chave"):
+            contas.openalex_chave_ciphertext = cifrar(dados["openalex_chave"])
         if commit:
             contas.save()
         return contas
