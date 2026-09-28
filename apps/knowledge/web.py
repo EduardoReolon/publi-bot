@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from django.conf import settings
 from django.core.exceptions import ValidationError
 
 logger = logging.getLogger("publibot.knowledge")
@@ -30,7 +31,20 @@ logger = logging.getLogger("publibot.knowledge")
 LIMITE_DE_BYTES = 5 * 1024 * 1024
 MAXIMO_DE_REDIRECIONAMENTOS = 5
 TIMEOUT_SEGUNDOS = 20.0
-AGENTE = "PubliBot/1.0 (+curadoria de fontes; contato pelo site do cliente)"
+
+
+def _agente() -> str:
+    """Nome do robo no formato que sites grandes exigem: nome, contato, biblioteca.
+
+    A Wikipedia (e quem segue a mesma politica) recusa com 403 o robo sem
+    endereco de contato. O contato e o dominio publico do PubliBot.
+    """
+    dominio = getattr(settings, "PUBLIBOT_DOMINIO_PUBLICO", "")
+    contato = f"+https://{dominio}/; " if dominio else ""
+    return f"PubliBot/1.0 ({contato}curadoria de fontes) httpx/{httpx.__version__}"
+
+
+AGENTE = _agente()
 
 
 class PaginaIndisponivel(RuntimeError):

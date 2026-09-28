@@ -45,10 +45,10 @@ def test_relata_cada_parte_e_sai_com_erro_quando_algo_falha(tenant_factory, monk
 
     from apps.radar import links_quebrados
 
-    respostas = {"Brasil": None, "nao_existe": 404, "invalid": 0}
+    respostas = {"Brasil": 200, "nao_existe": 404, "invalid": 0}
     monkeypatch.setattr(
         links_quebrados,
-        "situacao_do_link",
+        "codigo_http",
         lambda url: next(v for k, v in respostas.items() if k in url),
     )
 
@@ -90,7 +90,7 @@ def test_completo_passa_pelas_funcoes_de_uso_e_confere_o_formato(tenant_factory,
 
     ok = httpx.Response(200, json={"tasks": [{"status_code": 20000, "result": [{}]}]})
     monkeypatch.setattr(httpx, "get", lambda url, **kw: ok)
-    monkeypatch.setattr(links_quebrados, "situacao_do_link", lambda url: None)
+    monkeypatch.setattr(links_quebrados, "codigo_http", lambda url: 200)
     monkeypatch.setattr(web, "texto_da_pagina", lambda url: "texto " * 100)
     # Organico sem titulo: o formato que o codigo nao aceita.
     monkeypatch.setattr(

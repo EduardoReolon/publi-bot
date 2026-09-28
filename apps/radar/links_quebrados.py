@@ -85,8 +85,8 @@ def links_de_saida(html: str, base: str) -> tuple[str, list[tuple[str, str]]]:
     return " ".join(leitor.titulo.split())[:300], saida[:LINKS_POR_PAGINA]
 
 
-def situacao_do_link(url: str) -> int | None:
-    """O codigo HTTP se o link esta quebrado (404/410, ou 0 se o dominio sumiu)."""
+def codigo_http(url: str) -> int | None:
+    """O codigo HTTP do destino; 0 se o dominio sumiu; None se nao deu para saber."""
     from apps.knowledge.web import AGENTE, PaginaIndisponivel, conferir_destino
 
     try:
@@ -105,7 +105,13 @@ def situacao_do_link(url: str) -> int | None:
         return 0
     except httpx.HTTPError:
         return None
-    return resposta.status_code if resposta.status_code in QUEBRADO else None
+    return resposta.status_code
+
+
+def situacao_do_link(url: str) -> int | None:
+    """O codigo HTTP se o link esta quebrado (404/410, ou 0 se o dominio sumiu)."""
+    codigo = codigo_http(url)
+    return codigo if codigo == 0 or codigo in QUEBRADO else None
 
 
 def paginas_para_verificar(limite: int = PAGINAS_POR_VEZ) -> list[str]:

@@ -141,3 +141,26 @@ def test_landing_com_whatsapp(client, settings, public_tenant):
     html = client.get("/", HTTP_HOST=settings.ROOT_DOMAIN).content.decode()
     assert "https://wa.me/5541920021699" in html and "(41) 92002-1699" in html
     assert "Escrito com fonte" in html
+
+
+def test_so_404_410_e_dominio_morto_contam_como_quebrado(monkeypatch):
+    from apps.radar import links_quebrados
+
+    for codigo, esperado in [
+        (200, None),
+        (403, None),
+        (500, None),
+        (None, None),
+        (404, 404),
+        (410, 410),
+        (0, 0),
+    ]:
+        monkeypatch.setattr(links_quebrados, "codigo_http", lambda url, c=codigo: c)
+        assert links_quebrados.situacao_do_link("https://x.com/") == esperado
+
+
+def test_agente_leva_o_dominio_publico_como_contato(settings):
+    from apps.knowledge import web
+
+    settings.PUBLIBOT_DOMINIO_PUBLICO = "publibot.exemplo.com"
+    assert "+https://publibot.exemplo.com/" in web._agente()

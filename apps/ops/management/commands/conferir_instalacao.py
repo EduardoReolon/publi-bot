@@ -36,11 +36,12 @@ from django.utils import timezone
 from django_tenants.utils import get_public_schema_name, schema_context
 
 TIMEOUT = 15.0
-# Casos conhecidos para o verificador de links quebrados, com a resposta
-# esperada: pagina viva (None), pagina que sumiu (404) e dominio que nao
-# existe (0). Passam pela mesma funcao que a tarefa de fundo usa.
+# Casos conhecidos para o verificador de links quebrados, com o codigo
+# esperado: pagina viva (200), pagina que sumiu (404) e dominio que nao existe
+# (0). Passam pela mesma funcao que a tarefa de fundo usa. Esperar 200, e nao
+# "nao quebrado", pega o site que recusa o robo (403) em vez de passar calado.
 LINKS_DE_REFERENCIA = [
-    ("https://pt.wikipedia.org/wiki/Brasil", None),
+    ("https://pt.wikipedia.org/wiki/Brasil", 200),
     ("https://pt.wikipedia.org/wiki/Pagina_que_nao_existe_publibot_conferencia", 404),
     ("https://dominio-que-nao-existe.invalid/", 0),
 ]
@@ -198,23 +199,32 @@ class Command(BaseCommand):
         return f"{conta['client_email']} (token emitido)"
 
     def _links_quebrados(self) -> str:
-        from apps.radar.links_quebrados import situacao_do_link
+        from apps.radar.links_quebrados import codigo_http
 
         erradas = []
         for url, esperado in LINKS_DE_REFERENCIA:
-            obtido = situacao_do_link(url)
+            obtido = codigo_http(url)
             if obtido != esperado:
                 erradas.append(f"{url} deu {obtido!r}, esperado {esperado!r}")
         if erradas:
             raise RuntimeError(
-                "; ".join(erradas) + ". O servidor sai para a internet? Ha proxy no caminho?"
+                "; ".join(erradas) + ". 403 e recusa do robo: confira PUBLIBOT_DOMINIO_PUBLICO "
+                "(vai no User-Agent como contato). Sem resposta: o servidor sai para a internet?"
             )
         return f"{len(LINKS_DE_REFERENCIA)} casos conhecidos como esperado"
 
     def _leitura_de_pagina(self) -> str:
-        from apps.knowledge.web import texto_da_pagina
+        from apps.knowledge.web import PaginaIndisponivel, texto_da_pagina
 
-        texto = texto_da_pagina(PAGINA_DE_TESTE)
+        try:
+            texto = texto_da_pagina(PAGINA_DE_TESTE)
+        except PaginaIndisponivel as exc:
+            if "403" in str(exc):
+                raise RuntimeError(
+                    f"{exc}. O site recusou o robo: confira PUBLIBOT_DOMINIO_PUBLICO "
+                    "(vai no User-Agent como contato)."
+                ) from exc
+            raise
         return f"{len(texto)} caracteres de texto principal de {PAGINA_DE_TESTE}"
 
     # -- por tenant -------------------------------------------------------------
