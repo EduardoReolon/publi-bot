@@ -178,8 +178,8 @@ def por_titulo(titulo: str) -> Trabalho | None:
     return None
 
 
-def pdf_pelo_unpaywall(doi: str) -> str:
-    """O PDF legal de acesso aberto pelo DOI, ou "" (exige e-mail de contato)."""
+def consultar_unpaywall(doi: str) -> str:
+    """O PDF de acesso aberto pelo DOI, ou "". Levanta `BaseIndisponivel` se falhar."""
     from apps.radar.models import ChamadaExterna
 
     email = _contas().email_para_bases_academicas
@@ -193,9 +193,20 @@ def pdf_pelo_unpaywall(doi: str) -> str:
         melhor = resposta.json().get("best_oa_location") or {}
     except (httpx.HTTPError, ValueError) as exc:
         _registrar(ChamadaExterna.Provedor.UNPAYWALL, "doi", doi, erro=str(exc)[:500])
-        return ""
+        raise BaseIndisponivel(f"Unpaywall nao respondeu: {exc}") from exc
     _registrar(ChamadaExterna.Provedor.UNPAYWALL, "doi", doi, itens=1)
     return melhor.get("url_for_pdf") or ""
+
+
+def pdf_pelo_unpaywall(doi: str) -> str:
+    """O PDF legal de acesso aberto pelo DOI, ou "" (exige e-mail de contato).
+
+    Falha vira "": o artigo so fica aguardando o PDF.
+    """
+    try:
+        return consultar_unpaywall(doi)
+    except BaseIndisponivel:
+        return ""
 
 
 def autoridade(citacoes: int) -> int:

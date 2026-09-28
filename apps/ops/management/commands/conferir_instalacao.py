@@ -270,7 +270,7 @@ class Command(BaseCommand):
     def _youtube(self) -> str | None:
         from apps.inference.security import decifrar
         from apps.radar.models import ContasExternas
-        from apps.radar.youtube import API
+        from apps.radar.youtube import API, motivo_do_erro
 
         contas = ContasExternas.carregar()
         if not contas.tem_youtube:
@@ -285,10 +285,7 @@ class Command(BaseCommand):
             timeout=TIMEOUT,
         )
         if not resposta.is_success:
-            try:
-                motivo = resposta.json()["error"]["errors"][0]["reason"]
-            except (ValueError, KeyError, IndexError, TypeError):
-                motivo = ""
+            motivo = motivo_do_erro(resposta)
             raise RuntimeError(
                 f"HTTP {resposta.status_code} {motivo}. Confira se a chave e da "
                 "'YouTube Data API v3' e se a API esta ativada no projeto do Google."
@@ -443,7 +440,7 @@ class Command(BaseCommand):
         return f"{len(resultado.resultados)} resultados"
 
     def _uso_academicos(self) -> str | None:
-        from apps.knowledge.academicos import buscar_openalex, pdf_pelo_unpaywall
+        from apps.knowledge.academicos import buscar_openalex, consultar_unpaywall
         from apps.radar.models import ConfiguracaoDoRadar, ContasExternas
 
         if not ConfiguracaoDoRadar.carregar().artigos_cientificos:
@@ -457,7 +454,7 @@ class Command(BaseCommand):
         elif com_doi is None:
             pdf = "nenhum com DOI para testar o Unpaywall"
         else:
-            achado = pdf_pelo_unpaywall(com_doi.doi)
+            achado = consultar_unpaywall(com_doi.doi)
             pdf = f"Unpaywall: {'PDF aberto' if achado else 'sem PDF aberto'} para {com_doi.doi}"
         return f"{len(trabalhos)} artigos com titulo e endereco; {pdf}"
 

@@ -25,7 +25,7 @@ def _sem_bases_academicas(request, monkeypatch):
     from apps.knowledge import academicos
 
     monkeypatch.setattr(academicos, "buscar_openalex", lambda *a, **k: [])
-    monkeypatch.setattr(academicos, "pdf_pelo_unpaywall", lambda *a, **k: "")
+    monkeypatch.setattr(academicos, "consultar_unpaywall", lambda *a, **k: "")
 
 
 @pytest.fixture

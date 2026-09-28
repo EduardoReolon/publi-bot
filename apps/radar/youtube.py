@@ -92,6 +92,14 @@ def _chave(contas: ContasExternas) -> str:
     return chave
 
 
+def motivo_do_erro(resposta: httpx.Response) -> str:
+    """O motivo que a API do Google poe no corpo do erro (keyInvalid, quotaExceeded...)."""
+    try:
+        return resposta.json()["error"]["errors"][0]["reason"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return ""
+
+
 def _get(recurso: str, params: dict, *, contas: ContasExternas, consulta: str) -> dict:
     try:
         resposta = httpx.get(
@@ -109,11 +117,7 @@ def _get(recurso: str, params: dict, *, contas: ContasExternas, consulta: str) -
         raise ProvedorIndisponivel(f"YouTube nao respondeu: {exc}") from exc
 
     if not resposta.is_success:
-        motivo = ""
-        try:
-            motivo = resposta.json()["error"]["errors"][0]["reason"]
-        except (ValueError, KeyError, IndexError, TypeError):
-            pass
+        motivo = motivo_do_erro(resposta)
         custos.registrar(
             provedor=ChamadaExterna.Provedor.YOUTUBE,
             endpoint=recurso,
