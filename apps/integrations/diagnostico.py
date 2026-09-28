@@ -75,6 +75,8 @@ def testar_site(site) -> list[Etapa]:
         return etapas
 
     versoes = saude.get("contract_versions") or saude.get("contract_version") or "?"
+    if isinstance(versoes, list | tuple):
+        versoes = ", ".join(map(str, versoes))
     recursos = saude.get("capabilities") or saude.get("features") or []
     etapas.append(
         Etapa(
