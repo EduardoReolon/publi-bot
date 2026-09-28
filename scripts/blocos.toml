@@ -44,7 +44,6 @@ ignorar = [
   ".gitignore",
   ".gitattributes",
   ".pre-commit-config.yaml",
-  "convert_requirements.py",
   "NOTICE.md",
   "dump.rdb",
 ]

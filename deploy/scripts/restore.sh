@@ -10,7 +10,8 @@ ARQUIVO="${1:?informe o caminho do dump}"
 [[ -f "$ARQUIVO" ]] || { echo "Arquivo nao encontrado: $ARQUIVO" >&2; exit 1; }
 
 # shellcheck disable=SC1091
-set -a; source /etc/publibot/env; set +a
+RAIZ="${PUBLIBOT_ROOT:-/home/ubuntu/publi-bot}"
+set -a; source <(grep -E '^[A-Z_][A-Z0-9_]*=' "$RAIZ/.env"); set +a
 
 echo "Isto vai SOBRESCREVER o banco '$POSTGRES_DB'."
 read -r -p "Digite o nome do banco para confirmar: " confirmacao
@@ -31,7 +32,7 @@ PGPASSWORD="$POSTGRES_PASSWORD" pg_restore \
 
 echo "==> Reinstalando as extensoes"
 # As extensoes vivem no schema `extensions`, fora do dump da aplicacao.
-sudo -u postgres psql -d "$POSTGRES_DB" -c \
+PGPASSWORD="$POSTGRES_PASSWORD" psql -h "${POSTGRES_HOST:-127.0.0.1}" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
     "CREATE SCHEMA IF NOT EXISTS extensions;
      CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
      CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;

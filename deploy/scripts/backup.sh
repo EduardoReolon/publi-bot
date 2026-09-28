@@ -7,14 +7,15 @@
 
 set -euo pipefail
 
-DESTINO="${BACKUP_DIR:-/var/backups/publibot}"
+DESTINO="${BACKUP_DIR:-/home/ubuntu/backups/publi-bot}"
 RETENCAO_DIAS="${BACKUP_RETENTION_DAYS:-14}"
 CARIMBO="$(date +%Y%m%d-%H%M%S)"
 
 mkdir -p "$DESTINO"
 
 # shellcheck disable=SC1091
-set -a; source /etc/publibot/env; set +a
+RAIZ="${PUBLIBOT_ROOT:-/home/ubuntu/publi-bot}"
+set -a; source <(grep -E '^[A-Z_][A-Z0-9_]*=' "$RAIZ/.env"); set +a
 
 echo "==> Banco"
 PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
@@ -25,7 +26,7 @@ PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
     --file="$DESTINO/publibot-$CARIMBO.dump"
 
 # A pasta de midia pode estar fora do projeto (MEDIA_ROOT no .env).
-MIDIA="${MEDIA_ROOT:-/srv/publibot/media}"
+MIDIA="${MEDIA_ROOT:-$RAIZ/media}"
 MIDIA="${MIDIA%/}"
 
 echo "==> Midias ($MIDIA)"

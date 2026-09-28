@@ -6,8 +6,8 @@
 # schema proprio e o prefixo de chave no Redis. Um teste que passa contra um
 # banco em memoria nao diz nada sobre nada disso.
 #
-# O job `deploy` nao repete os passos da implantacao: ele entra no servidor e
-# roda `deploy/scripts/release.sh`, o MESMO script que se roda a mao. Duplicar
+# O job `deploy` nao repete os passos da implantacao: ele copia o codigo para o
+# servidor e roda `deploy/scripts/release.sh`, o MESMO script que se roda a mao. Duplicar
 # a sequencia aqui criaria dois caminhos de implantacao que divergem no dia em
 # que alguem corrige so um dos dois.
 
@@ -21,7 +21,7 @@ on:
     branches: [main, claude-cli]
   pull_request:
 
-# Duas implantacoes ao mesmo tempo no mesmo servidor disputariam o `git pull` e
+# Duas implantacoes ao mesmo tempo no mesmo servidor disputariam o `rsync` e
 # o `systemctl`. A da frente termina; a de tras espera.
 concurrency:
   group: ci-${{ github.ref }}
@@ -162,28 +162,55 @@ jobs:
     # request aberto CONTRA a main tambem iria, com codigo que ninguem revisou.
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    env:
+      # O codigo chega numa pasta de ENVIO, e nao direto na do servico: o
+      # release.sh instala as dependencias antes e so entao troca o codigo
+      # (rsync --delete). Um requirements que nao instala para ali, com a
+      # versao anterior inteira no ar.
+      PASTA_DE_ENVIO: /home/ubuntu/publi-bot-envio
 
     steps:
-      - name: Rodar release.sh no servidor
-        # Nada de `scp` do codigo: o proprio `release.sh` busca do git, e e ele
-        # que decide a ordem (migrations antes de reiniciar, units
-        # sincronizados antes do reload). Este passo existe so para aperta-lo.
-        #
-        # Os segredos do servidor nao passam por aqui. Eles vivem em
-        # `/etc/publibot/env`, gerados uma unica vez pelo `bootstrap.sh` e
-        # jamais sobrescritos — regenerar `NODE_KEY_ENCRYPTION_KEY` por cima
-        # tornaria irrecuperaveis todas as credenciais de site ja guardadas.
-        # Por isso nao existe um secret com o `.env` de producao.
+      - uses: actions/checkout@v4
+
+      - name: Limpar o que nao vai para o servidor
+        run: rm -rf .git/ .github/ tests/ tests_contrato/ media/ dump.rdb
+
+      # O .env de producao vem de um secret. Escrito aqui, num arquivo, e
+      # copiado junto com o codigo: o valor nunca e colado no texto de um
+      # script remoto, onde um `$` ou uma aspa na senha o corromperiam.
+      # O secret e sempre o MESMO texto, entao a NODE_KEY_ENCRYPTION_KEY nao
+      # muda entre implantacoes (mudar tornaria as credenciais guardadas
+      # irrecuperaveis).
+      - name: Montar o .env de producao
+        env:
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+        run: |
+          test -n "$PRODUCTION_ENV_FILE" || { echo "Secret PRODUCTION_ENV_FILE vazio."; exit 1; }
+          printf '%s\n' "$PRODUCTION_ENV_FILE" > .env
+
+      - name: Copiar para o servidor
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "."
+          target: ${{ env.PASTA_DE_ENVIO }}
+          # Esvazia a pasta de ENVIO antes de copiar (nunca a do servico).
+          rm: true
+
+      - name: Rodar o release.sh no servidor
+        # O mesmo script que se roda a mao: a sequencia da implantacao existe
+        # num lugar so.
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           port: ${{ secrets.SERVER_PORT }}
-          # Maior que a implantacao mais longa ja vista: `migrate_schemas`
-          # percorre TODOS os schemas, e o tempo cresce com o numero de
-          # clientes. Um timeout curto mataria o ssh no meio de uma migration.
-          command_timeout: 30m
-          script: |
-            set -euo pipefail
-            /srv/publibot/deploy/scripts/release.sh main
+          # Maior que a implantacao mais longa: a primeira instala pacotes e
+          # baixa o modelo de embedding (~2 GB); `migrate_schemas` percorre
+          # todos os schemas. Um timeout curto mataria o ssh no meio.
+          command_timeout: 45m
+          script: bash ${{ env.PASTA_DE_ENVIO }}/deploy/scripts/release.sh

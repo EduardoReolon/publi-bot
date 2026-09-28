@@ -3,7 +3,7 @@ Description=Socket do PubliBot
 
 [Socket]
 ListenStream=/run/publibot/publibot.sock
-SocketUser=publibot
+SocketUser=ubuntu
 SocketGroup=www-data
 SocketMode=0660
 

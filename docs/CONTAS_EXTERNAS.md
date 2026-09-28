@@ -150,11 +150,15 @@ convida o e-mail dela.
 4. No servidor:
 
    ```bash
-   sudo install -o publibot -g publibot -m 600 chave.json /etc/publibot/gsc-conta-de-servico.json
+   # da sua maquina, uma vez (fora da pasta do codigo, que o deploy reescreve):
+   ssh ubuntu@servidor 'mkdir -p ~/publibot-config && chmod 700 ~/publibot-config'
+   scp chave.json ubuntu@servidor:publibot-config/gsc-conta-de-servico.json
+   ssh ubuntu@servidor 'chmod 600 ~/publibot-config/gsc-conta-de-servico.json'
    ```
 
-   e no `.env`: `GSC_CONTA_DE_SERVICO_ARQUIVO=/etc/publibot/gsc-conta-de-servico.json`.
-   Reinicie web e celery.
+   e no `.env` (o secret `PRODUCTION_ENV_FILE`):
+   `GSC_CONTA_DE_SERVICO_ARQUIVO=/home/ubuntu/publibot-config/gsc-conta-de-servico.json`.
+   Vale na proxima implantacao.
 5. Em cada site: <https://search.google.com/search-console> › a propriedade ›
    **Configurações › Usuários e permissões › Adicionar usuário** › o
    `client_email` do JSON, permissão **Restrita**. A tela do Radar mostra

@@ -5,18 +5,20 @@ After=network.target postgresql.service redis-server.service
 
 [Service]
 Type=notify
-User=publibot
+User=ubuntu
 Group=www-data
 RuntimeDirectory=publibot
-WorkingDirectory=/srv/publibot
+# O socket (publibot.socket) mora nesta pasta: um restart nao pode apaga-la.
+RuntimeDirectoryPreserve=yes
+WorkingDirectory=/home/ubuntu/publi-bot
 
-# Modo 0600: o arquivo contem a SECRET_KEY, a senha do banco e a chave que
+# Modo 0600: o .env contem a SECRET_KEY, a senha do banco e a chave que
 # cifra as credenciais dos clientes.
-EnvironmentFile=/etc/publibot/env
+EnvironmentFile=/home/ubuntu/publi-bot/.env
 Environment=DJANGO_SETTINGS_MODULE=core.settings.prod
 
-ExecStart=/srv/publibot/venv/bin/gunicorn \
-    --config /srv/publibot/deploy/gunicorn/gunicorn.conf.py \
+ExecStart=/home/ubuntu/publi-bot/venv/bin/gunicorn \
+    --config /home/ubuntu/publi-bot/deploy/gunicorn/gunicorn.conf.py \
     core.wsgi:application
 
 ExecReload=/bin/kill -s HUP $MAINPID
@@ -28,8 +30,8 @@ RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/srv/publibot/media /srv/publibot/staticfiles /run/publibot
+ProtectHome=false
+ReadWritePaths=/home/ubuntu/storage/publi-bot /home/ubuntu/publi-bot/.model_cache /run/publibot
 
 [Install]
 WantedBy=multi-user.target

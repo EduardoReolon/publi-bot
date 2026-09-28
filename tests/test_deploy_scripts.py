@@ -2,7 +2,8 @@
 
 Eles nao tem como ser testados por inteiro aqui — nao ha systemd, nem sudo, nem
 PostgreSQL de producao. O que se testa e a logica que erra em silencio:
-sincronizar units so quando mudam, e nunca sobrescrever o arquivo de segredos.
+sincronizar units so quando mudam, a ordem do release e o .env que chega do
+secret.
 
 Nada aqui toca o banco.
 """
@@ -10,6 +11,7 @@ Nada aqui toca o banco.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -85,39 +87,47 @@ def test_unit_alterado_no_repositorio_e_reinstalado(tmp_path):
 # Garantias lidas do texto dos scripts
 # ---------------------------------------------------------------------------
 # Sao asserts sobre o codigo-fonte, e nao sobre a execucao. Valem porque a
-# alternativa — rodar o bootstrap de verdade — exigiria um servidor, e o que se
-# quer impedir aqui e alguem remover a protecao sem perceber.
+# alternativa — rodar o release inteiro — exigiria um servidor, e o que se
+# quer impedir aqui e alguem trocar a ordem sem perceber.
+RELEASE = RAIZ / "deploy" / "scripts" / "release.sh"
 
 
-def test_o_bootstrap_nunca_sobrescreve_o_arquivo_de_segredos():
-    """NODE_KEY_ENCRYPTION_KEY cifra as credenciais dos sites dos clientes.
-    Gerar uma chave nova por cima torna todas irrecuperaveis, e o erro so
-    aparece na proxima publicacao."""
-    texto = (RAIZ / "deploy" / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
-
-    assert 'if [[ -f "$ARQUIVO_ENV" ]]; then' in texto
-    assert "ja existe e foi preservado" in texto
+def _release() -> str:
+    return RELEASE.read_text(encoding="utf-8")
 
 
 def test_o_release_semeia_a_conexao_de_inferencia_sem_sobrescrever():
     """Com `--atualizar`, trocar de modelo pelo admin duraria ate a proxima
     implantacao."""
-    texto = (RAIZ / "deploy" / "scripts" / "release.sh").read_text(encoding="utf-8")
-
-    assert "manage.py configurar_inferencia" in texto
-    assert "configurar_inferencia --atualizar" not in texto
+    assert "manage configurar_inferencia" in _release()
+    assert "configurar_inferencia --atualizar" not in _release()
 
 
-def test_o_release_sincroniza_os_units_antes_de_reiniciar():
-    """Reiniciar antes de copiar o unit novo aplicaria a configuracao antiga, e
-    a seguinte so valeria na implantacao seguinte."""
-    texto = (RAIZ / "deploy" / "scripts" / "release.sh").read_text(encoding="utf-8")
+def test_o_release_instala_dependencias_antes_de_trocar_o_codigo():
+    """Um requirements que nao instala precisa parar a implantacao com o codigo
+    antigo inteiro no ar, e nao com codigo novo e pacote velho."""
+    texto = _release()
+    assert texto.index('pip" install -q -r "$ENVIO/requirements.txt"') < texto.index(
+        "rsync -a --delete"
+    )
 
-    assert texto.index("sincronizar-systemd.sh") < texto.index("systemctl reload")
+
+def test_o_release_migra_antes_de_reiniciar_e_sincroniza_units_antes():
+    texto = _release()
+    assert texto.index("migrate_schemas") < texto.index("systemctl restart celery-publibot")
+    assert texto.index("sincronizar-systemd.sh") < texto.index("systemctl reload publibot")
+
+
+def test_o_rsync_nao_apaga_o_que_so_existe_no_servidor():
+    """`--delete` tira do servidor o que saiu do git; venv, .env, midia e o
+    modelo baixado nao estao no git e nao podem ir junto."""
+    texto = _release()
+    for protegido in ("/venv/", "/.env", "/media/", "/.model_cache/", "/staticfiles/"):
+        assert f"--exclude '{protegido}'" in texto
 
 
 @pytest.mark.parametrize(
-    "script", ["bootstrap.sh", "release.sh", "sincronizar-systemd.sh", "backup.sh", "restore.sh"]
+    "script", ["release.sh", "sincronizar-systemd.sh", "backup.sh", "restore.sh"]
 )
 def test_scripts_param_no_primeiro_erro(script):
     """Sem `set -e`, um passo que falha no meio da implantacao e seguido pelos
@@ -127,76 +137,92 @@ def test_scripts_param_no_primeiro_erro(script):
     assert "set -euo pipefail" in texto
 
 
-@pytest.mark.parametrize("script", ["bootstrap.sh", "release.sh", "sincronizar-systemd.sh"])
+@pytest.mark.parametrize("script", ["release.sh", "sincronizar-systemd.sh"])
 def test_scripts_sao_executaveis(script):
     assert os.access(RAIZ / "deploy" / "scripts" / script, os.X_OK), (
         f"{script} sem bit de execucao: o git preserva o modo, e sem ele a "
-        f"instrucao do README nao funciona."
+        f"instrucao da documentacao nao funciona."
     )
 
 
-RELEASE = RAIZ / "deploy" / "scripts" / "release.sh"
+def _prologo_em(envio: Path) -> Path:
+    """Uma copia do release.sh ate a leitura do .env, dentro de uma pasta de envio.
 
-
-def _prologo_do_release() -> str:
-    """O trecho do release.sh que carrega o ambiente, ate o `fi` que o fecha.
-
-    Recortado em vez de rodado inteiro porque o resto do script quer um
-    servidor: git, venv, systemd. O que se testa aqui e so a leitura do
-    arquivo de ambiente — e ela roda de verdade, nao por leitura de texto.
+    Recortado em vez de rodado inteiro porque o resto quer um servidor (apt,
+    banco, systemd). A leitura do .env roda de verdade, e nao por texto.
     """
-    linhas = RELEASE.read_text(encoding="utf-8").splitlines()
-    fim = next(i for i, linha in enumerate(linhas) if linha == "fi")
-    return "\n".join(linhas[: fim + 1])
+    linhas = _release().splitlines()
+    fim = next(i for i, linha in enumerate(linhas) if linha.startswith("MIDIA="))
+    copia = envio / "deploy" / "scripts" / "release.sh"
+    copia.parent.mkdir(parents=True)
+    copia.write_text(
+        "\n".join(linhas[: fim + 1]) + '\necho "$DJANGO_SECRET_KEY|$ROOT_DOMAIN|$MIDIA"\n',
+        encoding="utf-8",
+    )
+    return copia
 
 
-def test_o_release_carrega_o_arquivo_de_ambiente(tmp_path):
-    """As units do systemd leem `/etc/publibot/env` por `EnvironmentFile`, mas
-    os `manage.py` do release rodam FORA delas.
+def _rodar(copia: Path, raiz: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(  # noqa: S603 - o alvo e um script do proprio repositorio
+        [shutil.which("bash") or "/bin/bash", str(copia)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PUBLIBOT_ROOT": str(raiz)},
+        check=False,
+    )
 
-    Sem carregar o arquivo, o primeiro comando morre em
-    `ImproperlyConfigured: DJANGO_SECRET_KEY` — antes de qualquer migration, e
-    com uma mensagem que nao menciona implantacao nenhuma.
-    """
-    arquivo = tmp_path / "env"
-    arquivo.write_text(
+
+def test_o_release_instala_o_env_enviado_e_o_carrega(tmp_path):
+    """O .env vem na pasta de envio (do secret) e vai para a raiz com modo 600,
+    saindo da pasta de envio. Os `manage.py` do release rodam fora das units,
+    entao o script precisa carrega-lo ele mesmo."""
+    envio, raiz = tmp_path / "envio", tmp_path / "raiz"
+    copia = _prologo_em(envio)
+    (envio / ".env").write_text(
         "# um comentario\n"
         "DJANGO_SECRET_KEY=segredo-do-servidor\n"
         "ROOT_DOMAIN=publibot.com.br\n"
+        "MEDIA_ROOT=/dados/midia\n"
         "isto nao e uma variavel\n",
         encoding="utf-8",
     )
-    script = _prologo_do_release() + '\necho "$DJANGO_SECRET_KEY|$ROOT_DOMAIN"\n'
 
-    resultado = subprocess.run(  # noqa: S603 - o alvo e um script do proprio repositorio
-        [shutil.which("bash") or "/bin/bash", "-c", script],
-        capture_output=True,
-        text=True,
-        env={**os.environ, "PUBLIBOT_ROOT": str(tmp_path), "PUBLIBOT_ENV_FILE": str(arquivo)},
-        check=False,
-    )
+    resultado = _rodar(copia, raiz)
 
     assert resultado.returncode == 0, resultado.stderr
-    assert resultado.stdout.strip() == "segredo-do-servidor|publibot.com.br"
+    assert resultado.stdout.strip() == "segredo-do-servidor|publibot.com.br|/dados/midia"
+    assert (raiz / ".env").stat().st_mode & 0o777 == 0o600
+    assert not (envio / ".env").exists()
 
 
-def test_o_release_para_se_o_arquivo_de_ambiente_nao_existe(tmp_path):
+def test_o_release_para_sem_env(tmp_path):
     """Seguir sem ele so adiaria a falha para o primeiro `manage.py`, com uma
     mensagem que nao menciona implantacao nem o arquivo que falta."""
-    resultado = subprocess.run(  # noqa: S603 - o alvo e um script do proprio repositorio
-        [shutil.which("bash") or "/bin/bash", "-c", _prologo_do_release()],
-        capture_output=True,
-        text=True,
-        env={
-            **os.environ,
-            "PUBLIBOT_ROOT": str(tmp_path),
-            "PUBLIBOT_ENV_FILE": str(tmp_path / "nao-existe"),
-        },
-        check=False,
-    )
+    copia = _prologo_em(tmp_path / "envio")
+
+    resultado = _rodar(copia, tmp_path / "raiz")
 
     assert resultado.returncode == 1
-    assert "bootstrap.sh" in resultado.stderr
+    assert "PRODUCTION_ENV_FILE" in resultado.stderr
+
+
+def test_o_molde_do_nginx_so_tem_marcadores_que_o_release_troca():
+    """Um marcador esquecido vira `server_name __DOMINIO__` no servidor, e o
+    `nginx -t` nao reclama: o site so nao responde."""
+    molde = (RAIZ / "deploy" / "nginx" / "publibot.conf").read_text(encoding="utf-8")
+    marcadores = set(re.findall(r"__[A-Z]+__", molde))
+
+    assert marcadores == {"__DOMINIO__", "__RAIZ__", "__MIDIA__"}
+    for marcador in marcadores:
+        assert f"s|{marcador}|" in _release()
+
+
+def test_as_units_apontam_para_a_raiz_do_release():
+    raiz = re.search(r'RAIZ="\$\{PUBLIBOT_ROOT:-([^}]+)\}"', _release()).group(1)
+    for unit in (RAIZ / "deploy" / "systemd").glob("*.service"):
+        texto = unit.read_text(encoding="utf-8")
+        assert f"WorkingDirectory={raiz}" in texto, unit.name
+        assert f"EnvironmentFile={raiz}/.env" in texto, unit.name
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +250,6 @@ def test_nenhuma_outra_branch_alcanca_o_servidor(workflow):
     """O teste acima passa com `main || claude-cli`: a substring continua la.
 
     Conferir a presenca de `main` diz que a main implanta; nao diz que so ela.
-    E a segunda pergunta que interessa, porque a forma de errar isto e
-    acrescentar um `||` numa tarde de pressa, e nao apagar o `main`.
     """
     condicao = workflow["jobs"]["deploy"]["if"]
 
@@ -233,49 +257,42 @@ def test_nenhuma_outra_branch_alcanca_o_servidor(workflow):
     assert condicao.count("refs/heads/") == 1
 
 
-def test_a_lista_de_branches_do_push_nao_implanta_ninguem(workflow):
-    """`on.push.branches` e o gatilho dos TESTES. Ela fica tres linhas abaixo
-    de um comentario que fala de implantacao, e ja foi lida como se fosse a
-    lista de quem vai para producao. Este teste existe para que a leitura
-    errada continue sendo so uma leitura errada.
-    """
-    # `on` vira `True` no YAML 1.1 que o PyYAML implementa: a chave e o
-    # booleano, nao a string. Ler por `.get("on")` devolveria `None` e o teste
-    # passaria sem conferir nada.
-    gatilhos = workflow.get(True) or workflow.get("on")
-    branches = gatilhos["push"]["branches"]
-
-    assert "main" in branches
-    # O que a lista NAO pode fazer e decidir implantacao — e isso e garantido
-    # pelo `if` do job, conferido acima. Aqui so se guarda que existe mais de
-    # uma branch de teste, para ninguem "consertar" o `if` mexendo nesta lista.
-    assert len(branches) >= 1
-
-
-def test_o_release_recebe_a_branch_explicitamente(workflow):
-    """`release.sh` tem `${1:-main}` como padrao. Confiar no padrao faria a
-    branch implantada depender de o argumento ter sido passado — e um dia
-    alguem passa outro."""
-    passos = workflow["jobs"]["deploy"]["steps"]
-    script = "\n".join(passo.get("with", {}).get("script", "") for passo in passos)
-
-    assert "release.sh main" in script
-
-
 def test_o_deploy_espera_os_testes(workflow):
     assert workflow["jobs"]["deploy"]["needs"] == "testes"
+
+
+def _passos(workflow) -> list[dict]:
+    return workflow["jobs"]["deploy"]["steps"]
 
 
 def test_o_deploy_chama_o_mesmo_script_que_se_roda_a_mao(workflow):
     """Descrever a implantacao duas vezes — uma no script, outra no YAML — cria
     dois caminhos que divergem no dia em que alguem corrige so um deles."""
-    passos = workflow["jobs"]["deploy"]["steps"]
-    script = "\n".join(passo.get("with", {}).get("script", "") for passo in passos)
+    script = "\n".join(p.get("with", {}).get("script", "") for p in _passos(workflow))
 
     assert "deploy/scripts/release.sh" in script
-    # Nenhum passo da implantacao repetido aqui: quem migra e o release.sh.
     assert "migrate_schemas" not in script
     assert "collectstatic" not in script
+
+
+def test_o_scp_so_esvazia_a_pasta_de_envio(workflow):
+    """`rm: true` apaga o destino antes de copiar. Na pasta do servico levaria
+    junto o venv, o .env e o modelo baixado."""
+    copia = next(p for p in _passos(workflow) if "scp-action" in p.get("uses", ""))
+    envio = workflow["jobs"]["deploy"]["env"]["PASTA_DE_ENVIO"]
+    raiz = re.search(r'RAIZ="\$\{PUBLIBOT_ROOT:-([^}]+)\}"', _release()).group(1)
+
+    assert copia["with"]["target"] == "${{ env.PASTA_DE_ENVIO }}"
+    assert envio.rstrip("/") != raiz.rstrip("/")
+
+
+def test_o_env_de_producao_nunca_entra_no_texto_de_um_script(workflow):
+    """O secret vira arquivo por variavel de ambiente do passo. Colado no texto
+    de um `run` ou do script remoto, um `$` ou uma aspa na senha o corromperia
+    — e o valor apareceria no comando que o GitHub registra."""
+    for passo in _passos(workflow):
+        texto = passo.get("run", "") + passo.get("with", {}).get("script", "")
+        assert "secrets.PRODUCTION_ENV_FILE" not in texto
 
 
 def test_o_ci_sobe_postgres_com_pgvector(workflow):
@@ -295,75 +312,3 @@ def test_o_ci_instala_as_extensoes_no_template1():
 
     assert "-d template1" in texto
     assert "WITH SCHEMA extensions" in texto
-
-
-def test_o_ci_nao_guarda_o_env_de_producao_num_segredo(workflow):
-    """Reescrever `/etc/publibot/env` a cada implantacao trocaria a
-    `NODE_KEY_ENCRYPTION_KEY` que cifrou as credenciais dos sites, e o erro so
-    apareceria dias depois, contra o site do cliente.
-
-    Os segredos nascem no servidor, no `bootstrap.sh`, e nunca sao
-    sobrescritos — entao o job de implantacao nao carrega nenhum deles. A
-    chave do job de TESTE nao conta: e descartavel e publica de proposito.
-    """
-    deploy = yaml.safe_dump(workflow["jobs"]["deploy"])
-
-    assert "PRODUCTION_ENV_FILE" not in WORKFLOW.read_text(encoding="utf-8")
-    assert "NODE_KEY_ENCRYPTION_KEY" not in deploy
-    assert "DJANGO_SECRET_KEY" not in deploy
-
-
-# ---------------------------------------------------------------------------
-# Regra de sudo da implantacao
-# ---------------------------------------------------------------------------
-SUDOERS = RAIZ / "deploy" / "sudoers" / "publibot-deploy"
-
-
-def test_a_regra_de_sudo_e_valida(tmp_path):
-    """Um arquivo invalido em /etc/sudoers.d quebra o sudo da maquina inteira,
-    para todos os usuarios, e o unico caminho de volta e um console fisico.
-
-    O `visudo -c` do bootstrap protege o servidor; este teste protege quem
-    edita o molde, que e onde o erro de fato nasce.
-    """
-    visudo = shutil.which("visudo")
-    if visudo is None:
-        pytest.skip("visudo nao existe neste ambiente")
-
-    arquivo = tmp_path / "publibot-deploy"
-    arquivo.write_text(
-        SUDOERS.read_text(encoding="utf-8").replace("USUARIO ", "deployer "), encoding="utf-8"
-    )
-
-    resultado = subprocess.run(  # noqa: S603 - alvo e um arquivo do proprio repositorio
-        [visudo, "-c", "-f", str(arquivo)], capture_output=True, text=True, check=False
-    )
-
-    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
-
-
-def test_a_regra_de_sudo_nao_da_a_maquina_inteira():
-    """`NOPASSWD: ALL` resolveria o mesmo problema e daria ao segredo
-    `DEPLOY_KEY`, guardado no GitHub, o poder de root sobre o servidor —
-    inclusive sobre os outros projetos que dividem a maquina."""
-    # So as linhas de regra: o comentario que EXPLICA por que `NOPASSWD: ALL`
-    # esta errado tambem contem `NOPASSWD: ALL`, e faria o teste acusar
-    # justamente o texto que o defende. Ja aconteceu com um hook do
-    # pre-commit deste repositorio.
-    regras = "\n".join(
-        linha
-        for linha in SUDOERS.read_text(encoding="utf-8").splitlines()
-        if not linha.lstrip().startswith("#")
-    )
-
-    assert "NOPASSWD: ALL" not in regras
-    # Cada comando permitido e nomeado, e nenhum deles e um shell.
-    assert "/usr/bin/systemctl reload publibot.service" in regras
-    for perigoso in ("/bin/bash", "/bin/sh", "/usr/bin/su "):
-        assert perigoso not in regras
-
-
-def test_o_bootstrap_confere_a_regra_antes_de_instalar():
-    texto = (RAIZ / "deploy" / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
-
-    assert texto.index("visudo -c") < texto.index("/etc/sudoers.d/publibot-deploy")

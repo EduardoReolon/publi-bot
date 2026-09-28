@@ -7,13 +7,9 @@ duas partes.
 
 ## 1. Atualizar
 
-```bash
-git pull
-venv/bin/pip install -r requirements.txt
-venv/bin/python manage.py migrate_schemas
-venv/bin/python manage.py semear_prompts --todos
-sudo systemctl restart publibot celery-publibot celery-beat-publibot
-```
+Um push na `main`: o CI roda a suite e, se passar, implanta
+(`deploy/scripts/release.sh`, ver `docs/OPERACAO.md`, Parte 2). No servidor,
+os comandos abaixo rodam em `~/publi-bot`.
 
 ## 2. Um comando confere o ambiente
 

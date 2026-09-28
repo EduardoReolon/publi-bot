@@ -4,27 +4,29 @@ After=network.target postgresql.service redis-server.service
 
 [Service]
 Type=simple
-User=publibot
-Group=publibot
-WorkingDirectory=/srv/publibot
-EnvironmentFile=/etc/publibot/env
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/publi-bot
+EnvironmentFile=/home/ubuntu/publi-bot/.env
 Environment=DJANGO_SETTINGS_MODULE=core.settings.prod
 
 # UMA unica instancia. Duas emitiriam os mesmos tiques em duplicata, e cada
 # publicacao seria despachada duas vezes.
-ExecStart=/srv/publibot/venv/bin/celery -A core beat \
+ExecStart=/home/ubuntu/publi-bot/venv/bin/celery -A core beat \
     --loglevel=INFO \
     --scheduler django_celery_beat.schedulers:DatabaseScheduler \
-    --pidfile=/run/publibot/beat.pid
+    --pidfile=/run/publibot-beat/beat.pid
 
-RuntimeDirectory=publibot
+# Pasta propria: dividir /run/publibot com o Gunicorn faria o restart do
+# beat apagar o socket da aplicacao.
+RuntimeDirectory=publibot-beat
 Restart=always
 RestartSec=10
 
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=false
 
 [Install]
 WantedBy=multi-user.target

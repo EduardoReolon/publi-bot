@@ -152,6 +152,8 @@ python manage.py conferir_instalacao --completo   # also the real calls, checkin
 
 The plain run only confirms each account and key is accepted, and costs nothing. `--completo` runs the same functions the system uses day to day — Google search and search volume (DataForSEO), video search, comments and captions (YouTube), OpenAlex and Unpaywall, Search Analytics, page reading — with one minimal query each, and fails if an answer doesn't come back in the shape the code expects. It costs about US$ 0.09 of DataForSEO and 101 YouTube quota units per tenant, logged in the cost ledger as a manual search. Run it after installing, after updating, and whenever a provider may have changed its API.
 
+**Production deploy** is a push to `main`: CI runs the suite and, if it passes, copies the code to the server and runs `deploy/scripts/release.sh` (packages, database, dependencies, migrations, systemd, Nginx). Setup and secrets: [`docs/OPERACAO.md`](docs/OPERACAO.md), part 2.
+
 The full guide — development, production server, GPU machine and troubleshooting — is in [`docs/OPERACAO.md`](docs/OPERACAO.md). External accounts (DataForSEO, YouTube, Search Console) are covered step by step in [`docs/CONTAS_EXTERNAS.md`](docs/CONTAS_EXTERNAS.md).
 
 ## 📂 Project Structure

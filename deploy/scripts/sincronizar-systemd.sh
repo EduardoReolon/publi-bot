@@ -13,12 +13,12 @@
 # ruido: ele reavalia todas as units da maquina, inclusive as de outros
 # projetos.
 #
-# Usado pelo bootstrap.sh (primeira instalacao) e pelo release.sh (toda
+# Usado pelo release.sh (toda
 # implantacao). Idempotente: sem mudanca, nao faz nada.
 
 set -euo pipefail
 
-RAIZ="${PUBLIBOT_ROOT:-/srv/publibot}"
+RAIZ="${PUBLIBOT_ROOT:-/home/ubuntu/publi-bot}"
 ORIGEM="$RAIZ/deploy/systemd"
 
 # Sobrescrevivel para permitir exercitar a logica de comparacao fora de um

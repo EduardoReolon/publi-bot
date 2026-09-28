@@ -259,224 +259,131 @@ Se algum comando de conferencia nao devolver o que esta escrito, pare ali. O
 proximo passo vai funcionar mesmo assim e o problema vai reaparecer mais
 tarde, disfarcado.
 
+### Como funciona
+
+A implantacao e o push na `main`. O job `deploy` do
+`.github/workflows/ci.yml` (so depois da suite passar):
+
+1. monta o `.env` a partir do secret `PRODUCTION_ENV_FILE`;
+2. copia o codigo e o `.env` para `/home/ubuntu/publi-bot-envio`;
+3. roda `deploy/scripts/release.sh` de la.
+
+O `release.sh` e idempotente: na primeira vez prepara o servidor; nas
+seguintes so confere o que ja existe. Em ordem:
+
+| Passo | O que faz |
+|---|---|
+| Pacotes | Python 3.12 (PPA deadsnakes no Ubuntu 22.04), build-essential, rsync, gettext, cliente do PostgreSQL; Redis e Nginx so se nada atender |
+| Banco | cria o banco se faltar, instala `postgresql-<versao>-pgvector` se faltar, e poe `vector` e `unaccent` no schema `extensions` |
+| Dependencias | venv em Python 3.12; `pip install` so quando o `requirements.txt` muda. **Antes** de trocar o codigo: se nao instalar, a versao anterior segue no ar |
+| Codigo | `rsync --delete` da pasta de envio para `/home/ubuntu/publi-bot` (preserva venv, `.env`, estaticos e o modelo baixado) |
+| Django | `check --deploy`, migration faltando, `migrate_schemas`, tenant raiz, conexoes, prompts, `collectstatic` |
+| Modelo | baixa o modelo de embedding (~2 GB) agora, e nao na primeira busca |
+| Servicos | sincroniza as units do systemd, instala o site do Nginx (se o certificado ja existir, e so depois de `nginx -t`), recarrega e confere o `/healthz/` |
+
+Nada de afrouxar o `requirements.txt` para caber num Python mais velho: o
+servidor rodaria versoes que a suite nunca testou. Por isso o script instala o
+3.12, o mesmo do CI.
+
+As extensoes precisam estar em `extensions`, **nao** em `public`. Com um
+schema por tenant, uma extensao so no `public` funciona para o primeiro tenant
+e falha no segundo, com `type "vector" does not exist`.
+
 ### O que precisa existir antes
 
 | | Por que |
 |---|---|
-| VM Linux com acesso `sudo` | a VM ARM da Oracle serve; ela **nao** roda modelo nenhum |
-| Dominio com DNS curinga (`*.exemplo.com.br`) | cada tenant vive num subdominio (ADR-0003) |
+| Ubuntu com o usuario `ubuntu` e `sudo` sem senha | o `release.sh` instala pacotes e mexe nas units |
+| PostgreSQL alcancavel em `127.0.0.1` | usuario e senha vao no `.env` |
+| DNS: `publibot.ekron.ia.br` e `*.publibot.ekron.ia.br` apontando para o servidor | cada tenant vive num subdominio (ADR-0003) |
 | Uma maquina com placa, alcancavel por Tailscale | o Ollama, o Docling e a geracao de imagem rodam la (ADR-0007) |
-| Chave ssh para o GitHub Actions | so se voce for implantar pelo push |
 
 A VM da nuvem nunca roda inferencia. Ela serve as telas, guarda o banco e faz
-requisicoes HTTP para a maquina da placa. Dimensionar a nuvem para rodar
-modelo e o erro caro deste projeto.
+requisicoes HTTP para a maquina da placa.
 
-### Passo 1 — Pacotes do sistema
+### Passo 1 — Segredos do GitHub
 
-```bash
-sudo apt update
-sudo apt install -y git curl python3-venv \
-     postgresql postgresql-contrib redis-server nginx
-```
+Em Settings > Secrets and variables > Actions:
 
-O `vector` **nao** vem com o PostgreSQL: e um pacote a parte, casado com a
-versao do servidor.
-
-```bash
-psql --version                                  # anote a versao maior (ex.: 16)
-sudo apt install -y postgresql-16-pgvector      # troque o 16 pela sua
-```
-
-**Conferir:**
-
-```bash
-systemctl is-active postgresql redis-server nginx   # active, active, active
-redis-cli ping                                      # PONG
-sudo -u postgres psql -tAc \
-  "SELECT 1 FROM pg_available_extensions WHERE name='vector'"   # 1
-```
-
-A ultima linha e a que mais se esquece. Sem ela o `bootstrap.sh` vai ate o
-meio e morre em `could not open extension control file` — depois de ja ter
-criado usuario, venv e segredos. (Hoje ele confere antes e para com a linha do
-`apt` certa; a conferencia aqui existe para voce nao descobrir isso pelo
-erro.)
-
-### Passo 2 — Codigo e bootstrap
-
-```bash
-sudo mkdir -p /srv/publibot && sudo chown "$USER" /srv/publibot
-git clone <repo> /srv/publibot && cd /srv/publibot
-./deploy/scripts/bootstrap.sh
-```
-
-O bootstrap cria o usuario de sistema, os diretorios, o venv, o banco com as
-extensoes no schema `extensions`, as units do systemd habilitadas no boot, a
-rotacao de log, a regra de sudo da implantacao, e **gera os segredos** em
-`/etc/publibot/env`.
-
-**Ele nunca sobrescreve esse arquivo.** Nao e zelo excessivo: regenerar
-`NODE_KEY_ENCRYPTION_KEY` por cima torna irrecuperaveis todas as credenciais
-de site ja guardadas, e o erro so apareceria na proxima publicacao, como falha
-de autenticacao contra o site do cliente.
-
-A regra de sudo (`deploy/sudoers/publibot-deploy`) e o que permite implantar
-por ssh sem ninguem na frente do terminal: um ssh nao interativo nao tem onde
-digitar senha, e sem ela o `sudo systemctl` do release espera um prompt que
-ninguem ve — a implantacao morre por timeout DEPOIS das migrations, com o
-servico ainda no codigo antigo. Ela nomeia um a um os comandos permitidos, so
-sobre as units deste projeto: um `NOPASSWD: ALL` daria ao `DEPLOY_KEY`
-guardado no GitHub o poder de root sobre a maquina.
-
-**Conferir:**
-
-```bash
-sudo test -f /etc/publibot/env && echo "env existe"
-sudo grep -c AJUSTE /etc/publibot/env       # quantos campos faltam preencher
-systemctl is-enabled publibot.socket celery-publibot celery-beat-publibot
-sudo -u postgres psql -d publibot -tAc \
-  "SELECT extname, nspname FROM pg_extension e
-     JOIN pg_namespace n ON n.oid = e.extnamespace
-    WHERE extname IN ('vector','unaccent')"   # as duas em 'extensions'
-```
-
-As extensoes precisam estar em `extensions`, **nao** em `public`. Com um
-schema por tenant, uma extensao so no `public` funciona para o primeiro tenant
-e falha no segundo, com `type "vector" does not exist` — o erro classico deste
-projeto.
-
-### Passo 3 — Preencher o que o bootstrap nao sabe
-
-```bash
-sudo nano /etc/publibot/env
-```
-
-Os campos marcados `AJUSTE`:
-
-| Variavel | Valor |
+| Segredo | O que e |
 |---|---|
-| `ROOT_DOMAIN` | `exemplo.com.br` — sem `www`, sem protocolo |
-| `DJANGO_ALLOWED_HOSTS` | `exemplo.com.br,.exemplo.com.br` |
-| `INFERENCIA_BASE_URL` | `http://<ip-tailscale-da-placa>:8090` (o worker, nao o Ollama) |
-| `INFERENCIA_MODELO` | o nome exato do `ollama list` |
+| `SERVER_HOST` | endereco do servidor |
+| `SERVER_USER` | `ubuntu` |
+| `DEPLOY_KEY` | chave ssh **privada** desse usuario |
+| `SERVER_PORT` | porta do ssh |
+| `PRODUCTION_ENV_FILE` | o conteudo inteiro do `.env` de producao |
 
-E, se a maquina da placa tambem for converter PDF e gerar imagem (Parte 1,
-secoes 4a e 4b):
+O `PRODUCTION_ENV_FILE` e reescrito no servidor a cada implantacao, sempre com
+o mesmo texto. **Nunca troque a `NODE_KEY_ENCRYPTION_KEY` dele**: ela cifra as
+credenciais guardadas no banco (chaves de API, senha dos sites), e com outra
+chave todas ficam irrecuperaveis. Guarde uma copia do `.env` fora do GitHub.
 
-```
-CONVERSAO_BASE_URL=http://<ip-tailscale-da-placa>:8090
-CONVERSAO_SEGREDO=<o WORKER_SHARED_SECRET do worker>
-IMAGEM_BASE_URL=http://<ip-tailscale-da-placa>:8090
-IMAGEM_SEGREDO=<o mesmo WORKER_SHARED_SECRET>
-```
+O modelo das variaveis e o `.env.example`; as de producao que mudam em relacao
+a ele: `DJANGO_SETTINGS_MODULE=core.settings.prod`, `ESQUEMA_PUBLICO=https`,
+`USAR_X_ACCEL=true`, `MEDIA_ROOT=/home/ubuntu/storage/publi-bot` (e o caminho
+que as units liberam para escrita) e `EMAIL_HOST` (obrigatorio em producao).
 
-**Conferir:**
+**Conferir:** faca um push na `main` e acompanhe o job *Implantar* no GitHub.
+A primeira vez demora (pacotes, dependencias, modelo de 2 GB).
 
-```bash
-sudo grep -c AJUSTE /etc/publibot/env      # 0
-tailscale status | grep <nome-da-placa>    # a maquina aparece
-curl -s http://<ip-tailscale-da-placa>:8090/health/ | head -c 300
-```
+### Passo 2 — Certificado e Nginx
 
-O `curl` roda **da VM**, nao da sua maquina: o que interessa e se a nuvem
-alcanca a placa. Alcancar do seu notebook nao diz nada.
+O certificado precisa cobrir os subdominios dos tenants. Duas saidas:
 
-### Passo 4 — Nginx e TLS
+- **Curinga** (`*.publibot.ekron.ia.br`): exige validacao por DNS. Se o seu
+  DNS tem plugin do certbot (Cloudflare, Route 53...), a renovacao e
+  automatica; com `--manual`, voce refaz a cada 90 dias.
 
-```bash
-sudo cp deploy/nginx/publibot.conf /etc/nginx/sites-available/publibot
-sudo sed -i 's/publibot.com.br/exemplo.com.br/g' /etc/nginx/sites-available/publibot
-sudo ln -sf /etc/nginx/sites-available/publibot /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
+  ```bash
+  sudo certbot certonly --manual --preferred-challenges dns \
+       -d publibot.ekron.ia.br -d '*.publibot.ekron.ia.br'
+  ```
 
-O certificado precisa ser **curinga** (`*.exemplo.com.br`): cada tenant e um
-subdominio, e um certificado so para o dominio raiz faz o primeiro cliente ver
-um aviso de seguranca. Certificado curinga exige validacao DNS-01:
+- **Um nome por tenant**, por HTTP (renova sozinho). Acrescente o subdominio a
+  cada tenant novo:
 
-```bash
-sudo certbot certonly --manual --preferred-challenges dns \
-     -d exemplo.com.br -d '*.exemplo.com.br'
-```
+  ```bash
+  sudo certbot certonly --webroot -w /var/www/certbot --cert-name publibot.ekron.ia.br \
+       -d publibot.ekron.ia.br -d publiteste.publibot.ekron.ia.br
+  ```
 
-**Conferir:**
+  Na primeira vez, sem o site do PubliBot no Nginx, use `--nginx` ou
+  `--standalone` no lugar de `--webroot`.
 
-```bash
-sudo nginx -t                                    # syntax is ok
-curl -sI https://exemplo.com.br/healthz/ | head -1
-curl -sI https://qualquer-coisa.exemplo.com.br/ | head -1   # o curinga responde
-```
-
-O `/healthz/` responde **antes** da resolucao de tenant, de proposito: um
-health check que passa pela resolucao devolveria 404 num dominio sem tenant, e
-o balanceador concluiria que a aplicacao esta fora do ar.
-
-#### Midia fora do projeto (opcional)
-
-Por padrao os arquivos ficam em `/srv/publibot/media`, cada tenant numa
-subpasta com o nome do schema (`media/<schema>/documents/...`,
-`media/<schema>/capas/...`). Para centralizar num storage do servidor, fora
-do projeto, sao quatro lugares — e os quatro precisam concordar:
-
-1. `.env`: `MEDIA_ROOT=/dados/publibot/media`
-2. Nginx: o `alias` do `location /protected-media/` aponta para a mesma pasta
-   (com a barra no fim): `alias /dados/publibot/media/;`
-3. systemd: os servicos rodam com `ProtectSystem=strict`, entao so escrevem
-   onde o unit libera. Um override, que sobrevive as implantacoes (o
-   `sincronizar-systemd.sh` copia os units, nao os `.d/`):
-
-   ```bash
-   for s in publibot celery-publibot; do
-     sudo mkdir -p /etc/systemd/system/$s.service.d
-     printf '[Service]\nReadWritePaths=/dados/publibot/media\n' |
-       sudo tee /etc/systemd/system/$s.service.d/midia.conf
-   done
-   sudo systemctl daemon-reload && sudo systemctl restart publibot celery-publibot
-   ```
-
-4. A pasta existe e e do usuario do servico:
-   `sudo install -d -o publibot -g publibot -m 0755 /dados/publibot/media`
-
-O `backup.sh` le o `MEDIA_ROOT` do `.env` sozinho. Se ja havia arquivos,
-mova a pasta inteira (com as subpastas dos schemas) antes de reiniciar.
-
-**Conferir:** envie um PDF num tenant e veja o arquivo em
-`/dados/publibot/media/<schema>/documents/`; baixe o original pela tela (com
-`USAR_X_ACCEL=true`, e o Nginx que entrega — um 404 aqui e o `alias`).
-Esquecer o passo 3 da `Read-only file system` no primeiro envio.
-
-### Passo 5 — Primeira implantacao
-
-```bash
-./deploy/scripts/release.sh
-```
-
-Busca o codigo, instala dependencias, roda `check --deploy`, recusa model sem
-migration, migra `public` e todos os tenants, confere o tenant raiz, semeia as
-conexoes de inferencia, semeia os prompts, coleta estaticos, **sincroniza as
-units** e recarrega os servicos — nessa ordem, e a ordem importa: migrations
-antes de reiniciar, senao o codigo novo consulta colunas que ainda nao
-existem.
-
-A sincronizacao das units resolve uma armadilha silenciosa. Elas sao
-versionadas no repositorio, mas o systemd le de `/etc/systemd/system`; sem
-copiar, editar um `.service` nao tem efeito nenhum e nada avisa — a mudanca
-esta no git, foi revisada, foi implantada, e o servico segue com a versao
-antiga. O `daemon-reload` so acontece quando algo mudou de fato.
+O nome da pasta do certificado precisa ser o `ROOT_DOMAIN`
+(`/etc/letsencrypt/live/publibot.ekron.ia.br/`). Com ele la, o proximo
+`release.sh` instala o site do Nginx sozinho (`deploy/nginx/publibot.conf`,
+com dominio e caminhos trocados), confere com `nginx -t` e recarrega. Se o
+`nginx -t` falhar, a configuracao anterior volta: o Nginx atende outros
+projetos.
 
 **Conferir:**
 
 ```bash
+curl -sI https://publibot.ekron.ia.br/healthz/ | head -1
+curl -sI https://publiteste.publibot.ekron.ia.br/ | head -1
+```
+
+O `/healthz/` responde **antes** da resolucao de tenant, de proposito.
+
+### Passo 3 — Conferir o que subiu
+
+```bash
+cd ~/publi-bot
 systemctl is-active publibot celery-publibot celery-beat-publibot
-cd /srv/publibot && venv/bin/python manage.py check_db
-venv/bin/python manage.py broker_status
+venv/bin/python manage.py check_db
+venv/bin/python manage.py conferir_instalacao
 ```
 
-O `check_db` confere banco, extensoes, `search_path` e o tenant raiz de uma
-vez. O `broker_status` diz **qual** broker esta valendo — a confusao entre
-Redis e Postgres como broker produz uma fila que aceita mensagens que ninguem
-consome.
+O `check_db` confere banco, extensoes, `search_path` e o tenant raiz. O
+`conferir_instalacao` confere fila, worker, beat, midia e as contas externas
+(`--completo` faz tambem as chamadas de uso real; ver `docs/CONFERENCIA.md`).
+
+Os arquivos dos tenants ficam em `MEDIA_ROOT`, cada tenant numa subpasta com
+o nome do schema. Para mudar a pasta, mude nos tres lugares que precisam
+concordar: `MEDIA_ROOT` no `.env`, `ReadWritePaths` das units
+(`deploy/systemd/`) e o `backup.sh` (que ja le o `MEDIA_ROOT` sozinho). O
+`alias` do Nginx o `release.sh` monta a partir do `MEDIA_ROOT`.
 
 ### Passo 6 — Conexoes de inferencia
 
@@ -630,59 +537,28 @@ mostra o passo em curso.
 
 ### Toda implantacao, depois disso
 
+Um push (ou merge) na `main`. Para implantar a mao, sem o GitHub:
+
 ```bash
-./deploy/scripts/release.sh
+# --exclude .env: o seu .env de desenvolvimento NAO pode ir como o de producao
+rsync -a --delete --exclude .git --exclude .env --exclude venv --exclude media \
+      --exclude .model_cache ./ ubuntu@servidor:publi-bot-envio/
+scp .env.producao ubuntu@servidor:publi-bot-envio/.env   # opcional: sem ele, vale o que ja esta la
+ssh ubuntu@servidor 'bash ~/publi-bot-envio/deploy/scripts/release.sh'
 ```
 
-**Conferir:**
+**Conferir** que a implantacao chegou (e nao so que o workflow ficou verde):
 
 ```bash
 systemctl is-active publibot celery-publibot celery-beat-publibot
-curl -sI https://exemplo.com.br/healthz/ | head -1
 journalctl -u publibot -n 20 --no-pager
 ```
 
-### Implantacao pelo GitHub
-
-`.github/workflows/ci.yml` roda a suite a cada push e, quando o commit entra
-na `main`, entra no servidor por ssh e roda **o mesmo** `release.sh` de cima.
-
-Nao ha copia de arquivo nem sequencia repetida no workflow. Descrever a
-implantacao duas vezes — uma no script, outra no YAML — cria dois caminhos que
-divergem no dia em que alguem corrige so um deles, e a divergencia so aparece
-em producao.
-
-Quatro segredos no repositorio (Settings > Secrets and variables > Actions):
-
-| Segredo | O que e |
-|---|---|
-| `SERVER_HOST` | endereco do servidor |
-| `SERVER_USER` | usuario que roda o `release.sh` |
-| `DEPLOY_KEY` | chave ssh **privada** desse usuario |
-| `SERVER_PORT` | porta do ssh |
-
-Nao existe um segredo com o `.env` de producao, e a ausencia e deliberada: os
-segredos sao gerados **no servidor**, uma unica vez, pelo `bootstrap.sh`, e
-nunca sobrescritos. Guardar o arquivo inteiro num secret significaria
-reescrever `/etc/publibot/env` a cada implantacao — e um
-`NODE_KEY_ENCRYPTION_KEY` diferente do que cifrou as credenciais as torna
-irrecuperaveis, com o erro aparecendo dias depois, como falha de autenticacao
-contra o site do cliente.
-
-**Conferir que a implantacao chegou** (e nao so que o workflow ficou verde):
-
-```bash
-ssh servidor 'cd /srv/publibot && git rev-parse --short HEAD'
-```
-
-Compare com o commit da `main`. Um workflow verde diz que o ssh rodou, nao que
-o servico reiniciou com o codigo novo.
-
 O job de teste sobe PostgreSQL e Redis de verdade, com a extensao `vector` no
-schema `extensions` do `template1` — a mesma preparacao que o `setup-db.sh`
-faz na sua maquina. Um banco falso passaria em tudo e nao diria nada sobre
-schema por tenant, `search_path` ou prefixo de chave, que e exatamente o que
-este projeto tem de mais fragil.
+schema `extensions` do `template1`, em Python 3.12 como o servidor. Um banco
+falso passaria em tudo e nao diria nada sobre schema por tenant,
+`search_path` ou prefixo de chave, que e exatamente o que este projeto tem de
+mais fragil.
 
 ### Redis compartilhado
 
@@ -837,7 +713,7 @@ python manage.py reservas          # quem esta segurando a capacidade
 | `sem_vram` ao gerar capa | a placa esta ocupada pelo modelo de texto. Ver "Quando a placa nao cabe" (secao 4a) |
 | Uma geracao consumindo horas de CPU | `IMAGEM_PERMITIR_CPU=true` sem medir antes |
 | `/health/` do worker da `timed out` (nao "refused") | ele esta ocupado gerando. Se persistir sem nada em curso, confira o journal da unit |
-| `could not open extension control file` no bootstrap | falta `postgresql-<versao>-pgvector` |
+| `could not open extension control file` no release | falta `postgresql-<versao>-pgvector` |
 | Unit de usuario nao sobe no boot | falta `sudo loginctl enable-linger $USER` |
 | Log do worker de GPU nao aparece no `dev` | ele e unit do systemd: `journalctl --user -u worker-gpu -f` |
 | `503 gpu_ocupada` num trabalho | funcionando como projetado: o worker arbitra a placa e o trabalho e adiado |

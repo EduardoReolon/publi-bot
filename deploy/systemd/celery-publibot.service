@@ -4,13 +4,13 @@ After=network.target postgresql.service redis-server.service
 
 [Service]
 Type=simple
-User=publibot
-Group=publibot
-WorkingDirectory=/srv/publibot
-EnvironmentFile=/etc/publibot/env
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/publi-bot
+EnvironmentFile=/home/ubuntu/publi-bot/.env
 Environment=DJANGO_SETTINGS_MODULE=core.settings.prod
 
-ExecStart=/srv/publibot/venv/bin/celery -A core worker \
+ExecStart=/home/ubuntu/publi-bot/venv/bin/celery -A core worker \
     --loglevel=INFO \
     --concurrency=4 \
     --prefetch-multiplier=1 \
@@ -27,8 +27,8 @@ RestartSec=10
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/srv/publibot/media
+ProtectHome=false
+ReadWritePaths=/home/ubuntu/storage/publi-bot /home/ubuntu/publi-bot/.model_cache
 
 [Install]
 WantedBy=multi-user.target
