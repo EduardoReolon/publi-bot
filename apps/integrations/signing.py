@@ -88,13 +88,24 @@ class AssinaturaHttpx(httpx.Auth):
 
     requires_request_body = True
 
-    def __init__(self, *, api_key: str, signing_secret: str):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        signing_secret: str,
+        timestamp: str | None = None,
+        nonce: str | None = None,
+    ):
         self.api_key = api_key
         self.signing_secret = signing_secret
+        # Fixos so no teste de conexao, que confere se o site recusa nonce
+        # repetido e instante vencido. No uso normal, cada requisicao gera os seus.
+        self.timestamp = timestamp
+        self.nonce = nonce
 
     def auth_flow(self, request: httpx.Request):
-        timestamp = str(int(time.time()))
-        nonce = str(uuid.uuid4())
+        timestamp = self.timestamp or str(int(time.time()))
+        nonce = self.nonce or str(uuid.uuid4())
         corpo = request.content or b""
 
         request.headers["X-API-KEY"] = self.api_key

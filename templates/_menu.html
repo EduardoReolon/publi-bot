@@ -5,9 +5,10 @@
   descobrir se ha trabalho.
 {% endcomment %}
 <div class="menu">
-  <div class="envolucro">
-    {# Na ordem em que alguem novo preenche: o site, o negocio e a voz; depois
-       o radar descobre temas, o acervo sustenta, e as pautas viram artigos. #}
+    {% comment %}
+      Na ordem em que alguem novo preenche: o site, o negocio e a voz; depois o
+      radar descobre temas, o acervo sustenta, e as pautas viram artigos.
+    {% endcomment %}
     <a href="{% url 'accounts:painel' %}" class="{% if aba == 'painel' %}ativo{% endif %}">
       {% translate "Painel" %}
     </a>
@@ -46,5 +47,4 @@
       {% translate "Operacao" %}
       {% if pendencias.falhas %}<span class="contagem">{{ pendencias.falhas }}</span>{% endif %}
     </a>
-  </div>
 </div>

@@ -44,6 +44,7 @@ def site(request: HttpRequest) -> HttpResponse:
             "horarios": _proximos_horarios(instancia),
             "chamadas": SiteApiCall.objects.order_by("-created_at")[:20] if instancia else [],
             "alertas": _alertas(instancia),
+            "teste": request.session.pop("teste_do_site", None),
         },
     )
 
@@ -126,7 +127,7 @@ def _salvar_cadencia(request: HttpRequest, instancia: Site | None) -> HttpRespon
 @login_required
 @require_POST
 def testar_conexao(request: HttpRequest) -> HttpResponse:
-    """Bate no site com as credenciais cadastradas e relata o que voltou.
+    """Bate no site com as credenciais cadastradas e relata cada etapa.
 
     Descobrir agora que a assinatura esta errada e barato; descobrir na
     primeira publicacao agendada significa um artigo aprovado parado sem que
@@ -137,21 +138,17 @@ def testar_conexao(request: HttpRequest) -> HttpResponse:
         messages.error(request, _("Nenhum site cadastrado."))
         return redirect("integrations:site")
 
-    from apps.integrations.client import SiteClient
+    from dataclasses import asdict
 
-    try:
-        cliente = SiteClient(instancia)
-        contexto = cliente.seo_context()
-    except Exception as exc:
-        messages.error(request, _("Falhou: %(erro)s") % {"erro": exc})
-        return redirect("integrations:site")
+    from apps.integrations.diagnostico import testar_site
 
-    posts = (contexto or {}).get("published_posts", []) if isinstance(contexto, dict) else []
-    messages.success(
-        request,
-        _("Conexao ok. O site respondeu com %(total)s publicacao(oes) no espelho de SEO.")
-        % {"total": len(posts)},
-    )
+    etapas = testar_site(instancia)
+    # Vai pela sessao, e nao por mensagens soltas: a tela mostra a lista inteira,
+    # em ordem, ao lado do botao.
+    request.session["teste_do_site"] = {
+        "etapas": [asdict(e) for e in etapas],
+        "em": timezone.localtime().strftime("%d/%m %H:%M"),
+    }
     return redirect("integrations:site")
 
 

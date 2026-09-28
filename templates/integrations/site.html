@@ -45,12 +45,25 @@
           <button type="submit" class="botao secundario">{% translate "Testar conexao agora" %}</button>
           <div class="ajuda">
             {% blocktranslate trimmed %}
-              Descobrir uma assinatura errada agora e barato. Descobrir na
-              primeira publicacao agendada significa um artigo aprovado parado
-              sem ninguem olhando.
+              Confere se o site aceita a chave e o segredo cadastrados, e tambem
+              se ele RECUSA o que e falso: segredo errado, requisicao repetida e
+              horario vencido. Um site que aceita qualquer assinatura responde
+              igual, e nele qualquer um publicaria.
             {% endblocktranslate %}
           </div>
         </form>
+        {% if teste %}
+          <h3 style="margin-top:1rem">{% blocktranslate with em=teste.em %}Teste de {{ em }}{% endblocktranslate %}</h3>
+          <ul class="lista">
+            {% for etapa in teste.etapas %}
+              <li>
+                <span class="selo {% if etapa.ok %}ok{% else %}ruim{% endif %}">{% if etapa.ok %}OK{% else %}{% translate "FALHA" %}{% endif %}</span>
+                <strong>{{ etapa.nome }}</strong>
+                {% if etapa.detalhe %}<span class="pre-visualizacao">— {{ etapa.detalhe }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
       {% endif %}
     </div>
 

@@ -72,6 +72,7 @@ class SiteClient:
         headers: dict | None = None,
         data: dict | None = None,
         files: dict | None = None,
+        auth: AssinaturaHttpx | None = None,
     ) -> dict[str, Any]:
         url = f"{self.site.base_url.rstrip('/')}/api/{VERSAO_DO_CONTRATO}{rota}"
         inicio = time.perf_counter()
@@ -100,7 +101,7 @@ class SiteClient:
                     files=files,
                     params=params,
                     headers=headers or {},
-                    auth=self._auth(),
+                    auth=auth or self._auth(),
                 )
         except httpx.TimeoutException as exc:
             self._registrar(

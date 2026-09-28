@@ -84,7 +84,7 @@ class Command(BaseCommand):
                 self._titulo(f"Tenant {schema}")
                 self._rodar("migracoes", self._migracoes)
                 self._rodar("prompts", self._prompts)
-                self._rodar("site (rota /health/ assinada)", self._site)
+                self._rodar("site (assinatura e recusas)", self._site)
                 self._rodar("DataForSEO", self._dataforseo)
                 self._rodar("YouTube", self._youtube)
                 self._rodar("SearXNG", self._searxng)
@@ -242,17 +242,21 @@ class Command(BaseCommand):
         return f"{len(existentes)} cadastrados"
 
     def _site(self) -> str | None:
-        from apps.integrations.client import SiteClient
+        from apps.integrations.diagnostico import testar_site
         from apps.integrations.models import Site
 
         site = Site.objects.first()
         if site is None or not site.base_url:
             return None
-        resposta = SiteClient(site).health() or {}
-        versao = resposta.get("contract_version") or resposta.get("version") or "?"
-        recursos = resposta.get("features") or resposta.get("supports") or []
-        extra = f", recursos: {', '.join(map(str, recursos))}" if recursos else ""
-        return f"{site.base_url} respondeu (contrato {versao}{extra})"
+        etapas = testar_site(site)
+        falhas = [f"{e.nome}: {e.detalhe}" for e in etapas if not e.ok]
+        if falhas:
+            raise RuntimeError("; ".join(falhas))
+        return (
+            f"{site.base_url}: "
+            + "; ".join(f"{e.nome} ({e.detalhe})" for e in etapas[:1])
+            + (f"; mais {len(etapas) - 1} etapa(s) ok")
+        )
 
     def _dataforseo(self) -> str | None:
         from apps.radar.models import ContasExternas
