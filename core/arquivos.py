@@ -9,10 +9,13 @@ processo do Gunicorn por download.
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 
 from django.conf import settings
-from django.http import FileResponse, HttpResponse
+from django.contrib.auth.decorators import login_required
+from django.db import connection
+from django.http import FileResponse, Http404, HttpResponse
 
 
 def entregar_arquivo(arquivo, *, tipo: str, nome_para_baixar: str = "") -> HttpResponse:
@@ -45,7 +48,7 @@ def entregar_arquivo(arquivo, *, tipo: str, nome_para_baixar: str = "") -> HttpR
             resposta["Content-Disposition"] = disposicao
         return resposta
 
-    resposta = FileResponse(arquivo.open("rb"), content_type=tipo)
+    resposta = FileResponse(Path(_caminho(arquivo)).open("rb"), content_type=tipo)
     if disposicao:
         resposta["Content-Disposition"] = disposicao
     return resposta
@@ -59,7 +62,37 @@ def caminho_sob_media_root(arquivo) -> str:
     tenant (`documents/...`). Mandar o `name` ao Nginx pede um arquivo que nao
     existe, e o 404 nao diz por que.
     """
-    return Path(arquivo.path).resolve().relative_to(Path(settings.MEDIA_ROOT).resolve()).as_posix()
+    return (
+        Path(_caminho(arquivo))
+        .resolve()
+        .relative_to(Path(settings.MEDIA_ROOT).resolve())
+        .as_posix()
+    )
+
+
+def _caminho(arquivo) -> str:
+    """Aceita o campo de arquivo do Django ou um caminho ja resolvido."""
+    return getattr(arquivo, "path", arquivo)
+
+
+@login_required
+def servir_midia(request, schema: str, caminho: str) -> HttpResponse:
+    """Os arquivos do tenant (foto de autor, capa em revisao) para quem e dele.
+
+    E a rota do `MEDIA_URL`: o storage por tenant monta `media/<schema>/...`.
+    Sem ela, em producao o endereco cai no Django e da 404 — o Nginx nao pode
+    servir `/media/` direto, porque ai o PDF de um cliente ficaria aberto para
+    qualquer um. Aqui passa pelo login e pela filiacao ao tenant (middleware),
+    e so o schema da propria requisicao e aceito.
+    """
+    if schema != connection.schema_name:
+        raise Http404
+    pasta = (Path(settings.MEDIA_ROOT) / schema).resolve()
+    arquivo = (pasta / caminho).resolve()
+    if not arquivo.is_relative_to(pasta) or not arquivo.is_file():
+        raise Http404
+    tipo = mimetypes.guess_type(arquivo.name)[0] or "application/octet-stream"
+    return entregar_arquivo(arquivo, tipo=tipo)
 
 
 def _sanear(nome: str) -> str:

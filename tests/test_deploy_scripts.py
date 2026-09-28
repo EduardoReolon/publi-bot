@@ -312,3 +312,10 @@ def test_o_ci_instala_as_extensoes_no_template1():
 
     assert "-d template1" in texto
     assert "WITH SCHEMA extensions" in texto
+
+
+def test_o_molde_do_nginx_funciona_no_nginx_do_ubuntu_lts():
+    """`http2 on;` e do Nginx 1.25+; o do Ubuntu 24.04 e o 1.24, e o nginx -t
+    recusa a diretiva — o release.sh entao restaura a config antiga e para."""
+    molde = (RAIZ / "deploy" / "nginx" / "publibot.conf").read_text(encoding="utf-8")
+    assert "http2 on" not in molde.replace("`http2 on;`", "")

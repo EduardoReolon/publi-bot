@@ -7,9 +7,10 @@ o host resolve para um tenant, com o search_path ja fixado no schema dele.
 from __future__ import annotations
 
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+
+from core.arquivos import servir_midia
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -25,8 +26,11 @@ urlpatterns = [
     path("operacao/", include("apps.ops.urls_painel", namespace="operacao")),
 ]
 
-# Em desenvolvimento o proprio runserver entrega os arquivos enviados — foto de
-# autor, PDF do acervo. Em producao quem serve e o Nginx (ver deploy/), e por
-# isso a lista so cresce com DEBUG ligado.
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Os arquivos do tenant (foto de autor, capa em revisao), com login. Em
+# desenvolvimento e em producao pela mesma rota: com USAR_X_ACCEL quem envia
+# os bytes e o Nginx (/protected-media/, internal).
+urlpatterns += [
+    path(
+        f"{settings.MEDIA_URL.strip('/')}/<str:schema>/<path:caminho>", servir_midia, name="midia"
+    ),
+]
