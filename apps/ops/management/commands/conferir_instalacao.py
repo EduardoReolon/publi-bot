@@ -2,6 +2,7 @@
 
     manage.py conferir_instalacao            # todos os tenants ativos
     manage.py conferir_instalacao --schema=acme
+    manage.py conferir_instalacao --completo # tambem as chamadas de uso real
 
 Os testes automaticos cobrem a logica; o que eles nao alcancam e o ambiente:
 migracao que nao rodou, beat parado, pasta de midia sem permissao, chave de
@@ -11,6 +12,14 @@ API errada, site que nao reconhece a assinatura. Cada linha sai com OK, FALHA
 Custo: nada. DataForSEO pela rota gratuita de dados da conta; YouTube pela
 rota de idiomas (1 unidade da cota diaria de 10.000); Search Console so le a
 permissao. Nada vai para o livro-caixa.
+
+Com --completo, cada servico passa tambem pelas MESMAS funcoes que o sistema
+usa no dia a dia (busca no Google, volume, videos, comentarios, legenda,
+OpenAlex, Unpaywall, Search Analytics, leitura de pagina), com uma consulta
+minima, e confere se a resposta chegou no formato que o codigo espera. Isso
+custa: cerca de US$ 0,09 da DataForSEO (quase tudo do volume) e 101 unidades
+da cota do YouTube, por tenant. Essas chamadas vao para o livro-caixa como
+"busca manual".
 """
 
 from __future__ import annotations
@@ -35,6 +44,11 @@ LINKS_DE_REFERENCIA = [
     ("https://pt.wikipedia.org/wiki/Pagina_que_nao_existe_publibot_conferencia", 404),
     ("https://dominio-que-nao-existe.invalid/", 0),
 ]
+# Consultas do --completo: genericas de proposito, para que "sem resultado"
+# signifique formato ou acesso errado, e nao tema sem busca.
+CONSULTA_DE_TESTE = "como fazer bolo de cenoura"
+CONSULTA_ACADEMICA = "diabetes mellitus"
+PAGINA_DE_TESTE = "https://pt.wikipedia.org/wiki/Brasil"
 
 
 class Command(BaseCommand):
@@ -42,6 +56,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--schema", default="", help="So este tenant.")
+        parser.add_argument(
+            "--completo",
+            action="store_true",
+            help="Tambem as chamadas de uso real (custa ~US$ 0,09 e 101 unidades do YouTube).",
+        )
 
     def handle(self, *args, **options):
         self.falhas = 0
@@ -53,6 +72,8 @@ class Command(BaseCommand):
         self._rodar("pasta de midia", self._midia)
         self._rodar("conta do Search Console", self._conta_do_console)
         self._rodar("links quebrados (verificador)", self._links_quebrados)
+        if options["completo"]:
+            self._rodar("leitura de pagina (fontes)", self._leitura_de_pagina)
 
         from apps.accounts.varredura import schemas_ativos
 
@@ -68,6 +89,13 @@ class Command(BaseCommand):
                 self._rodar("SearXNG", self._searxng)
                 self._rodar("OpenAlex (artigos cientificos)", self._openalex)
                 self._rodar("Search Console", self._console)
+                if options["completo"]:
+                    self._rodar("DataForSEO: busca no Google", self._uso_serp)
+                    self._rodar("DataForSEO: volume de busca", self._uso_volume)
+                    self._rodar("YouTube: videos, comentarios e legenda", self._uso_youtube)
+                    self._rodar("SearXNG: busca", self._uso_searxng)
+                    self._rodar("OpenAlex e Unpaywall: artigos", self._uso_academicos)
+                    self._rodar("Search Console: cliques e posicoes", self._uso_console)
 
         self.stdout.write("")
         if self.falhas:
@@ -182,6 +210,12 @@ class Command(BaseCommand):
                 "; ".join(erradas) + ". O servidor sai para a internet? Ha proxy no caminho?"
             )
         return f"{len(LINKS_DE_REFERENCIA)} casos conhecidos como esperado"
+
+    def _leitura_de_pagina(self) -> str:
+        from apps.knowledge.web import texto_da_pagina
+
+        texto = texto_da_pagina(PAGINA_DE_TESTE)
+        return f"{len(texto)} caracteres de texto principal de {PAGINA_DE_TESTE}"
 
     # -- por tenant -------------------------------------------------------------
 
@@ -320,3 +354,126 @@ class Command(BaseCommand):
             )
         resposta.raise_for_status()
         return f"{propriedade}: {resposta.json().get('permissionLevel', 'acesso ok')}"
+
+    # -- uso real (--completo) --------------------------------------------------
+
+    @staticmethod
+    def _exigir(condicao, mensagem: str) -> None:
+        if not condicao:
+            raise RuntimeError(f"a resposta nao veio como o sistema espera: {mensagem}")
+
+    def _uso_serp(self) -> str | None:
+        from apps.radar.models import ChamadaExterna, ConfiguracaoDoRadar, ContasExternas
+        from apps.radar.provedores import buscar_dataforseo
+
+        contas = ContasExternas.carregar()
+        if not contas.dataforseo_login:
+            return None
+        resultado = buscar_dataforseo(
+            CONSULTA_DE_TESTE,
+            config=ConfiguracaoDoRadar.carregar(),
+            contas=contas,
+            finalidade=ChamadaExterna.Finalidade.MANUAL,
+        )
+        self._exigir(resultado.resultados, "nenhum resultado organico")
+        self._exigir(
+            all(item.url.startswith("http") and item.titulo for item in resultado.resultados),
+            "resultado organico sem endereco ou titulo",
+        )
+        return (
+            f"{len(resultado.resultados)} organicos, {len(resultado.perguntas)} perguntas, "
+            f"{len(resultado.relacionadas)} relacionadas, {len(resultado.academicos)} "
+            f"academicos, {len(resultado.noticias)} noticias (US$ {resultado.custo})"
+        )
+
+    def _uso_volume(self) -> str | None:
+        from apps.radar.models import ChamadaExterna, ConfiguracaoDoRadar, ContasExternas
+        from apps.radar.provedores import metricas_dataforseo, palavra_para_volume
+
+        contas = ContasExternas.carregar()
+        if not contas.dataforseo_login:
+            return None
+        metricas = metricas_dataforseo(
+            [CONSULTA_DE_TESTE],
+            config=ConfiguracaoDoRadar.carregar(),
+            contas=contas,
+            finalidade=ChamadaExterna.Finalidade.MANUAL,
+        )
+        linha = metricas.get(palavra_para_volume(CONSULTA_DE_TESTE))
+        self._exigir(linha is not None, f"a palavra {CONSULTA_DE_TESTE!r} nao voltou")
+        self._exigir("volume" in linha, "sem o campo de volume")
+        return f"{CONSULTA_DE_TESTE!r}: {linha['volume']} buscas/mes"
+
+    def _uso_youtube(self) -> str | None:
+        from apps.knowledge.videos import LegendaIndisponivel, buscar_legenda
+        from apps.radar.models import ContasExternas
+        from apps.radar.youtube import buscar_videos, comentarios
+
+        contas = ContasExternas.carregar()
+        if not contas.tem_youtube:
+            return None
+        videos = buscar_videos(CONSULTA_DE_TESTE, quantos=1, contas=contas)
+        self._exigir(videos, "a busca nao trouxe video")
+        video = videos[0]
+        self._exigir(video["id"] and video["titulo"], "video sem id ou titulo")
+        lista = comentarios(video["id"], contas=contas, quantos=5)
+        self._exigir(all(c["texto"] for c in lista), "comentario sem texto")
+        try:
+            legenda = f"{len(buscar_legenda(video['id']))} trechos de legenda"
+        except LegendaIndisponivel as exc:
+            if "recusou" in str(exc):
+                raise
+            legenda = f"sem legenda neste video ({exc})"
+        return f"video {video['id']}: {len(lista)} comentarios, {legenda}"
+
+    def _uso_searxng(self) -> str | None:
+        from apps.radar.models import ChamadaExterna, ConfiguracaoDoRadar, ContasExternas
+        from apps.radar.provedores import buscar_searxng, url_do_searxng
+
+        contas = ContasExternas.carregar()
+        if not url_do_searxng(contas):
+            return None
+        resultado = buscar_searxng(
+            CONSULTA_DE_TESTE,
+            config=ConfiguracaoDoRadar.carregar(),
+            contas=contas,
+            finalidade=ChamadaExterna.Finalidade.MANUAL,
+        )
+        self._exigir(resultado.resultados, "nenhum resultado")
+        return f"{len(resultado.resultados)} resultados"
+
+    def _uso_academicos(self) -> str | None:
+        from apps.knowledge.academicos import buscar_openalex, pdf_pelo_unpaywall
+        from apps.radar.models import ConfiguracaoDoRadar, ContasExternas
+
+        if not ConfiguracaoDoRadar.carregar().artigos_cientificos:
+            return None
+        trabalhos = buscar_openalex(CONSULTA_ACADEMICA, quantos=3)
+        self._exigir(trabalhos, "o OpenAlex nao trouxe artigo")
+        self._exigir(all(t.url for t in trabalhos), "artigo sem DOI nem pagina")
+        com_doi = next((t for t in trabalhos if t.doi), None)
+        if not ContasExternas.carregar().email_para_bases_academicas:
+            pdf = "Unpaywall fora (sem e-mail)"
+        elif com_doi is None:
+            pdf = "nenhum com DOI para testar o Unpaywall"
+        else:
+            achado = pdf_pelo_unpaywall(com_doi.doi)
+            pdf = f"Unpaywall: {'PDF aberto' if achado else 'sem PDF aberto'} para {com_doi.doi}"
+        return f"{len(trabalhos)} artigos com titulo e endereco; {pdf}"
+
+    def _uso_console(self) -> str | None:
+        from apps.radar.models import ConfiguracaoDoRadar
+        from apps.radar.search_console import consultar, conta_de_servico
+
+        propriedade = ConfiguracaoDoRadar.carregar().propriedade_search_console
+        if not propriedade or conta_de_servico() is None:
+            return None
+        hoje = timezone.now().date()
+        linhas = consultar(propriedade, hoje - timedelta(days=30), hoje - timedelta(days=3))
+        if not linhas:
+            return "respondeu, sem linhas no periodo (site novo ou sem impressoes)"
+        self._exigir(
+            all(len(x.get("keys") or []) == 2 and "position" in x for x in linhas[:50]),
+            "linha sem consulta, pagina ou posicao",
+        )
+        return f"{len(linhas)} linhas (consulta, pagina) nos ultimos 30 dias"

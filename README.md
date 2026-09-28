@@ -143,6 +143,15 @@ Open `http://publibot.localhost:8000/`. Each tenant lives on its own subdomain (
 python manage.py configurar_inferencia --testar
 ```
 
+**4. Check the environment:**
+
+```bash
+python manage.py conferir_instalacao              # free: database, queue, beat, media, keys, the site
+python manage.py conferir_instalacao --completo   # also the real calls, checking each answer's format
+```
+
+The plain run only confirms each account and key is accepted, and costs nothing. `--completo` runs the same functions the system uses day to day — Google search and search volume (DataForSEO), video search, comments and captions (YouTube), OpenAlex and Unpaywall, Search Analytics, page reading — with one minimal query each, and fails if an answer doesn't come back in the shape the code expects. It costs about US$ 0.09 of DataForSEO and 101 YouTube quota units per tenant, logged in the cost ledger as a manual search. Run it after installing, after updating, and whenever a provider may have changed its API.
+
 The full guide — development, production server, GPU machine and troubleshooting — is in [`docs/OPERACAO.md`](docs/OPERACAO.md). External accounts (DataForSEO, YouTube, Search Console) are covered step by step in [`docs/CONTAS_EXTERNAS.md`](docs/CONTAS_EXTERNAS.md).
 
 ## 📂 Project Structure
@@ -175,7 +184,7 @@ The in-depth documentation is written in Portuguese.
 * [`docs/adr/`](docs/adr/) — every architectural decision, with its reasoning and consequences.
 * [`docs/ARMADILHAS.md`](docs/ARMADILHAS.md) — real failures, their literal symptoms, and where each one is handled.
 * [`docs/contrato/`](docs/contrato/) — what a website must implement to receive content.
-* [`docs/CONFERENCIA.md`](docs/CONFERENCIA.md) — after updating: run `manage.py conferir_instalacao` (database, queue, beat, media, external accounts, the site), then a short list of what only a person can judge.
+* [`docs/CONFERENCIA.md`](docs/CONFERENCIA.md) — after updating: run `manage.py conferir_instalacao` (database, queue, beat, media, external accounts, the site; `--completo` also exercises the real calls), then a short list of what only a person can judge.
 * [`docs/EXTRACAO.md`](docs/EXTRACAO.md) — PDF extraction heuristics and how to calibrate them.
 * [`docs/BLOCOS.md`](docs/BLOCOS.md) — packing each capability into a self-contained file for small-context AI assistants.
 

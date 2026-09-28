@@ -36,7 +36,33 @@ Cada linha sai com `OK`, `FALHA` (e o que fazer) ou `--` (não configurado).
 | Search Console | a conta de serviço gera o token e tem acesso à propriedade |
 | Links quebrados | três endereços conhecidos (página viva, página que sumiu, domínio que não existe) passam pela mesma função da tarefa de fundo e dão a resposta esperada |
 
-O comando não gasta nada nem grava no livro-caixa. O modelo de texto e o de
+O comando não gasta nada nem grava no livro-caixa: ele só confirma que cada
+conta e chave é aceita.
+
+### Com `--completo`: as chamadas de uso real
+
+```bash
+venv/bin/python manage.py conferir_instalacao --completo
+```
+
+Além do acima, cada serviço passa pelas **mesmas funções** que o sistema usa
+no dia a dia, com uma consulta mínima, e a linha falha se a resposta não vier
+no formato que o código espera:
+
+| Linha | Chama | Confere |
+|---|---|---|
+| leitura de página | a leitura de fontes (download e extração) | sai texto principal de uma página da Wikipédia |
+| DataForSEO: busca no Google | a busca da rodada do radar | resultados com endereço e título; conta perguntas, relacionadas, acadêmicos e notícias |
+| DataForSEO: volume de busca | o volume do radar | a palavra volta com o campo de volume |
+| YouTube | busca de vídeo, comentários e legenda | vídeo com id e título, comentários com texto; legenda bloqueada pelo YouTube é falha, vídeo sem legenda não |
+| SearXNG | a busca gratuita | traz resultado |
+| OpenAlex e Unpaywall | a busca de artigos científicos e o PDF pelo DOI | artigos com título e endereço; o Unpaywall responde |
+| Search Console | a coleta de cliques e posições | linhas com consulta, página e posição |
+
+Custa cerca de US$ 0,09 da DataForSEO (quase tudo do volume) e 101 unidades
+da cota diária do YouTube, por cliente; vai para o livro-caixa como "busca
+manual". Rode depois de instalar, depois de atualizar, e quando algum serviço
+puder ter mudado a API. O modelo de texto e o de
 imagem têm um comando próprio: `manage.py conferir_worker`.
 
 ## 3. O que só você julga (uma vez, uns 15 minutos)

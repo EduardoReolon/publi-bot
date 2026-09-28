@@ -63,3 +63,74 @@ def test_relata_cada_parte_e_sai_com_erro_quando_algo_falha(tenant_factory, monk
     assert "--    DataForSEO: nao configurado" in texto
     assert "--    site" in texto
     assert "OK    links quebrados (verificador): 3 casos" in texto
+
+
+@pytest.mark.django_db
+def test_completo_passa_pelas_funcoes_de_uso_e_confere_o_formato(tenant_factory, monkeypatch):
+    from django_tenants.utils import schema_context
+
+    from apps.content.services import garantir_prompts_padrao
+    from apps.knowledge import academicos, videos, web
+    from apps.radar import links_quebrados, provedores, youtube
+    from apps.radar.provedores import ItemDeBusca, ResultadoDeBusca
+
+    tenant = tenant_factory("conferencia_completa")
+    with schema_context(tenant.schema_name):
+        garantir_prompts_padrao()
+        from apps.inference.security import cifrar
+        from apps.radar.models import ConfiguracaoDoRadar, ContasExternas
+
+        contas = ContasExternas.carregar()
+        contas.dataforseo_login = "login"
+        contas.youtube_chave_ciphertext = cifrar("chave")
+        contas.save()
+        config = ConfiguracaoDoRadar.carregar()
+        config.artigos_cientificos = True
+        config.save()
+
+    ok = httpx.Response(200, json={"tasks": [{"status_code": 20000, "result": [{}]}]})
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: ok)
+    monkeypatch.setattr(links_quebrados, "situacao_do_link", lambda url: None)
+    monkeypatch.setattr(web, "texto_da_pagina", lambda url: "texto " * 100)
+    # Organico sem titulo: o formato que o codigo nao aceita.
+    monkeypatch.setattr(
+        provedores,
+        "buscar_dataforseo",
+        lambda consulta, **kw: ResultadoDeBusca("dataforseo", [ItemDeBusca("https://a.com/", "")]),
+    )
+    monkeypatch.setattr(
+        provedores, "metricas_dataforseo", lambda palavras, **kw: {palavras[0]: {"volume": 90}}
+    )
+    monkeypatch.setattr(youtube, "buscar_videos", lambda c, **kw: [{"id": "v1", "titulo": "t"}])
+    monkeypatch.setattr(youtube, "comentarios", lambda v, **kw: [{"texto": "oi", "curtidas": 1}])
+    monkeypatch.setattr(videos, "buscar_legenda", lambda v: [(0.0, "ola")])
+    monkeypatch.setattr(
+        academicos,
+        "buscar_openalex",
+        lambda c, **kw: [academicos.Trabalho(titulo="Estudo", doi="10.1/x")],
+    )
+
+    saida = io.StringIO()
+    with pytest.raises(SystemExit):
+        call_command("conferir_instalacao", schema=tenant.schema_name, completo=True, stdout=saida)
+    texto = saida.getvalue()
+    assert "OK    leitura de pagina (fontes)" in texto
+    assert "FALHA DataForSEO: busca no Google: a resposta nao veio" in texto
+    assert "OK    DataForSEO: volume de busca: 'como fazer bolo de cenoura': 90" in texto
+    assert "OK    YouTube: videos, comentarios e legenda: video v1: 1 comentarios" in texto
+    assert "OK    OpenAlex e Unpaywall: artigos: 1 artigos" in texto
+    assert "--    Search Console: cliques e posicoes: nao configurado" in texto
+
+
+@pytest.mark.django_db
+def test_sem_completo_nao_faz_chamada_de_uso(tenant_factory, monkeypatch):
+    from apps.radar import provedores
+
+    tenant = tenant_factory("conferencia_simples")
+    monkeypatch.setattr(
+        provedores, "buscar_dataforseo", lambda *a, **kw: pytest.fail("chamou a busca paga")
+    )
+    saida = io.StringIO()
+    with pytest.raises(SystemExit):
+        call_command("conferir_instalacao", schema=tenant.schema_name, stdout=saida)
+    assert "busca no Google" not in saida.getvalue()
