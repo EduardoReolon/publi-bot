@@ -22,6 +22,8 @@ class ConfiguracaoForm(forms.ModelForm):
             "fontes_pelo_radar",
             "buscar_fontes",
             "fontes_por_pauta",
+            "artigos_cientificos",
+            "artigos_por_rodada",
             "idade_para_vigiar",
             "concorrentes",
             "usar_concorrentes_conteudo",
