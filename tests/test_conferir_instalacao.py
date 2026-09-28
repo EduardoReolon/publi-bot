@@ -43,6 +43,15 @@ def test_relata_cada_parte_e_sai_com_erro_quando_algo_falha(tenant_factory, monk
 
     monkeypatch.setattr(httpx, "get", recusa)
 
+    from apps.radar import links_quebrados
+
+    respostas = {"Brasil": None, "nao_existe": 404, "invalid": 0}
+    monkeypatch.setattr(
+        links_quebrados,
+        "situacao_do_link",
+        lambda url: next(v for k, v in respostas.items() if k in url),
+    )
+
     saida = io.StringIO()
     with pytest.raises(SystemExit):
         call_command("conferir_instalacao", schema=tenant.schema_name, stdout=saida)
@@ -53,3 +62,4 @@ def test_relata_cada_parte_e_sai_com_erro_quando_algo_falha(tenant_factory, monk
     assert "FALHA YouTube: HTTP 400 keyInvalid" in texto
     assert "--    DataForSEO: nao configurado" in texto
     assert "--    site" in texto
+    assert "OK    links quebrados (verificador): 3 casos" in texto

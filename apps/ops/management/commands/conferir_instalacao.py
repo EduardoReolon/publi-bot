@@ -27,6 +27,14 @@ from django.utils import timezone
 from django_tenants.utils import get_public_schema_name, schema_context
 
 TIMEOUT = 15.0
+# Casos conhecidos para o verificador de links quebrados, com a resposta
+# esperada: pagina viva (None), pagina que sumiu (404) e dominio que nao
+# existe (0). Passam pela mesma funcao que a tarefa de fundo usa.
+LINKS_DE_REFERENCIA = [
+    ("https://pt.wikipedia.org/wiki/Brasil", None),
+    ("https://pt.wikipedia.org/wiki/Pagina_que_nao_existe_publibot_conferencia", 404),
+    ("https://dominio-que-nao-existe.invalid/", 0),
+]
 
 
 class Command(BaseCommand):
@@ -44,6 +52,7 @@ class Command(BaseCommand):
         self._rodar("beat (agendamentos)", self._beat)
         self._rodar("pasta de midia", self._midia)
         self._rodar("conta do Search Console", self._conta_do_console)
+        self._rodar("links quebrados (verificador)", self._links_quebrados)
 
         from apps.accounts.varredura import schemas_ativos
 
@@ -159,6 +168,20 @@ class Command(BaseCommand):
             )
         _token_de_acesso()
         return f"{conta['client_email']} (token emitido)"
+
+    def _links_quebrados(self) -> str:
+        from apps.radar.links_quebrados import situacao_do_link
+
+        erradas = []
+        for url, esperado in LINKS_DE_REFERENCIA:
+            obtido = situacao_do_link(url)
+            if obtido != esperado:
+                erradas.append(f"{url} deu {obtido!r}, esperado {esperado!r}")
+        if erradas:
+            raise RuntimeError(
+                "; ".join(erradas) + ". O servidor sai para a internet? Ha proxy no caminho?"
+            )
+        return f"{len(LINKS_DE_REFERENCIA)} casos conhecidos como esperado"
 
     # -- por tenant -------------------------------------------------------------
 

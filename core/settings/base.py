@@ -801,6 +801,10 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": env.get("LOG_LEVEL", "INFO")},
     "loggers": {
         "django.db.backends": {"level": "WARNING", "propagate": True},
+        # O httpx registra cada URL em INFO, com a chave de API que algumas
+        # rotas (YouTube, OpenAlex) levam na query. Nao pode ir para o log.
+        "httpx": {"level": "WARNING", "propagate": True},
+        "httpcore": {"level": "WARNING", "propagate": True},
         PROJECT_SLUG: {"level": env.get("LOG_LEVEL", "INFO"), "propagate": True},
     },
 }

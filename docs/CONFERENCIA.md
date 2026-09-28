@@ -34,6 +34,7 @@ Cada linha sai com `OK`, `FALHA` (e o que fazer) ou `--` (não configurado).
 | YouTube | a chave é aceita (1 unidade da cota diária de 10.000) |
 | SearXNG | devolve resultado em JSON |
 | Search Console | a conta de serviço gera o token e tem acesso à propriedade |
+| Links quebrados | três endereços conhecidos (página viva, página que sumiu, domínio que não existe) passam pela mesma função da tarefa de fundo e dão a resposta esperada |
 
 O comando não gasta nada nem grava no livro-caixa. O modelo de texto e o de
 imagem têm um comando próprio: `manage.py conferir_worker`.
