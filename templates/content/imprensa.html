@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Pauta para imprensa" %} · PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+<h1>{% translate "Pauta para imprensa" %}</h1>
+<p class="sub"><strong>{{ pauta.title }}</strong>{% if pauta.target_keyword %} · {{ pauta.target_keyword }}{% endif %}</p>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    Um link de site de noticias vale muito, mas so quando e conquistado:
+    materia paga precisa ir marcada como patrocinada (rel="sponsored") e nao
+    transfere autoridade — serve para marca, nao para posicao no Google. A
+    materia conquistada nasce de um angulo de noticia: um dado novo, uma
+    tendencia, um numero que surpreende. Copie o pedido para um modelo grande:
+    ele diz primeiro se a pauta tem esse angulo; se tiver, devolve o e-mail
+    para o jornalista e a materia, com as fontes do seu acervo e o
+    especialista como fonte. Se faltar um dado, ele diz qual — muitas vezes e
+    um levantamento da sua propria base, e esse e o melhor ativo de imprensa
+    que existe.
+  {% endblocktranslate %}
+</div>
+<section class="secao">
+  <div class="acoes"><button type="button" class="botao" data-copiar="pedido-imprensa">{% translate "Copiar pedido" %}</button>
+    <a class="botao discreto" href="{% url 'content:pautas' %}">{% translate "Voltar" %}</a></div>
+  <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-imprensa" readonly rows="20" style="width:100%">{{ pedido }}</textarea></details>
+</section>
+{% endblock %}

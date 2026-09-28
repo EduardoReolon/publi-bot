@@ -107,15 +107,24 @@ def _contexto_do_console() -> dict:
 
 @login_required
 def radar(request: HttpRequest) -> HttpResponse:
+    from apps.radar.autoridade import diagnosticar, resumo_dos_temas
+    from apps.radar.dificuldade import do_grupo, mapa
     from apps.radar.resumo import rendimento_das_sementes, texto_para_ia
 
+    contexto = _contexto(request=request)
+    dificuldades = mapa()
+    for grupo in contexto["grupos"]:
+        grupo.dificuldade = do_grupo(grupo, dificuldades)
     return render(
         request,
         "radar/radar.html",
         {
-            **_contexto(request=request),
+            **contexto,
             "rendimento": rendimento_das_sementes(),
             "texto_para_ia": texto_para_ia(),
+            "autoridade": diagnosticar(),
+            "temas_por_dificuldade": resumo_dos_temas(contexto["grupos"]),
+            "mede_dificuldade": bool(dificuldades),
         },
     )
 

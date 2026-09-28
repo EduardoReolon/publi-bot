@@ -1,0 +1,62 @@
+{% load i18n %}
+<section class="secao" id="backlinks">
+  <h2>{% translate "Precisa de backlinks?" %}</h2>
+  <div class="aviso {% if autoridade.veredito == 'links ajudariam' %}alerta{% elif autoridade.veredito == 'links nao sao prioridade' %}ok{% endif %}">
+    <strong>{{ autoridade.veredito|capfirst }}.</strong> {{ autoridade.explicacao }}
+    {% if autoridade.links %}<div><strong>{% translate "Quantos" %}:</strong> {{ autoridade.links }}.</div>{% endif %}
+  </div>
+
+  {% if mede_dificuldade %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed with b=temas_por_dificuldade.brecha m=temas_por_dificuldade.medio d=temas_por_dificuldade.dificil %}
+        Nos temas desta pagina: {{ b }} com brecha, {{ m }} medios, {{ d }} dificeis.
+      {% endblocktranslate %}
+    </p>
+  {% endif %}
+
+  {% if autoridade.artigos %}
+    <div class="rolagem">
+      <table>
+        <thead><tr>
+          <th>{% translate "Artigo" %}</th><th>{% translate "Posicao" %}</th><th>{% translate "Impressoes" %}</th>
+          <th>{% translate "Situacao" %}</th><th>{% translate "Dificuldade" %}</th>
+        </tr></thead>
+        <tbody data-recolher="5">
+          {% for a in autoridade.artigos %}
+            <tr>
+              <td>{{ a.artigo.title|truncatechars:70 }}</td>
+              <td>{% if a.posicao %}{{ a.posicao|floatformat:1 }}{% else %}—{% endif %}</td>
+              <td>{{ a.impressoes }}</td>
+              <td><span class="selo {% if a.situacao == 'funcionando' %}ok{% elif a.situacao == 'falta_autoridade' %}alerta{% elif a.situacao == 'cedo' %}{% else %}ruim{% endif %}">{{ a.rotulo }}</span></td>
+              <td>{% include "radar/_dificuldade.html" with d=a.dificuldade %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <details>
+    <summary>{% translate "Como ler isto" %}</summary>
+    <div class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        <p><strong>Dificuldade</strong> sai das paginas do Google que o radar ja
+        busca: quem ocupa a primeira pagina. "Brecha" e quando ha forum, video ou
+        rede social no topo — o Google nao achou pagina melhor, e um bom artigo
+        entra com pouca ou nenhuma autoridade. "Dificil" e quando os mesmos
+        sites grandes aparecem em quase todas as buscas do seu tema. Sem ao menos
+        6 buscas guardadas, a medida ainda nao existe.</p>
+        <p><strong>Precisa de backlinks</strong> sai do Search Console: artigo
+        com mais de 60 dias que aparece mas trava entre a 6a e a 30a posicao e o
+        sinal classico de falta de autoridade. Nesse caso, os links valem para
+        ESSES artigos. Artigo que quase nao aparece, ou aparece longe, nao se
+        resolve com link: o tema ou o texto e que precisam mudar.</p>
+        <p><strong>Onde conseguir</strong>, sem comprar link: um dado proprio
+        (um levantamento da sua ferramenta vira noticia e e citado), os
+        Possiveis parceiros acima, entrevistas e podcasts do setor, associacoes
+        e o Google Meu Negocio. Link pago ou trocado precisa de
+        rel="sponsored" — e por isso nao transfere autoridade.</p>
+      {% endblocktranslate %}
+    </div>
+  </details>
+</section>

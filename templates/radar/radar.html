@@ -57,6 +57,7 @@
     <thead><tr>
       <th>{% translate "Tema" %}</th><th>{% translate "Nota" %}</th>
       <th>{% translate "Buscas/mes" %}</th><th>{% translate "Sinais" %}</th>
+      <th title="{% translate 'Quem ocupa a primeira pagina do Google nesta busca' %}">{% translate "Dificuldade" %}</th>
       <th>{% translate "Por que essa nota" %}</th><th></th>
     </tr></thead>
     <tbody data-recolher="3" data-recolher-junto="paginas-temas" data-total="{{ grupos.paginator.count }}" {% if paginando %}data-expandido{% endif %}>
@@ -66,6 +67,7 @@
           <td><span class="nota {% if grupo.nota >= 60 %}alta{% elif grupo.nota >= 40 %}media{% endif %}">{{ grupo.nota|floatformat:0 }}</span></td>
           <td>{{ grupo.volume_total|default:"—" }}</td>
           <td>{{ grupo.total }}</td>
+          <td>{% include "radar/_dificuldade.html" with d=grupo.dificuldade %}</td>
           <td>
             <div class="parcelas compacta">
               {% for nome, valor in grupo.parcelas_rotuladas %}
@@ -85,7 +87,7 @@
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="6" class="vazio">{% translate "Nenhum tema ainda. Configure as sementes e rode o radar." %}</td></tr>
+        <tr><td colspan="7" class="vazio">{% translate "Nenhum tema ainda. Configure as sementes e rode o radar." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -272,6 +274,8 @@
   {% endfor %}
   </div>
 </section>
+
+{% include "radar/_autoridade.html" %}
 
 <section class="secao ok">
   <h2>{% translate "Search Console" %}</h2>

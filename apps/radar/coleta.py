@@ -676,8 +676,12 @@ def propor_pautas(
             if grupo.parcelas.get("canibalizacao", 0) < 0.8:
                 candidatos.append(grupo)
 
+    from apps.radar.dificuldade import do_grupo, mapa
+
+    dificuldades = mapa() if candidatos else {}
     criadas = []
     for grupo in sorted(candidatos, key=lambda g: -g.nota)[:limite]:
+        dificuldade = do_grupo(grupo, dificuldades)
         sinais = list(grupo.sinais.exclude(situacao=SinalDeDemanda.Situacao.DESCARTADO)[:12])
         briefing = "Demanda observada:\n" + "\n".join(
             f"- {s.texto}" + (f" ({s.volume}/mes)" if s.volume is not None else "") for s in sinais
@@ -694,6 +698,17 @@ def propor_pautas(
                 "nota": grupo.nota,
                 "parcelas": grupo.parcelas,
                 "volume_total": grupo.volume_total,
+                "dificuldade": (
+                    {
+                        "nota": dificuldade.nota,
+                        "rotulo": dificuldade.rotulo,
+                        "links": dificuldade.links,
+                        "dominantes": dificuldade.dominantes,
+                        "brechas": dificuldade.brechas,
+                    }
+                    if dificuldade
+                    else None
+                ),
                 "sinais": [
                     {"texto": s.texto, "fonte": s.get_fonte_display(), "volume": s.volume}
                     for s in sinais

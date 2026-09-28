@@ -166,6 +166,19 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
 
 
 @login_required
+def imprensa_da_pauta(request: HttpRequest, pk) -> HttpResponse:
+    """O pedido para outra IA julgar se a pauta vira materia de jornal."""
+    from apps.content import imprensa
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    return render(
+        request,
+        "content/imprensa.html",
+        {"aba": "pautas", "pauta": pauta, "pedido": imprensa.pedido(pauta)},
+    )
+
+
+@login_required
 def nova_pauta(request: HttpRequest) -> HttpResponse:
     if request.method != "POST":
         return redirect("content:pautas")

@@ -45,7 +45,9 @@
                   <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>
                 {% endif %}
               </td>
-              <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}</td>
+              <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}
+                {% with d=pauta.evidence.dificuldade %}{% if d %}<div><span class="selo {% if d.rotulo == 'brecha' %}ok{% elif d.rotulo == 'dificil' %}ruim{% else %}alerta{% endif %}" title="{% translate 'Links para a 1a pagina' %}: {{ d.links }}">{% if d.rotulo == 'brecha' %}{% translate "brecha" %}{% elif d.rotulo == 'dificil' %}{% translate "dificil" %}{% else %}{% translate "media" %}{% endif %} · {{ d.nota }}</span></div>{% endif %}{% endwith %}
+              </td>
               <td>
                 <span class="selo {% if pauta.status == 'used' %}ok{% elif pauta.status == 'rejected' or pauta.status == 'waiting_sources' %}ruim{% endif %}">
                   {{ pauta.get_status_display }}
@@ -71,6 +73,7 @@
                   </form>
                   <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
                   <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA" %}</a>
+                  <a class="botao secundario" href="{% url 'content:imprensa_da_pauta' pauta.pk %}" title="{% translate 'Outra IA julga se a pauta vira materia de jornal, e escreve' %}">{% translate "Imprensa (outra IA)" %}</a>
                   {% if pauta.de_peso %}<div class="ajuda"><span class="selo ok">{% translate "vale o modelo grande" %}</span> {{ pauta.de_peso|join:", " }}</div>{% endif %}
                   <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">
                     {% csrf_token %}
