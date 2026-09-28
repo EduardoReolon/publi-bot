@@ -1,36 +1,34 @@
 {% extends "base.html" %}{% load i18n %}
-{% block titulo %}PubliBot{% endblock %}
+{% block titulo %}PubliBot — conteudo que o Google encontra, com fonte e resultado medido{% endblock %}
+{% block cabeca %}
+  <meta name="description" content="O PubliBot descobre o que as pessoas procuram no Google, escreve com base em estudos e dados oficiais, publica no seu site depois da sua revisao e mede o resultado lado a lado com os anuncios.">
+  <style>
+    .heroi { padding: 2.5rem 0 1.5rem; }
+    .heroi h1 { font-size: 2.1rem; line-height: 1.2; max-width: 36rem; }
+    .heroi p { font-size: 1.1rem; color: var(--suave); max-width: 40rem; }
+    .pilares { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+    .pilar { background: var(--superficie); border-radius: 10px; padding: 1.1rem 1.2rem; box-shadow: var(--sombra); }
+    .pilar h3 { margin: 0 0 .4rem; font-size: 1.05rem; }
+    .pilar p { margin: 0; color: var(--suave); font-size: .95rem; }
+    .passos { counter-reset: passo; list-style: none; padding: 0; }
+    .passos li { counter-increment: passo; margin: .6rem 0; padding-left: 2.2rem; position: relative; }
+    .passos li::before { content: counter(passo); position: absolute; left: 0; top: 0; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--realce); color: #fff; display: grid; place-items: center; font-size: .85rem; }
+    .contato { background: var(--realce-suave); border-radius: 12px; padding: 1.5rem; margin: 2rem 0; }
+  </style>
+{% endblock %}
 {% block conteudo %}
-  <h1>{% translate "Conteudo fundamentado em literatura cientifica" %}</h1>
-  <p class="sub">
-    {% blocktranslate trimmed %}
-      Converte artigos cientificos em conteudo web com curadoria e revisao
-      humana obrigatoria, publicado no seu site na cadencia que voce definir.
-    {% endblocktranslate %}
-  </p>
-
   {% if ambientes %}
-    <h2>{% translate "Seus ambientes" %}</h2>
+    <h1>{% translate "Seus ambientes" %}</h1>
     <ul class="lista">
       {% for ambiente in ambientes %}
         <li>
-          {% if ambiente.url %}
-            <a href="{{ ambiente.url }}"><strong>{{ ambiente.tenant.name }}</strong></a>
-          {% else %}
-            <strong>{{ ambiente.tenant.name }}</strong>
-          {% endif %}
+          {% if ambiente.url %}<a href="{{ ambiente.url }}"><strong>{{ ambiente.tenant.name }}</strong></a>{% else %}<strong>{{ ambiente.tenant.name }}</strong>{% endif %}
           <div class="pre-visualizacao">
             {% comment %}
               O endereco completo, e nao o slug: cada tenant responde num
               subdominio do dominio raiz, e o slug sozinho nao diz qual.
-              `{# #}` nao serve aqui — so vale para uma linha, e um comentario
-              de varias linhas com essa sintaxe e impresso na pagina.
             {% endcomment %}
-            {% if ambiente.pronto and ambiente.url %}
-              {{ ambiente.url }}
-            {% else %}
-              {{ ambiente.tenant.slug }} &middot; {{ ambiente.tenant.get_status_display }}
-            {% endif %}
+            {% if ambiente.pronto and ambiente.url %}{{ ambiente.url }}{% else %}{{ ambiente.tenant.slug }} &middot; {{ ambiente.tenant.get_status_display }}{% endif %}
             &middot; {{ ambiente.papel }}
           </div>
         </li>
@@ -38,6 +36,62 @@
     </ul>
     <p><a href="{% url 'accounts:signup' %}">{% translate "Criar outro ambiente" %}</a></p>
   {% else %}
-    <p><a class="botao" href="{% url 'accounts:signup' %}">{% translate "Criar meu ambiente" %}</a></p>
+    <section class="heroi">
+      <h1>{% translate "Conteudo que o Google encontra, com fonte de verdade e resultado medido" %}</h1>
+      <p>
+        {% blocktranslate trimmed %}
+          O PubliBot descobre o que o seu cliente procura no Google, escreve com
+          base em estudos e dados oficiais, publica no seu site depois da sua
+          revisao — e mostra quanto isso rende, na mesma regua dos anuncios.
+        {% endblocktranslate %}
+      </p>
+      <div class="acoes">
+        {% if whatsapp_link %}<a class="botao" href="{{ whatsapp_link }}" target="_blank" rel="noopener">{% translate "Falar no WhatsApp" %}</a>{% endif %}
+        <a class="botao secundario" href="{% url 'accounts:signup' %}">{% translate "Criar meu ambiente" %}</a>
+      </div>
+    </section>
+
+    <div class="pilares">
+      <div class="pilar">
+        <h3>{% translate "Demanda, nao achismo" %}</h3>
+        <p>{% blocktranslate trimmed %}Um radar junta o que as pessoas perguntam no Google, o volume de busca, as duvidas dos seus visitantes e os comentarios do YouTube, e diz sobre o que vale escrever — e quanto o tema e disputado.{% endblocktranslate %}</p>
+      </div>
+      <div class="pilar">
+        <h3>{% translate "Escrito com fonte" %}</h3>
+        <p>{% blocktranslate trimmed %}Cada texto sai de um acervo com curadoria: estudos cientificos, normas e dados oficiais tem prioridade. Nada de numero inventado: sem fonte que sustente a ideia central, o artigo nao e escrito.{% endblocktranslate %}</p>
+      </div>
+      <div class="pilar">
+        <h3>{% translate "Voce aprova tudo" %}</h3>
+        <p>{% blocktranslate trimmed %}Nada vai ao ar sem a revisao de uma pessoa identificada. Um guia editorial confere o tom, os termos proibidos e as marcas de texto de maquina antes da aprovacao.{% endblocktranslate %}</p>
+      </div>
+      <div class="pilar">
+        <h3>{% translate "Medido como anuncio" %}</h3>
+        <p>{% blocktranslate trimmed %}Cliques, posicao e conversoes de cada artigo, com o valor que esses visitantes custariam no Google Ads e o custo por conversao ao lado do dos seus anuncios.{% endblocktranslate %}</p>
+      </div>
+      <div class="pilar">
+        <h3>{% translate "Autoridade sem truque" %}</h3>
+        <p>{% blocktranslate trimmed %}Diz se o site precisa de links e de quantos, acha parceiros do mesmo assunto, pautas para a imprensa e links quebrados onde o seu artigo pode entrar — sem troca de links.{% endblocktranslate %}</p>
+      </div>
+      <div class="pilar">
+        <h3>{% translate "No seu site" %}</h3>
+        <p>{% blocktranslate trimmed %}Publica na cadencia que voce definir, em qualquer tecnologia que siga o contrato aberto — para sites em Django, um pacote pronto instala em minutos.{% endblocktranslate %}</p>
+      </div>
+    </div>
+
+    <h2>{% translate "Como funciona" %}</h2>
+    <ol class="passos">
+      <li>{% translate "Voce conta o que vende e para quem, e liga o seu site." %}</li>
+      <li>{% translate "O radar traz os temas com procura e os artigos cientificos e dados que os sustentam." %}</li>
+      <li>{% translate "O PubliBot escreve; voce revisa e aprova." %}</li>
+      <li>{% translate "O artigo vai ao ar, e o painel mostra cliques, conversoes e o que fazer em seguida." %}</li>
+    </ol>
+
+    <section class="contato">
+      <h2 style="margin-top:0">{% translate "Quer ver no seu negocio?" %}</h2>
+      <p>{% blocktranslate trimmed %}Mostramos o radar rodando com as buscas do seu mercado antes de qualquer compromisso.{% endblocktranslate %}</p>
+      {% if whatsapp_link %}
+        <p><a class="botao" href="{{ whatsapp_link }}" target="_blank" rel="noopener">{% translate "WhatsApp" %} {{ whatsapp_legivel }}</a></p>
+      {% endif %}
+    </section>
   {% endif %}
 {% endblock %}

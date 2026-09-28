@@ -156,6 +156,15 @@ class ConfiguracaoDoRadar(models.Model):
     artigos_por_rodada = models.PositiveSmallIntegerField(
         _("artigos cientificos por rodada"), default=5, validators=[MaxValueValidator(30)]
     )
+    procurar_links_quebrados = models.BooleanField(
+        _("procurar links quebrados"),
+        default=True,
+        help_text=_(
+            "Gratuito e devagar: algumas paginas por hora, dos sites que aparecem nas "
+            "buscas do seu tema. Link que aponta para pagina que nao existe mais, perto "
+            "de um artigo seu, vira oportunidade de link em Radar > Imprensa e links."
+        ),
+    )
 
     # --- Concorrentes ----------------------------------------------------------
     idade_para_vigiar = models.PositiveSmallIntegerField(
@@ -749,6 +758,8 @@ class ConcorrenteSugerido(models.Model):
     aderencias = models.JSONField(_("proximidade das buscas"), default=dict, blank=True)
     # Apareceu no bloco "Principais noticias" do Google: e veiculo de imprensa.
     imprensa = models.BooleanField(_("veiculo de imprensa"), default=False)
+    # Quando o e-mail com as pautas foi mandado (painel de imprensa).
+    contatado_em = models.DateTimeField(_("contatado em"), null=True, blank=True)
     visto_em = models.DateTimeField(_("visto em"), default=timezone.now)
 
     class Meta:
@@ -1058,3 +1069,66 @@ class CustoDaPalavra(models.Model):
 
     def __str__(self) -> str:
         return f"{self.palavra} ({self.local})"
+
+
+class PaginaVerificada(models.Model):
+    """Pagina de outro site cujos links ja foram conferidos (nao repete tao cedo)."""
+
+    id = models.BigAutoField(primary_key=True)
+    url = models.URLField(_("URL"), max_length=500, unique=True)
+    links = models.PositiveSmallIntegerField(_("links conferidos"), default=0)
+    erro = models.CharField(_("erro"), max_length=300, blank=True)
+    verificada_em = models.DateTimeField(_("verificada em"), default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = _("pagina verificada")
+        verbose_name_plural = _("paginas verificadas")
+
+    def __str__(self) -> str:
+        return self.url
+
+
+class LinkQuebrado(models.Model):
+    """Link de um site do assunto que aponta para pagina que nao existe mais.
+
+    Oportunidade classica ("broken link building"): o dono conserta um erro do
+    proprio site e o seu artigo entra no lugar do link morto.
+    """
+
+    class Situacao(models.TextChoices):
+        NOVO = "novo", _("Novo")
+        CONTATADO = "contatado", _("Contatado")
+        DESCARTADO = "descartado", _("Descartado")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    pagina_url = models.URLField(_("pagina"), max_length=500)
+    pagina_titulo = models.CharField(_("titulo da pagina"), max_length=300, blank=True)
+    dominio = models.CharField(_("dominio"), max_length=255, db_index=True)
+    link_url = models.URLField(_("link quebrado"), max_length=500)
+    texto = models.CharField(_("texto do link"), max_length=300, blank=True)
+    status_http = models.PositiveSmallIntegerField(_("resposta"), default=0)
+    # O artigo publicado que cobre o mesmo assunto; sem ele, o tema pode virar pauta.
+    artigo = models.ForeignKey(
+        "content.Article",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("artigo sugerido"),
+    )
+    proximidade = models.FloatField(_("proximidade"), null=True, blank=True)
+    situacao = models.CharField(
+        _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.NOVO
+    )
+    encontrado_em = models.DateTimeField(_("encontrado em"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("link quebrado")
+        verbose_name_plural = _("links quebrados")
+        ordering = ["-encontrado_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["pagina_url", "link_url"], name="uniq_link_quebrado")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.pagina_url} -> {self.link_url}"

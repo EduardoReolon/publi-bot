@@ -48,7 +48,27 @@ def landing(request: HttpRequest) -> HttpResponse:
                     else reverse("accounts:provisioning", args=[vinculo.tenant.slug]),
                 }
             )
-    return render(request, "accounts/landing.html", {"ambientes": ambientes})
+    return render(
+        request, "accounts/landing.html", {"ambientes": ambientes, **_contato_comercial()}
+    )
+
+
+def _contato_comercial() -> dict:
+    """O WhatsApp comercial do .env, em link e no formato de leitura."""
+    import re
+
+    from django.conf import settings
+
+    digitos = re.sub(r"\D", "", getattr(settings, "CONTATO_COMERCIAL_WHATSAPP", "") or "")
+    if not digitos:
+        return {}
+    local = digitos.removeprefix("55") if len(digitos) > 11 else digitos
+    legivel = f"({local[:2]}) {local[2:-4]}-{local[-4:]}" if len(local) >= 10 else local
+    mensagem = "Ola! Vi o PubliBot e quero saber mais."
+    return {
+        "whatsapp_link": f"https://wa.me/55{local}?text={mensagem.replace(' ', '%20')}",
+        "whatsapp_legivel": legivel,
+    }
 
 
 def signup(request: HttpRequest) -> HttpResponse:

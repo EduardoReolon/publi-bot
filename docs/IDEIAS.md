@@ -1,5 +1,8 @@
 # Ideias para depois
 
+(Os links quebrados sairam daqui: estao em Radar > Imprensa e links,
+`apps/radar/links_quebrados.py`.)
+
 O que ja foi pensado e ficou de fora de proposito, com o motivo. Antes de
 construir uma delas, releia o motivo: ele pode continuar valendo.
 
@@ -17,22 +20,6 @@ Radar, pelo Search Console, ja diz se falta autoridade sem essa base.
 dominios que apontam para os concorrentes confirmados, menos os que ja
 apontam para o site, vira uma lista em Possiveis parceiros, com a pagina que
 linka e o texto do link.
-
-## Links quebrados ("broken link building")
-
-**O que e.** Achar, em sites do seu assunto, links que apontam para paginas
-que nao existem mais (erro 404), e oferecer o seu artigo que cobre o mesmo
-tema no lugar. O dono do site ganha (conserta um erro); voce ganha o link.
-
-**Como caberia no PubliBot, devagar pelo Celery.** As paginas dos parceiros
-provaveis e dos vizinhos ja estao nas buscas guardadas do radar. Uma tarefa
-de fundo baixaria algumas por hora, extrairia os links de saida, conferiria
-cada um (so um HEAD, com limite por dominio) e guardaria os quebrados cujo
-texto do link e perto de um artigo publicado. A tela mostraria: "a pagina X
-tem um link quebrado para Y; o seu artigo Z cobre o mesmo", com o e-mail
-pronto para copiar.
-
-**Estado:** proposto, esperando decisao.
 
 ## Relatorio gratis em troca de link
 

@@ -31,6 +31,11 @@ PROJECT_SLUG = "publibot"
 # *.localhost para 127.0.0.1 sem precisar editar /etc/hosts.
 ROOT_DOMAIN = env.get("ROOT_DOMAIN", "localhost")
 
+# Como o PubliBot se apresenta la fora: o endereco publico (vai no e-mail aos
+# veiculos como origem dos dados) e o contato comercial da pagina inicial.
+PUBLIBOT_DOMINIO_PUBLICO = env.get("PUBLIBOT_DOMINIO_PUBLICO", "")
+CONTATO_COMERCIAL_WHATSAPP = env.get("CONTATO_COMERCIAL_WHATSAPP", "")
+
 # ---------------------------------------------------------------------------
 # Seguranca
 # ---------------------------------------------------------------------------
@@ -432,6 +437,12 @@ CELERY_BEAT_SCHEDULE = {
     "tick-radar": {
         "task": "apps.radar.tasks.tick_radar",
         # De hora em hora; a intensidade de cada tenant decide se roda.
+        "schedule": 3600.0,
+        "options": {"expires": 3000},
+    },
+    "procurar-links-quebrados": {
+        "task": "apps.radar.tasks.procurar_links_quebrados",
+        # Devagar de proposito: algumas paginas por tenant, a cada hora.
         "schedule": 3600.0,
         "options": {"expires": 3000},
     },

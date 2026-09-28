@@ -404,6 +404,26 @@ def _com_vaga_para_fonte_forte(elegiveis: list, top_k: int) -> list:
     return [*escolhidos[:-1], reserva]
 
 
+def contar_fontes_fortes(consulta: str) -> int:
+    """Quantos documentos-fonte fortes (estudo, norma, dado oficial) do acervo
+    sustentam o tema, dentro do limiar — e nao so os que couberam no artigo.
+
+    Nao grava consulta: e contagem para a tela, nao busca de geracao.
+    """
+    config = RetrievalSettings.carregar()
+    vetor = get_embedding_client().embed_query(consulta)
+    trechos = (
+        SuperChunk.objects.filter(
+            is_active=True, embedding__isnull=False, supports_central_idea=True
+        )
+        .exclude(document__valid_until__lt=timezone.localdate())
+        .select_related("document__category")
+        .annotate(distancia=CosineDistance("embedding", vetor))
+        .filter(distancia__lte=config.max_cosine_distance)
+    )
+    return len({t.document_id for t in trechos[:500] if fonte_forte(t)})
+
+
 def _fundir(listas: list[list]) -> list:
     """Reciprocal Rank Fusion: a posicao em cada lista vale 1/(k + posicao).
 

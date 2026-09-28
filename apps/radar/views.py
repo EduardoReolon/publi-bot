@@ -8,6 +8,7 @@ from django.db.models import Avg, Count, Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
@@ -592,3 +593,76 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
     sugestao.decidida_em = timezone.now()
     sugestao.save(update_fields=["situacao", "decidida_em", "atualizada_em"])
     return redirect("radar:atualizacoes")
+
+
+@login_required
+def imprensa(request: HttpRequest) -> HttpResponse:
+    """Painel de imprensa (um e-mail por veiculo) e links quebrados do assunto."""
+    from apps.content.imprensa import painel, pedido_de_email
+    from apps.radar.links_quebrados import email
+    from apps.radar.models import LinkQuebrado
+
+    veiculos = painel()
+    for veiculo in veiculos:
+        veiculo.pedido = pedido_de_email(veiculo)
+    links = list(
+        LinkQuebrado.objects.filter(situacao=LinkQuebrado.Situacao.NOVO).select_related("artigo")[
+            :50
+        ]
+    )
+    for link in links:
+        link.email = email(link)
+    return render(
+        request,
+        "radar/imprensa.html",
+        {
+            "aba": "radar",
+            "subaba": "imprensa",
+            "veiculos": veiculos,
+            "links": links,
+            "links_contatados": LinkQuebrado.objects.filter(
+                situacao=LinkQuebrado.Situacao.CONTATADO
+            ).count(),
+        },
+    )
+
+
+@login_required
+@require_POST
+def veiculo_contatado(request: HttpRequest, pk) -> HttpResponse:
+    from apps.radar.models import ConcorrenteSugerido
+
+    veiculo = get_object_or_404(ConcorrenteSugerido, pk=pk, imprensa=True)
+    veiculo.contatado_em = None if request.POST.get("desfazer") else timezone.now()
+    veiculo.save(update_fields=["contatado_em"])
+    return redirect(reverse("radar:imprensa") + f"#veiculo-{veiculo.pk}")
+
+
+@login_required
+@require_POST
+def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
+    """Contatado, descartado, ou o assunto vira pauta (quando nao ha artigo)."""
+    from apps.content.models import Topic
+    from apps.radar.models import LinkQuebrado
+
+    link = get_object_or_404(LinkQuebrado, pk=pk)
+    decisao = request.POST.get("decisao")
+    if decisao == "pauta":
+        titulo = (link.texto or link.link_url)[:300]
+        Topic.objects.create(
+            title=titulo,
+            target_keyword=titulo[:120],
+            briefing=(
+                f"Link quebrado em {link.pagina_url} apontava para {link.link_url}. "
+                "Um artigo sobre isso pode ocupar o lugar do link."
+            ),
+            status=Topic.Status.SUGGESTED,
+        )
+        messages.success(request, _("Pauta criada: %(t)s") % {"t": titulo})
+        link.situacao = LinkQuebrado.Situacao.DESCARTADO
+    elif decisao == "contatado":
+        link.situacao = LinkQuebrado.Situacao.CONTATADO
+    else:
+        link.situacao = LinkQuebrado.Situacao.DESCARTADO
+    link.save(update_fields=["situacao"])
+    return redirect(reverse("radar:imprensa") + "#links-quebrados")

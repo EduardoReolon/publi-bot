@@ -142,3 +142,12 @@ def sugerir_sementes(self, com_modelo: bool = True) -> int:
         except SemModeloConfigurado as exc:
             logger.info("Sugestao pelo modelo pulada: %s", exc)
     return novas
+
+
+@shared_task
+def procurar_links_quebrados() -> int:
+    """De hora em hora, poucas paginas por tenant: links quebrados do assunto."""
+    from apps.accounts.varredura import para_cada_tenant
+    from apps.radar.links_quebrados import verificar_um_lote
+
+    return para_cada_tenant(verificar_um_lote, "procurar_links_quebrados")

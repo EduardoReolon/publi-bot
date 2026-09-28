@@ -1,0 +1,117 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Imprensa e links" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+{% include "radar/_abas.html" %}
+<h1>{% translate "Imprensa e links" %}</h1>
+
+<section class="secao" id="imprensa">
+  <h2>{% translate "Veiculos de imprensa" %}</h2>
+  <div class="explica">
+    {% blocktranslate trimmed %}
+      Um e-mail por veiculo, com o que mais provavelmente interessa a ele, em
+      duas listas: <strong>materias dele que ja aparecem numa busca do seu
+      artigo</strong> (vale mais quando estao entre a 4a e a 15a posicao: ele
+      ganha subindo com dados novos) e <strong>buscas com procura em que ele nao
+      tem materia</strong>, mas cobre assuntos vizinhos. A ordem pesa procura,
+      tendencia de alta e quantos estudos do seu acervo sustentam o tema — os
+      criterios de noticia que o radar consegue medir. Copie o pedido para um
+      modelo grande: ele escreve o e-mail com os 3 melhores de cada lista.
+    {% endblocktranslate %}
+  </div>
+  {% for veiculo in veiculos %}
+    <div class="aviso" id="veiculo-{{ veiculo.registro.pk }}">
+      <strong>{{ veiculo.dominio }}</strong>
+      <span class="ajuda">
+        {% blocktranslate trimmed with a=veiculo.atualizar|length l=veiculo.lacunas|length %}{{ a }} para atualizar · {{ l }} lacunas{% endblocktranslate %}
+      </span>
+      {% if veiculo.registro.contatado_em %}<span class="selo ok">{% translate "contatado em" %} {{ veiculo.registro.contatado_em|date:"d/m/Y" }}</span>{% endif %}
+      <div class="duas-colunas">
+        <div>
+          <h3>{% translate "Atualizar a materia deles" %}</h3>
+          <ol class="pre-visualizacao">
+            {% for item in veiculo.atualizar|slice:":5" %}
+              <li><a href="{{ item.artigo.published_url }}" target="_blank" rel="noopener">{{ item.artigo.title|truncatechars:70 }}</a>
+                · {{ item.posicao }}a {% if item.volume %}· {{ item.volume }}/{% translate "mes" %}{% endif %}{% if item.estudos %} · {{ item.estudos }} {% translate "estudos" %}{% endif %}{% if item.tendencia %} · {{ item.tendencia }}{% endif %}
+                <div class="ajuda"><a href="{{ item.materia_url }}" target="_blank" rel="noopener noreferrer">{{ item.materia_titulo|default:item.materia_url|truncatechars:80 }}</a></div></li>
+            {% empty %}<li class="vazio">{% translate "Nenhuma" %}</li>{% endfor %}
+          </ol>
+        </div>
+        <div>
+          <h3>{% translate "Lacunas (materia nova)" %}</h3>
+          <ol class="pre-visualizacao">
+            {% for item in veiculo.lacunas|slice:":5" %}
+              <li><a href="{{ item.artigo.published_url }}" target="_blank" rel="noopener">{{ item.artigo.title|truncatechars:70 }}</a>
+                {% if item.volume %}· {{ item.volume }}/{% translate "mes" %}{% endif %}{% if item.estudos %} · {{ item.estudos }} {% translate "estudos" %}{% endif %}{% if item.tendencia %} · {{ item.tendencia }}{% endif %}</li>
+            {% empty %}<li class="vazio">{% translate "Nenhuma" %}</li>{% endfor %}
+          </ol>
+        </div>
+      </div>
+      <details><summary>{% translate "Ver o pedido do e-mail" %}</summary><textarea id="pedido-{{ veiculo.registro.pk }}" readonly rows="18" style="width:100%">{{ veiculo.pedido }}</textarea></details>
+      <div class="acoes">
+        <button type="button" class="botao secundario pequeno" data-copiar="pedido-{{ veiculo.registro.pk }}">{% translate "Copiar pedido do e-mail" %}</button>
+        <form method="post" action="{% url 'radar:veiculo_contatado' veiculo.registro.pk %}">
+          {% csrf_token %}
+          {% if veiculo.registro.contatado_em %}
+            <button type="submit" name="desfazer" value="1" class="botao discreto pequeno">{% translate "Desmarcar enviado" %}</button>
+          {% else %}
+            <button type="submit" class="botao discreto pequeno">{% translate "Marcar como enviado" %}</button>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  {% empty %}
+    <p class="vazio">
+      {% blocktranslate trimmed %}
+        Nenhum veiculo com pauta ainda. Aparecem quando ha artigos publicados e
+        o radar reconhece imprensa: quem surge no bloco "Principais noticias" do
+        Google, ou quem voce marca como "E imprensa" em Possiveis concorrentes.
+      {% endblocktranslate %}
+    </p>
+  {% endfor %}
+</section>
+
+<section class="secao" id="links-quebrados">
+  <h2>{% translate "Links quebrados em sites do assunto" %}</h2>
+  <div class="explica">
+    {% blocktranslate trimmed count n=links_contatados %}
+      Paginas de outros sites do seu tema com link para pagina que nao existe
+      mais. O dono ganha consertando (link morto atrapalha a pagina dele), e o
+      seu artigo entra no lugar — nao e troca de links. O radar confere algumas
+      paginas por hora; quando o assunto nao tem artigo seu, vire pauta.
+      {{ n }} ja contatado.
+    {% plural %}
+      Paginas de outros sites do seu tema com link para pagina que nao existe
+      mais. O dono ganha consertando (link morto atrapalha a pagina dele), e o
+      seu artigo entra no lugar — nao e troca de links. O radar confere algumas
+      paginas por hora; quando o assunto nao tem artigo seu, vire pauta.
+      {{ n }} ja contatados.
+    {% endblocktranslate %}
+  </div>
+  <div data-recolher="5">
+  {% for link in links %}
+    <div class="aviso">
+      <strong><a href="{{ link.pagina_url }}" target="_blank" rel="noopener noreferrer">{{ link.pagina_titulo|default:link.pagina_url|truncatechars:90 }}</a></strong>
+      <span class="ajuda">{{ link.dominio }}</span>
+      <div class="pre-visualizacao">{% translate "Link morto" %}: "{{ link.texto|default:"—" }}" → {{ link.link_url|truncatechars:90 }} ({% if link.status_http %}HTTP {{ link.status_http }}{% else %}{% translate "site fora do ar" %}{% endif %})</div>
+      {% if link.artigo %}
+        <div class="ajuda">{% translate "Seu artigo que cobre o mesmo" %}: <a href="{{ link.artigo.published_url }}" target="_blank" rel="noopener">{{ link.artigo.title }}</a></div>
+      {% else %}
+        <div class="ajuda">{% translate "Voce ainda nao tem artigo sobre isso." %}</div>
+      {% endif %}
+      <details><summary>{% translate "Ver o e-mail" %}</summary><textarea id="email-{{ link.pk }}" readonly rows="8" style="width:100%">{{ link.email }}</textarea></details>
+      <form method="post" action="{% url 'radar:decidir_link_quebrado' link.pk %}" class="acoes">
+        {% csrf_token %}
+        {% if link.artigo %}<button type="button" class="botao secundario pequeno" data-copiar="email-{{ link.pk }}">{% translate "Copiar e-mail" %}</button>
+        <button type="submit" name="decisao" value="contatado" class="botao discreto pequeno">{% translate "Contatado" %}</button>
+        {% else %}<button type="submit" name="decisao" value="pauta" class="botao secundario pequeno">{% translate "Virar pauta" %}</button>{% endif %}
+        <button type="submit" name="decisao" value="descartar" class="botao discreto pequeno">{% translate "Descartar" %}</button>
+      </form>
+    </div>
+  {% empty %}
+    <p class="vazio">{% translate "Nenhum ainda. A procura roda de hora em hora, devagar, nas paginas que o radar ja achou nas buscas do seu tema." %}</p>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}

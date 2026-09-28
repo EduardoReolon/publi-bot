@@ -26,6 +26,9 @@ urlpatterns = [
     path("locais/", views.procurar_locais, name="procurar_locais"),
     path("locais/atualizar/", views.atualizar_locais, name="atualizar_locais"),
     path("oportunidades/", views.oportunidades, name="oportunidades"),
+    path("imprensa/", views.imprensa, name="imprensa"),
+    path("imprensa/<uuid:pk>/contatado/", views.veiculo_contatado, name="veiculo_contatado"),
+    path("links-quebrados/<uuid:pk>/", views.decidir_link_quebrado, name="decidir_link_quebrado"),
     path(
         "oportunidades/<uuid:pk>/decidir/",
         views.decidir_oportunidade,
