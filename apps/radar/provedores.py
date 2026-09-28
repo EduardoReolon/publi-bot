@@ -56,6 +56,8 @@ class ResultadoDeBusca:
     relacionadas: list[str] = field(default_factory=list)
     # Bloco "Google Academico" (so a DataForSEO traz): titulo, url, autor, descricao.
     academicos: list[dict] = field(default_factory=list)
+    # Bloco "Principais noticias": quem o Google trata como imprensa neste tema.
+    noticias: list[dict] = field(default_factory=list)
     custo: Decimal = Decimal("0")
 
 
@@ -204,6 +206,19 @@ def ler_serp(tarefa: dict) -> ResultadoDeBusca:
                             "url": artigo.get("url") or "",
                             "autor": (artigo.get("author") or "").strip("\u200e "),
                             "descricao": artigo.get("description") or "",
+                        }
+                    )
+        elif tipo == "top_stories":
+            for noticia in bloco.get("items") or []:
+                url = noticia.get("url") or ""
+                dominio = noticia.get("domain") or urlparse(url).hostname or ""
+                if dominio:
+                    resultado.noticias.append(
+                        {
+                            "dominio": dominio.lower().removeprefix("www."),
+                            "url": url,
+                            "titulo": noticia.get("title") or "",
+                            "fonte": noticia.get("source") or "",
                         }
                     )
         elif tipo == "related_searches":

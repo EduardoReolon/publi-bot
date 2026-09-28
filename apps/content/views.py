@@ -69,11 +69,14 @@ def pautas(request: HttpRequest) -> HttpResponse:
     if situacao:
         consulta = consulta.filter(status=situacao)
 
+    from apps.content.imprensa import dados_de_imprensa, veiculos
     from apps.content.outra_ia import motivos_de_peso
 
     lista = list(consulta.prefetch_related("articles")[:200])
+    dados = dados_de_imprensa()
     for pauta in lista:
         pauta.de_peso = motivos_de_peso(pauta)
+        pauta.imprensa = veiculos(pauta, dados)
     return render(
         request,
         "content/pautas.html",
@@ -174,7 +177,12 @@ def imprensa_da_pauta(request: HttpRequest, pk) -> HttpResponse:
     return render(
         request,
         "content/imprensa.html",
-        {"aba": "pautas", "pauta": pauta, "pedido": imprensa.pedido(pauta)},
+        {
+            "aba": "pautas",
+            "pauta": pauta,
+            "pedido": imprensa.pedido(pauta),
+            "achados": imprensa.veiculos(pauta),
+        },
     )
 
 

@@ -292,7 +292,7 @@ def _sinais_da_serp(resultado, consulta: str, *, rodada) -> list[SinalDeDemanda]
 
     # Quem esta na primeira pagina desta busca: candidato a concorrente. E a
     # propria pagina, guardada, pode virar fonte no fim da rodada.
-    registrar_aparicoes(consulta, resultado.resultados)
+    registrar_aparicoes(consulta, resultado.resultados, noticias=resultado.noticias)
     if rodada is not None:
         from apps.radar.fontes import guardar_resultados
 

@@ -44,8 +44,78 @@ def public_tenant(db) -> Tenant:
     return tenant
 
 
+SCHEMA_MODELO = "modelo_de_teste"
+
+
+@pytest.fixture(scope="session")
+def _schema_modelo(django_db_setup, django_db_blocker):
+    """Um schema de tenant migrado UMA vez por sessao, para ser copiado.
+
+    Migrar cada tenant do zero leva uns 6 s, e quase todo teste cria um: era a
+    maior parte do tempo da suite. Copiar a estrutura pronta leva uma fracao
+    disso. O modelo e criado fora da transacao dos testes (fica ate o fim da
+    sessao); as copias, dentro (somem com o rollback de cada teste).
+    """
+    from django_tenants.utils import schema_exists
+
+    with django_db_blocker.unblock():
+        # Sempre do zero: num banco de teste reaproveitado (--reuse-db), um
+        # modelo antigo ficaria sem as migracoes novas e todas as copias junto.
+        if schema_exists(SCHEMA_MODELO):
+            with connection.cursor() as cursor:
+                cursor.execute(f'DROP SCHEMA "{SCHEMA_MODELO}" CASCADE')
+        Tenant(schema_name=SCHEMA_MODELO, name="Modelo", slug=SCHEMA_MODELO).create_schema(
+            verbosity=0
+        )
+        connection.set_schema_to_public()
+    return SCHEMA_MODELO
+
+
+def _copiar_schema(modelo: str, novo: str) -> None:
+    """Copia tabelas, indices, chaves e dados do modelo para um schema novo.
+
+    `LIKE ... INCLUDING ALL` preserva tipo com dimensao (vector(1024)),
+    padroes, checks, indices e identidade; as chaves estrangeiras e os dados
+    (o registro das migracoes, e o que alguma migracao tenha semeado) vem a
+    seguir. A funcao clone_schema do django-tenants perde a dimensao do vetor
+    e por isso nao serve aqui.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SET search_path TO public, extensions")
+        cursor.execute(f'CREATE SCHEMA "{novo}"')
+        cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = %s", [modelo])
+        tabelas = [linha[0] for linha in cursor.fetchall()]
+        for tabela in tabelas:
+            cursor.execute(
+                f'CREATE TABLE "{novo}"."{tabela}" (LIKE "{modelo}"."{tabela}" INCLUDING ALL)'
+            )
+        cursor.execute(
+            """SELECT c.conrelid::regclass::text, c.conname, pg_get_constraintdef(c.oid)
+               FROM pg_constraint c WHERE c.contype = 'f' AND c.connamespace = %s::regnamespace""",
+            [modelo],
+        )
+        for tabela, nome, definicao in cursor.fetchall():
+            tabela = tabela.split(".")[-1].strip('"')
+            definicao = definicao.replace(f"{modelo}.", f'"{novo}".')
+            cursor.execute(f'ALTER TABLE "{novo}"."{tabela}" ADD CONSTRAINT "{nome}" {definicao}')
+        # Nomes vindos do catalogo do proprio Postgres, nao de fora.
+        for tabela in tabelas:
+            copia = f'INSERT INTO "{novo}"."{tabela}" OVERRIDING SYSTEM VALUE SELECT * '
+            cursor.execute(copia + f'FROM "{modelo}"."{tabela}"')
+        # Identidade copiada comeca do 1: acerta para depois dos dados copiados.
+        cursor.execute(
+            """SELECT table_name, column_name FROM information_schema.columns
+               WHERE table_schema = %s AND is_identity = 'YES'""",
+            [novo],
+        )
+        for tabela, coluna in cursor.fetchall():
+            sequencia = f'pg_get_serial_sequence(\'"{novo}"."{tabela}"\', %s)'
+            maximo = f'COALESCE((SELECT MAX("{coluna}") FROM "{novo}"."{tabela}"), 0) + 1'  # noqa: S608
+            cursor.execute(f"SELECT setval({sequencia}, {maximo}, false)", [coluna])
+
+
 @pytest.fixture
-def tenant_factory(db, public_tenant):
+def tenant_factory(db, public_tenant, _schema_modelo):
     """Cria um tenant com schema real no Postgres.
 
     Cria o schema de verdade (nao um mock) porque tudo o que estes testes
@@ -60,7 +130,7 @@ def tenant_factory(db, public_tenant):
             slug=schema_name.replace("_", "-"),
             status=Tenant.Status.ACTIVE,
         )
-        tenant.create_schema(check_if_exists=True, verbosity=0)
+        _copiar_schema(_schema_modelo, schema_name)
         Domain.objects.create(
             domain=f"{tenant.slug}.{settings.ROOT_DOMAIN}", tenant=tenant, is_primary=True
         )

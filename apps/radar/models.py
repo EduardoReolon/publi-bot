@@ -743,6 +743,12 @@ class ConcorrenteSugerido(models.Model):
     consultas = models.JSONField(_("consultas"), default=dict, blank=True)
     # Ate 5 paginas de exemplo: {"url", "titulo", "consulta"}.
     exemplos = models.JSONField(_("exemplos"), default=list, blank=True)
+    # Quao perto do negocio esta cada busca em que apareceu (0 a 1). Separa
+    # quem disputa o seu nucleo (concorrente) de quem aparece nos assuntos
+    # vizinhos (parceiro provavel: mesmo publico, outro servico).
+    aderencias = models.JSONField(_("proximidade das buscas"), default=dict, blank=True)
+    # Apareceu no bloco "Principais noticias" do Google: e veiculo de imprensa.
+    imprensa = models.BooleanField(_("veiculo de imprensa"), default=False)
     visto_em = models.DateTimeField(_("visto em"), default=timezone.now)
 
     class Meta:

@@ -80,8 +80,7 @@ def _contexto(config=None, contas=None, busca_form=None, request=None) -> dict:
         "comparacoes_total": len(comparacoes),
         "comparacoes_falhas": sum(1 for c in comparacoes if c.gratuito_falhou),
         "chamadas": _pagina(ChamadaExterna.objects.order_by("-criado_em"), request, "chamadas", 15),
-        "concorrentes_sugeridos": sugeridos_para_a_tela(),
-        "parceiros": parceiros_com_proposta(),
+        **_concorrentes_e_parceiros(),
         "sementes_sugeridas": SementeSugerida.objects.filter(
             situacao=SementeSugerida.Situacao.SUGERIDA
         ).order_by("tipo", "origem", "-criada_em")[:40],
@@ -89,6 +88,19 @@ def _contexto(config=None, contas=None, busca_form=None, request=None) -> dict:
             situacao=TarefaNaFila.Situacao.AGUARDANDO
         ).count(),
         **_contexto_do_console(),
+    }
+
+
+def _concorrentes_e_parceiros() -> dict:
+    """Um site aparece numa lista so: parceiro provavel sai dos concorrentes."""
+    from apps.radar.parceiros import parceiros_provaveis
+
+    provaveis = parceiros_provaveis()
+    ids = {p.pk for p in provaveis}
+    return {
+        "concorrentes_sugeridos": [c for c in sugeridos_para_a_tela() if c.pk not in ids],
+        "parceiros": parceiros_com_proposta(),
+        "parceiros_provaveis": provaveis,
     }
 
 
@@ -288,6 +300,20 @@ def decidir_concorrente(request: HttpRequest, pk) -> HttpResponse:
     from apps.radar.models import ConcorrenteSugerido
 
     sugerido = get_object_or_404(ConcorrenteSugerido, pk=pk)
+    if request.POST.get("decisao") == "imprensa":
+        sugerido.imprensa = True
+        sugerido.save(update_fields=["imprensa"])
+        messages.success(
+            request,
+            _("%(d)s marcado como imprensa: entra no angulo das pautas.") % {"d": sugerido.dominio},
+        )
+        return redirect("radar:radar")
+    if request.POST.get("decisao") == "desfazer":
+        # Marcado como parceiro por engano: volta a ser so um site sugerido.
+        sugerido.situacao = ConcorrenteSugerido.Situacao.SUGERIDO
+        sugerido.save(update_fields=["situacao"])
+        messages.success(request, _("%(d)s voltou para os sugeridos.") % {"d": sugerido.dominio})
+        return redirect(reverse("radar:radar") + "#parceiros")
     if request.POST.get("decisao") == "parceiro":
         sugerido.situacao = ConcorrenteSugerido.Situacao.PARCEIRO
         sugerido.save(update_fields=["situacao"])

@@ -142,3 +142,100 @@ def test_telas_mostram_o_diagnostico_e_o_pedido_de_imprensa(ambiente, embedding_
     url = reverse("content:imprensa_da_pauta", args=[pauta.pk], urlconf="core.urls_tenants")
     pagina = client.get(url).content.decode()
     assert "VEREDITO: SIM ou NAO" in pagina and "sponsored" in pagina
+
+
+# ---------------------------------------------------------------------------
+# Parceiros vizinhos e imprensa
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_vizinho_vira_parceiro_provavel_e_nucleo_nao(radar):  # noqa: F811
+    from apps.radar.models import ConcorrenteSugerido
+    from apps.radar.parceiros import parceiros_provaveis
+
+    ConcorrenteSugerido.objects.create(
+        dominio="blogdevarejo.com.br",
+        consultas={"estoque": 3, "vitrine": 5, "rfm": 9},
+        aderencias={"estoque": 0.3, "vitrine": 0.2, "rfm": 0.9},
+    )
+    ConcorrenteSugerido.objects.create(
+        dominio="rival.com.br",
+        consultas={"rfm": 1, "churn": 2, "estoque": 4},
+        aderencias={"rfm": 0.9, "churn": 0.8, "estoque": 0.3},
+    )
+    ConcorrenteSugerido.objects.create(
+        dominio="imprensa.com.br",
+        consultas={"estoque": 1, "vitrine": 1},
+        aderencias={"estoque": 0.3, "vitrine": 0.2},
+        imprensa=True,
+    )
+    assert [p.dominio for p in parceiros_provaveis()] == []  # 1 do nucleo para 2 vizinhas
+
+    blog = ConcorrenteSugerido.objects.get(dominio="blogdevarejo.com.br")
+    blog.consultas["loja"] = 2
+    blog.aderencias["loja"] = 0.4
+    blog.save()
+    [provavel] = parceiros_provaveis()
+    assert provavel.dominio == "blogdevarejo.com.br"
+    assert sorted(provavel.buscas_vizinhas) == ["estoque", "loja", "vitrine"]
+
+
+@pytest.mark.django_db
+def test_desfazer_parceiro_e_marcar_imprensa(ambiente):  # noqa: F811
+    from apps.radar.models import ConcorrenteSugerido
+
+    _, _, client = ambiente
+    site = ConcorrenteSugerido.objects.create(
+        dominio="x.com.br", situacao=ConcorrenteSugerido.Situacao.PARCEIRO
+    )
+    url = reverse("radar:decidir_concorrente", args=[site.pk], urlconf="core.urls_tenants")
+    client.post(url, {"decisao": "desfazer"})
+    site.refresh_from_db()
+    assert site.situacao == "sugerido"
+    client.post(url, {"decisao": "imprensa"})
+    site.refresh_from_db()
+    assert site.imprensa
+
+
+@pytest.mark.django_db
+def test_principais_noticias_marcam_imprensa_e_a_pauta_ganha_angulo(radar):  # noqa: F811
+    from apps.content.imprensa import pedido, veiculos
+    from apps.content.models import Topic
+    from apps.radar.concorrentes import registrar_aparicoes
+    from apps.radar.models import ConcorrenteSugerido
+    from apps.radar.provedores import ItemDeBusca, ler_serp
+
+    tarefa = {
+        "result": [
+            {
+                "items": [
+                    {
+                        "type": "top_stories",
+                        "items": [
+                            {"domain": "www.jornal.com.br", "url": "https://jornal.com.br/n"}
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+    noticias = ler_serp(tarefa).noticias
+    registrar_aparicoes(
+        "clientes inativos",
+        [ItemDeBusca(url="https://jornal.com.br/materia-antiga", titulo="Clientes somem")],
+        noticias=noticias,
+    )
+    _serp("clientes inativos", ["jornal.com.br", "blog.com.br"])
+    assert ConcorrenteSugerido.objects.get(dominio="jornal.com.br").imprensa
+
+    ConcorrenteSugerido.objects.create(
+        dominio="revista.com.br",
+        imprensa=True,
+        consultas={"churn": 3, "retencao": 4},
+        aderencias={"churn": 0.8, "retencao": 0.7},
+    )
+    pauta = Topic.objects.create(title="Clientes inativos", target_keyword="clientes inativos")
+    achados = veiculos(pauta)
+    assert [v["dominio"] for v in achados.na_busca] == ["jornal.com.br"]
+    assert [v["dominio"] for v in achados.ausentes] == ["revista.com.br"]
+    texto = pedido(pauta)
+    assert "jornal.com.br" in texto and "ATUALIZAR a materia" in texto

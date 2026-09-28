@@ -19,6 +19,29 @@
   {% endblocktranslate %}
 </div>
 <section class="secao">
+  <h2>{% translate "Quem e imprensa nesta busca" %}</h2>
+  {% if achados.na_busca %}
+    <p class="pre-visualizacao">{% translate "Com materia na primeira pagina — proposta: atualizar a materia deles com dados novos, citando a sua:" %}</p>
+    <ul>{% for v in achados.na_busca %}<li><strong>{{ v.dominio }}</strong> · {{ v.posicao }}a · <a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ v.titulo|default:v.url|truncatechars:90 }}</a></li>{% endfor %}</ul>
+  {% endif %}
+  {% if achados.ausentes %}
+    <p class="pre-visualizacao">{% translate "Cobrem o assunto e nao aparecem nesta busca — proposta: materia nova:" %}</p>
+    <ul>{% for v in achados.ausentes %}<li><strong>{{ v.dominio }}</strong> · {{ v.buscas|join:", " }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if not achados.tem_angulo %}
+    <p class="vazio">
+      {% blocktranslate trimmed %}
+        Nenhum veiculo identificado ainda. O radar reconhece como imprensa quem
+        aparece no bloco "Principais noticias" do Google nas buscas dele (ou
+        quem voce marcar como imprensa em Possiveis concorrentes). O pedido
+        abaixo funciona assim mesmo: o modelo julga o angulo pela pauta e pelas
+        fontes.
+      {% endblocktranslate %}
+    </p>
+  {% endif %}
+</section>
+
+<section class="secao">
   <div class="acoes"><button type="button" class="botao" data-copiar="pedido-imprensa">{% translate "Copiar pedido" %}</button>
     <a class="botao discreto" href="{% url 'content:pautas' %}">{% translate "Voltar" %}</a></div>
   <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-imprensa" readonly rows="20" style="width:100%">{{ pedido }}</textarea></details>

@@ -133,6 +133,16 @@ class ConfiguracaoForm(forms.ModelForm):
             )
         return regioes
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "artigos_por_rodada" in self.fields:
+            self.fields["artigos_por_rodada"].required = False
+
+    def clean_artigos_por_rodada(self):
+        # Vazio (ou formulario de antes do campo existir): o padrao.
+        valor = self.cleaned_data.get("artigos_por_rodada")
+        return 5 if valor in (None, "") else valor
+
     def clean_teto_mensal_usd(self):
         from decimal import Decimal
 

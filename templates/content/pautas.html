@@ -73,7 +73,10 @@
                   </form>
                   <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
                   <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA" %}</a>
-                  <a class="botao secundario" href="{% url 'content:imprensa_da_pauta' pauta.pk %}" title="{% translate 'Outra IA julga se a pauta vira materia de jornal, e escreve' %}">{% translate "Imprensa (outra IA)" %}</a>
+                  <a class="botao {% if pauta.imprensa.tem_angulo %}{% else %}discreto{% endif %}" href="{% url 'content:imprensa_da_pauta' pauta.pk %}" title="{% translate 'Outra IA julga se a pauta vira materia de jornal, e escreve' %}">{% translate "Imprensa (outra IA)" %}</a>
+                  {% if pauta.imprensa.tem_angulo %}<div class="ajuda"><span class="selo ok">{% translate "angulo de imprensa" %}</span>
+                    {% if pauta.imprensa.na_busca %}{% blocktranslate trimmed count n=pauta.imprensa.na_busca|length %}{{ n }} veiculo nesta busca{% plural %}{{ n }} veiculos nesta busca{% endblocktranslate %}{% endif %}
+                    {% if pauta.imprensa.ausentes %}· {% blocktranslate trimmed count n=pauta.imprensa.ausentes|length %}{{ n }} cobre o tema e nao aparece{% plural %}{{ n }} cobrem o tema e nao aparecem{% endblocktranslate %}{% endif %}</div>{% endif %}
                   {% if pauta.de_peso %}<div class="ajuda"><span class="selo ok">{% translate "vale o modelo grande" %}</span> {{ pauta.de_peso|join:", " }}</div>{% endif %}
                   <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">
                     {% csrf_token %}

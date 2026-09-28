@@ -93,3 +93,42 @@ def parceiros_com_proposta() -> list:
         for parceiro in parceiros:
             parceiro.proposta = proposta(parceiro, nosso)
     return parceiros
+
+
+# Faixas de proximidade da busca com o negocio (0 a 1, a regua dos temas).
+NUCLEO_DESDE = 0.6
+VIZINHA_DESDE = 0.1
+MINIMO_DE_VIZINHAS = 2
+# Aparece em mais que esta fracao de todas as buscas: portal generalista.
+FRACAO_DE_PORTAL = 0.5
+
+
+def parceiros_provaveis(limite: int = 10) -> list:
+    """Sites que aparecem nos assuntos vizinhos e quase nunca no seu nucleo.
+
+    Mesmo publico, outro servico: nao disputam o seu cliente, e o link deles e
+    do mesmo assunto — o tipo que mais vale. A lista se refaz a cada rodada:
+    quem passar a aparecer no nucleo vira concorrente e sai daqui sozinho.
+    """
+    from apps.radar.models import ConcorrenteSugerido
+
+    candidatos = list(
+        ConcorrenteSugerido.objects.filter(
+            situacao=ConcorrenteSugerido.Situacao.SUGERIDO, imprensa=False
+        )
+    )
+    todas = {c for sugerido in candidatos for c in sugerido.consultas}
+    if not todas:
+        return []
+    provaveis = []
+    for sugerido in candidatos:
+        if len(sugerido.consultas) > FRACAO_DE_PORTAL * len(todas) and len(todas) >= 6:
+            continue
+        nucleo = [c for c, a in sugerido.aderencias.items() if a >= NUCLEO_DESDE]
+        vizinhas = [c for c, a in sugerido.aderencias.items() if VIZINHA_DESDE <= a < NUCLEO_DESDE]
+        if len(vizinhas) >= MINIMO_DE_VIZINHAS and len(nucleo) * 3 <= len(vizinhas):
+            sugerido.buscas_vizinhas = vizinhas
+            sugerido.buscas_do_nucleo = nucleo
+            provaveis.append(sugerido)
+    provaveis.sort(key=lambda s: (-len(s.buscas_vizinhas), len(s.buscas_do_nucleo)))
+    return provaveis[:limite]

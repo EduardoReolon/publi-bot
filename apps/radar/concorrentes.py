@@ -109,7 +109,33 @@ def _dominio_proprio() -> str:
     return (anfitriao or "").lower().removeprefix("www.")
 
 
-def registrar_aparicoes(consulta: str, resultados) -> None:
+def aderencia_da_consulta(consulta: str) -> float | None:
+    """Quao perto do negocio esta a busca (0 a 1), na regua dos temas."""
+    from apps.radar.agrupamento import _distancia, _escala, _texto_do_negocio, _vetor
+
+    texto = _texto_do_negocio()
+    if not texto:
+        return None
+    try:
+        return round(_escala(_distancia(_vetor(consulta), _vetor_cacheado(texto)), 0.12, 0.30), 3)
+    except Exception:
+        logger.exception("Nao foi possivel medir a proximidade da busca %r.", consulta)
+        return None
+
+
+_CACHE_DO_NEGOCIO: dict[str, object] = {}
+
+
+def _vetor_cacheado(texto: str):
+    from apps.radar.agrupamento import _vetor
+
+    if texto not in _CACHE_DO_NEGOCIO:
+        _CACHE_DO_NEGOCIO.clear()
+        _CACHE_DO_NEGOCIO[texto] = _vetor(texto)
+    return _CACHE_DO_NEGOCIO[texto]
+
+
+def registrar_aparicoes(consulta: str, resultados, *, noticias: list[dict] | None = None) -> None:
     """Conta os dominios da primeira pagina de uma busca.
 
     `resultados` sao os `ItemDeBusca` organicos, na ordem da pagina. Nao custa
@@ -123,6 +149,7 @@ def registrar_aparicoes(consulta: str, resultados) -> None:
     ja_listados = {c["dominio"] for c in config.lista_de_concorrentes}
     proprio = _dominio_proprio()
     chave = consulta.strip().lower()
+    aderencia = aderencia_da_consulta(consulta)
     for posicao, item in enumerate(list(resultados)[:10], start=1):
         dominio = (urlparse(item.url).hostname or "").lower().removeprefix("www.")
         if not dominio or dominio == proprio or dominio in ja_listados or _ignorado(dominio):
@@ -134,8 +161,17 @@ def registrar_aparicoes(consulta: str, resultados) -> None:
             sugerido.exemplos.append(
                 {"url": item.url, "titulo": item.titulo[:200], "consulta": consulta[:200]}
             )
+        if aderencia is not None:
+            sugerido.aderencias[chave] = aderencia
         sugerido.visto_em = timezone.now()
-        sugerido.save(update_fields=["consultas", "exemplos", "visto_em"])
+        sugerido.save(update_fields=["consultas", "exemplos", "aderencias", "visto_em"])
+    # Quem aparece em "Principais noticias" e imprensa, mesmo fora da lista organica.
+    for noticia in noticias or []:
+        dominio = (noticia.get("dominio") or "").lower().removeprefix("www.")
+        if dominio and dominio != proprio and not _ignorado(dominio):
+            ConcorrenteSugerido.objects.update_or_create(
+                dominio=dominio, defaults={"imprensa": True, "visto_em": timezone.now()}
+            )
 
 
 def sugeridos_para_a_tela(limite: int = 15) -> list:

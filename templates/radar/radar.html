@@ -228,6 +228,7 @@
               <div class="acoes" style="margin-top:.4rem">
                 <button type="submit" class="pequeno">{% translate "E concorrente" %}</button>
                 <button type="submit" name="decisao" value="parceiro" class="botao secundario pequeno" title="{% translate 'Complementa em vez de disputar: candidato a artigo convidado ou conteudo em conjunto' %}">{% translate "Pode ser parceiro" %}</button>
+                <button type="submit" name="decisao" value="imprensa" class="botao discreto pequeno" title="{% translate 'Jornal, revista ou portal de noticias: entra no angulo de imprensa das pautas' %}">{% translate "E imprensa" %}</button>
                 <button type="submit" name="decisao" value="recusar" class="botao discreto pequeno">{% translate "Nao e" %}</button>
               </div>
             </form>
@@ -265,12 +266,42 @@
       </div>
       <button type="button" class="botao secundario pequeno" data-copiar="proposta-{{ parceiro.pk }}">{% translate "Copiar proposta" %}</button>
       <form method="post" action="{% url 'radar:decidir_concorrente' parceiro.pk %}">
-        {% csrf_token %}<input type="hidden" name="decisao" value="recusar">
-        <button type="submit" class="botao discreto pequeno">{% translate "Tirar da lista" %}</button>
+        {% csrf_token %}
+        <button type="submit" name="decisao" value="desfazer" class="botao discreto pequeno" title="{% translate 'Marcado por engano: volta para os sugeridos' %}">{% translate "Desfazer" %}</button>
+        <button type="submit" name="decisao" value="recusar" class="botao discreto pequeno">{% translate "Tirar da lista" %}</button>
       </form>
     </div>
   {% empty %}
-    <p class="vazio">{% translate "Nenhum. Em Possiveis concorrentes, marque Pode ser parceiro no site que complementa o seu." %}</p>
+    <p class="vazio">{% translate "Nenhum ainda. Confirme um dos provaveis abaixo, ou marque Pode ser parceiro em Possiveis concorrentes." %}</p>
+  {% endfor %}
+  </div>
+
+  <h3>{% translate "Parceiros provaveis (achados pelo radar)" %}</h3>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Aparecem nas buscas VIZINHAS do seu tema (mesmo publico, outro servico) e
+      quase nunca no seu nucleo: nao disputam o seu cliente. A lista se refaz a
+      cada rodada — quem passar a aparecer no seu nucleo vira concorrente e sai
+      daqui sozinho.
+    {% endblocktranslate %}
+  </p>
+  <div data-recolher="3">
+  {% for provavel in parceiros_provaveis %}
+    <div class="sugestao">
+      <div class="texto">
+        <strong>{{ provavel.dominio }}</strong>
+        <span class="ajuda">{% blocktranslate trimmed with v=provavel.buscas_vizinhas|length n=provavel.buscas_do_nucleo|length %}{{ v }} buscas vizinhas, {{ n }} do seu nucleo{% endblocktranslate %}</span>
+        <div class="ajuda">{{ provavel.buscas_vizinhas|slice:":4"|join:" · " }}</div>
+      </div>
+      <form method="post" action="{% url 'radar:decidir_concorrente' provavel.pk %}">
+        {% csrf_token %}
+        <button type="submit" name="decisao" value="parceiro" class="botao secundario pequeno">{% translate "E parceiro" %}</button>
+        <button type="submit" name="decisao" value="confirmar" class="botao discreto pequeno">{% translate "E concorrente" %}</button>
+        <button type="submit" name="decisao" value="recusar" class="botao discreto pequeno">{% translate "Nao e" %}</button>
+      </form>
+    </div>
+  {% empty %}
+    <p class="vazio">{% translate "Nenhum ainda. Aparecem quando um site surge em pelo menos duas buscas vizinhas do seu tema." %}</p>
   {% endfor %}
   </div>
 </section>
