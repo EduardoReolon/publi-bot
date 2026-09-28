@@ -321,7 +321,8 @@ chave todas ficam irrecuperaveis. Guarde uma copia do `.env` fora do GitHub.
 O modelo das variaveis e o `.env.example`; as de producao que mudam em relacao
 a ele: `DJANGO_SETTINGS_MODULE=core.settings.prod`, `ESQUEMA_PUBLICO=https`,
 `USAR_X_ACCEL=true`, `MEDIA_ROOT=/home/ubuntu/storage/publi-bot` (e o caminho
-que as units liberam para escrita) e `EMAIL_HOST` (obrigatorio em producao).
+que as units liberam para escrita). `EMAIL_HOST` e opcional: sem ele, o que o
+Django tentar enviar sai no log.
 
 **Conferir:** faca um push na `main` e acompanhe o job *Implantar* no GitHub.
 A primeira vez demora (pacotes, dependencias, modelo de 2 GB).

@@ -34,8 +34,14 @@ CSRF_TRUSTED_ORIGINS = [f"https://{ROOT_DOMAIN}", f"https://*.{ROOT_DOMAIN}"]
 
 X_FRAME_OPTIONS = "DENY"
 
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = env.require("EMAIL_HOST")
+# Opcional: o sistema nao manda e-mail em nenhum fluxo hoje. Sem EMAIL_HOST, o
+# que o Django tentar enviar (erro para ADMINS, por exemplo) sai no log.
+EMAIL_HOST = env.get("EMAIL_HOST", "")
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST
+    else "django.core.mail.backends.console.EmailBackend"
+)
 EMAIL_PORT = env.integer("EMAIL_PORT", 587)
 EMAIL_HOST_USER = env.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env.get("EMAIL_HOST_PASSWORD", "")
