@@ -566,6 +566,19 @@ class GrupoDeDemanda(models.Model):
         related_name="grupos_de_demanda",
         verbose_name=_("pauta"),
     )
+
+    # Avaliacao de outra IA, colada pela pessoa (radar.revisao_ia). E so uma
+    # etiqueta: nada e apagado sozinho; a tela filtra e a pessoa decide.
+    class AvaliacaoIA(models.TextChoices):
+        NENHUMA = "", _("Sem avaliacao")
+        BOA = "boa", _("Boa")
+        RUIM = "ruim", _("Ruim")
+
+    avaliacao_ia = models.CharField(
+        _("avaliacao da IA"), max_length=4, choices=AvaliacaoIA.choices, blank=True, default=""
+    )
+    motivo_ia = models.CharField(_("motivo da IA"), max_length=300, blank=True)
+    avaliado_em = models.DateTimeField(_("avaliado em"), null=True, blank=True)
     atualizado_em = models.DateTimeField(_("atualizado em"), auto_now=True)
     criado_em = models.DateTimeField(_("criado em"), default=timezone.now)
 

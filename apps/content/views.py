@@ -68,15 +68,22 @@ def pautas(request: HttpRequest) -> HttpResponse:
     consulta = Topic.objects.annotate(artigos=Count("articles")).order_by("-created_at")
     if situacao:
         consulta = consulta.filter(status=situacao)
+    # A etiqueta que a outra IA deu ao tema de origem (Radar > Ajustar com outra IA).
+    ia = request.GET.get("ia", "")
+    if ia in {"boa", "ruim"}:
+        consulta = consulta.filter(grupos_de_demanda__avaliacao_ia=ia).distinct()
 
     from apps.content.imprensa import dados_de_imprensa, veiculos
     from apps.content.outra_ia import motivos_de_peso
 
-    lista = list(consulta.prefetch_related("articles")[:200])
+    lista = list(consulta.prefetch_related("articles", "grupos_de_demanda")[:200])
     dados = dados_de_imprensa()
     for pauta in lista:
         pauta.de_peso = motivos_de_peso(pauta)
         pauta.imprensa = veiculos(pauta, dados)
+        pauta.grupo_avaliado = next(
+            (g for g in pauta.grupos_de_demanda.all() if g.avaliacao_ia), None
+        )
     return render(
         request,
         "content/pautas.html",
@@ -84,6 +91,7 @@ def pautas(request: HttpRequest) -> HttpResponse:
             "aba": "pautas",
             "pautas": lista,
             "situacao": situacao,
+            "ia": ia,
             "form": PautaForm(),
         },
     )

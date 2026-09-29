@@ -45,7 +45,10 @@
   <article class="secao oportunidade">
     <header class="cabeca-oportunidade">
       <div>
-        <h3>{{ op.grupo.rotulo }}</h3>
+        <h3>{{ op.grupo.rotulo }}
+          {% if op.grupo.avaliacao_ia %}<span class="selo {% if op.grupo.avaliacao_ia == 'boa' %}ok{% else %}ruim{% endif %}" title="{{ op.grupo.motivo_ia }}">{% if op.grupo.avaliacao_ia == 'boa' %}{% translate "IA: bom" %}{% else %}{% translate "IA: ruim" %}{% endif %}</span>{% endif %}
+        </h3>
+        {% if op.grupo.motivo_ia %}<div class="pre-visualizacao">{{ op.grupo.motivo_ia }}</div>{% endif %}
         <div class="chips">{% for termo in op.termos %}<span class="chip neutro">{{ termo }}</span>{% endfor %}</div>
       </div>
       <div class="nota-grande" title="{% translate 'nota de 0 a 100' %}">{{ op.nota|floatformat:0 }}</div>

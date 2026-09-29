@@ -63,8 +63,14 @@ def _contexto(config=None, contas=None, busca_form=None, request=None) -> dict:
         "busca_form": busca_form or BuscaManualForm(),
         "proxima_rodada": _proxima_rodada(config_obj),
         "resumo": resumo,
+        "filtro_ia": _filtro_ia(request),
+        "ruins_da_ia": GrupoDeDemanda.objects.filter(
+            situacao=GrupoDeDemanda.Situacao.NOVO, avaliacao_ia="ruim"
+        ).count(),
         "grupos": _pagina(
-            GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO)
+            _com_filtro_ia(
+                GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO), request
+            )
             .annotate(total=Count("sinais", filter=~Q(sinais__situacao="descartado")))
             .order_by("-nota"),
             request,
@@ -141,6 +147,22 @@ def radar(request: HttpRequest) -> HttpResponse:
             "mede_dificuldade": bool(dificuldades),
         },
     )
+
+
+FILTROS_IA = {"boa", "ruim", "sem"}
+
+
+def _filtro_ia(request) -> str:
+    valor = request.GET.get("ia", "") if request is not None else ""
+    return valor if valor in FILTROS_IA else ""
+
+
+def _com_filtro_ia(consulta, request, campo: str = "avaliacao_ia"):
+    """Filtra pela etiqueta que a outra IA deu (radar.revisao_ia)."""
+    filtro = _filtro_ia(request)
+    if not filtro:
+        return consulta
+    return consulta.filter(**{campo: "" if filtro == "sem" else filtro})
 
 
 def _proxima_rodada(config) -> dict:
@@ -279,6 +301,62 @@ def descartar_grupo(request: HttpRequest, pk) -> HttpResponse:
     grupo.sinais.update(situacao=SinalDeDemanda.Situacao.DESCARTADO)
     messages.success(request, _("Grupo descartado."))
     return redirect("radar:radar")
+
+
+@login_required
+@require_POST
+def descartar_ruins(request: HttpRequest) -> HttpResponse:
+    """Descarta de uma vez os temas em observacao que a IA marcou como ruins."""
+    grupos = GrupoDeDemanda.objects.filter(
+        situacao=GrupoDeDemanda.Situacao.NOVO, avaliacao_ia="ruim"
+    )
+    SinalDeDemanda.objects.filter(grupo__in=grupos).update(
+        situacao=SinalDeDemanda.Situacao.DESCARTADO
+    )
+    total = grupos.update(situacao=GrupoDeDemanda.Situacao.DESCARTADO)
+    messages.success(request, _("%(n)s tema(s) descartado(s).") % {"n": total})
+    return redirect(reverse("radar:radar") + "#temas")
+
+
+@login_required
+@require_POST
+def revisar_resposta_ia(request: HttpRequest) -> HttpResponse:
+    """A resposta colada vira previa: o que entra, o que sai, o que e etiquetado."""
+    from apps.radar import revisao_ia
+
+    resposta = request.POST.get("resposta", "")
+    leitura = revisao_ia.ler(resposta)
+    if leitura.vazia:
+        messages.error(
+            request,
+            _(
+                "Nao achei os blocos SEMENTES, DORES, BONS nem RUINS na "
+                "resposta. Copie o pedido de novo e cole a resposta inteira."
+            ),
+        )
+        return redirect(reverse("radar:radar") + "#outra-ia")
+    return render(
+        request,
+        "radar/revisao_ia.html",
+        {"aba": "radar", "subaba": "radar", "resposta": resposta, **revisao_ia.previa(leitura)},
+    )
+
+
+@login_required
+@require_POST
+def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
+    from apps.radar import revisao_ia
+
+    feito = revisao_ia.aplicar(revisao_ia.ler(request.POST.get("resposta", "")))
+    messages.success(
+        request,
+        _(
+            "Aplicado: %(s)s semente(s), %(d)s dor(es) e %(t)s tema(s) avaliado(s). Os temas "
+            "ruins estao no filtro 'IA: ruim', para voce descartar."
+        )
+        % {"s": feito["sementes"], "d": feito["dores"], "t": feito["temas"]},
+    )
+    return redirect(reverse("radar:radar") + "?ia=ruim#temas")
 
 
 @login_required

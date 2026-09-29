@@ -18,6 +18,9 @@ urlpatterns = [
     path("buscas/<uuid:pk>/decidir/", views.decidir_busca, name="decidir_busca"),
     path("grupos/<uuid:pk>/pauta/", views.grupo_para_pauta, name="grupo_para_pauta"),
     path("grupos/<uuid:pk>/descartar/", views.descartar_grupo, name="descartar_grupo"),
+    path("grupos/descartar-ruins/", views.descartar_ruins, name="descartar_ruins"),
+    path("resposta-da-ia/", views.revisar_resposta_ia, name="revisar_resposta_ia"),
+    path("resposta-da-ia/aplicar/", views.aplicar_resposta_ia, name="aplicar_resposta_ia"),
     path(
         "concorrentes/<uuid:pk>/decidir/",
         views.decidir_concorrente,

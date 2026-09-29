@@ -67,32 +67,41 @@ def _linha(semente: str, *, configurada: bool) -> dict:
 
 PEDIDO = """\
 Voce e um consultor de SEO e de estrategia de conteudo. Abaixo estao os dados
-do radar de pautas de um site: o negocio, as palavras-semente que eu uso, o que
-cada semente rendeu, os sinais de demanda (perguntas e buscas do Google, com
-volume mensal quando existe), os temas agrupados com a nota do sistema, as
-pautas criadas e os concorrentes. "—" em volume quer dizer que o Google Ads nao
-tem numero (busca rara ou pergunta longa), nao que seja zero.
+do radar de pautas de um site: o negocio, as palavras-semente e as dores que eu
+busco (na ordem em que o radar as usa), o que cada semente rendeu, os sinais de
+demanda (buscas e perguntas do Google, com volume mensal quando existe), os
+temas que o radar agrupou e os concorrentes. "—" em volume quer dizer que o
+Google Ads nao tem numero (busca rara ou pergunta longa), nao que seja zero.
 
-Quero, em portugues, em listas curtas e diretas:
+A sua resposta volta para o sistema, que a le sozinho. Por isso responda SO
+nos blocos abaixo, nesta ordem, e termine com FIM:
 
-1. Quais sementes trazem o PUBLICO CERTO (quem compraria a oferta) e quais
-   trazem publico errado ou so curiosos. Diga quais manter, quais trocar.
-2. De 10 a 15 sementes novas, na lingua de quem sente o problema (e nao no
-   jargao de quem vende), marcando as 5 que eu deveria testar primeiro.
-3. De 5 a 10 dores do publico, cada uma numa frase como o cliente diria.
-4. Para cada pauta criada, um angulo de artigo que atenda a busca E leve
-   naturalmente a oferta — e um titulo melhor, se o atual for fraco.
-5. Temas da lista que eu deveria descartar, e por que.
-6. Para cada dominio em "Concorrentes", classifique: concorrente de NEGOCIO
-   (vende algo que substitui a minha oferta), concorrente de CONTEUDO (disputa
-   as mesmas buscas, mas vende outra coisa), possivel PARCEIRO (publica para o
-   mesmo publico sem competir: artigo convidado, indicacao, conteudo em
-   conjunto) ou IRRELEVANTE. Uma linha de porque para cada, e diga quais eu
-   deveria confirmar como concorrente no radar e quais recusar.
-7. Um padrao que voce veja nos dados e que eu nao tenha perguntado.
+SEMENTES:
+- a lista COMPLETA de sementes que devo usar, uma por linha, na ordem de
+  prioridade: a primeira e a que o radar busca primeiro. Mantenha as que
+  trazem o publico que compraria a oferta, tire as que trazem estudante,
+  curioso ou publico errado, e acrescente as que faltam, na lingua de quem
+  sente o problema (nao no jargao de quem vende). Ate 25.
+DORES:
+- a lista COMPLETA de dores do publico, uma por linha, cada uma como o cliente
+  diria. Ate 15.
+BONS:
+- t-xxxxxx: motivo em ate 12 palavras
+RUINS:
+- t-xxxxxx: motivo em ate 12 palavras
+COMENTARIOS:
+o que mais importar, curto: quais concorrentes confirmar, recusar ou tratar
+como parceiro (e por que), um padrao que voce veja nos dados, e perguntas que
+voce tenha para mim.
+FIM
 
-Nao invente volumes: onde nao ha numero, diga "testar". Se algo depender de
-informacao que nao esta aqui, pergunte no fim.
+Regras:
+- TODO codigo da lista "Temas para avaliar" (e das oportunidades) aparece uma
+  vez, em BONS ou em RUINS. Bom = vale um artigo que leva a oferta;
+  ruim = publico errado, sem intencao de compra ou fora do negocio.
+- Use o codigo exatamente como esta (t- e seis caracteres). Nao reescreva
+  titulos: so classifique.
+- Nao invente volumes: onde nao ha numero, e "testar".
 """
 
 
@@ -103,7 +112,6 @@ def texto_para_ia() -> str:
         ConfiguracaoDoRadar,
         GrupoDeDemanda,
         Oportunidade,
-        RodadaDoRadar,
         SinalDeDemanda,
     )
 
@@ -148,30 +156,56 @@ def texto_para_ia() -> str:
             f"{(sinal.extra or {}).get('semente', '')}"
         )
 
-    partes.append("\n## Temas agrupados (nota 0-100 | volume | situacao | parcelas)")
-    grupos = GrupoDeDemanda.objects.exclude(situacao=GrupoDeDemanda.Situacao.DESCARTADO)
-    for grupo in grupos.order_by("-nota")[:MAXIMO_DE_TEMAS]:
+    from apps.radar.revisao_ia import (
+        OPORTUNIDADES_POR_PEDIDO,
+        codigo,
+        temas_para_avaliar,
+    )
+
+    partes.append("\n## Sementes atuais, na ordem (a primeira e buscada primeiro)")
+    partes += [f"- {s}" for s in config.lista_de_sementes] or ["(nenhuma)"]
+    partes.append("\n## Dores atuais, na ordem")
+    partes += [f"- {d}" for d in config.lista_de_dores] or ["(nenhuma)"]
+
+    temas = list(temas_para_avaliar())
+    ja_avaliados = GrupoDeDemanda.objects.exclude(avaliacao_ia="").count()
+    faltam = (
+        GrupoDeDemanda.objects.filter(avaliacao_ia="")
+        .exclude(situacao=GrupoDeDemanda.Situacao.DESCARTADO)
+        .count()
+    )
+    partes.append(
+        f"\n## Temas para avaliar ({len(temas)} de {faltam} sem avaliacao; "
+        f"{ja_avaliados} ja avaliados em pedidos anteriores)"
+    )
+    partes.append("codigo | tema | nota 0-100 | buscas/mes | situacao | parcelas da nota")
+    for grupo in temas:
         parcelas = ", ".join(f"{nome} {valor:.2f}" for nome, valor in grupo.parcelas_rotuladas)
-        partes.append(
-            f"- {grupo.rotulo} | {grupo.nota:.0f} | {grupo.volume_total or '—'} | "
-            f"{grupo.get_situacao_display()} | {parcelas}"
+        situacao = (
+            f"virou pauta: {grupo.pauta.title}" if grupo.pauta_id else grupo.get_situacao_display()
         )
+        partes.append(
+            f"- {codigo(grupo)} | {grupo.rotulo} | {grupo.nota:.0f} | "
+            f"{grupo.volume_total or '—'} | {situacao} | {parcelas}"
+        )
+    if not temas:
+        partes.append("(nenhum tema sem avaliacao)")
 
-    pautas = [
-        pauta
-        for rodada in RodadaDoRadar.objects.order_by("-iniciada_em")[:5]
-        for pauta in (rodada.resumo or {}).get("pautas") or []
-    ]
-    partes.append("\n## Pautas criadas pelo radar nas ultimas rodadas")
-    partes += [f"- {p}" for p in dict.fromkeys(pautas)] or ["(nenhuma)"]
-
-    oportunidades = Oportunidade.objects.exclude(
-        situacao=Oportunidade.Situacao.ARQUIVADA
-    ).select_related("grupo")
-    partes.append("\n## Oportunidades (temas longe do negocio atual, perto do publico)")
+    ids_dos_temas = {g.pk for g in temas}
+    oportunidades = [
+        o
+        for o in Oportunidade.objects.exclude(situacao=Oportunidade.Situacao.ARQUIVADA)
+        .filter(grupo__avaliacao_ia="")
+        .select_related("grupo")
+        .order_by("-nota")[: OPORTUNIDADES_POR_PEDIDO * 2]
+        if o.grupo_id not in ids_dos_temas
+    ][:OPORTUNIDADES_POR_PEDIDO]
+    partes.append(
+        "\n## Oportunidades para avaliar (temas longe do negocio atual, perto do publico)"
+    )
     partes += [
-        f"- {o.grupo.rotulo} | nota {o.nota:.0f} | {o.get_situacao_display()}"
-        for o in oportunidades.order_by("-nota")[:15]
+        f"- {codigo(o.grupo)} | {o.grupo.rotulo} | nota {o.nota:.0f} | {o.get_situacao_display()}"
+        for o in oportunidades
     ] or ["(nenhuma)"]
 
     partes.append("\n## Concorrentes")

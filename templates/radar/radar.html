@@ -52,6 +52,19 @@
       perto de artigo que converte sobe.
     {% endblocktranslate %}
   </p>
+  <div class="acoes" style="align-items:center">
+    <span class="pre-visualizacao">{% translate "Avaliacao da outra IA:" %}</span>
+    <a href="?#temas" {% if not filtro_ia %}class="ativo"{% endif %}>{% translate "todos" %}</a> ·
+    <a href="?ia=ruim#temas" {% if filtro_ia == 'ruim' %}class="ativo"{% endif %}>{% translate "ruins" %}</a> ·
+    <a href="?ia=boa#temas" {% if filtro_ia == 'boa' %}class="ativo"{% endif %}>{% translate "bons" %}</a> ·
+    <a href="?ia=sem#temas" {% if filtro_ia == 'sem' %}class="ativo"{% endif %}>{% translate "sem avaliacao" %}</a>
+    {% if filtro_ia == 'ruim' and ruins_da_ia %}
+      <form method="post" action="{% url 'radar:descartar_ruins' %}" style="margin-left:auto">
+        {% csrf_token %}
+        <button type="submit" class="botao discreto pequeno">{% blocktranslate with n=ruins_da_ia %}Descartar os {{ n }} marcados como ruins{% endblocktranslate %}</button>
+      </form>
+    {% endif %}
+  </div>
   <div class="rolagem">
   <table>
     <thead><tr>
@@ -63,7 +76,12 @@
     <tbody data-recolher="3" data-recolher-junto="paginas-temas" data-total="{{ grupos.paginator.count }}" {% if paginando %}data-expandido{% endif %}>
       {% for grupo in grupos %}
         <tr>
-          <td><strong>{{ grupo.rotulo }}</strong></td>
+          <td><strong>{{ grupo.rotulo }}</strong>
+            {% if grupo.avaliacao_ia %}
+              <div><span class="selo {% if grupo.avaliacao_ia == 'boa' %}ok{% else %}ruim{% endif %}">{% if grupo.avaliacao_ia == 'boa' %}{% translate "IA: bom" %}{% else %}{% translate "IA: ruim" %}{% endif %}</span>
+              <span class="pre-visualizacao">{{ grupo.motivo_ia }}</span></div>
+            {% endif %}
+          </td>
           <td><span class="nota {% if grupo.nota >= 60 %}alta{% elif grupo.nota >= 40 %}media{% endif %}">{{ grupo.nota|floatformat:0 }}</span></td>
           <td>{{ grupo.volume_total|default:"—" }}</td>
           <td>{{ grupo.total }}</td>
@@ -173,15 +191,17 @@
   {% endif %}
 </section>
 
-<section class="secao">
-  <h2>{% translate "Analisar com outra IA" %}</h2>
+<section class="secao" id="outra-ia">
+  <h2>{% translate "Ajustar com outra IA" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
-      O negocio, o rendimento das sementes, os sinais, os temas, as pautas e os
-      concorrentes num texto so, com as perguntas certas no comeco. Copie e cole
-      num modelo grande (Claude, ChatGPT, Gemini): ele tira destes dados a
-      leitura de consultor que o modelo local nao tira. Nada e enviado pelo
-      PubliBot; o texto contem os dados do seu negocio.
+      1. Copie o pedido e cole num modelo grande (Claude, ChatGPT, Gemini). Ele
+      leva o negocio, as sementes, as dores e os temas ainda nao avaliados, cada
+      um com um codigo. 2. Cole aqui a resposta inteira: voce ve o que muda antes
+      de aplicar. As sementes e dores sao trocadas pela lista da IA, na ordem dela;
+      os temas ganham a etiqueta "IA: bom" ou "IA: ruim", e nada e apagado
+      sozinho. Repita depois de cada rodada: o pedido leva so o que ainda nao foi
+      avaliado. Nada e enviado pelo PubliBot.
     {% endblocktranslate %}
   </p>
   <div class="acoes">
@@ -191,6 +211,12 @@
     <summary>{% translate "Ver o texto" %}</summary>
     <textarea id="texto-para-ia" readonly rows="16" style="width:100%">{{ texto_para_ia }}</textarea>
   </details>
+  <form method="post" action="{% url 'radar:revisar_resposta_ia' %}" style="margin-top:.8rem">
+    {% csrf_token %}
+    <label for="resposta-da-ia">{% translate "Cole aqui a resposta inteira" %}</label>
+    <textarea id="resposta-da-ia" name="resposta" rows="5" style="width:100%" required></textarea>
+    <div class="acoes"><button type="submit" class="botao secundario">{% translate "Ver o que muda" %}</button></div>
+  </form>
 </section>
 
 <section class="secao" style="margin-top:1.2rem">

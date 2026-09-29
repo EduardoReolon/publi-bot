@@ -1,0 +1,62 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Resposta da outra IA" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+{% include "radar/_abas.html" %}
+<h1>{% translate "O que a resposta muda" %}</h1>
+<p class="sub">{% translate "Nada foi aplicado ainda. Confira e clique em Aplicar no fim da pagina." %}</p>
+
+<div class="duas-colunas">
+  <section class="secao">
+    <h2>{% translate "Sementes" %}</h2>
+    {% if sementes %}
+      <p class="pre-visualizacao">{% translate "A lista inteira e trocada por esta, nesta ordem (a primeira e buscada primeiro)." %}</p>
+      <ol>{% for s in sementes.lista %}<li>{{ s }}{% if s in sementes.entram %} <span class="selo ok">{% translate "nova" %}</span>{% endif %}</li>{% endfor %}</ol>
+      {% if sementes.saem %}<p><strong>{% translate "Saem:" %}</strong> {{ sementes.saem|join:"; " }}</p>{% endif %}
+    {% else %}
+      <p class="vazio">{% translate "A resposta nao trouxe sementes: ficam as atuais." %}</p>
+    {% endif %}
+  </section>
+  <section class="secao">
+    <h2>{% translate "Dores" %}</h2>
+    {% if dores %}
+      <ol>{% for d in dores.lista %}<li>{{ d }}{% if d in dores.entram %} <span class="selo ok">{% translate "nova" %}</span>{% endif %}</li>{% endfor %}</ol>
+      {% if dores.saem %}<p><strong>{% translate "Saem:" %}</strong> {{ dores.saem|join:"; " }}</p>{% endif %}
+    {% else %}
+      <p class="vazio">{% translate "A resposta nao trouxe dores: ficam as atuais." %}</p>
+    {% endif %}
+  </section>
+</div>
+
+<section class="secao">
+  <h2>{% blocktranslate with b=bons r=ruins %}Temas: {{ b }} bons, {{ r }} ruins{% endblocktranslate %}</h2>
+  <p class="pre-visualizacao">{% translate "Viram etiqueta. Nenhum tema e descartado sozinho: depois, filtre 'ruins' na lista de temas." %}</p>
+  <ul class="lista">
+    {% for t in temas %}
+      <li><span class="selo {% if t.avaliacao == 'boa' %}ok{% else %}ruim{% endif %}">{% if t.avaliacao == 'boa' %}{% translate "bom" %}{% else %}{% translate "ruim" %}{% endif %}</span>
+        <strong>{{ t.grupo.rotulo }}</strong> <span class="pre-visualizacao">— {{ t.motivo }}</span></li>
+    {% empty %}
+      <li class="vazio">{% translate "Nenhum tema avaliado na resposta." %}</li>
+    {% endfor %}
+  </ul>
+  {% if nao_achados %}
+    <p class="aviso">{% blocktranslate with c=nao_achados|join:", " %}Codigos que nao existem (ou ja descartados), ignorados: {{ c }}{% endblocktranslate %}</p>
+  {% endif %}
+</section>
+
+{% if comentarios %}
+  <section class="secao">
+    <h2>{% translate "Comentarios da IA" %}</h2>
+    <p class="pre-visualizacao">{% translate "Nao mudam nada no sistema. Leia e decida." %}</p>
+    <div style="white-space:pre-wrap">{{ comentarios }}</div>
+  </section>
+{% endif %}
+
+<form method="post" action="{% url 'radar:aplicar_resposta_ia' %}" class="acoes">
+  {% csrf_token %}
+  <textarea name="resposta" hidden>{{ resposta }}</textarea>
+  <button type="submit">{% translate "Aplicar" %}</button>
+  <a href="{% url 'radar:radar' %}#outra-ia" class="botao discreto">{% translate "Cancelar" %}</a>
+</form>
+{% endblock %}
