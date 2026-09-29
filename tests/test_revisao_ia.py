@@ -200,3 +200,23 @@ def test_o_pedido_pede_conversa_e_mudanca_gradual():
     assert "Converse antes" in texto and "NO MAXIMO 5 sementes" in texto
     assert "Olhe tambem os concorrentes" in texto and "ecossistema do cliente" in texto
     assert "OFERTA:" in PEDIDO and "FRENTES:" in PEDIDO
+
+
+@pytest.mark.django_db
+def test_oportunidades_filtram_e_arquivam_as_ruins(ambiente):  # noqa: F811
+    from apps.radar.models import Oportunidade
+
+    _, _, client = ambiente
+    boa = Oportunidade.objects.create(grupo=_grupo("oportunidade boa", avaliacao_ia="boa"))
+    ruim = Oportunidade.objects.create(grupo=_grupo("oportunidade ruim", avaliacao_ia="ruim"))
+    url = reverse("radar:oportunidades", urlconf="core.urls_tenants")
+
+    pagina = client.get(url + "?ver=nova&ia=ruim").content.decode()
+    assert "oportunidade ruim" in pagina and "oportunidade boa" not in pagina
+    assert "Arquivar as 1 marcadas como ruins" in pagina
+
+    client.post(reverse("radar:arquivar_oportunidades_ruins", urlconf="core.urls_tenants"))
+    ruim.refresh_from_db()
+    boa.refresh_from_db()
+    assert ruim.situacao == Oportunidade.Situacao.ARQUIVADA
+    assert boa.situacao == Oportunidade.Situacao.NOVA
