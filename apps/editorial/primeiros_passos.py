@@ -106,9 +106,15 @@ FIM
 """
 
 
-def ler_negocio(resposta: str) -> dict:
-    """Os campos do formulario do Negocio a partir da resposta colada."""
-    blocos = ler_blocos(resposta, ROTULOS_DO_NEGOCIO)
+def ler_negocio(resposta: str, *, blocos: dict | None = None) -> dict:
+    """Os campos do formulario do Negocio a partir da resposta colada.
+
+    `blocos` ja lidos: quando a resposta tem outros rotulos alem destes (a do
+    ajuste do radar), quem le e o leitor com todos eles, senao o texto de um
+    bloco desconhecido cairia dentro do anterior.
+    """
+    if blocos is None:
+        blocos = ler_blocos(resposta, ROTULOS_DO_NEGOCIO)
     saida = {}
     for campo, rotulo in (("tema", "TEMA"), ("publico", "PUBLICO"), ("oferta", "OFERTA")):
         texto = " ".join(blocos.get(rotulo, "").split())

@@ -24,7 +24,20 @@ from django.utils import timezone
 
 from core.resposta_ia import itens, ler_blocos
 
-ROTULOS = ["SEMENTES", "DORES", "BONS", "RUINS", "COMENTARIOS"]
+ROTULOS = [
+    "SEMENTES",
+    "DORES",
+    "BONS",
+    "RUINS",
+    "TEMA",
+    "PUBLICO",
+    "OFERTA",
+    "FRENTES",
+    "COMENTARIOS",
+]
+# O pedido pede mudanca gradual; acima disto a previa avisa.
+MUDANCA_GRANDE = 5
+PARTES = ("sementes", "dores", "temas", "negocio")
 TEMAS_POR_PEDIDO = 40
 OPORTUNIDADES_POR_PEDIDO = 15
 TAMANHO_DO_CODIGO = 6
@@ -52,11 +65,12 @@ class Leitura:
     dores: list[str] = field(default_factory=list)
     bons: list[tuple[str, str]] = field(default_factory=list)
     ruins: list[tuple[str, str]] = field(default_factory=list)
+    negocio: dict = field(default_factory=dict)
     comentarios: str = ""
 
     @property
     def vazia(self) -> bool:
-        return not (self.sementes or self.dores or self.bons or self.ruins)
+        return not (self.sementes or self.dores or self.bons or self.ruins or self.negocio)
 
 
 def _sem_repetir(lista: list[str]) -> list[str]:
@@ -83,8 +97,13 @@ def _temas(bloco: str) -> list[tuple[str, str]]:
 
 
 def ler(resposta: str) -> Leitura:
+    from apps.editorial.primeiros_passos import ler_negocio
+
     blocos = ler_blocos(resposta, ROTULOS)
+    negocio = ler_negocio("", blocos=blocos)
+    negocio.pop("dores", None)  # as dores daqui sao a lista do radar, acima
     return Leitura(
+        negocio=negocio,
         sementes=_sem_repetir(itens(blocos.get("SEMENTES", ""))),
         dores=_sem_repetir(itens(blocos.get("DORES", ""))),
         bons=_temas(blocos.get("BONS", "")),
@@ -118,6 +137,38 @@ def _diferenca(atual: list[str], nova: list[str]) -> dict:
     }
 
 
+def _negocio_proposto(leitura: Leitura) -> list[dict]:
+    """[{campo, rotulo, atual, proposto}] so do que muda."""
+    from apps.editorial.models import PerfilDoNegocio
+    from apps.editorial.primeiros_passos import unir
+
+    perfil = PerfilDoNegocio.carregar()
+    saida = []
+    for campo, rotulo in (("tema", "Tema"), ("publico", "Publico"), ("oferta", "Oferta")):
+        proposto = leitura.negocio.get(campo)
+        if proposto and proposto.strip() != (getattr(perfil, campo) or "").strip():
+            saida.append(
+                {
+                    "campo": campo,
+                    "rotulo": rotulo,
+                    "atual": getattr(perfil, campo),
+                    "proposto": proposto,
+                }
+            )
+    if leitura.negocio.get("frentes"):
+        novas = unir(perfil.frentes, leitura.negocio["frentes"])
+        if novas.strip() != perfil.frentes.strip():
+            saida.append(
+                {
+                    "campo": "frentes",
+                    "rotulo": "Frentes (somadas)",
+                    "atual": perfil.frentes,
+                    "proposto": novas,
+                }
+            )
+    return saida
+
+
 def previa(leitura: Leitura) -> dict:
     """O que aplicar mudaria, para a pessoa conferir antes."""
     from apps.radar.models import ConfiguracaoDoRadar
@@ -131,11 +182,16 @@ def previa(leitura: Leitura) -> dict:
                 nao_achados.append(codigo_lido)
             else:
                 temas.append({"grupo": grupo, "avaliacao": avaliacao, "motivo": motivo})
+    sementes = _diferenca(config.lista_de_sementes, leitura.sementes) if leitura.sementes else None
+    dores = _diferenca(config.lista_de_dores, leitura.dores) if leitura.dores else None
+    grande = any(
+        d and max(len(d["entram"]), len(d["saem"])) > MUDANCA_GRANDE for d in (sementes, dores)
+    )
     return {
-        "sementes": _diferenca(config.lista_de_sementes, leitura.sementes)
-        if leitura.sementes
-        else None,
-        "dores": _diferenca(config.lista_de_dores, leitura.dores) if leitura.dores else None,
+        "sementes": sementes,
+        "dores": dores,
+        "mudanca_grande": grande,
+        "negocio": _negocio_proposto(leitura),
         "temas": temas,
         "bons": sum(t["avaliacao"] == "boa" for t in temas),
         "ruins": sum(t["avaliacao"] == "ruim" for t in temas),
@@ -144,24 +200,43 @@ def previa(leitura: Leitura) -> dict:
     }
 
 
-def aplicar(leitura: Leitura) -> dict:
-    """Aplica e devolve as contagens para a mensagem."""
+def aplicar(leitura: Leitura, partes=PARTES) -> dict:
+    """Aplica as partes escolhidas e devolve as contagens para a mensagem.
+
+    O negocio so muda quando a pessoa marca: e a ancora de tudo que o radar
+    mede, e mudar a ancora e decisao, nao efeito colateral.
+    """
     from apps.radar.models import ConfiguracaoDoRadar
 
     config = ConfiguracaoDoRadar.carregar()
     campos = []
-    if leitura.sementes:
+    if leitura.sementes and "sementes" in partes:
         config.sementes = "\n".join(leitura.sementes)
         campos.append("sementes")
-    if leitura.dores:
+    if leitura.dores and "dores" in partes:
         config.dores = "\n".join(leitura.dores)
         campos.append("dores")
     if campos:
         config.save(update_fields=campos)
 
+    negocio = 0
+    if "negocio" in partes:
+        from apps.editorial.models import PerfilDoNegocio
+
+        mudancas = _negocio_proposto(leitura)
+        if mudancas:
+            perfil = PerfilDoNegocio.carregar()
+            for mudanca in mudancas:
+                setattr(perfil, mudanca["campo"], mudanca["proposto"])
+            perfil.save()
+            negocio = len(mudancas)
+
     agora = timezone.now()
     avaliados = 0
-    for avaliacao, pares in (("boa", leitura.bons), ("ruim", leitura.ruins)):
+    pares_por_avaliacao = (
+        (("boa", leitura.bons), ("ruim", leitura.ruins)) if "temas" in partes else ()
+    )
+    for avaliacao, pares in pares_por_avaliacao:
         for codigo_lido, motivo in pares:
             grupo = _achar(codigo_lido)
             if grupo is None:
@@ -170,7 +245,8 @@ def aplicar(leitura: Leitura) -> dict:
             grupo.save(update_fields=["avaliacao_ia", "motivo_ia", "avaliado_em", "atualizado_em"])
             avaliados += 1
     return {
-        "sementes": len(leitura.sementes),
-        "dores": len(leitura.dores),
+        "sementes": len(leitura.sementes) if "sementes" in campos else 0,
+        "dores": len(leitura.dores) if "dores" in campos else 0,
         "temas": avaliados,
+        "negocio": negocio,
     }

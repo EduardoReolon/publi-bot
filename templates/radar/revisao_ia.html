@@ -5,12 +5,27 @@
 {% block conteudo %}
 {% include "radar/_abas.html" %}
 <h1>{% translate "O que a resposta muda" %}</h1>
-<p class="sub">{% translate "Nada foi aplicado ainda. Confira e clique em Aplicar no fim da pagina." %}</p>
+<p class="sub">{% translate "Nada foi aplicado ainda. Marque o que aplicar e clique em Aplicar no fim da pagina." %}</p>
+{% if mudanca_grande %}
+  <div class="aviso alerta">
+    {% blocktranslate trimmed %}
+      Mudanca grande: mais de 5 sementes ou dores entram ou saem de uma vez. O
+      radar aprende aos poucos, e uma troca brusca joga fora o que as rodadas
+      anteriores mostraram. Considere pedir a IA uma troca menor, ou aplicar so
+      os temas desta vez.
+    {% endblocktranslate %}
+  </div>
+{% endif %}
+<form method="post" action="{% url 'radar:aplicar_resposta_ia' %}" id="aplicar">
+  {% csrf_token %}
+  <input type="hidden" name="com_partes" value="1">
+  <textarea name="resposta" hidden>{{ resposta }}</textarea>
 
 <div class="duas-colunas">
   <section class="secao">
     <h2>{% translate "Sementes" %}</h2>
     {% if sementes %}
+      <label><input type="checkbox" name="partes" value="sementes" checked> {% translate "Aplicar as sementes" %}</label>
       <p class="pre-visualizacao">{% translate "A lista inteira e trocada por esta, nesta ordem (a primeira e buscada primeiro)." %}</p>
       <ol>{% for s in sementes.lista %}<li>{{ s }}{% if s in sementes.entram %} <span class="selo ok">{% translate "nova" %}</span>{% endif %}</li>{% endfor %}</ol>
       {% if sementes.saem %}<p><strong>{% translate "Saem:" %}</strong> {{ sementes.saem|join:"; " }}</p>{% endif %}
@@ -21,6 +36,7 @@
   <section class="secao">
     <h2>{% translate "Dores" %}</h2>
     {% if dores %}
+      <label><input type="checkbox" name="partes" value="dores" checked> {% translate "Aplicar as dores" %}</label>
       <ol>{% for d in dores.lista %}<li>{{ d }}{% if d in dores.entram %} <span class="selo ok">{% translate "nova" %}</span>{% endif %}</li>{% endfor %}</ol>
       {% if dores.saem %}<p><strong>{% translate "Saem:" %}</strong> {{ dores.saem|join:"; " }}</p>{% endif %}
     {% else %}
@@ -32,6 +48,7 @@
 <section class="secao">
   <h2>{% blocktranslate with b=bons r=ruins %}Temas: {{ b }} bons, {{ r }} ruins{% endblocktranslate %}</h2>
   <p class="pre-visualizacao">{% translate "Viram etiqueta. Nenhum tema e descartado sozinho: depois, filtre 'ruins' na lista de temas." %}</p>
+  {% if temas %}<label><input type="checkbox" name="partes" value="temas" checked> {% translate "Aplicar as etiquetas" %}</label>{% endif %}
   <ul class="lista">
     {% for t in temas %}
       <li><span class="selo {% if t.avaliacao == 'boa' %}ok{% else %}ruim{% endif %}">{% if t.avaliacao == 'boa' %}{% translate "bom" %}{% else %}{% translate "ruim" %}{% endif %}</span>
@@ -45,6 +62,28 @@
   {% endif %}
 </section>
 
+{% if negocio %}
+  <section class="secao">
+    <h2>{% translate "Mudancas sugeridas no negocio" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        O negocio e a ancora de tudo que o radar mede: a nota de cada tema compara
+        com ele. Mudar aqui muda o rumo aos poucos, rodada a rodada. Por isso vem
+        desmarcado: aplique so se concordar.
+      {% endblocktranslate %}
+    </p>
+    <label><input type="checkbox" name="partes" value="negocio"> {% translate "Aplicar as mudancas no negocio" %}</label>
+    <table>
+      <thead><tr><th></th><th>{% translate "Hoje" %}</th><th>{% translate "Sugerido" %}</th></tr></thead>
+      <tbody>
+        {% for m in negocio %}
+          <tr><td><strong>{{ m.rotulo }}</strong></td><td style="white-space:pre-wrap">{{ m.atual|default:"—" }}</td><td style="white-space:pre-wrap">{{ m.proposto }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endif %}
+
 {% if comentarios %}
   <section class="secao">
     <h2>{% translate "Comentarios da IA" %}</h2>
@@ -53,10 +92,9 @@
   </section>
 {% endif %}
 
-<form method="post" action="{% url 'radar:aplicar_resposta_ia' %}" class="acoes">
-  {% csrf_token %}
-  <textarea name="resposta" hidden>{{ resposta }}</textarea>
-  <button type="submit">{% translate "Aplicar" %}</button>
+<div class="acoes">
+  <button type="submit">{% translate "Aplicar o que esta marcado" %}</button>
   <a href="{% url 'radar:radar' %}#outra-ia" class="botao discreto">{% translate "Cancelar" %}</a>
+</div>
 </form>
 {% endblock %}

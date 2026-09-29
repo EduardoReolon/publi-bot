@@ -142,3 +142,59 @@ def test_colar_mostra_a_previa(ambiente):  # noqa: F811
     assert resposta.status_code == 200
     assert "Nada foi aplicado ainda" in html and "padronizacao tcc" in html
     assert "t-zzzzzz" in html
+
+
+RESPOSTA_COM_NEGOCIO = """Conversamos e ficou assim.
+SEMENTES:
+- organizar a operacao da empresa
+BONS:
+RUINS:
+OFERTA: Diagnostico de processos para quem ja usa um sistema de gestao
+FRENTES:
+- implantacao de ERP
+COMENTARIOS:
+Hipotese: quem busca software ja sente a dor.
+FIM"""
+
+
+@pytest.mark.django_db
+def test_mudanca_no_negocio_vem_desmarcada_e_so_aplica_se_marcar(ambiente):  # noqa: F811
+    from apps.editorial.models import PerfilDoNegocio
+
+    _, _, client = ambiente
+    PerfilDoNegocio.objects.update_or_create(pk=1, defaults={"oferta": "Consultoria"})
+    url_previa = reverse("radar:revisar_resposta_ia", urlconf="core.urls_tenants")
+    url = reverse("radar:aplicar_resposta_ia", urlconf="core.urls_tenants")
+
+    html = client.post(url_previa, {"resposta": RESPOSTA_COM_NEGOCIO}).content.decode()
+    assert "Mudancas sugeridas no negocio" in html
+    assert 'value="negocio">' in html  # desmarcado
+
+    # Sem marcar o negocio: so as sementes mudam.
+    client.post(url, {"resposta": RESPOSTA_COM_NEGOCIO, "com_partes": "1", "partes": ["sementes"]})
+    assert PerfilDoNegocio.carregar().oferta == "Consultoria"
+    assert ConfiguracaoDoRadar.carregar().lista_de_sementes == ["organizar a operacao da empresa"]
+
+    client.post(url, {"resposta": RESPOSTA_COM_NEGOCIO, "com_partes": "1", "partes": ["negocio"]})
+    perfil = PerfilDoNegocio.carregar()
+    assert perfil.oferta.startswith("Diagnostico de processos")
+    assert "implantacao de ERP" in perfil.frentes
+
+
+@pytest.mark.django_db
+def test_troca_grande_de_sementes_gera_aviso(ambiente):  # noqa: F811
+    from apps.radar.revisao_ia import ler, previa
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.sementes = "\n".join(f"antiga {i}" for i in range(8))
+    config.save()
+    resposta = "SEMENTES:\n" + "\n".join(f"- nova {i}" for i in range(8)) + "\nFIM"
+
+    assert previa(ler(resposta))["mudanca_grande"] is True
+
+
+def test_o_pedido_pede_conversa_e_mudanca_gradual():
+    from apps.radar.resumo import PEDIDO
+
+    assert "Converse antes" in PEDIDO and "NO MAXIMO 5 sementes" in PEDIDO
+    assert "OFERTA:" in PEDIDO and "FRENTES:" in PEDIDO

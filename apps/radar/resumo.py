@@ -73,15 +73,32 @@ demanda (buscas e perguntas do Google, com volume mensal quando existe), os
 temas que o radar agrupou e os concorrentes. "—" em volume quer dizer que o
 Google Ads nao tem numero (busca rara ou pergunta longa), nao que seja zero.
 
-A sua resposta volta para o sistema, que a le sozinho. Por isso responda SO
-nos blocos abaixo, nesta ordem, e termine com FIM:
+COMO TRABALHAR COMIGO
+
+1. Converse antes. Leia os dados e, ANTES dos blocos, me diga em poucas linhas
+   o que voce viu e o que mudaria, principalmente se enxergar uma mudanca de
+   rumo. Espere eu responder. So entregue os blocos quando eu pedir ("pode
+   gerar"); se nao houver nada que valha discutir, diga isso e ja gere.
+2. Este e um sistema de ajuste gradual: cada rodada do radar busca de novo e
+   traz dados novos. Por ciclo, troque NO MAXIMO 5 sementes e 3 dores; as que
+   ficam, mantenha na ordem, salvo motivo forte.
+3. Classifique cada tema pela intencao real de quem busca, com o negocio COMO
+   ESTA descrito abaixo, e nao por uma estrategia nova que tenhamos discutido.
+4. Mudanca maior de rumo nao vai nas listas de uma vez. Proponha nos blocos
+   TEMA, PUBLICO, OFERTA e FRENTES so o que mudaria no negocio (deixe de fora o
+   que fica igual) e acrescente 2 ou 3 sementes que testem a hipotese. As
+   proximas rodadas dizem, com dados, se vale seguir.
+5. Nao invente sementes sem ligacao com os dados, fora as de teste de hipotese.
+
+Quando eu pedir os blocos, responda SO neles, nesta ordem, e termine com FIM
+(a resposta volta para o sistema, que a le sozinho):
 
 SEMENTES:
-- a lista COMPLETA de sementes que devo usar, uma por linha, na ordem de
-  prioridade: a primeira e a que o radar busca primeiro. Mantenha as que
-  trazem o publico que compraria a oferta, tire as que trazem estudante,
-  curioso ou publico errado, e acrescente as que faltam, na lingua de quem
-  sente o problema (nao no jargao de quem vende). Ate 25.
+- a lista COMPLETA de sementes, uma por linha, na ordem de prioridade: a
+  primeira e a que o radar busca primeiro. Mantenha as que trazem o publico
+  que compraria a oferta, tire as que trazem estudante, curioso ou publico
+  errado, e acrescente as que faltam, na lingua de quem sente o problema (nao
+  no jargao de quem vende). Ate 25.
 DORES:
 - a lista COMPLETA de dores do publico, uma por linha, cada uma como o cliente
   diria. Ate 15.
@@ -89,6 +106,11 @@ BONS:
 - t-xxxxxx: motivo em ate 12 palavras
 RUINS:
 - t-xxxxxx: motivo em ate 12 palavras
+TEMA: (so se mudar) o tema do site numa frase
+PUBLICO: (so se mudar) quem le e quem compra
+OFERTA: (so se mudar) o que o site vende, como o cliente diria
+FRENTES: (so se houver novas)
+- frente nova, uma por linha
 COMENTARIOS:
 curto. Para cada dominio em "Concorrentes", uma linha: concorrente de NEGOCIO
 (vende o que substitui a minha oferta: confirmar no radar), concorrente de
@@ -97,7 +119,7 @@ publico sem competir) ou IRRELEVANTE (recusar). Depois, um padrao que voce veja
 nos dados, e perguntas que voce tenha para mim.
 FIM
 
-Regras:
+Regras dos blocos:
 - TODO codigo da lista "Temas para avaliar" (e das oportunidades) aparece uma
   vez, em BONS ou em RUINS. Bom = vale um artigo que leva a oferta;
   ruim = publico errado, sem intencao de compra ou fora do negocio.

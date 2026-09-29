@@ -427,14 +427,21 @@ def revisar_resposta_ia(request: HttpRequest) -> HttpResponse:
 def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
     from apps.radar import revisao_ia
 
-    feito = revisao_ia.aplicar(revisao_ia.ler(request.POST.get("resposta", "")))
+    # A previa manda as partes marcadas; sem a previa (chamada direta), tudo
+    # menos o negocio, que so muda quando a pessoa marca.
+    if request.POST.get("com_partes"):
+        partes = set(request.POST.getlist("partes")) & set(revisao_ia.PARTES)
+    else:
+        partes = {"sementes", "dores", "temas"}
+    feito = revisao_ia.aplicar(revisao_ia.ler(request.POST.get("resposta", "")), partes)
     messages.success(
         request,
         _(
-            "Aplicado: %(s)s semente(s), %(d)s dor(es) e %(t)s tema(s) avaliado(s). Os temas "
-            "ruins estao no filtro 'IA: ruim', para voce descartar."
+            "Aplicado: %(s)s semente(s), %(d)s dor(es), %(t)s tema(s) avaliado(s) e %(n)s "
+            "campo(s) do negocio. Os temas ruins estao no filtro 'IA: ruim', para voce "
+            "descartar."
         )
-        % {"s": feito["sementes"], "d": feito["dores"], "t": feito["temas"]},
+        % {"s": feito["sementes"], "d": feito["dores"], "t": feito["temas"], "n": feito["negocio"]},
     )
     return redirect(reverse("radar:radar") + "?ia=ruim#temas")
 
