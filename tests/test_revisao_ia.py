@@ -196,5 +196,7 @@ def test_troca_grande_de_sementes_gera_aviso(ambiente):  # noqa: F811
 def test_o_pedido_pede_conversa_e_mudanca_gradual():
     from apps.radar.resumo import PEDIDO
 
-    assert "Converse antes" in PEDIDO and "NO MAXIMO 5 sementes" in PEDIDO
+    texto = " ".join(PEDIDO.split())
+    assert "Converse antes" in texto and "NO MAXIMO 5 sementes" in texto
+    assert "Olhe tambem os concorrentes" in texto and "ecossistema do cliente" in texto
     assert "OFERTA:" in PEDIDO and "FRENTES:" in PEDIDO

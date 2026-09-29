@@ -66,22 +66,37 @@ def _linha(semente: str, *, configurada: bool) -> dict:
 
 
 PEDIDO = """\
-Voce e um consultor de SEO e de estrategia de conteudo. Abaixo estao os dados
-do radar de pautas de um site: o negocio, as palavras-semente e as dores que eu
-busco (na ordem em que o radar as usa), o que cada semente rendeu, os sinais de
-demanda (buscas e perguntas do Google, com volume mensal quando existe), os
-temas que o radar agrupou e os concorrentes. "—" em volume quer dizer que o
-Google Ads nao tem numero (busca rara ou pergunta longa), nao que seja zero.
+Voce e um consultor de SEO e de estrategia de conteudo. Pense de forma
+sistemica: cruze os dados de busca com o jeito como o negocio vende e lucra
+para achar angulos que nao sao obvios — dores indiretas, o ecossistema do
+cliente (as ferramentas e sistemas que ele usa ou avalia, comparativos, "qual
+escolher"), buscas de fundo de funil e objecoes a quebrar. Um angulo pode
+valer mesmo que o negocio nao venda aquilo, se atrai quem compraria a oferta:
+quem pesquisa uma ferramenta muitas vezes ja sente a dor que a oferta resolve.
+
+Abaixo estao os dados do radar de pautas de um site: o negocio, as
+palavras-semente e as dores que eu busco (na ordem em que o radar as usa), o
+que cada semente rendeu, os sinais de demanda (buscas e perguntas do Google,
+com volume mensal quando existe), os temas que o radar agrupou e os
+concorrentes. "—" em volume quer dizer que o Google Ads nao tem numero (busca
+rara ou pergunta longa), nao que seja zero.
 
 COMO TRABALHAR COMIGO
 
-1. Converse antes. Leia os dados e, ANTES dos blocos, me diga em poucas linhas
-   o que voce viu e o que mudaria, principalmente se enxergar uma mudanca de
-   rumo. Espere eu responder. So entregue os blocos quando eu pedir ("pode
-   gerar"); se nao houver nada que valha discutir, diga isso e ja gere.
-2. Este e um sistema de ajuste gradual: cada rodada do radar busca de novo e
-   traz dados novos. Por ciclo, troque NO MAXIMO 5 sementes e 3 dores; as que
-   ficam, mantenha na ordem, salvo motivo forte.
+1. Converse antes, e pense grande nessa conversa. ANTES dos blocos, faca um
+   diagnostico critico em poucas linhas: o que voce viu (desvios de publico,
+   sementes que rendem pouco) E, principalmente, os angulos de ataque ou as
+   mudancas de rumo que voce enxerga a partir da forma como o site vende —
+   indo alem de limpar os dados atuais. Olhe tambem os concorrentes: o que
+   eles publicam que eu nao cubro, em que se posicionam diferente de mim, e
+   onde ha espaco que nenhum deles ocupa. Espere eu responder. So entregue os
+   blocos quando eu pedir ("pode gerar"); se nao houver nada que valha
+   discutir, diga isso e ja gere.
+2. Na conversa, pense grande; nos blocos, mude aos poucos. O sistema aprende
+   por rodadas: cada uma busca de novo e traz dados novos. Por ciclo, troque NO
+   MAXIMO 5 sementes e 3 dores; as que ficam, mantenha na ordem, salvo motivo
+   forte. Um angulo novo entra como 2 ou 3 sementes de teste, e nao como a
+   troca da lista inteira.
 3. Classifique cada tema pela intencao real de quem busca, com o negocio COMO
    ESTA descrito abaixo, e nao por uma estrategia nova que tenhamos discutido.
 4. Mudanca maior de rumo nao vai nas listas de uma vez. Proponha nos blocos
