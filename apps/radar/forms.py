@@ -147,13 +147,20 @@ class ConfiguracaoForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if "artigos_por_rodada" in self.fields:
-            self.fields["artigos_por_rodada"].required = False
+        # Campos que vieram depois: formulario antigo (ou que nao os envia)
+        # fica com o padrao, e nao com erro.
+        for nome in ("artigos_por_rodada", "estrategia_de_temas"):
+            if nome in self.fields:
+                self.fields[nome].required = False
 
     def clean_artigos_por_rodada(self):
         # Vazio (ou formulario de antes do campo existir): o padrao.
         valor = self.cleaned_data.get("artigos_por_rodada")
         return 5 if valor in (None, "") else valor
+
+    def clean_estrategia_de_temas(self):
+        valor = self.cleaned_data.get("estrategia_de_temas")
+        return valor or ConfiguracaoDoRadar.Estrategia.AUTOMATICA
 
     def clean_teto_mensal_usd(self):
         from decimal import Decimal
