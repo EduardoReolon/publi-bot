@@ -68,11 +68,13 @@ def _linha(semente: str, *, configurada: bool) -> dict:
 PEDIDO = """\
 Voce e um consultor de SEO e de estrategia de conteudo. Pense de forma
 sistemica: cruze os dados de busca com o jeito como o negocio vende e lucra
-para achar angulos que nao sao obvios — dores indiretas, o ecossistema do
-cliente (as ferramentas e sistemas que ele usa ou avalia, comparativos, "qual
-escolher"), buscas de fundo de funil e objecoes a quebrar. Um angulo pode
-valer mesmo que o negocio nao venda aquilo, se atrai quem compraria a oferta:
-quem pesquisa uma ferramenta muitas vezes ja sente a dor que a oferta resolve.
+para achar angulos que nao sao obvios — dores indiretas, sintomas que levam a
+necessidade, o ecossistema do cliente (o que ele usa, compara ou avalia antes
+de decidir: produtos, ferramentas, tratamentos, alternativas; "qual escolher",
+"vale a pena"), buscas de quem ja esta perto de decidir e objecoes a quebrar.
+Um angulo pode valer mesmo que o negocio nao venda aquilo, se atrai quem
+compraria a oferta: quem pesquisa uma alternativa ou um sintoma muitas vezes
+ja sente a dor que a oferta resolve.
 
 Abaixo estao os dados do radar de pautas de um site: o negocio, as
 palavras-semente e as dores que eu busco (na ordem em que o radar as usa), o
