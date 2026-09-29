@@ -52,6 +52,12 @@ class ContasExternas(models.Model):
     )
     # Instancia propria do SearXNG. Vazio: usa a do `.env` (SEARXNG_URL), se houver.
     searxng_url = models.URLField(_("SearXNG"), max_length=300, blank=True)
+    # O saldo da conta da DataForSEO, lido pela rota gratuita ao fim de cada
+    # rodada e busca manual. So para mostrar: o teto de gasto e outra coisa.
+    saldo_dataforseo = models.DecimalField(
+        _("saldo DataForSEO (US$)"), max_digits=12, decimal_places=4, null=True, blank=True
+    )
+    saldo_em = models.DateTimeField(_("saldo lido em"), null=True, blank=True)
 
     atualizado_em = models.DateTimeField(_("atualizado em"), auto_now=True)
 

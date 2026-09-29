@@ -75,6 +75,47 @@ def _credenciais_dataforseo(contas: ContasExternas) -> tuple[str, str]:
     return contas.dataforseo_login, senha
 
 
+def saldo_dataforseo(contas: ContasExternas) -> Decimal | None:
+    """O saldo da conta, pela rota gratuita de dados do usuario.
+
+    None quando a resposta nao traz o saldo. Levanta `ProvedorIndisponivel` se
+    a conta recusar ou nao responder.
+    """
+    login, senha = _credenciais_dataforseo(contas)
+    try:
+        resposta = httpx.get(
+            f"{DATAFORSEO_BASE}/appendix/user_data", auth=(login, senha), timeout=15.0
+        )
+    except httpx.HTTPError as exc:
+        raise ProvedorIndisponivel(f"DataForSEO nao respondeu: {exc}") from exc
+    conferir_http_dataforseo(resposta)
+    tarefa = (resposta.json().get("tasks") or [{}])[0]
+    if tarefa.get("status_code") != 20000:
+        raise ProvedorIndisponivel(
+            f"{tarefa.get('status_code')} {tarefa.get('status_message', '')}"
+        )
+    saldo = ((tarefa.get("result") or [{}])[0].get("money") or {}).get("balance")
+    return Decimal(str(saldo)) if saldo is not None else None
+
+
+def atualizar_saldo_dataforseo() -> None:
+    """Le e guarda o saldo. Nunca falha: e so para a tela."""
+    from django.utils import timezone
+
+    contas = ContasExternas.carregar()
+    if not contas.tem_dataforseo:
+        return
+    try:
+        saldo = saldo_dataforseo(contas)
+    except ProvedorIndisponivel as exc:
+        logger.info("saldo da DataForSEO nao lido: %s", exc)
+        return
+    if saldo is not None:
+        ContasExternas.objects.filter(pk=contas.pk).update(
+            saldo_dataforseo=saldo, saldo_em=timezone.now()
+        )
+
+
 def conferir_http_dataforseo(resposta: httpx.Response) -> None:
     """Levanta com a mensagem que a DataForSEO mandou, e nao so o numero.
 

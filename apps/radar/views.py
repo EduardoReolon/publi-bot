@@ -328,6 +328,9 @@ def busca_manual(request: HttpRequest) -> HttpResponse:
     if not form.is_valid():
         return render(request, "radar/radar.html", _contexto(busca_form=form), status=400)
     busca = executar(form.cleaned_data["consulta"], com_volume=form.cleaned_data["com_volume"])
+    from apps.radar.provedores import atualizar_saldo_dataforseo
+
+    atualizar_saldo_dataforseo()
     if busca.erro:
         messages.error(request, _("A busca nao completou: %(erro)s") % {"erro": busca.erro})
     else:
@@ -444,6 +447,15 @@ def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
         % {"s": feito["sementes"], "d": feito["dores"], "t": feito["temas"], "n": feito["negocio"]},
     )
     return redirect(reverse("radar:radar") + "?ia=ruim#temas")
+
+
+@login_required
+@require_POST
+def atualizar_saldo(request: HttpRequest) -> HttpResponse:
+    from apps.radar.provedores import atualizar_saldo_dataforseo
+
+    atualizar_saldo_dataforseo()
+    return redirect("radar:radar")
 
 
 @login_required

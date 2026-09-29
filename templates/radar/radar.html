@@ -20,6 +20,17 @@
     <strong>US$ {{ resumo.gasto|floatformat:2 }}</strong>
     <div class="barra-de-uso {% if uso_do_teto > 80 %}alto{% endif %}"><div style="width: {{ uso_do_teto }}%"></div></div>
     <div class="ajuda">{% translate "teto" %}: US$ {{ resumo.teto }}</div>
+    {% if contas_obj.tem_dataforseo %}
+      <form method="post" action="{% url 'radar:atualizar_saldo' %}" class="ajuda" style="margin:0">
+        {% csrf_token %}
+        {% if contas_obj.saldo_dataforseo is not None %}
+          <span title="{% blocktranslate with em=contas_obj.saldo_em|date:'d/m H:i' %}lido em {{ em }}{% endblocktranslate %}">{% translate "saldo DataForSEO" %}: US$ {{ contas_obj.saldo_dataforseo|floatformat:2 }}</span>
+        {% else %}
+          {% translate "saldo DataForSEO: ainda nao lido" %}
+        {% endif %}
+        <button type="submit" class="botao discreto pequeno" style="padding:0 .3rem" title="{% translate 'Ler o saldo agora (gratuito)' %}">↻</button>
+      </form>
+    {% endif %}
   </div>
   <div class="cartao">
     <label>{% translate "Intensidade" %}</label>

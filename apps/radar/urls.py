@@ -16,6 +16,7 @@ urlpatterns = [
     path("artigos/buscar/", views.buscar_artigos_agora, name="buscar_artigos_agora"),
     path("contas/", views.salvar_contas, name="salvar_contas"),
     path("rodar/", views.rodar_agora, name="rodar_agora"),
+    path("saldo/", views.atualizar_saldo, name="atualizar_saldo"),
     path("buscar/", views.busca_manual, name="busca_manual"),
     path("buscas/<uuid:pk>/decidir/", views.decidir_busca, name="decidir_busca"),
     path("grupos/<uuid:pk>/pauta/", views.grupo_para_pauta, name="grupo_para_pauta"),
