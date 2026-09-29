@@ -14,6 +14,7 @@ class ConfiguracaoForm(forms.ModelForm):
         fields = [
             "intensidade",
             "sementes",
+            "dores",
             "usar_serp",
             "usar_volume",
             "usar_perguntas_do_site",
@@ -41,14 +42,18 @@ class ConfiguracaoForm(forms.ModelForm):
         ]
         widgets = {
             "regioes": forms.HiddenInput(),
-            "sementes": forms.Textarea(attrs={"rows": 5}),
+            "sementes": forms.Textarea(attrs={"rows": 6}),
+            "dores": forms.Textarea(attrs={"rows": 6}),
             "concorrentes": forms.Textarea(attrs={"rows": 4}),
         }
 
     # Os campos em blocos, na ordem em que a pessoa pensa: o que buscar, onde,
     # de que fontes, contra quem, com que provedor, e quanto gastar.
     GRUPOS = [
-        (_("Ritmo e temas"), ["intensidade", "sementes"]),
+        (_("Ritmo"), ["intensidade"]),
+        # Sementes e dores juntas: as duas viram busca no Google, cada rodada
+        # pega algumas de cada (as nunca buscadas primeiro, na ordem da lista).
+        (_("O que o radar busca"), ["sementes", "dores"]),
         (_("Onde"), ["regioes", "codigo_de_local", "codigo_de_idioma"]),
         (
             _("Fontes de demanda"),

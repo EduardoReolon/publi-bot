@@ -46,7 +46,7 @@
         {% csrf_token %}
         <select name="categoria" style="width:auto">
           {% for categoria in categorias %}
-            <option value="{{ categoria.pk }}" {% if candidato.tipo == 'artigo' %}{% if categoria.source_class == 'cientifico' %}selected{% endif %}{% elif categoria.source_class == 'veiculo' %}selected{% endif %}>{{ categoria.name }}</option>
+            <option value="{{ categoria.pk }}" {% if categoria.source_class == candidato.natureza_padrao %}selected{% endif %}>{{ categoria.name }}</option>
           {% endfor %}
         </select>
         <button type="submit" name="decisao" value="aprovar">{% translate "Aprovar e enviar para a curadoria" %}</button>

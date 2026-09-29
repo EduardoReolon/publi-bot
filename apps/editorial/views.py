@@ -117,7 +117,18 @@ def negocio(request: HttpRequest) -> HttpResponse:
             return redirect(reverse("editorial:negocio") + "#passo-2")
         inicial = {k: v for k, v in lido.items() if k in {"tema", "publico", "oferta"}}
         if "dores" in lido:
-            inicial["dores"] = primeiros_passos.unir(config.dores, lido["dores"])
+            # As dores vivem no Radar, junto das sementes: somam ja, sem repetir,
+            # e a pessoa as ve (e edita) la.
+            antes = len(config.lista_de_dores)
+            config.dores = primeiros_passos.unir(config.dores, lido["dores"])
+            config.save(update_fields=["dores"])
+            novas = len(config.lista_de_dores) - antes
+            if novas:
+                messages.info(
+                    request,
+                    _("%(n)s dor(es) somada(s) em Radar > Configuracao, junto das sementes.")
+                    % {"n": novas},
+                )
         if "frentes" in lido:
             inicial["frentes"] = primeiros_passos.unir(perfil.frentes, lido["frentes"])
         form = PerfilDoNegocioForm(instance=perfil, config=config, initial=inicial)
@@ -163,6 +174,7 @@ def negocio(request: HttpRequest) -> HttpResponse:
             "valores": valores,
             "colado": colado,
             "sementes": config.lista_de_sementes,
+            "dores": config.lista_de_dores,
             "regioes": [nome for _codigo, nome in config.locais() if nome],
             "concorrentes": config.lista_de_concorrentes,
             "pedido_do_negocio": primeiros_passos.pedido_do_negocio(perfil, config),

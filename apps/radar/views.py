@@ -61,6 +61,7 @@ def _contexto(config=None, contas=None, busca_form=None, request=None) -> dict:
             buscador_efetivo(config_obj, contas_obj)
         ).label,
         "busca_form": busca_form or BuscaManualForm(),
+        "proxima_rodada": _proxima_rodada(config_obj),
         "resumo": resumo,
         "grupos": _pagina(
             GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO)
@@ -140,6 +141,17 @@ def radar(request: HttpRequest) -> HttpResponse:
             "mede_dificuldade": bool(dificuldades),
         },
     )
+
+
+def _proxima_rodada(config) -> dict:
+    """O que a proxima rodada vai buscar, pela mesma escolha que a rodada usa."""
+    from apps.radar.coleta import _da_vez, _sementes_da_vez, plano_de
+
+    plano = plano_de(config)
+    return {
+        "sementes": _sementes_da_vez(config, plano.buscas),
+        "dores": _da_vez(config.lista_de_dores, plano.dores, chave="dores"),
+    }
 
 
 @login_required

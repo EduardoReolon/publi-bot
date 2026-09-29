@@ -68,7 +68,6 @@
     {% include "_campo.html" with campo=form.tema %}
     {% include "_campo.html" with campo=form.publico %}
     {% include "_campo.html" with campo=form.oferta %}
-    {% include "_campo.html" with campo=form.dores %}
     {% include "_campo.html" with campo=form.frentes %}
     <div class="acoes"><button type="submit">{% translate "Salvar" %}</button></div>
   </form>
@@ -123,6 +122,11 @@
 <section class="secao">
   <h2>{% translate "Onde mais o negocio e descrito" %}</h2>
   <ul>
+    <li>
+      <strong>{% translate "Dores do publico" %}</strong> ({{ dores|length }}) —
+      {% translate "o problema nas palavras de quem sente. Viram busca, como as sementes, e alimentam as Oportunidades." %}
+      <a href="{% url 'radar:configuracao' %}">{% translate "Radar › Configuracao" %}</a>
+    </li>
     <li>
       <strong>{% translate "Palavras-semente" %}</strong> ({{ sementes|length }}) —
       {% translate "por onde o radar comeca a procurar. Tambem entram no 'perto do tema do site'." %}

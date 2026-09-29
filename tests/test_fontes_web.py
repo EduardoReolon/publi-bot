@@ -262,3 +262,22 @@ def test_tela_recusa_plataforma_aberta(ambiente):  # noqa: F811
     )
 
     assert not CaminhoConfiavel.objects.exists()
+
+
+@pytest.mark.parametrize(
+    ("tipo", "url", "esperado"),
+    [
+        ("video", "https://www.youtube.com/watch?v=x", "video"),
+        ("artigo", "https://doi.org/10.1/x", "cientifico"),
+        ("pagina", "https://www.gov.br/receita/pt-br/x", "normativo"),
+        ("pagina", "https://www.reddit.com/r/x", "comunidade"),
+        ("pagina", "https://exame.com/negocios/x", "veiculo"),
+    ],
+)
+def test_natureza_sugerida_segue_o_tipo_e_o_dominio(tipo, url, esperado):
+    """Antes, tudo que nao era artigo vinha como veiculo de referencia, video
+    inclusive; e o perfil da natureza decide como a fonte e citada."""
+    from apps.knowledge.fontes_web import natureza_sugerida
+    from apps.knowledge.models import CandidatoDeFonte
+
+    assert natureza_sugerida(CandidatoDeFonte(tipo=tipo, url=url)) == esperado

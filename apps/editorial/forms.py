@@ -127,18 +127,8 @@ class PerfilEditorialForm(forms.ModelForm):
 
 
 class PerfilDoNegocioForm(forms.ModelForm):
-    """O perfil do negocio, e as dores do publico (guardadas no radar)."""
-
-    dores = forms.CharField(
-        label=_("Dores do publico"),
-        required=False,
-        widget=forms.Textarea(attrs={"rows": 6}),
-        help_text=_(
-            "Uma por linha: o problema nas palavras de quem sente, nao o seu servico. "
-            "Quem busca 'consultoria de custos' ja sabe o que quer; quem busca 'obra "
-            "estourou o orcamento' ainda nao."
-        ),
-    )
+    """O perfil do negocio. As dores ficam no Radar, junto das sementes: as
+    duas viram busca."""
 
     class Meta:
         model = PerfilDoNegocio
@@ -150,16 +140,6 @@ class PerfilDoNegocioForm(forms.ModelForm):
 
     def __init__(self, *args, config=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self._config = config
-        if config is not None:
-            self.fields["dores"].initial = config.dores
-
-    def save(self, commit: bool = True):
-        perfil = super().save(commit=commit)
-        if commit and self._config is not None:
-            self._config.dores = self.cleaned_data.get("dores", "")
-            self._config.save(update_fields=["dores"])
-        return perfil
 
 
 class BasicoDoNegocioForm(forms.ModelForm):

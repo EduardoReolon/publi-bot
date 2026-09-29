@@ -16,6 +16,18 @@
           <legend>{{ titulo }}</legend>
           {% for campo in campos %}
             {% if campo.name == "regioes" %}{% include "radar/_regioes.html" %}{% else %}{% include "_campo.html" %}{% endif %}
+            {% if campo.name == "dores" %}
+              <div class="ajuda">
+                {% blocktranslate trimmed %}
+                  Cada rodada busca algumas sementes e algumas dores: primeiro as que
+                  nunca foram buscadas, na ordem da lista; depois, as buscadas ha mais
+                  tempo. Quer testar uma primeiro? Ponha no topo.
+                {% endblocktranslate %}
+                <br><strong>{% translate "Proxima rodada busca:" %}</strong>
+                {{ proxima_rodada.sementes|join:"; "|default:"-" }}
+                {% if proxima_rodada.dores %}<br><strong>{% translate "e as dores:" %}</strong> {{ proxima_rodada.dores|join:"; " }}{% endif %}
+              </div>
+            {% endif %}
           {% endfor %}
         </fieldset>
       {% endfor %}

@@ -690,17 +690,22 @@ AVISO_DE_CONFIANCA = gettext_lazy(
 @login_required
 def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     """Candidatos a fonte achados na web, esperando curadoria."""
+    from apps.knowledge.fontes_web import natureza_sugerida
     from apps.knowledge.models import CaminhoConfiavel, CandidatoDeFonte
 
-    pendentes = CandidatoDeFonte.objects.filter(
-        situacao=CandidatoDeFonte.Situacao.PENDENTE
-    ).select_related("pauta")
+    pendentes = list(
+        CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE).select_related(
+            "pauta"
+        )[:100]
+    )
+    for candidato in pendentes:
+        candidato.natureza_padrao = natureza_sugerida(candidato)
     return render(
         request,
         "knowledge/fontes_sugeridas.html",
         {
             "aba": "documentos",
-            "pendentes": pendentes[:100],
+            "pendentes": pendentes,
             "aguardando_audio": CandidatoDeFonte.objects.filter(
                 situacao=CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO
             ),

@@ -1,6 +1,6 @@
 """Perfil do negocio: a referencia do que o PubliBot mede.
 
-* a tela salva tema, publico, oferta, valores e as dores (guardadas no radar);
+* a tela salva tema, publico, oferta e valores (as dores ficam no Radar);
 * o publico vira o padrao do planejamento; o tema e a oferta, a referencia do
   "perto do tema do site"; a oferta, a da chamada.
 """
@@ -15,9 +15,7 @@ from tests.test_interface import ambiente  # noqa: F401
 
 
 @pytest.mark.django_db
-def test_tela_salva_o_negocio_e_as_dores(ambiente):  # noqa: F811
-    from apps.radar.models import ConfiguracaoDoRadar
-
+def test_tela_salva_o_negocio(ambiente):  # noqa: F811
     _, _, client = ambiente
     url = reverse("editorial:negocio", urlconf="core.urls_tenants")
     assert "Como o PubliBot usa cada informacao" in client.get(url).content.decode()
@@ -33,7 +31,6 @@ def test_tela_salva_o_negocio_e_as_dores(ambiente):  # noqa: F811
             "tema": "Custos de obra",
             "publico": "Donos de obra sem formacao tecnica",
             "oferta": "Engenheiro confere suas notas pelo WhatsApp",
-            "dores": "obra estourou o orcamento\npaguei caro no cimento",
         },
     )
     assert resposta.status_code == 302
@@ -49,10 +46,6 @@ def test_tela_salva_o_negocio_e_as_dores(ambiente):  # noqa: F811
     )
     perfil = PerfilDoNegocio.carregar()
     assert perfil.tema == "Custos de obra" and perfil.valor_da_conversao == 150
-    assert ConfiguracaoDoRadar.carregar().lista_de_dores == [
-        "obra estourou o orcamento",
-        "paguei caro no cimento",
-    ]
 
 
 @pytest.mark.django_db

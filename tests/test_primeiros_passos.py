@@ -70,8 +70,11 @@ def test_pedido_1_preenche_sem_salvar(ambiente):  # noqa: F811
     assert resposta.status_code == 200
     assert "Nada foi salvo ainda" in html
     assert "IA e dados para pequenas e medias empresas" in html
-    # Dores somam as existentes, sem repetir.
-    assert "clientes pararam de comprar\nnao sei quem compra mais" in html
+    # Dores vivem no Radar: somam as existentes ja, sem repetir.
+    assert ConfiguracaoDoRadar.carregar().lista_de_dores == [
+        "clientes pararam de comprar",
+        "nao sei quem compra mais",
+    ]
     assert PerfilDoNegocio.carregar().tema == ""
 
 

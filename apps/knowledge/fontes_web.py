@@ -66,6 +66,31 @@ def normalizar_caminho(endereco: str) -> str:
     return f"{anfitriao}{caminho}"
 
 
+COMUNIDADES = ("reddit.com", "quora.com", "stackexchange.com", "stackoverflow.com")
+SUFIXOS_OFICIAIS = (".gov.br", ".gov", ".jus.br", ".leg.br", ".mil.br", ".mp.br", ".def.br")
+
+
+def natureza_sugerida(candidato) -> str:
+    """A natureza que a tela pre-seleciona ao aprovar. A pessoa pode trocar.
+
+    Antes era "veiculo" para tudo que nao fosse artigo, video inclusive — e o
+    perfil da natureza decide como a fonte e citada e quanto tempo vale.
+    """
+    from apps.knowledge.models import CandidatoDeFonte
+
+    if candidato.tipo == CandidatoDeFonte.Tipo.ARTIGO:
+        return "cientifico"
+    if candidato.tipo == CandidatoDeFonte.Tipo.VIDEO:
+        return "video"
+    anfitriao = (candidato.dominio or urlparse(candidato.url).hostname or "").lower()
+    anfitriao = anfitriao.removeprefix("www.")
+    if anfitriao.endswith(SUFIXOS_OFICIAIS):
+        return "normativo"
+    if any(anfitriao == c or anfitriao.endswith(f".{c}") for c in COMUNIDADES):
+        return "comunidade"
+    return "veiculo"
+
+
 def _plataforma(anfitriao: str) -> str | None:
     for plataforma in PLATAFORMAS_ABERTAS:
         if anfitriao == plataforma or anfitriao.endswith(f".{plataforma}"):
