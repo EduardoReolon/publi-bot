@@ -24,6 +24,7 @@ class ConfiguracaoForm(forms.ModelForm):
             "buscar_fontes",
             "fontes_por_pauta",
             "artigos_cientificos",
+            "sementes_cientificas",
             "artigos_por_rodada",
             "procurar_links_quebrados",
             "idade_para_vigiar",
@@ -44,6 +45,7 @@ class ConfiguracaoForm(forms.ModelForm):
             "regioes": forms.HiddenInput(),
             "sementes": forms.Textarea(attrs={"rows": 6}),
             "dores": forms.Textarea(attrs={"rows": 6}),
+            "sementes_cientificas": forms.Textarea(attrs={"rows": 5}),
             "concorrentes": forms.Textarea(attrs={"rows": 4}),
         }
 
@@ -72,10 +74,12 @@ class ConfiguracaoForm(forms.ModelForm):
                 "fontes_pelo_radar",
                 "buscar_fontes",
                 "fontes_por_pauta",
-                "artigos_cientificos",
-                "artigos_por_rodada",
                 "procurar_links_quebrados",
             ],
+        ),
+        (
+            _("Artigos cientificos"),
+            ["artigos_cientificos", "sementes_cientificas", "artigos_por_rodada"],
         ),
         (_("Artigos publicados"), ["idade_para_vigiar"]),
         (

@@ -178,9 +178,65 @@ def _proxima_rodada(config) -> dict:
 
 @login_required
 def configuracao(request: HttpRequest) -> HttpResponse:
+    from apps.knowledge.academicos import pedido_das_sementes_cientificas
+
     return render(
-        request, "radar/configuracao.html", {**_contexto(request=request), "subaba": "configuracao"}
+        request,
+        "radar/configuracao.html",
+        {
+            **_contexto(request=request),
+            "subaba": "configuracao",
+            "pedido_cientifico": pedido_das_sementes_cientificas(),
+            "busca_de_artigos": request.session.pop("busca_de_artigos", None),
+        },
     )
+
+
+@login_required
+@require_POST
+def colar_sementes_cientificas(request: HttpRequest) -> HttpResponse:
+    """A resposta da outra IA troca a lista de sementes cientificas."""
+    from apps.knowledge.academicos import ler_sementes_cientificas
+
+    sementes = ler_sementes_cientificas(request.POST.get("resposta", ""))
+    if not sementes:
+        messages.error(request, _("Nao achei o bloco CIENTIFICAS na resposta colada."))
+    else:
+        config = ConfiguracaoDoRadar.carregar()
+        config.sementes_cientificas = "\n".join(sementes)
+        config.save(update_fields=["sementes_cientificas"])
+        messages.success(
+            request,
+            _(
+                "%(n)s semente(s) cientifica(s) salva(s). Use 'Buscar artigos agora' para "
+                "ver o que cada uma traz."
+            )
+            % {"n": len(sementes)},
+        )
+    return redirect(reverse("radar:configuracao") + "#artigos-cientificos")
+
+
+@login_required
+@require_POST
+def buscar_artigos_agora(request: HttpRequest) -> HttpResponse:
+    """Busca as sementes cientificas no OpenAlex agora, sem esperar a rodada."""
+    from apps.knowledge.academicos import (
+        SEMENTES_POR_BUSCA_MANUAL,
+        BaseIndisponivel,
+        buscar_por_sementes,
+    )
+
+    sementes = ConfiguracaoDoRadar.carregar().lista_de_sementes_cientificas
+    if not sementes:
+        messages.error(request, _("Cadastre as sementes cientificas antes."))
+        return redirect(reverse("radar:configuracao") + "#artigos-cientificos")
+    try:
+        relatorio = buscar_por_sementes(sementes[:SEMENTES_POR_BUSCA_MANUAL])
+    except BaseIndisponivel as exc:
+        messages.error(request, str(exc))
+        return redirect(reverse("radar:configuracao") + "#artigos-cientificos")
+    request.session["busca_de_artigos"] = relatorio
+    return redirect(reverse("radar:configuracao") + "#artigos-cientificos")
 
 
 @login_required

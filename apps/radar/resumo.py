@@ -90,9 +90,11 @@ BONS:
 RUINS:
 - t-xxxxxx: motivo em ate 12 palavras
 COMENTARIOS:
-o que mais importar, curto: quais concorrentes confirmar, recusar ou tratar
-como parceiro (e por que), um padrao que voce veja nos dados, e perguntas que
-voce tenha para mim.
+curto. Para cada dominio em "Concorrentes", uma linha: concorrente de NEGOCIO
+(vende o que substitui a minha oferta: confirmar no radar), concorrente de
+CONTEUDO (disputa as buscas, vende outra coisa), possivel PARCEIRO (mesmo
+publico sem competir) ou IRRELEVANTE (recusar). Depois, um padrao que voce veja
+nos dados, e perguntas que voce tenha para mim.
 FIM
 
 Regras:

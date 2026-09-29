@@ -153,6 +153,16 @@ class ConfiguracaoDoRadar(models.Model):
             "buscas que o radar ja paga. Tudo espera curadoria em Fontes sugeridas."
         ),
     )
+    sementes_cientificas = models.TextField(
+        _("sementes cientificas"),
+        blank=True,
+        help_text=_(
+            "Uma por linha: como o assunto aparece em artigo academico — nome de "
+            "metodo, estrategia, teoria —, de preferencia em ingles. Sao as buscas do "
+            "OpenAlex; as sementes comerciais trariam lixo. Use o pedido ao lado para "
+            "uma IA traduzir o seu negocio para o vocabulario academico."
+        ),
+    )
     artigos_por_rodada = models.PositiveSmallIntegerField(
         _("artigos cientificos por rodada"), default=5, validators=[MaxValueValidator(30)]
     )
@@ -324,6 +334,10 @@ class ConfiguracaoDoRadar(models.Model):
     @property
     def lista_de_sementes(self) -> list[str]:
         return [s.strip() for s in self.sementes.splitlines() if s.strip()]
+
+    @property
+    def lista_de_sementes_cientificas(self) -> list[str]:
+        return [s.strip() for s in self.sementes_cientificas.splitlines() if s.strip()]
 
     @property
     def lista_de_dores(self) -> list[str]:

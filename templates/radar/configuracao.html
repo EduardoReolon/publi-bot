@@ -37,6 +37,48 @@
   </section>
 
   <div>
+    <section class="secao" id="artigos-cientificos">
+      <h2>{% translate "Sementes cientificas" %}</h2>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Artigo academico fala de outro jeito: "customer retention", e nao "cliente
+          sumiu". Por isso a busca de artigos (OpenAlex, gratuita) usa sementes
+          proprias, e nao as do Google. O pedido abaixo leva o negocio, as sementes, as
+          dores e os temas que o radar achou (os bons primeiro), e pede a uma IA os
+          termos academicos. Melhor depois de uma ou duas rodadas ajustadas: ai ela
+          sabe onde focar. Cada rodada busca algumas; o botao busca ate 15 agora.
+        {% endblocktranslate %}
+      </p>
+      <div class="acoes">
+        <button type="button" class="botao secundario" data-copiar="pedido-cientifico">{% translate "Copiar pedido" %}</button>
+      </div>
+      <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-cientifico" readonly rows="12" style="width:100%">{{ pedido_cientifico }}</textarea></details>
+      <form method="post" action="{% url 'radar:sementes_cientificas' %}" style="margin-top:.6rem">
+        {% csrf_token %}
+        <label for="resposta-cientifica">{% translate "Cole aqui a resposta (troca a lista)" %}</label>
+        <textarea id="resposta-cientifica" name="resposta" rows="4" style="width:100%" required></textarea>
+        <div class="acoes"><button type="submit" class="botao secundario">{% translate "Salvar sementes cientificas" %}</button></div>
+      </form>
+      {% if config_obj.lista_de_sementes_cientificas %}
+        <p><strong>{% translate "Atuais:" %}</strong> {{ config_obj.lista_de_sementes_cientificas|join:"; " }}</p>
+        <form method="post" action="{% url 'radar:buscar_artigos_agora' %}" class="acoes">
+          {% csrf_token %}<button type="submit" class="botao">{% translate "Buscar artigos agora" %}</button>
+        </form>
+      {% endif %}
+      {% if busca_de_artigos %}
+        <table>
+          <thead><tr><th>{% translate "Semente" %}</th><th>{% translate "Achados" %}</th><th>{% translate "Novos na fila" %}</th></tr></thead>
+          <tbody>
+            {% for linha in busca_de_artigos %}
+              <tr><td>{{ linha.semente }}</td><td>{{ linha.achados }}</td><td>{{ linha.novos }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="ajuda">{% translate "Achados zero: a semente nao aparece na literatura com esse nome; troque. Os novos esperam em" %}
+          <a href="{% url 'knowledge:fontes_sugeridas' %}">{% translate "Documentos › Fontes sugeridas" %}</a>.</p>
+      {% endif %}
+    </section>
+
     <section class="secao" id="sementes-sugeridas">
       <h2>{% translate "Sementes sugeridas" %}</h2>
     <p class="pre-visualizacao">

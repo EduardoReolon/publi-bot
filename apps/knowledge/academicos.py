@@ -263,33 +263,135 @@ def buscar_para_pauta(pauta, *, limite: int = 5) -> list:
     return novos
 
 
-def sugerir_pelo_radar(rodada, *, cota: int) -> int:
-    """Artigos para os temas da rodada que o acervo ainda nao cobre."""
-    from apps.radar.fontes import _coberta
-    from apps.radar.models import ResultadoOrganico
+SEMENTES_POR_RODADA = 3
+POR_SEMENTE = 3
+SEMENTES_POR_BUSCA_MANUAL = 15
 
-    cota = min(cota, MAXIMO_DE_PENDENTES - _pendentes())
-    if cota <= 0:
-        return 0
-    consultas = list(
-        dict.fromkeys(
-            ResultadoOrganico.objects.filter(rodada=rodada)
-            .order_by("posicao")
-            .values_list("consulta", flat=True)
-        )
-    )
-    criados = 0
-    for consulta in consultas:
-        if criados >= cota:
+
+def buscar_por_sementes(
+    sementes: list[str], *, cota: int | None = None, por_semente: int = POR_SEMENTE
+) -> list[dict]:
+    """Busca cada semente cientifica no OpenAlex e registra os artigos novos.
+
+    Devolve, por semente, quantos o OpenAlex achou e quantos entraram na fila
+    (os ja conhecidos ficam de fora): e o que diz se a semente presta.
+    """
+    relatorio, criados = [], 0
+    for semente in sementes:
+        if (cota is not None and criados >= cota) or _pendentes() >= MAXIMO_DE_PENDENTES:
             break
-        if _coberta(consulta):
-            continue
-        for trabalho in buscar_openalex(consulta, quantos=2):
-            if criados >= cota:
+        trabalhos = buscar_openalex(semente, quantos=por_semente * 2)
+        novos = 0
+        for trabalho in trabalhos:
+            if novos >= por_semente or (cota is not None and criados >= cota):
                 break
-            if registrar(trabalho, consulta=consulta, origem=CandidatoDeFonte.Origem.OPENALEX):
+            if registrar(trabalho, consulta=semente, origem=CandidatoDeFonte.Origem.OPENALEX):
+                novos += 1
                 criados += 1
-    return criados
+        relatorio.append({"semente": semente, "achados": len(trabalhos), "novos": novos})
+    return relatorio
+
+
+def sugerir_pelo_radar(rodada, *, cota: int) -> int:
+    """Artigos pelas sementes cientificas da vez.
+
+    Nao pelas buscas do Google da rodada: artigo academico fala de outro jeito
+    ("customer retention strategies", e nao "cliente sumiu depois da primeira
+    compra"), e a frase comercial trazia pouco ou lixo. Sem sementes
+    cientificas, nada e buscado.
+    """
+    from apps.radar.coleta import _da_vez
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    lista = ConfiguracaoDoRadar.carregar().lista_de_sementes_cientificas
+    cota = min(cota, MAXIMO_DE_PENDENTES - _pendentes())
+    if not lista or cota <= 0:
+        return 0
+    sementes = _da_vez(lista, SEMENTES_POR_RODADA, chave="sementes_cientificas")
+    relatorio = buscar_por_sementes(sementes, cota=cota)
+    # Registrado na rodada para a rotacao: a proxima pega as seguintes.
+    rodada.resumo["sementes_cientificas"] = [linha["semente"] for linha in relatorio]
+    return sum(linha["novos"] for linha in relatorio)
+
+
+ROTULOS_CIENTIFICOS = ["CIENTIFICAS", "COMENTARIOS"]
+
+
+def pedido_das_sementes_cientificas() -> str:
+    """O pedido para uma IA traduzir o negocio para o vocabulario academico."""
+    from apps.editorial.models import perfil_do_negocio
+    from apps.radar.models import ConfiguracaoDoRadar, GrupoDeDemanda
+
+    config = ConfiguracaoDoRadar.carregar()
+    perfil = perfil_do_negocio()
+    partes = [
+        """\
+Quero achar ARTIGOS CIENTIFICOS que sustentem os textos do meu site. Os artigos
+academicos quase nunca usam as palavras de quem vende ou de quem compra: um
+metodo para reter clientes aparece como "customer retention" ou "churn
+prediction", e nao como "cliente sumiu". Por isso preciso de sementes proprias
+para a busca academica (OpenAlex), separadas das sementes do Google.
+
+Antes de responder, pesquise: pense em como a literatura chama cada problema
+abaixo — nomes de metodos, estrategias, modelos, teorias e construtos, e as
+areas em que isso e estudado. Dê prioridade aos temas com mais busca e aos
+marcados como bons. Evite termos genericos ("gestao", "tecnologia") e nomes de
+produto.
+
+Responda SO nos blocos abaixo e termine com FIM:
+
+CIENTIFICAS:
+- de 10 a 20 termos de busca academica, de 2 a 5 palavras cada, como
+  apareceriam no titulo ou no resumo de um artigo. A maioria em ingles (onde
+  esta a maior parte da literatura), alguns em portugues. Os mais importantes
+  primeiro.
+COMENTARIOS:
+curto: areas de pesquisa e autores ou revistas de referencia, se souber.
+FIM
+""",
+        "## O negocio",
+    ]
+    if perfil is not None:
+        partes += [
+            f"Tema: {perfil.tema or '-'}",
+            f"Publico: {perfil.publico or '-'}",
+            f"Oferta: {perfil.oferta or '-'}",
+        ]
+        frentes = [f.strip() for f in perfil.frentes.splitlines() if f.strip()]
+        if frentes:
+            partes.append("Outras frentes: " + "; ".join(frentes))
+    partes.append("\n## Sementes do Google (comerciais)")
+    partes += [f"- {s}" for s in config.lista_de_sementes] or ["(nenhuma)"]
+    partes.append("\n## Dores do publico")
+    partes += [f"- {d}" for d in config.lista_de_dores] or ["(nenhuma)"]
+    partes.append("\n## Temas que o radar achou (buscas/mes; os bons primeiro)")
+    temas = GrupoDeDemanda.objects.exclude(situacao=GrupoDeDemanda.Situacao.DESCARTADO).exclude(
+        avaliacao_ia="ruim"
+    )
+    ordenados = sorted(
+        temas.order_by("-nota")[:60],
+        key=lambda g: (g.avaliacao_ia != "boa", -(g.volume_total or 0)),
+    )[:20]
+    partes += [
+        f"- {g.rotulo} ({g.volume_total or '—'})" + (" [bom]" if g.avaliacao_ia == "boa" else "")
+        for g in ordenados
+    ] or ["(nenhum ainda: rode o radar antes, para a IA saber onde focar)"]
+    atuais = config.lista_de_sementes_cientificas
+    if atuais:
+        partes.append("\n## Sementes cientificas que ja uso (mantenha as boas)")
+        partes += [f"- {s}" for s in atuais]
+    return "\n".join(partes)
+
+
+def ler_sementes_cientificas(resposta: str) -> list[str]:
+    from core.resposta_ia import itens, ler_blocos
+
+    vistos, saida = set(), []
+    for termo in itens(ler_blocos(resposta, ROTULOS_CIENTIFICOS).get("CIENTIFICAS", "")):
+        if termo.lower() not in vistos:
+            vistos.add(termo.lower())
+            saida.append(termo[:200])
+    return saida
 
 
 def _url_do_scholar(url: str) -> str:

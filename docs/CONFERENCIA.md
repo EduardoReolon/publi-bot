@@ -72,10 +72,15 @@ imagem têm um comando próprio: `manage.py conferir_worker`.
 - [ ] **Fontes sugeridas.** Abra *Ver o texto capturado* em duas ou três
       páginas. Se aparecer menu, rodapé, propaganda ou comentário no meio,
       recuse (ou recuse a área do site).
-- [ ] **Artigos científicos.** Com a chave do OpenAlex cadastrada, rode o
-      radar. Os artigos sugeridos (selo "artigo científico") são do seu tema?
-      Aprove um com "PDF aberto" e um sem: o primeiro vai para a curadoria, o
-      segundo para *Artigos aguardando o PDF*.
+- [ ] **Ajustar com outra IA.** Em *Radar › Demanda e pautas*, copie o pedido
+      de "Ajustar com outra IA", cole num modelo grande e cole a resposta de
+      volta. A prévia mostra as sementes e dores que entram e saem e os temas
+      etiquetados; aplique e filtre "ruins" para descartar.
+- [ ] **Artigos científicos.** Em *Radar › Configuração › Sementes
+      científicas*, copie o pedido, cole a resposta e clique em *Buscar
+      artigos agora*. A tabela diz quantos artigos cada semente achou; os
+      novos estão em *Fontes sugeridas*. Aprove um com "PDF aberto" e um sem:
+      o primeiro vai para a curadoria, o segundo para *Artigos aguardando o PDF*.
 - [ ] **Artigo.** Gere um pelo caminho de sempre e um por *Artigo com outra
       IA* (numa pauta com o selo "vale o modelo grande", se houver). Na
       revisão, olhe:

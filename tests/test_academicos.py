@@ -199,21 +199,68 @@ def test_enviar_o_pdf_pela_tela(ambiente, bases_academicas):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_rodada_sugere_artigos_so_para_tema_sem_cobertura(radar, bases_academicas, monkeypatch):  # noqa: F811
-    from apps.radar import fontes
-    from apps.radar.models import ResultadoOrganico, RodadaDoRadar
+def test_rodada_busca_artigos_pelas_sementes_cientificas(radar, bases_academicas):  # noqa: F811
+    """Nao pelas buscas do Google: artigo academico usa outro vocabulario."""
+    from apps.radar.models import ConfiguracaoDoRadar, ResultadoOrganico, RodadaDoRadar
 
-    rodada = RodadaDoRadar.objects.create(origem="manual")
-    for consulta in ("rfm", "coberto"):
-        ResultadoOrganico.objects.create(
-            rodada=rodada, consulta=consulta, url=f"https://x.com/{consulta}", posicao=1
-        )
-    monkeypatch.setattr(fontes, "_coberta", lambda consulta: consulta == "coberto")
+    rodada = RodadaDoRadar.objects.create(origem="manual", resumo={})
+    ResultadoOrganico.objects.create(
+        rodada=rodada, consulta="cliente sumiu", url="https://x.com/a", posicao=1
+    )
+    assert academicos.sugerir_pelo_radar(rodada, cota=5) == 0  # sem sementes cientificas
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.sementes_cientificas = "rfm analysis\ncustomer churn"
+    config.save()
+
     assert academicos.sugerir_pelo_radar(rodada, cota=1) == 1
-    assert CandidatoDeFonte.objects.get().consulta == "rfm"
+    assert CandidatoDeFonte.objects.get().consulta == "rfm analysis"
+    assert rodada.resumo["sementes_cientificas"] == ["rfm analysis"]
+
+
+@pytest.mark.django_db
+def test_pedido_e_resposta_das_sementes_cientificas(radar):  # noqa: F811
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.sementes = "cliente sumiu"
+    config.save()
+    pedido = academicos.pedido_das_sementes_cientificas()
+    assert "CIENTIFICAS:" in pedido and "- cliente sumiu" in pedido
+
+    resposta = (
+        "Claro!\n**CIENTIFICAS:**\n- customer retention\n- churn prediction\n"
+        "- customer retention\nFIM"
+    )
+    assert academicos.ler_sementes_cientificas(resposta) == [
+        "customer retention",
+        "churn prediction",
+    ]
 
 
 def _pauta():
     from apps.content.models import Topic
 
     return Topic.objects.create(title="Analise RFM", target_keyword="analise rfm")
+
+
+@pytest.mark.django_db
+def test_tela_salva_as_sementes_e_busca_agora(ambiente, bases_academicas):  # noqa: F811
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    _, _, client = ambiente
+    client.post(
+        reverse("radar:sementes_cientificas", urlconf="core.urls_tenants"),
+        {"resposta": "CIENTIFICAS:\n- rfm analysis\n- customer churn\nFIM"},
+    )
+    assert ConfiguracaoDoRadar.carregar().lista_de_sementes_cientificas == [
+        "rfm analysis",
+        "customer churn",
+    ]
+
+    client.post(reverse("radar:buscar_artigos_agora", urlconf="core.urls_tenants"))
+    pagina = client.get(reverse("radar:configuracao", urlconf="core.urls_tenants"))
+
+    html = pagina.content.decode()
+    assert "Novos na fila" in html and "rfm analysis" in html
+    assert CandidatoDeFonte.objects.filter(consulta="rfm analysis").exists()
