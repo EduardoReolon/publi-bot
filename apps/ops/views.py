@@ -15,10 +15,27 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET
 
 
+def _implantacao() -> str:
+    from django.conf import settings
+
+    try:
+        return (settings.BASE_DIR / ".release").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+# Lido uma vez, ao carregar o modulo: e o codigo que ESTE processo tem.
+IMPLANTACAO_CARREGADA = _implantacao()
+
+
 @require_GET
 def healthz(request: HttpRequest) -> JsonResponse:
-    """Vivo. Deliberadamente nao consulta banco nem broker."""
-    return JsonResponse({"status": "ok"})
+    """Vivo. Deliberadamente nao consulta banco nem broker.
+
+    Diz tambem qual implantacao este processo carregou: e como o release.sh
+    confere que o reload pegou o codigo novo, e nao so que o site responde.
+    """
+    return JsonResponse({"status": "ok", "release": IMPLANTACAO_CARREGADA})
 
 
 @require_GET

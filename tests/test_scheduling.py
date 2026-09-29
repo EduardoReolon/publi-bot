@@ -343,7 +343,8 @@ def test_healthz_nao_depende_de_servico_externo(client):
 
     resposta = client.get("/healthz/", HTTP_HOST=settings.ROOT_DOMAIN)
     assert resposta.status_code == 200
-    assert resposta.json() == {"status": "ok"}
+    assert resposta.json()["status"] == "ok"
+    assert "release" in resposta.json()
 
 
 @pytest.mark.django_db
@@ -384,4 +385,4 @@ def test_sonda_responde_mesmo_com_host_desconhecido(client):
     esta morta — reiniciando conteineres saudaveis."""
     resposta = client.get("/healthz/", HTTP_HOST="10.0.0.7")
     assert resposta.status_code == 200
-    assert resposta.json() == {"status": "ok"}
+    assert resposta.json()["status"] == "ok"

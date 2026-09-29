@@ -148,6 +148,7 @@ echo "==> Codigo"
 rsync -a --delete \
     --exclude '/venv/' --exclude '/.env' --exclude '/.requirements_hash' \
     --exclude '/staticfiles/' --exclude '/media/' --exclude '/.model_cache/' \
+    --exclude '/.release' \
     "$ENVIO/" "$RAIZ/"
 cd "$RAIZ"
 mkdir -p "$MIDIA" "$RAIZ/staticfiles" "$RAIZ/.model_cache"
@@ -243,6 +244,12 @@ else
 fi
 
 echo "==> Reiniciando servicos"
+# Identifica esta implantacao. O /healthz/ devolve o que o processo carregou;
+# e assim que se sabe que o reload pegou o codigo novo, e nao so que o site
+# responde (com o antigo).
+IMPLANTACAO="$(date +%s)-$$"
+echo "$IMPLANTACAO" > "$RAIZ/.release"
+
 # A aplicacao recarrega sem derrubar o socket: as conexoes em curso terminam.
 sudo systemctl start publibot.socket
 if systemctl is-active --quiet publibot.service; then
@@ -256,17 +263,34 @@ fi
 sudo systemctl restart celery-publibot.service
 sudo systemctl restart celery-beat-publibot.service
 
-echo "==> Conferindo saude"
 # Direto no socket do Gunicorn, e nao pelo Nginx: responde mesmo antes do
 # certificado existir, e nao confunde com o site de outro projeto.
-for _ in $(seq 1 15); do
-    if curl -sf -o /dev/null --unix-socket /run/publibot/publibot.sock \
-        -H "Host: $DOMINIO" -H "X-Forwarded-Proto: https" http://localhost/healthz/; then
-        echo "Aplicacao respondendo."
-        exit 0
-    fi
-    sleep 2
-done
+versao_no_ar() {
+    curl -sf --unix-socket /run/publibot/publibot.sock \
+        -H "Host: $DOMINIO" -H "X-Forwarded-Proto: https" http://localhost/healthz/ || true
+}
+esperar_versao() {
+    for _ in $(seq 1 "$1"); do
+        if versao_no_ar | grep -q "$IMPLANTACAO"; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
 
-echo "ERRO: a aplicacao nao respondeu apos a implantacao. journalctl -u publibot -n 50" >&2
+echo "==> Conferindo que a versao nova esta no ar"
+if esperar_versao 15; then
+    echo "Aplicacao respondendo com a versao nova."
+    exit 0
+fi
+# O reload nao bastou (worker preso, config antiga): restart, uma vez.
+echo "  o reload nao trouxe a versao nova; reiniciando o servico"
+sudo systemctl restart publibot.service
+if esperar_versao 20; then
+    echo "Aplicacao respondendo com a versao nova (depois do restart)."
+    exit 0
+fi
+
+echo "ERRO: a aplicacao nao respondeu com a versao nova. journalctl -u publibot -n 50" >&2
 exit 1

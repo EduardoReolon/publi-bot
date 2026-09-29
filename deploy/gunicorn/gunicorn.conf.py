@@ -33,7 +33,11 @@ loglevel = os.environ.get("GUNICORN_LOG_LEVEL", "info")
 # servidor poder ser cruzado com o da aplicacao.
 access_log_format = '%({x-request-id}i)s %(h)s "%(r)s" %(s)s %(b)s %(D)sus'
 
-# Carrega a aplicacao antes de bifurcar: economiza memoria entre os workers.
-preload_app = True
+# DESLIGADO de proposito. Com preload, o processo principal guarda o codigo
+# carregado, e o `reload` (HUP) sobe workers novos com o codigo ANTIGO: a
+# implantacao termina "ok" e o site segue na versao anterior. Sem preload,
+# cada worker novo carrega o codigo do disco. O modelo de embedding e
+# carregado sob demanda, entao a memoria nao dobra no boot.
+preload_app = False
 
 proc_name = "publibot"

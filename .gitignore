@@ -96,3 +96,4 @@ casos/
 # codigo que nao existe mais. Regere com `python scripts/gerar_blocos.py`,
 # leva menos de um segundo.
 docs/blocos/
+/.release

@@ -319,3 +319,17 @@ def test_o_molde_do_nginx_funciona_no_nginx_do_ubuntu_lts():
     recusa a diretiva — o release.sh entao restaura a config antiga e para."""
     molde = (RAIZ / "deploy" / "nginx" / "publibot.conf").read_text(encoding="utf-8")
     assert "http2 on" not in molde.replace("`http2 on;`", "")
+
+
+def test_o_gunicorn_nao_pre_carrega_a_aplicacao():
+    """Com preload, o reload (HUP) sobe workers com o codigo ANTIGO: a
+    implantacao termina bem e o site fica na versao anterior."""
+    conf = (RAIZ / "deploy" / "gunicorn" / "gunicorn.conf.py").read_text(encoding="utf-8")
+    assert "preload_app = False" in conf
+
+
+def test_o_release_confere_a_versao_nova_e_reinicia_se_preciso():
+    texto = _release()
+    assert 'echo "$IMPLANTACAO" > "$RAIZ/.release"' in texto
+    assert texto.index("systemctl reload publibot") < texto.index("esperar_versao 15")
+    assert texto.index("esperar_versao 15") < texto.index("systemctl restart publibot.service")
