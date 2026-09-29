@@ -260,26 +260,13 @@ class Command(BaseCommand):
 
     def _dataforseo(self) -> str | None:
         from apps.radar.models import ContasExternas
-        from apps.radar.provedores import (
-            DATAFORSEO_BASE,
-            _credenciais_dataforseo,
-            conferir_http_dataforseo,
-        )
+        from apps.radar.provedores import saldo_dataforseo
 
         contas = ContasExternas.carregar()
         if not contas.dataforseo_login:
             return None
-        login, senha = _credenciais_dataforseo(contas)
-        resposta = httpx.get(
-            f"{DATAFORSEO_BASE}/appendix/user_data", auth=(login, senha), timeout=TIMEOUT
-        )
-        conferir_http_dataforseo(resposta)
-        tarefa = (resposta.json().get("tasks") or [{}])[0]
-        if tarefa.get("status_code") != 20000:
-            raise RuntimeError(f"{tarefa.get('status_code')} {tarefa.get('status_message', '')}")
-        dados = (tarefa.get("result") or [{}])[0]
-        saldo = (dados.get("money") or {}).get("balance")
-        return f"conta ativa, saldo US$ {saldo}" if saldo is not None else "conta ativa"
+        saldo = saldo_dataforseo(contas)
+        return f"conta ativa, saldo US$ {saldo:.2f}" if saldo is not None else "conta ativa"
 
     def _youtube(self) -> str | None:
         from apps.inference.security import decifrar

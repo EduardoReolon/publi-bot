@@ -522,6 +522,9 @@ def _encerrar(rodada: RodadaDoRadar, situacao: str, erro: str = "") -> RodadaDoR
         ],
     ).aggregate(t=Sum("custo_usd"))["t"] or Decimal("0")
     rodada.save()
+    from apps.radar.provedores import atualizar_saldo_dataforseo
+
+    atualizar_saldo_dataforseo()
     # Tarefa que ainda estiver na fila e colhida mesmo assim (ja foi paga); o
     # sinal dela entra na proxima rodada.
     return rodada

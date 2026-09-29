@@ -20,11 +20,16 @@ def _sem_bases_academicas(request, monkeypatch):
     fontes e na rodada do radar; sem isto, esses testes dependeriam da rede.
     Quem testa as bases pede `bases_academicas` e simula as respostas.
     """
+    # O saldo da DataForSEO e lido ao fim de rodada e busca: sem rede no teste.
+    from apps.radar import provedores
+
+    monkeypatch.setattr(provedores, "atualizar_saldo_dataforseo", lambda: None)
     if "bases_academicas" in request.fixturenames:
         return
     from apps.knowledge import academicos
 
     monkeypatch.setattr(academicos, "buscar_openalex", lambda *a, **k: [])
+
     monkeypatch.setattr(academicos, "consultar_unpaywall", lambda *a, **k: "")
 
 
