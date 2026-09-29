@@ -546,7 +546,7 @@ def oportunidades(request: HttpRequest) -> HttpResponse:
     situacoes = {s.value for s in Oportunidade.Situacao}
     ver = ver if ver in situacoes else "nova"
     oportunidades = list(
-        Oportunidade.objects.filter(situacao=ver)
+        _com_filtro_ia(Oportunidade.objects.filter(situacao=ver), request, "grupo__avaliacao_ia")
         .select_related("grupo")
         .prefetch_related("grupo__sinais")
         .order_by("-nota")[:50]
@@ -570,8 +570,25 @@ def oportunidades(request: HttpRequest) -> HttpResponse:
             "contagens": {s: Oportunidade.objects.filter(situacao=s).count() for s in situacoes},
             "oportunidades": oportunidades,
             "tem_dores": bool(config.lista_de_dores),
+            "filtro_ia": _filtro_ia(request),
+            "ruins_da_ia": Oportunidade.objects.filter(
+                situacao=Oportunidade.Situacao.NOVA, grupo__avaliacao_ia="ruim"
+            ).count(),
         },
     )
+
+
+@login_required
+@require_POST
+def arquivar_ruins(request: HttpRequest) -> HttpResponse:
+    """Arquiva de uma vez as oportunidades novas que a outra IA marcou como ruins."""
+    from apps.radar.models import Oportunidade
+
+    total = Oportunidade.objects.filter(
+        situacao=Oportunidade.Situacao.NOVA, grupo__avaliacao_ia="ruim"
+    ).update(situacao=Oportunidade.Situacao.ARQUIVADA)
+    messages.success(request, _("%(n)s oportunidade(s) arquivada(s).") % {"n": total})
+    return redirect(reverse("radar:oportunidades") + "?ver=nova")
 
 
 @login_required

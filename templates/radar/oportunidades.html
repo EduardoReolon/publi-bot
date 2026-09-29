@@ -30,16 +30,30 @@
   {% if dores %}
     <ul class="sinais">{% for dor in dores %}<li>{{ dor }}</li>{% endfor %}</ul>
   {% endif %}
-  <p><a href="{% url 'editorial:negocio' %}">{% translate "Editar em Negocio" %}</a></p>
+  <p><a href="{% url 'radar:configuracao' %}">{% translate "Editar em Radar › Configuracao" %}</a></p>
 </section>
 
 <nav class="abas">
   {% for valor, rotulo in situacoes %}
-    <a href="?ver={{ valor }}" class="{% if ver == valor %}ativo{% endif %}">
+    <a href="?ver={{ valor }}{% if filtro_ia %}&ia={{ filtro_ia }}{% endif %}" class="{% if ver == valor %}ativo{% endif %}">
       {{ rotulo }} <span class="contagem-aba">{% for k, n in contagens.items %}{% if k == valor %}{{ n }}{% endif %}{% endfor %}</span>
     </a>
   {% endfor %}
 </nav>
+
+<div class="acoes" style="align-items:center">
+  <span class="pre-visualizacao">{% translate "Avaliacao da outra IA:" %}</span>
+  <a href="?ver={{ ver }}" {% if not filtro_ia %}class="ativo"{% endif %}>{% translate "todas" %}</a> ·
+  <a href="?ver={{ ver }}&ia=ruim" {% if filtro_ia == 'ruim' %}class="ativo"{% endif %}>{% translate "ruins" %}</a> ·
+  <a href="?ver={{ ver }}&ia=boa" {% if filtro_ia == 'boa' %}class="ativo"{% endif %}>{% translate "boas" %}</a> ·
+  <a href="?ver={{ ver }}&ia=sem" {% if filtro_ia == 'sem' %}class="ativo"{% endif %}>{% translate "sem avaliacao" %}</a>
+  {% if ver == 'nova' and filtro_ia == 'ruim' and ruins_da_ia %}
+    <form method="post" action="{% url 'radar:arquivar_oportunidades_ruins' %}" style="margin-left:auto">
+      {% csrf_token %}
+      <button type="submit" class="botao discreto pequeno">{% blocktranslate with n=ruins_da_ia %}Arquivar as {{ n }} marcadas como ruins{% endblocktranslate %}</button>
+    </form>
+  {% endif %}
+</div>
 
 {% for op in oportunidades %}
   <article class="secao oportunidade">
