@@ -52,12 +52,32 @@
       perto de artigo que converte sobe.
     {% endblocktranslate %}
   </p>
+  <div class="aviso {% if estrategia == 'brechas' %}alerta{% else %}ok{% endif %}">
+    {% if ordem_dos_temas == 'brechas' %}
+      <strong>{% translate "Ordem: brechas primeiro." %}</strong>
+      {% blocktranslate trimmed %}
+        A nota e pesada pela dificuldade: brecha conta inteira, medio perde 20%,
+        dificil perde 45%. E o que chega a primeira pagina sem autoridade, e o que
+        as pautas automaticas escolhem agora.
+      {% endblocktranslate %}
+    {% else %}
+      <strong>{% translate "Ordem: pela nota." %}</strong>
+      {% translate "A dificuldade aparece na coluna, mas nao muda a ordem." %}
+    {% endif %}
+    {% blocktranslate with m=motivo_da_estrategia %}Momento do site: {{ m }}.{% endblocktranslate %}
+    {% if ordem_dos_temas == 'brechas' %}
+      <a href="?ordem=nota{% if filtro_ia %}&ia={{ filtro_ia }}{% endif %}#temas">{% translate "Ver pela nota" %}</a>
+    {% else %}
+      <a href="?ordem=brechas{% if filtro_ia %}&ia={{ filtro_ia }}{% endif %}#temas">{% translate "Ver brechas primeiro" %}</a>
+    {% endif %}
+    · <a href="{% url 'radar:configuracao' %}">{% translate "mudar na configuracao" %}</a>
+  </div>
   <div class="acoes" style="align-items:center">
     <span class="pre-visualizacao">{% translate "Avaliacao da outra IA:" %}</span>
-    <a href="?#temas" {% if not filtro_ia %}class="ativo"{% endif %}>{% translate "todos" %}</a> ·
-    <a href="?ia=ruim#temas" {% if filtro_ia == 'ruim' %}class="ativo"{% endif %}>{% translate "ruins" %}</a> ·
-    <a href="?ia=boa#temas" {% if filtro_ia == 'boa' %}class="ativo"{% endif %}>{% translate "bons" %}</a> ·
-    <a href="?ia=sem#temas" {% if filtro_ia == 'sem' %}class="ativo"{% endif %}>{% translate "sem avaliacao" %}</a>
+    <a href="?ordem={{ ordem_dos_temas }}#temas" {% if not filtro_ia %}class="ativo"{% endif %}>{% translate "todos" %}</a> ·
+    <a href="?ia=ruim{% if ordem_dos_temas %}&ordem={{ ordem_dos_temas }}{% endif %}#temas" {% if filtro_ia == 'ruim' %}class="ativo"{% endif %}>{% translate "ruins" %}</a> ·
+    <a href="?ia=boa{% if ordem_dos_temas %}&ordem={{ ordem_dos_temas }}{% endif %}#temas" {% if filtro_ia == 'boa' %}class="ativo"{% endif %}>{% translate "bons" %}</a> ·
+    <a href="?ia=sem{% if ordem_dos_temas %}&ordem={{ ordem_dos_temas }}{% endif %}#temas" {% if filtro_ia == 'sem' %}class="ativo"{% endif %}>{% translate "sem avaliacao" %}</a>
     {% if filtro_ia == 'ruim' and ruins_da_ia %}
       <form method="post" action="{% url 'radar:descartar_ruins' %}" style="margin-left:auto">
         {% csrf_token %}

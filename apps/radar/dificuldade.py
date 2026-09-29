@@ -151,3 +151,44 @@ def de_textos(textos, dificuldades: dict[str, Dificuldade]) -> Dificuldade | Non
     """A mais facil entre estes textos (as consultas de um artigo, de uma pauta)."""
     candidatas = [dificuldades[_chave(t)] for t in textos if _chave(t) in dificuldades]
     return min(candidatas, key=lambda d: d.nota, default=None)
+
+
+# Quanto a dificuldade tira da nota quando a estrategia e "brechas primeiro".
+# Nao zera o dificil: um tema dificil muito bom ainda passa um medio fraco.
+FATOR_DA_DIFICULDADE = {"brecha": 1.0, "medio": 0.8, "dificil": 0.55}
+# Sem pagina de resultado guardada, a dificuldade e desconhecida: um pouco
+# abaixo da brecha, para o que foi medido como facil vir antes.
+FATOR_SEM_MEDIDA = 0.9
+
+
+def prioridade(nota: float, dificuldade: Dificuldade | None, estrategia: str) -> float:
+    """A nota, ou a nota pesada pela dificuldade em "brechas primeiro"."""
+    if estrategia != "brechas":
+        return nota
+    fator = FATOR_SEM_MEDIDA if dificuldade is None else FATOR_DA_DIFICULDADE[dificuldade.rotulo]
+    return nota * fator
+
+
+def estrategia_efetiva(config, diagnostico=None) -> tuple[str, str]:
+    """("brechas" | "equilibrada", por que) — a escolhida, ou a do momento do site.
+
+    Na automatica, o que decide e o diagnostico de autoridade (Search
+    Console): so quando os artigos maduros ja chegam ao topo o site deixa de
+    precisar de brechas.
+    """
+    escolhida = config.estrategia_de_temas
+    if escolhida == "brechas":
+        return "brechas", "escolhida na configuracao"
+    if escolhida == "equilibrada":
+        return "equilibrada", "escolhida na configuracao"
+    if diagnostico is None:
+        from apps.radar.autoridade import diagnosticar
+
+        diagnostico = diagnosticar()
+    if diagnostico.veredito == "links nao sao prioridade":
+        return "equilibrada", "os artigos maduros ja chegam ao topo do Google"
+    return "brechas", {
+        "sem dados": "sem Search Console, o site e tratado como comecando",
+        "cedo para dizer": "poucos artigos com mais de 60 dias no ar",
+        "links ajudariam": "os artigos param entre a 6a e a 30a posicao: falta autoridade",
+    }.get(diagnostico.veredito, "o site ainda nao chega ao topo")

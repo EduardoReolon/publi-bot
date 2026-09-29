@@ -679,9 +679,20 @@ def propor_pautas(
     from apps.radar.dificuldade import do_grupo, mapa
 
     dificuldades = mapa() if candidatos else {}
+    estrategia = "equilibrada"
+    if candidatos and not pedido_pela_pessoa:
+        from apps.radar.dificuldade import estrategia_efetiva
+
+        estrategia, _motivo = estrategia_efetiva(ConfiguracaoDoRadar.carregar())
+    from apps.radar.dificuldade import prioridade
+
+    for grupo in candidatos:
+        grupo.dificuldade = do_grupo(grupo, dificuldades)
     criadas = []
-    for grupo in sorted(candidatos, key=lambda g: -g.nota)[:limite]:
-        dificuldade = do_grupo(grupo, dificuldades)
+    for grupo in sorted(candidatos, key=lambda g: -prioridade(g.nota, g.dificuldade, estrategia))[
+        :limite
+    ]:
+        dificuldade = grupo.dificuldade
         sinais = list(grupo.sinais.exclude(situacao=SinalDeDemanda.Situacao.DESCARTADO)[:12])
         briefing = "Demanda observada:\n" + "\n".join(
             f"- {s.texto}" + (f" ({s.volume}/mes)" if s.volume is not None else "") for s in sinais

@@ -98,6 +98,25 @@ class ConfiguracaoDoRadar(models.Model):
         _("intensidade"), max_length=10, choices=Intensidade.choices, default=Intensidade.DESLIGADO
     )
 
+    class Estrategia(models.TextChoices):
+        AUTOMATICA = "auto", _("Automatica (pelo momento do site)")
+        BRECHAS = "brechas", _("Brechas primeiro")
+        EQUILIBRADA = "equilibrada", _("So pela nota")
+
+    estrategia_de_temas = models.CharField(
+        _("ordem dos temas"),
+        max_length=12,
+        choices=Estrategia.choices,
+        default=Estrategia.AUTOMATICA,
+        help_text=_(
+            "Site comecando, sem autoridade: tema dificil (portais fortes no topo) "
+            "demora meses, e a brecha entra logo. Em 'brechas primeiro', a dificuldade "
+            "pesa na ordem dos temas e na escolha das pautas automaticas. Automatica: "
+            "brechas primeiro ate o Search Console mostrar que os artigos ja chegam ao "
+            "topo; dai, so pela nota."
+        ),
+    )
+
     # --- Foco: quais fontes de demanda usar -------------------------------
     usar_serp = models.BooleanField(
         _("perguntas e buscas relacionadas do Google"),

@@ -67,12 +67,9 @@ def _contexto(config=None, contas=None, busca_form=None, request=None) -> dict:
         "ruins_da_ia": GrupoDeDemanda.objects.filter(
             situacao=GrupoDeDemanda.Situacao.NOVO, avaliacao_ia="ruim"
         ).count(),
+        "consulta_de_temas": _temas_em_observacao(request),
         "grupos": _pagina(
-            _com_filtro_ia(
-                GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO), request
-            )
-            .annotate(total=Count("sinais", filter=~Q(sinais__situacao="descartado")))
-            .order_by("-nota"),
+            _temas_em_observacao(request),
             request,
             "temas",
             30,
@@ -128,13 +125,27 @@ def _contexto_do_console() -> dict:
 @login_required
 def radar(request: HttpRequest) -> HttpResponse:
     from apps.radar.autoridade import diagnosticar, resumo_dos_temas
-    from apps.radar.dificuldade import do_grupo, mapa
+    from apps.radar.dificuldade import do_grupo, estrategia_efetiva, mapa, prioridade
     from apps.radar.resumo import rendimento_das_sementes, texto_para_ia
 
     contexto = _contexto(request=request)
     dificuldades = mapa()
-    for grupo in contexto["grupos"]:
-        grupo.dificuldade = do_grupo(grupo, dificuldades)
+    autoridade = diagnosticar()
+    estrategia, motivo = estrategia_efetiva(contexto["config_obj"], autoridade)
+    ordem = request.GET.get("ordem", "")
+    if ordem not in {"brechas", "nota"}:
+        ordem = "brechas" if estrategia == "brechas" else "nota"
+    if ordem == "brechas":
+        # A dificuldade nao esta no banco (sai das paginas de resultado): para
+        # ordenar por ela, a lista inteira e medida aqui.
+        todos = list(contexto["consulta_de_temas"])
+        for grupo in todos:
+            grupo.dificuldade = do_grupo(grupo, dificuldades)
+        todos.sort(key=lambda g: -prioridade(g.nota, g.dificuldade, "brechas"))
+        contexto["grupos"] = _pagina(todos, request, "temas", 30)
+    else:
+        for grupo in contexto["grupos"]:
+            grupo.dificuldade = do_grupo(grupo, dificuldades)
     return render(
         request,
         "radar/radar.html",
@@ -142,10 +153,23 @@ def radar(request: HttpRequest) -> HttpResponse:
             **contexto,
             "rendimento": rendimento_das_sementes(),
             "texto_para_ia": texto_para_ia(),
-            "autoridade": diagnosticar(),
+            "autoridade": autoridade,
+            "estrategia": estrategia,
+            "motivo_da_estrategia": motivo,
+            "ordem_dos_temas": ordem,
             "temas_por_dificuldade": resumo_dos_temas(contexto["grupos"]),
             "mede_dificuldade": bool(dificuldades),
         },
+    )
+
+
+def _temas_em_observacao(request):
+    return (
+        _com_filtro_ia(
+            GrupoDeDemanda.objects.filter(situacao=GrupoDeDemanda.Situacao.NOVO), request
+        )
+        .annotate(total=Count("sinais", filter=~Q(sinais__situacao="descartado")))
+        .order_by("-nota")
     )
 
 

@@ -13,6 +13,7 @@ class ConfiguracaoForm(forms.ModelForm):
         model = ConfiguracaoDoRadar
         fields = [
             "intensidade",
+            "estrategia_de_temas",
             "sementes",
             "dores",
             "usar_serp",
@@ -52,7 +53,7 @@ class ConfiguracaoForm(forms.ModelForm):
     # Os campos em blocos, na ordem em que a pessoa pensa: o que buscar, onde,
     # de que fontes, contra quem, com que provedor, e quanto gastar.
     GRUPOS = [
-        (_("Ritmo"), ["intensidade"]),
+        (_("Ritmo"), ["intensidade", "estrategia_de_temas"]),
         # Sementes e dores juntas: as duas viram busca no Google, cada rodada
         # pega algumas de cada (as nunca buscadas primeiro, na ordem da lista).
         (_("O que o radar busca"), ["sementes", "dores"]),
