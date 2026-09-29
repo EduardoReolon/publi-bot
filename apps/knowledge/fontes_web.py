@@ -84,7 +84,7 @@ def natureza_sugerida(candidato) -> str:
         return "video"
     anfitriao = (candidato.dominio or urlparse(candidato.url).hostname or "").lower()
     anfitriao = anfitriao.removeprefix("www.")
-    if anfitriao.endswith(SUFIXOS_OFICIAIS):
+    if any(anfitriao == s.lstrip(".") or anfitriao.endswith(s) for s in SUFIXOS_OFICIAIS):
         return "normativo"
     if any(anfitriao == c or anfitriao.endswith(f".{c}") for c in COMUNIDADES):
         return "comunidade"
