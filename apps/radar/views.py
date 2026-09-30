@@ -245,8 +245,10 @@ def colar_sementes_cientificas(request: HttpRequest) -> HttpResponse:
 def buscar_artigos_agora(request: HttpRequest) -> HttpResponse:
     """Busca as sementes cientificas no OpenAlex agora, sem esperar a rodada."""
     from apps.knowledge.academicos import (
+        MAXIMO_DE_PENDENTES,
         SEMENTES_POR_BUSCA_MANUAL,
         BaseIndisponivel,
+        _pendentes,
         buscar_por_sementes,
     )
 
@@ -260,6 +262,22 @@ def buscar_artigos_agora(request: HttpRequest) -> HttpResponse:
         messages.error(request, str(exc))
         return redirect(reverse("radar:configuracao") + "#artigos-cientificos")
     request.session["busca_de_artigos"] = relatorio
+    novos = sum(linha["novos"] for linha in relatorio)
+    if not relatorio:
+        messages.error(
+            request,
+            _(
+                "Nenhuma busca feita: ja ha %(n)s artigos esperando curadoria em Fontes "
+                "sugeridas (o limite e %(max)s). Aprove ou recuse alguns e tente de novo."
+            )
+            % {"n": _pendentes(), "max": MAXIMO_DE_PENDENTES},
+        )
+    else:
+        messages.success(
+            request,
+            _("%(s)s semente(s) buscada(s) no OpenAlex, %(n)s artigo(s) novo(s) na fila.")
+            % {"s": len(relatorio), "n": novos},
+        )
     return redirect(reverse("radar:configuracao") + "#artigos-cientificos")
 
 

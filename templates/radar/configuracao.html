@@ -62,7 +62,7 @@
       {% if config_obj.lista_de_sementes_cientificas %}
         <p><strong>{% translate "Atuais:" %}</strong> {{ config_obj.lista_de_sementes_cientificas|join:"; " }}</p>
         <form method="post" action="{% url 'radar:buscar_artigos_agora' %}" class="acoes">
-          {% csrf_token %}<button type="submit" class="botao">{% translate "Buscar artigos agora" %}</button>
+          {% csrf_token %}<button type="submit" class="botao" onclick="setTimeout(() => { this.disabled = true; this.textContent = '{% translate "Buscando no OpenAlex… (ate 1 minuto)" %}'; }, 0)">{% translate "Buscar artigos agora" %}</button>
         </form>
       {% endif %}
       {% if busca_de_artigos %}

@@ -14,12 +14,22 @@ from apps.radar.models import ConcorrenteSugerido, LinkQuebrado, PaginaVerificad
 from tests.test_interface import ambiente  # noqa: F401
 from tests.test_radar import radar  # noqa: F401
 
-HTML = """<html><head><title>Guia de varejo</title></head><body>
-<a href="/interno">interno</a>
+PARAGRAFO = "Texto do guia de varejo com conteudo de verdade para o extrator. " * 25
+
+HTML = f"""<html><head><title>Guia de varejo</title></head><body>
+<nav><a href="https://menu.com.br/secao">Politica de Privacidade</a></nav>
+<article><h1>Guia de varejo</h1>
+<p>{PARAGRAFO} Veja a
 <a href="https://morto.com.br/analise-rfm-clientes">analise rfm de clientes</a>
-<a href="https://vivo.com.br/x">qualquer coisa</a>
-<a href="https://morto.com.br/receita-de-bolo">receita de bolo de cenoura</a>
-<a href="mailto:a@b.c">email</a>
+e <a href="/interno">interno</a> e <a href="https://vivo.com.br/x">qualquer coisa</a>.</p>
+<p>{PARAGRAFO} Tambem a
+<a href="https://morto.com.br/receita-de-bolo">receita de bolo de cenoura</a>,
+o <a href="https://play.google.com/store/apps/details?id=x">app</a>, o
+<a href="https://blog.com.brpolitica/">link torto do proprio site</a> e o
+<a href="mailto:a@b.c">email</a>.</p>
+</article>
+<footer><a href="https://rodape.com.br/y">
+<svg><style>.cls-1 {{ fill: #252959; }}</style></svg></a></footer>
 </body></html>"""
 
 
@@ -37,7 +47,9 @@ def _artigo(titulo, palavra, **extra):
     )
 
 
-def test_links_de_saida_so_para_outros_sites():
+def test_links_de_saida_so_do_texto_principal_e_para_outros_sites():
+    """Menu, rodape e SVG escondido ficam de fora; loja de aplicativo e o
+    proprio site com a barra faltando tambem."""
     titulo, links = links_quebrados.links_de_saida(HTML, "https://blog.com.br/guia")
     assert titulo == "Guia de varejo"
     assert [u for u, _ in links] == [
@@ -45,6 +57,13 @@ def test_links_de_saida_so_para_outros_sites():
         "https://vivo.com.br/x",
         "https://morto.com.br/receita-de-bolo",
     ]
+
+
+def test_pagina_em_latin1_nao_vira_interrogacao():
+    texto = "concorrência".encode("latin-1")
+    assert links_quebrados.decodificar(texto, "text/html; charset=ISO-8859-1") == "concorrência"
+    assert links_quebrados.decodificar(texto, "text/html") == "concorrência"
+    assert links_quebrados.decodificar("ação".encode(), "text/html") == "ação"
 
 
 @pytest.mark.django_db

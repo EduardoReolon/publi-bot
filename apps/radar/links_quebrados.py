@@ -14,7 +14,7 @@ dele —, e e isso que faz o pedido funcionar sem ser troca de links.
 from __future__ import annotations
 
 import logging
-from html.parser import HTMLParser
+import re
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -33,56 +33,98 @@ PERTO_DO_ARTIGO = 0.35  # distancia de cosseno do texto do link ao titulo
 PERTO_DO_TEMA = 0.3  # proximidade com o negocio (0 a 1), sem artigo
 
 
-class _Links(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.links: list[tuple[str, str]] = []
-        self.titulo = ""
-        self._atual: str | None = None
-        self._texto: list[str] = []
-        self._no_titulo = False
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "a":
-            self._atual = dict(attrs).get("href") or None
-            self._texto = []
-        elif tag == "title":
-            self._no_titulo = True
-
-    def handle_endtag(self, tag):
-        if tag == "a" and self._atual:
-            self.links.append((self._atual, " ".join("".join(self._texto).split())))
-            self._atual = None
-        elif tag == "title":
-            self._no_titulo = False
-
-    def handle_data(self, data):
-        if self._atual is not None:
-            self._texto.append(data)
-        if self._no_titulo:
-            self.titulo += data
+# Links que nao sao citacao no texto, mesmo quando aparecem nele: loja de
+# aplicativo, rede social, botao de compartilhar. Quebrados ou nao, nao ha o
+# que sugerir no lugar.
+SEM_INTERESSE = (
+    "play.google.com",
+    "apps.apple.com",
+    "itunes.apple.com",
+    "facebook.com",
+    "instagram.com",
+    "twitter.com",
+    "x.com",
+    "linkedin.com",
+    "wa.me",
+    "api.whatsapp.com",
+    "t.me",
+    "pinterest.com",
+    "tiktok.com",
+)
 
 
 def _dominio(url: str) -> str:
     return (urlparse(url).hostname or "").lower().removeprefix("www.")
 
 
+def _sem_interesse(dominio: str) -> bool:
+    return any(dominio == d or dominio.endswith(f".{d}") for d in SEM_INTERESSE)
+
+
+def _link_torto_do_proprio_site(dominio: str, proprio: str) -> bool:
+    """`euax.com.brpolitica-de-privacidade`: o proprio site com a barra faltando.
+
+    E um erro do site, sim, mas de link interno: nao ha conteudo nosso que
+    substitua a politica de privacidade dele.
+    """
+    return bool(proprio) and dominio.startswith(proprio) and dominio != proprio
+
+
+def decodificar(conteudo: bytes, tipo: str = "") -> str:
+    """Pelo charset do cabecalho; sem ele, UTF-8 e, se nao for, Windows-1252.
+
+    Decodificar tudo como UTF-8 transformava "concorrencia" em "concorr?ncia"
+    nas paginas em Latin-1.
+    """
+    achado = re.search(r"charset=([\w-]+)", tipo or "", re.IGNORECASE)
+    if achado:
+        try:
+            return conteudo.decode(achado.group(1))
+        except (LookupError, UnicodeDecodeError):
+            pass
+    try:
+        return conteudo.decode("utf-8")
+    except UnicodeDecodeError:
+        return conteudo.decode("cp1252", errors="replace")
+
+
 def links_de_saida(html: str, base: str) -> tuple[str, list[tuple[str, str]]]:
-    """(titulo da pagina, [(url absoluta, texto)]) dos links para OUTROS sites."""
-    leitor = _Links()
-    leitor.feed(html)
+    """(titulo da pagina, [(url absoluta, texto)]) dos links para OUTROS sites,
+    so os que estao no TEXTO PRINCIPAL da pagina.
+
+    O texto principal sai da mesma extracao das fontes (trafilatura): menu,
+    rodape, barra lateral e o que esta escondido ficam de fora. E ai que o link
+    quebrado importa — e ai que o dono do site aceita trocar por outro.
+    """
+    import trafilatura
+
+    documento = trafilatura.bare_extraction(
+        html, url=base, include_links=True, favor_precision=True, with_metadata=True
+    )
+    if documento is None:
+        return "", []
+    titulo = " ".join((documento.title or "").split())[:300]
+    if documento.body is None:
+        return titulo, []
+
     proprio = _dominio(base)
     vistos, saida = set(), []
-    for href, texto in leitor.links:
-        url = urljoin(base, href.strip()).split("#", 1)[0]
-        if not url.startswith(("http://", "https://")):
+    for ref in documento.body.iter("ref"):
+        href = (ref.get("target") or "").strip()
+        url = urljoin(base, href).split("#", 1)[0]
+        if not url.startswith(("http://", "https://")) or url in vistos:
             continue
         dominio = _dominio(url)
-        if not dominio or dominio == proprio or url in vistos:
+        if (
+            not dominio
+            or dominio == proprio
+            or _sem_interesse(dominio)
+            or _link_torto_do_proprio_site(dominio, proprio)
+        ):
             continue
         vistos.add(url)
-        saida.append((url, texto[:300]))
-    return " ".join(leitor.titulo.split())[:300], saida[:LINKS_POR_PAGINA]
+        saida.append((url, " ".join("".join(ref.itertext()).split())[:300]))
+    return titulo, saida[:LINKS_POR_PAGINA]
 
 
 def codigo_http(url: str) -> int | None:
@@ -192,7 +234,7 @@ def verificar_pagina(url: str, artigos: list) -> int:
             url=url[:500], defaults={"erro": "nao e HTML", "verificada_em": timezone.now()}
         )
         return 0
-    titulo, links = links_de_saida(conteudo.decode("utf-8", errors="replace"), url_final)
+    titulo, links = links_de_saida(decodificar(conteudo, tipo), url_final)
     guardados = 0
     for link, texto in links:
         codigo = situacao_do_link(link)

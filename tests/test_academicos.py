@@ -300,3 +300,24 @@ def test_filtros_de_numero():
     assert numero_curto(None) == "" and numero_curto(950) == "950"
     assert porcentagem_de(540, 12345) == "4,4%"
     assert duracao(725) == "12min05" and duracao(3723) == "1h02"
+
+
+@pytest.mark.django_db
+def test_paginas_e_videos_pendentes_nao_travam_a_busca_de_artigos(ambiente, bases_academicas):  # noqa: F811
+    """A trava de 30 pendentes contava tudo; com a fila cheia de paginas, o
+    botao nao fazia nada e nao dizia nada."""
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    _, _, client = ambiente
+    for i in range(academicos.MAXIMO_DE_PENDENTES):
+        CandidatoDeFonte.objects.create(url=f"https://pagina.com/{i}", tipo="pagina")
+    config = ConfiguracaoDoRadar.carregar()
+    config.sementes_cientificas = "rfm analysis"
+    config.save()
+
+    resposta = client.post(
+        reverse("radar:buscar_artigos_agora", urlconf="core.urls_tenants"), follow=True
+    )
+
+    assert "artigo(s) novo(s) na fila" in resposta.content.decode()
+    assert CandidatoDeFonte.objects.filter(tipo="artigo").exists()

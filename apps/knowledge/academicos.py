@@ -243,7 +243,11 @@ def autoridade(citacoes: int) -> int:
 # Candidatos
 # ---------------------------------------------------------------------------
 def _pendentes() -> int:
-    return CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE).count()
+    """Artigos esperando curadoria. So artigos: paginas e videos pendentes nao
+    podem travar a busca de artigos (e travavam, calados)."""
+    return CandidatoDeFonte.objects.filter(
+        situacao=CandidatoDeFonte.Situacao.PENDENTE, tipo=CandidatoDeFonte.Tipo.ARTIGO
+    ).count()
 
 
 def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
