@@ -327,6 +327,17 @@ def aprovar(
     return candidato
 
 
+def desfazer_aprovacao(candidato: CandidatoDeFonte) -> CandidatoDeFonte:
+    """Aprovado que ainda espera o PDF ou o audio volta a ser sugestao: nada
+    virou documento, entao nao ha o que desfazer no acervo."""
+    candidato.situacao = CandidatoDeFonte.Situacao.PENDENTE
+    candidato.motivo = ""
+    candidato.decidido_por = None
+    candidato.decidido_em = None
+    candidato.save(update_fields=["situacao", "motivo", "decidido_por", "decidido_em"])
+    return candidato
+
+
 def recusar(
     candidato: CandidatoDeFonte, *, por=None, motivo: str = "", bloquear: str = ""
 ) -> CaminhoConfiavel | None:

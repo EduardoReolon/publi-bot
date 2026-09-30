@@ -26,6 +26,11 @@
           <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
           <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
         </form>
+        <form method="post" action="{% url 'knowledge:desfazer_aprovacao' candidato.pk %}" class="acoes">
+          {% csrf_token %}
+          <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
+          <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
+        </form>
       </div>
     {% endfor %}
   {% endif %}
@@ -48,6 +53,11 @@
           {% csrf_token %}
           <input type="file" name="pdf" accept="application/pdf,.pdf" required>
           <button type="submit">{% translate "Enviar o PDF" %}</button>
+        </form>
+        <form method="post" action="{% url 'knowledge:desfazer_aprovacao' candidato.pk %}" class="acoes">
+          {% csrf_token %}
+          <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
+          <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
         </form>
       </div>
     {% endfor %}

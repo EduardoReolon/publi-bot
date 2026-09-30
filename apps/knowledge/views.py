@@ -916,6 +916,34 @@ def enviar_audio(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
+def desfazer_aprovacao(request: HttpRequest, pk) -> HttpResponse:
+    """O aprovado que espera PDF ou audio volta a ser sugestao; com
+    `recusar`, ja sai recusado."""
+    from apps.knowledge.fontes_web import desfazer_aprovacao as desfazer
+    from apps.knowledge.fontes_web import recusar
+    from apps.knowledge.models import CandidatoDeFonte
+
+    candidato = get_object_or_404(
+        CandidatoDeFonte,
+        pk=pk,
+        situacao__in=[
+            CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
+            CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
+        ],
+    )
+    desfazer(candidato)
+    if request.POST.get("recusar") == "1":
+        recusar(candidato, por=request.user, motivo=_("Sem arquivo para ler."))
+        messages.success(request, _("Recusado. Nao sera sugerido de novo."))
+        return redirect("knowledge:fontes_sugeridas")
+    messages.success(
+        request, _("Aprovacao desfeita: voltou para as sugestoes, com todas as opcoes.")
+    )
+    return redirect(reverse("knowledge:fontes_sugeridas") + f"#candidato-{candidato.pk}")
+
+
+@login_required
+@require_POST
 def enviar_pdf(request: HttpRequest, pk) -> HttpResponse:
     """O PDF de um artigo cientifico que nao tinha acesso aberto."""
     from apps.knowledge.academicos import receber_pdf

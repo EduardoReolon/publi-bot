@@ -200,3 +200,27 @@ def test_artigo_sem_pdf_aprovado_diz_onde_ficou_e_aceita_pdf_junto(ambiente, mon
         },
     )
     assert enviados == [com_pdf.pk]
+
+
+def test_desfazer_a_aprovacao_de_quem_espera_o_pdf(ambiente):  # noqa: F811
+    _, _, client = ambiente
+    candidato = _artigo_pendente(1)
+    candidato.situacao = CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+    candidato.motivo = "Sem PDF de acesso aberto."
+    candidato.save()
+    url = reverse("knowledge:desfazer_aprovacao", args=[candidato.pk], urlconf="core.urls_tenants")
+
+    html = client.get(
+        reverse("knowledge:fontes_sugeridas", urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Desfazer aprovacao" in html
+
+    client.post(url)
+    candidato.refresh_from_db()
+    assert candidato.situacao == CandidatoDeFonte.Situacao.PENDENTE and not candidato.motivo
+
+    candidato.situacao = CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+    candidato.save()
+    client.post(url, {"recusar": "1"})
+    candidato.refresh_from_db()
+    assert candidato.situacao == CandidatoDeFonte.Situacao.RECUSADO
