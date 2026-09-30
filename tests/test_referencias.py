@@ -208,7 +208,7 @@ def test_desfazer_a_aprovacao_de_quem_espera_o_pdf(ambiente):  # noqa: F811
     candidato.situacao = CandidatoDeFonte.Situacao.AGUARDANDO_PDF
     candidato.motivo = "Sem PDF de acesso aberto."
     candidato.save()
-    url = reverse("knowledge:desfazer_aprovacao", args=[candidato.pk], urlconf="core.urls_tenants")
+    url = reverse("knowledge:voltar_a_sugestao", args=[candidato.pk], urlconf="core.urls_tenants")
 
     html = client.get(
         reverse("knowledge:fontes_sugeridas", urlconf="core.urls_tenants")
@@ -224,3 +224,26 @@ def test_desfazer_a_aprovacao_de_quem_espera_o_pdf(ambiente):  # noqa: F811
     client.post(url, {"recusar": "1"})
     candidato.refresh_from_db()
     assert candidato.situacao == CandidatoDeFonte.Situacao.RECUSADO
+
+
+def test_recusado_por_engano_volta_para_as_sugestoes(ambiente):  # noqa: F811
+    import datetime
+
+    from django.utils import timezone
+
+    _, _, client = ambiente
+    antigo, novo = _artigo_pendente(1), _artigo_pendente(2)
+    agora = timezone.now()
+    for candidato, quando in ((antigo, agora - datetime.timedelta(days=2)), (novo, agora)):
+        candidato.situacao = CandidatoDeFonte.Situacao.RECUSADO
+        candidato.decidido_em = quando
+        candidato.save()
+
+    lista = reverse("knowledge:fontes_sugeridas", urlconf="core.urls_tenants")
+    html = client.get(lista + "?recusados=1").content.decode()
+    assert html.index("Estudo 2") < html.index("Estudo 1")
+    assert "Voltar para as sugestoes" in html
+
+    client.post(reverse("knowledge:voltar_a_sugestao", args=[novo.pk], urlconf="core.urls_tenants"))
+    novo.refresh_from_db()
+    assert novo.situacao == CandidatoDeFonte.Situacao.PENDENTE and novo.decidido_em is None

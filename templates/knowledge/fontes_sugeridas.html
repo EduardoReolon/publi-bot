@@ -26,7 +26,7 @@
           <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
           <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
         </form>
-        <form method="post" action="{% url 'knowledge:desfazer_aprovacao' candidato.pk %}" class="acoes">
+        <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}" class="acoes">
           {% csrf_token %}
           <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
           <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
@@ -54,7 +54,7 @@
           <input type="file" name="pdf" accept="application/pdf,.pdf" required>
           <button type="submit">{% translate "Enviar o PDF" %}</button>
         </form>
-        <form method="post" action="{% url 'knowledge:desfazer_aprovacao' candidato.pk %}" class="acoes">
+        <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}" class="acoes">
           {% csrf_token %}
           <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
           <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
@@ -163,14 +163,29 @@
   {% endfor %}
 
   {% if recentes %}
-    <h2>{% translate "Decididas recentemente" %}</h2>
+    <h2 id="decididas">{% if so_recusados %}{% translate "Recusados" %}{% else %}{% translate "Decididas recentemente" %}{% endif %}</h2>
+    <p class="ajuda">
+      {% if so_recusados %}<a href="{% url 'knowledge:fontes_sugeridas' %}#decididas">{% translate "Ver todas as decididas" %}</a>
+      {% else %}<a href="{% url 'knowledge:fontes_sugeridas' %}?recusados=1#decididas">{% translate "Ver so os recusados" %}</a>{% endif %}
+      · {% translate "A mais recente primeiro. Recusou sem querer? Volte para as sugestoes." %}
+    </p>
     <table>
       <tbody>
         {% for candidato in recentes %}
           <tr>
-            <td>{{ candidato.titulo|default:candidato.url|truncatechars:90 }}</td>
-            <td>{{ candidato.get_situacao_display }}{% if candidato.motivo %}<div class="ajuda">{{ candidato.motivo|truncatechars:120 }}</div>{% endif %}</td>
-            <td>{% if candidato.documento %}<a href="{% url 'knowledge:curar' candidato.documento.pk %}">{% translate "curadoria" %}</a>{% endif %}</td>
+            <td><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url|truncatechars:90 }}</a>
+              {% if candidato.tipo != 'pagina' %}<span class="selo">{{ candidato.get_tipo_display }}</span>{% endif %}</td>
+            <td>{{ candidato.get_situacao_display }}{% if candidato.decidido_em %} <span class="ajuda">{{ candidato.decidido_em|date:"d/m/Y H:i" }}</span>{% endif %}
+              {% if candidato.motivo %}<div class="ajuda">{{ candidato.motivo|truncatechars:120 }}</div>{% endif %}
+              {% if candidato.bloqueio %}<div class="ajuda">{% blocktranslate with p=candidato.bloqueio.prefixo %}{{ p }} esta bloqueado{% endblocktranslate %} — <a href="{% url 'knowledge:caminhos' %}">{% translate "desfazer em Caminhos confiaveis" %}</a></div>{% endif %}</td>
+            <td>
+              {% if candidato.documento %}<a href="{% url 'knowledge:curar' candidato.documento.pk %}">{% translate "curadoria" %}</a>{% endif %}
+              {% if candidato.situacao == 'recusado' or candidato.situacao == 'falhou' %}
+                <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}">{% csrf_token %}
+                  <button type="submit" class="botao discreto pequeno">{% translate "Voltar para as sugestoes" %}</button>
+                </form>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>

@@ -8,7 +8,7 @@ import uuid
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count
+from django.db.models import Count, F
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -691,7 +691,7 @@ AVISO_DE_CONFIANCA = gettext_lazy(
 @login_required
 def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     """Candidatos a fonte achados na web, esperando curadoria."""
-    from apps.knowledge.fontes_web import natureza_sugerida
+    from apps.knowledge.fontes_web import caminho_de, natureza_sugerida
     from apps.knowledge.models import CaminhoConfiavel, CandidatoDeFonte
 
     consulta = CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE)
@@ -705,6 +705,27 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     pendentes = list(consulta.select_related("pauta")[:100])
     for candidato in pendentes:
         candidato.natureza_padrao = natureza_sugerida(candidato)
+    # Decididas, a mais recente primeiro: e ali que se desfaz um engano.
+    so_recusados = request.GET.get("recusados") == "1"
+    decididas = CandidatoDeFonte.objects.exclude(
+        situacao__in=[
+            CandidatoDeFonte.Situacao.PENDENTE,
+            CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
+            CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
+        ]
+    )
+    if so_recusados:
+        decididas = decididas.filter(situacao=CandidatoDeFonte.Situacao.RECUSADO)
+    recentes = list(
+        decididas.select_related("documento").order_by(
+            F("decidido_em").desc(nulls_last=True), "-encontrado_em"
+        )[: 200 if so_recusados else 20]
+    )
+    for candidato in recentes:
+        if candidato.situacao == CandidatoDeFonte.Situacao.RECUSADO:
+            caminho = caminho_de(candidato.url)
+            if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.BLOQUEAR:
+                candidato.bloqueio = caminho
     return render(
         request,
         "knowledge/fontes_sugeridas.html",
@@ -717,13 +738,8 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
             "aguardando_pdf": CandidatoDeFonte.objects.filter(
                 situacao=CandidatoDeFonte.Situacao.AGUARDANDO_PDF
             ),
-            "recentes": CandidatoDeFonte.objects.exclude(
-                situacao__in=[
-                    CandidatoDeFonte.Situacao.PENDENTE,
-                    CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
-                    CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
-                ]
-            ).select_related("documento")[:20],
+            "recentes": recentes,
+            "so_recusados": so_recusados,
             "categorias": DocumentCategory.objects.order_by("name"),
             "niveis": CaminhoConfiavel.Nivel.choices,
             "aviso": AVISO_DE_CONFIANCA,
@@ -916,11 +932,11 @@ def enviar_audio(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
-def desfazer_aprovacao(request: HttpRequest, pk) -> HttpResponse:
-    """O aprovado que espera PDF ou audio volta a ser sugestao; com
-    `recusar`, ja sai recusado."""
-    from apps.knowledge.fontes_web import desfazer_aprovacao as desfazer
+def voltar_a_sugestao(request: HttpRequest, pk) -> HttpResponse:
+    """Volta para as sugestoes: o recusado, ou o aprovado que espera PDF ou
+    audio. Com `recusar`, o que esperava arquivo ja sai recusado."""
     from apps.knowledge.fontes_web import recusar
+    from apps.knowledge.fontes_web import voltar_a_sugestao as voltar
     from apps.knowledge.models import CandidatoDeFonte
 
     candidato = get_object_or_404(
@@ -929,16 +945,20 @@ def desfazer_aprovacao(request: HttpRequest, pk) -> HttpResponse:
         situacao__in=[
             CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
             CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
+            CandidatoDeFonte.Situacao.RECUSADO,
+            CandidatoDeFonte.Situacao.FALHOU,
         ],
     )
-    desfazer(candidato)
-    if request.POST.get("recusar") == "1":
+    esperava_arquivo = candidato.situacao in (
+        CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
+        CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
+    )
+    voltar(candidato)
+    if esperava_arquivo and request.POST.get("recusar") == "1":
         recusar(candidato, por=request.user, motivo=_("Sem arquivo para ler."))
         messages.success(request, _("Recusado. Nao sera sugerido de novo."))
         return redirect("knowledge:fontes_sugeridas")
-    messages.success(
-        request, _("Aprovacao desfeita: voltou para as sugestoes, com todas as opcoes.")
-    )
+    messages.success(request, _("Voltou para as sugestoes, com todas as opcoes."))
     return redirect(reverse("knowledge:fontes_sugeridas") + f"#candidato-{candidato.pk}")
 
 

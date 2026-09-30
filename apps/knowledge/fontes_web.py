@@ -327,9 +327,11 @@ def aprovar(
     return candidato
 
 
-def desfazer_aprovacao(candidato: CandidatoDeFonte) -> CandidatoDeFonte:
-    """Aprovado que ainda espera o PDF ou o audio volta a ser sugestao: nada
-    virou documento, entao nao ha o que desfazer no acervo."""
+def voltar_a_sugestao(candidato: CandidatoDeFonte) -> CandidatoDeFonte:
+    """Volta a ser sugestao, com todas as opcoes: o recusado (arrependimento) e
+    o aprovado que ainda espera o PDF ou o audio (nada virou documento, entao
+    nao ha o que desfazer no acervo). Bloqueio de site ou area, se houve, fica:
+    ele se desfaz em Caminhos confiaveis."""
     candidato.situacao = CandidatoDeFonte.Situacao.PENDENTE
     candidato.motivo = ""
     candidato.decidido_por = None

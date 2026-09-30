@@ -17,9 +17,9 @@ urlpatterns = [
     path("fontes-sugeridas/<uuid:pk>/", views.decidir_candidato, name="decidir_candidato"),
     path("fontes-sugeridas/<uuid:pk>/pdf/", views.enviar_pdf, name="enviar_pdf"),
     path(
-        "fontes-sugeridas/<uuid:pk>/desfazer/",
-        views.desfazer_aprovacao,
-        name="desfazer_aprovacao",
+        "fontes-sugeridas/<uuid:pk>/voltar/",
+        views.voltar_a_sugestao,
+        name="voltar_a_sugestao",
     ),
     path(
         "fontes-sugeridas/<uuid:pk>/texto/",
