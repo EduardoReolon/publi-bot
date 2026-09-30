@@ -38,6 +38,10 @@ def _sem_bases_academicas(request, monkeypatch):
     from apps.knowledge import tasks as tarefas_do_acervo
 
     monkeypatch.setattr(tarefas_do_acervo, "ao_concluir_curadoria", lambda: None)
+    # A curadoria vetoriza na fila; nos testes, na hora.
+    from django.conf import settings as configuracao
+
+    monkeypatch.setattr(configuracao, "PUBLIBOT_INDEXAR_NA_HORA", True, raising=False)
     if "bases_academicas" in request.fixturenames:
         return
     from apps.knowledge import academicos

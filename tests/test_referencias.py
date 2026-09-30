@@ -247,3 +247,31 @@ def test_recusado_por_engano_volta_para_as_sugestoes(ambiente):  # noqa: F811
     client.post(reverse("knowledge:voltar_a_sugestao", args=[novo.pk], urlconf="core.urls_tenants"))
     novo.refresh_from_db()
     assert novo.situacao == CandidatoDeFonte.Situacao.PENDENTE and novo.decidido_em is None
+
+
+def test_curadoria_na_fila_mostra_processando(ambiente, monkeypatch, settings):  # noqa: F811
+    from apps.knowledge import tasks
+    from apps.knowledge.models import Document
+
+    _, _, client = ambiente
+    settings.PUBLIBOT_INDEXAR_NA_HORA = False
+    from tests.test_interface import _documento_curado
+
+    documento = _documento_curado()
+    Document.objects.filter(pk=documento.pk).update(status=Document.Status.PENDING_CURATION)
+    despachados = []
+    monkeypatch.setattr(tasks.indexar_documento, "delay", lambda pk: despachados.append(pk))
+
+    from django.db import transaction
+
+    monkeypatch.setattr(transaction, "on_commit", lambda funcao: funcao())
+    tasks.pedir_indexacao(documento, blocos={0, 2}, concluir=True, por=None)
+    documento.refresh_from_db()
+    assert documento.indexacao_pedida["blocos"] == [0, 2] and despachados == [str(documento.pk)]
+
+    html = client.get(
+        reverse("knowledge:curar", args=[documento.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Processando" in html and "disabled" in html
+    html = client.get(reverse("knowledge:documentos", urlconf="core.urls_tenants")).content.decode()
+    assert "processando" in html

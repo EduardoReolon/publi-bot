@@ -378,6 +378,11 @@ class Document(models.Model):
         verbose_name=_("revisado por"),
     )
     reviewed_at = models.DateTimeField(_("revisado em"), null=True, blank=True)
+    # Vetorizar os blocos marcados e demorado (um vetor por paragrafo, num
+    # servidor pequeno): vai para a fila. Enquanto houver pedido, a tela mostra
+    # "processando". {"blocos": [...], "concluir": bool, "por": id, "em": iso}.
+    indexacao_pedida = models.JSONField(_("indexacao pedida"), default=dict, blank=True)
+    indexacao_erro = models.TextField(_("erro da indexacao"), blank=True)
 
     # Sem este numero nao existe modelo de negocio: e ele que diz quanto custa
     # cada documento em trabalho humano qualificado.

@@ -22,9 +22,7 @@ from apps.knowledge.forms import CuradoriaDeDocumento, EnvioDeDocumento
 from apps.knowledge.models import Document, DocumentCategory
 from apps.knowledge.services import (
     blocos_marcados,
-    indexar_blocos,
     ingerir_documento,
-    marcar_curado,
     possiveis_duplicatas,
 )
 from apps.knowledge.tasks import iniciar_ingestao
@@ -159,7 +157,12 @@ def _contexto_da_curadoria(documento: Document, form=None) -> dict:
         "documento": documento,
         "form": form or CuradoriaDeDocumento(instance=documento),
         "blocos": preparar_blocos(documento),
-        "marcados": blocos_marcados(documento),
+        # Enquanto processa, a tela volta com o que foi pedido, e nao com o
+        # indice antigo.
+        "marcados": set(documento.indexacao_pedida.get("blocos", []))
+        if documento.indexacao_pedida
+        else blocos_marcados(documento),
+        "processando": bool(documento.indexacao_pedida),
         "trechos": documento.chunks.order_by("block_index", "paragraph_index"),
         "duplicatas": possiveis_duplicatas(documento),
         "limite_de_tokens": settings.EMBEDDING_MAX_TOKENS,
@@ -186,41 +189,29 @@ def _processar_curadoria(request: HttpRequest, documento: Document) -> HttpRespo
     documento.save()
 
     marcados = {int(v) for v in request.POST.getlist("bloco") if v.isdigit()}
-
-    try:
-        criados = indexar_blocos(document=documento, blocos_marcados=marcados)
-    except Exception as exc:
-        # Indexar carrega o modelo de embedding — 2 GB, baixados na primeira
-        # utilizacao. Sem rede isso levantava uma excecao de HTTP no meio da
-        # requisicao e virava 500, sem nenhuma pista de que o problema era o
-        # modelo e nao o texto.
-        logger.exception("Falha ao indexar blocos do documento %s", documento.pk)
+    concluir = acao == "concluir"
+    if concluir and not marcados:
         messages.error(
             request,
-            _(
-                "Nao foi possivel vetorizar: %(erro)s. O modelo de embedding e "
-                "baixado na primeira utilizacao (cerca de 2 GB) e precisa de rede."
-            )
-            % {"erro": str(exc)[:200]},
+            _("Marque ao menos um bloco: sem trecho no indice o documento nao e citavel."),
         )
         return redirect("knowledge:curar", pk=documento.pk)
 
-    if acao == "concluir":
-        if not criados:
-            messages.error(
-                request,
-                _("Marque ao menos um bloco: sem trecho no indice o documento nao e citavel."),
-            )
-            return redirect("knowledge:curar", pk=documento.pk)
+    # Vetorizar e demorado num servidor pequeno: vai para a fila, e a tela
+    # mostra "processando" ate terminar.
+    from apps.knowledge.tasks import pedir_indexacao
 
-        marcar_curado(document=documento, revisado_por=request.user)
+    pedir_indexacao(documento, blocos=marcados, concluir=concluir, por=request.user)
+    if concluir:
         messages.success(
             request,
-            _("Documento curado com %(total)s trecho(s) no indice.") % {"total": criados},
+            _(
+                "Concluindo a curadoria em segundo plano: os trechos estao sendo "
+                "vetorizados. O documento aparece como curado quando terminar."
+            ),
         )
         return redirect("knowledge:documentos")
-
-    messages.success(request, _("Salvo. %(total)s trecho(s) no indice.") % {"total": criados})
+    messages.success(request, _("Salvo. Os trechos estao sendo vetorizados em segundo plano."))
     return redirect("knowledge:curar", pk=documento.pk)
 
 

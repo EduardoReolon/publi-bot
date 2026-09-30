@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task
+from django.conf import settings
 from django.db import transaction
 
 from apps.knowledge.models import Document
@@ -102,3 +103,59 @@ def ao_concluir_curadoria() -> None:
             logger.exception("Nao foi possivel despachar a conferencia das pautas.")
 
     transaction.on_commit(despachar)
+
+
+@shared_task
+def indexar_documento(document_id: str) -> int:
+    """Vetoriza os blocos marcados na curadoria e, se pedido, conclui.
+
+    Fora da requisicao: um vetor por paragrafo, no modelo de embedding, num
+    servidor de uma CPU, leva tempo demais para a pessoa esperar a tela.
+    Despachada de dentro do tenant.
+    """
+    from django.contrib.auth import get_user_model
+
+    from apps.knowledge.services import indexar_blocos, marcar_curado
+
+    documento = Document.objects.filter(pk=document_id).first()
+    if documento is None or not documento.indexacao_pedida:
+        return 0
+    pedido = documento.indexacao_pedida
+    try:
+        criados = indexar_blocos(document=documento, blocos_marcados=set(pedido.get("blocos", [])))
+        if pedido.get("concluir"):
+            if criados:
+                por = get_user_model().objects.filter(pk=pedido.get("por")).first()
+                marcar_curado(document=documento, revisado_por=por)
+            else:
+                documento.indexacao_erro = (
+                    "Nenhum trecho foi para o indice: marque ao menos um bloco com texto."
+                )
+    except Exception as exc:
+        logger.exception("Falha ao indexar o documento %s", document_id)
+        documento.indexacao_erro = f"Nao foi possivel vetorizar: {str(exc)[:300]}"
+        criados = 0
+    Document.objects.filter(pk=documento.pk).update(
+        indexacao_pedida={}, indexacao_erro=documento.indexacao_erro
+    )
+    return criados
+
+
+def pedir_indexacao(documento: Document, *, blocos: set[int], concluir: bool, por) -> None:
+    """Registra o pedido (a tela passa a mostrar "processando") e o poe na fila."""
+    from django.utils import timezone
+
+    Document.objects.filter(pk=documento.pk).update(
+        indexacao_pedida={
+            "blocos": sorted(blocos),
+            "concluir": concluir,
+            "por": str(por.pk) if getattr(por, "pk", None) else None,
+            "em": timezone.now().isoformat(),
+        },
+        indexacao_erro="",
+    )
+    # Nos testes (e em quem roda sem worker), na hora.
+    if getattr(settings, "PUBLIBOT_INDEXAR_NA_HORA", False):
+        indexar_documento(str(documento.pk))
+        return
+    transaction.on_commit(lambda: indexar_documento.delay(str(documento.pk)))

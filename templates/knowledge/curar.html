@@ -16,6 +16,15 @@
       </span>
     {% endif %}
   </p>
+  {% if processando %}
+    <div class="aviso espera">
+      <strong>{% translate "Processando" %}</strong> —
+      {% if documento.indexacao_pedida.concluir %}{% translate "concluindo a curadoria" %}{% else %}{% translate "salvando" %}{% endif %}:
+      {% translate "os trechos marcados estao sendo vetorizados em segundo plano. Atualize a pagina em instantes; enquanto isso, os botoes ficam travados." %}
+    </div>
+  {% elif documento.indexacao_erro %}
+    <div class="aviso ruim"><strong>{% translate "A ultima indexacao falhou" %}</strong>: {{ documento.indexacao_erro }}</div>
+  {% endif %}
 
   {% comment %}
     Os dois arquivos que respondem "o que o conversor entendeu?".
@@ -248,10 +257,10 @@
     {% endif %}
 
     <div class="acoes">
-      <button type="submit" name="acao" value="salvar" class="botao secundario">
+      <button type="submit" name="acao" value="salvar" class="botao secundario" {% if processando %}disabled{% endif %}>
         {% translate "Salvar" %}
       </button>
-      <button type="submit" name="acao" value="concluir">
+      <button type="submit" name="acao" value="concluir" {% if processando %}disabled{% endif %}>
         {% translate "Concluir curadoria" %}
       </button>
     </div>

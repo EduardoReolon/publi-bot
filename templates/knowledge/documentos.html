@@ -79,6 +79,11 @@
                   {% elif documento.status == 'pending_curation' %}espera{% endif %}">
                   {{ documento.get_status_display }}
                 </span>
+                {% if documento.indexacao_pedida %}
+                  <span class="selo espera" title="{% translate 'Vetorizando os trechos marcados na curadoria' %}">{% translate "processando" %}</span>
+                {% elif documento.indexacao_erro %}
+                  <span class="selo ruim" title="{{ documento.indexacao_erro }}">{% translate "indexacao falhou" %}</span>
+                {% endif %}
                 {% if not documento.extracao_e_confiavel %}
                   <span class="selo ruim">{% translate "sem analise de layout" %}</span>
                 {% endif %}
