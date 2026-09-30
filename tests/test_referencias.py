@@ -164,3 +164,39 @@ def test_painel_na_tela_de_pautas(ambiente, monkeypatch):  # noqa: F811
     )
     pauta.refresh_from_db()
     assert pauta.busca_de_fontes["artigos"]["ignorado"] is True
+
+
+def test_artigo_sem_pdf_aprovado_diz_onde_ficou_e_aceita_pdf_junto(ambiente, monkeypatch):  # noqa: F811
+    from apps.knowledge.models import DocumentCategory
+
+    _, _, client = ambiente
+    monkeypatch.setattr("apps.knowledge.academicos.pdf_pelo_unpaywall", lambda doi: "")
+    categoria = DocumentCategory.objects.create(name="Cientifico", slug="cientifico")
+    sem_pdf = _artigo_pendente(1)
+    url = reverse("knowledge:decidir_candidato", args=[sem_pdf.pk], urlconf="core.urls_tenants")
+
+    resposta = client.post(url, {"decisao": "aprovar", "categoria": categoria.pk}, follow=True)
+    sem_pdf.refresh_from_db()
+    assert sem_pdf.situacao == CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+    html = resposta.content.decode()
+    assert "ainda nao foi para o acervo" in html and 'id="aguardando-pdf"' in html
+    # A secao dos que esperam o PDF vem antes das sugestoes.
+    assert html.index('id="aguardando-pdf"') < html.index("Sugestoes esperando decisao")
+
+    enviados = []
+    monkeypatch.setattr(
+        "apps.knowledge.academicos.receber_pdf",
+        lambda candidato, arquivo, **kw: enviados.append(candidato.pk),
+    )
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    com_pdf = _artigo_pendente(2)
+    client.post(
+        reverse("knowledge:decidir_candidato", args=[com_pdf.pk], urlconf="core.urls_tenants"),
+        {
+            "decisao": "aprovar",
+            "categoria": categoria.pk,
+            "pdf": SimpleUploadedFile("a.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        },
+    )
+    assert enviados == [com_pdf.pk]

@@ -24,9 +24,7 @@
       {% translate "feita" %}{% if r.paginas.variada %} {% translate "com outras palavras" %}{% endif %} —
       {% if r.paginas.novos %}{{ r.paginas.novos }} {% translate "nova(s)" %}{% else %}{% translate "nada novo encontrado" %}{% endif %}.
     {% else %}{% translate "ainda nao feita" %}.{% endif %}
-    {% with a=r.aguardando.pagina %}{% if a.conferencia or a.curadoria %}
-      <span class="selo alerta">{% if a.conferencia %}{{ a.conferencia }} {% translate "aguardando conferencia" %}{% endif %}{% if a.conferencia and a.curadoria %} · {% endif %}{% if a.curadoria %}{{ a.curadoria }} {% translate "aguardando curadoria" %}{% endif %}</span>
-    {% endif %}{% endwith %}
+    {% include "content/_aguardando_referencia.html" with a=r.aguardando.pagina %}
   </div>
 
   <div>
@@ -43,9 +41,7 @@
       {% endif %}
       {% if r.artigos.ligados %}{% blocktranslate trimmed count n=r.artigos.ligados %}{{ n }} ja achado pelas sementes cientificas passou a ser desta pauta{% plural %}{{ n }} ja achados pelas sementes cientificas passaram a ser desta pauta{% endblocktranslate %}.{% endif %}
     {% else %}{% translate "ainda nao feita" %}.{% endif %}
-    {% with a=r.aguardando.artigo %}{% if a.conferencia or a.curadoria %}
-      <span class="selo alerta">{% if a.conferencia %}{{ a.conferencia }} {% translate "aguardando conferencia" %}{% endif %}{% if a.conferencia and a.curadoria %} · {% endif %}{% if a.curadoria %}{{ a.curadoria }} {% translate "aguardando curadoria" %}{% endif %}</span>
-    {% endif %}{% endwith %}
+    {% include "content/_aguardando_referencia.html" with a=r.aguardando.artigo %}
     {% if r.falta_artigos %}<span class="selo alerta">{% blocktranslate trimmed with n=r.minimo_de_artigos %}menos de {{ n }} no acervo{% endblocktranslate %}</span>{% endif %}
   </div>
 

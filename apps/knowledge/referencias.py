@@ -92,17 +92,20 @@ def no_acervo(pauta) -> dict:
 
 
 def aguardando(pauta) -> dict:
-    """{tipo: {"conferencia": n, "curadoria": n}} do que as buscas da pauta trouxeram."""
+    """{tipo: {"conferencia": n, "arquivo": n, "curadoria": n}} do que as buscas
+    da pauta trouxeram. "arquivo": aprovado, mas esperando o PDF ou o audio que
+    a pessoa precisa enviar (ainda nao e documento)."""
     from apps.knowledge.models import CandidatoDeFonte
 
-    saida = {tipo: {"conferencia": 0, "curadoria": 0} for tipo in TIPOS}
+    saida = {tipo: {"conferencia": 0, "arquivo": 0, "curadoria": 0} for tipo in TIPOS}
     for candidato in CandidatoDeFonte.objects.filter(pauta=pauta).select_related("documento"):
-        if candidato.situacao in (
-            CandidatoDeFonte.Situacao.PENDENTE,
+        if candidato.situacao == CandidatoDeFonte.Situacao.PENDENTE:
+            saida[candidato.tipo]["conferencia"] += 1
+        elif candidato.situacao in (
             CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
             CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
         ):
-            saida[candidato.tipo]["conferencia"] += 1
+            saida[candidato.tipo]["arquivo"] += 1
         elif (
             candidato.situacao == CandidatoDeFonte.Situacao.APROVADO
             and candidato.documento is not None

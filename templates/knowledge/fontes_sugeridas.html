@@ -14,6 +14,46 @@
     <a href="{% url 'radar:configuracao' %}#artigos-cientificos">{% translate "Artigos cientificos: sementes e busca agora" %}</a>
   </p>
 
+  {% if aguardando_audio %}
+    <h2 id="aguardando-audio">{% translate "Videos aguardando o audio" %}</h2>
+    {% for candidato in aguardando_audio %}
+      <div class="aviso">
+        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
+        <span class="selo">{{ candidato.canal_nome }}</span>
+        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
+        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_audio' candidato.pk %}" class="acoes">
+          {% csrf_token %}
+          <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
+          <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if aguardando_pdf %}
+    <h2 id="aguardando-pdf">{% translate "Artigos aguardando o PDF" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Aprovados, mas sem PDF de acesso aberto (ou o site recusou o download
+        por robo). Abra o link no navegador — ou pela biblioteca da sua
+        instituicao — baixe o PDF e envie aqui.
+      {% endblocktranslate %}
+    </p>
+    {% for candidato in aguardando_pdf %}
+      <div class="aviso">
+        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
+        {% if candidato.autores %}<span class="ajuda">{{ candidato.autores|truncatechars:80 }}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}</span>{% endif %}
+        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
+        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_pdf' candidato.pk %}" class="acoes">
+          {% csrf_token %}
+          <input type="file" name="pdf" accept="application/pdf,.pdf" required>
+          <button type="submit">{% translate "Enviar o PDF" %}</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if aguardando_audio or aguardando_pdf %}<h2>{% translate "Sugestoes esperando decisao" %}</h2>{% endif %}
   {% for candidato in pendentes %}
     <div class="aviso" id="candidato-{{ candidato.pk }}">
       <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
@@ -55,8 +95,13 @@
       {% endif %}
       {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
 
-      <form method="post" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
+      <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
         {% csrf_token %}
+        {% if candidato.tipo == 'artigo' and not candidato.pdf_url %}
+          <label class="ajuda" style="width:100%">{% translate "Ja baixou o PDF? Envie junto (opcional). Sem ele, o artigo aprovado vai para 'Artigos aguardando o PDF', no topo desta pagina." %}
+            <input type="file" name="pdf" accept="application/pdf,.pdf">
+          </label>
+        {% endif %}
         <select name="categoria" style="width:auto">
           {% for categoria in categorias %}
             <option value="{{ categoria.pk }}" {% if categoria.source_class == candidato.natureza_padrao %}selected{% endif %}>{{ categoria.name }}</option>
@@ -106,45 +151,6 @@
   {% empty %}
     <p class="vazio">{% translate "Nenhuma fonte sugerida esperando decisao." %}</p>
   {% endfor %}
-
-  {% if aguardando_audio %}
-    <h2>{% translate "Videos aguardando o audio" %}</h2>
-    {% for candidato in aguardando_audio %}
-      <div class="aviso">
-        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
-        <span class="selo">{{ candidato.canal_nome }}</span>
-        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
-        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_audio' candidato.pk %}" class="acoes">
-          {% csrf_token %}
-          <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
-          <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
-        </form>
-      </div>
-    {% endfor %}
-  {% endif %}
-
-  {% if aguardando_pdf %}
-    <h2>{% translate "Artigos aguardando o PDF" %}</h2>
-    <p class="pre-visualizacao">
-      {% blocktranslate trimmed %}
-        Aprovados, mas sem PDF de acesso aberto (ou o site recusou o download
-        por robo). Abra o link no navegador — ou pela biblioteca da sua
-        instituicao — baixe o PDF e envie aqui.
-      {% endblocktranslate %}
-    </p>
-    {% for candidato in aguardando_pdf %}
-      <div class="aviso">
-        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
-        {% if candidato.autores %}<span class="ajuda">{{ candidato.autores|truncatechars:80 }}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}</span>{% endif %}
-        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
-        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_pdf' candidato.pk %}" class="acoes">
-          {% csrf_token %}
-          <input type="file" name="pdf" accept="application/pdf,.pdf" required>
-          <button type="submit">{% translate "Enviar o PDF" %}</button>
-        </form>
-      </div>
-    {% endfor %}
-  {% endif %}
 
   {% if recentes %}
     <h2>{% translate "Decididas recentemente" %}</h2>

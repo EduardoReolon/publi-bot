@@ -764,17 +764,51 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
         messages.error(request, _("Escolha a categoria da fonte."))
         return redirect("knowledge:fontes_sugeridas")
 
+    arquivo = request.FILES.get("pdf")
+    if arquivo is not None and candidato.tipo == CandidatoDeFonte.Tipo.ARTIGO:
+        if not (arquivo.name or "").lower().endswith(".pdf"):
+            messages.error(request, _("Envie o arquivo PDF do artigo."))
+            return redirect("knowledge:fontes_sugeridas")
+        from apps.knowledge.academicos import receber_pdf
+
+        receber_pdf(candidato, arquivo, categoria=categoria, por=request.user)
+        messages.success(
+            request, _("PDF recebido. Confira na curadoria quando a leitura terminar.")
+        )
+        return redirect("knowledge:fontes_sugeridas")
+
     candidato = aprovar(candidato, categoria=categoria, por=request.user)
+    voltar = reverse("knowledge:fontes_sugeridas")
     if candidato.situacao == CandidatoDeFonte.Situacao.FALHOU:
         messages.error(
             request, _("Nao foi possivel buscar a pagina: %(m)s") % {"m": candidato.motivo}
         )
+    elif candidato.situacao == CandidatoDeFonte.Situacao.AGUARDANDO_PDF:
+        # Aprovado, mas ainda NAO e documento: sem o PDF nao ha o que ler.
+        messages.warning(
+            request,
+            _(
+                "Artigo aprovado, mas sem PDF para baixar: ele ainda nao foi para o "
+                "acervo. Esta em 'Artigos aguardando o PDF', no topo desta pagina: "
+                "baixe o PDF pelo link e envie ali."
+            ),
+        )
+        return redirect(voltar + "#aguardando-pdf")
+    elif candidato.situacao == CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO:
+        messages.warning(
+            request,
+            _(
+                "Video aprovado, mas sem legenda para ler: ele esta em 'Videos "
+                "aguardando o audio', no topo desta pagina."
+            ),
+        )
+        return redirect(voltar + "#aguardando-audio")
     else:
         messages.success(
             request,
-            _("Pagina enviada para o acervo. Confira na curadoria quando a leitura terminar."),
+            _("Enviado para o acervo. Confira na curadoria quando a leitura terminar."),
         )
-    return redirect("knowledge:fontes_sugeridas")
+    return redirect(voltar)
 
 
 @login_required

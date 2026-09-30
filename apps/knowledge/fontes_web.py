@@ -219,7 +219,7 @@ def _buscar_artigos(pauta, acervo: dict, consultas: list[str]) -> list:
     # (conferencia ou curadoria) — contando os que as sementes trouxeram.
     ligados = referencias.ligar_artigos_da_base(pauta)
     esperando = referencias.aguardando(pauta)["artigo"]
-    da_base = acervo.get("artigo", 0) + esperando["conferencia"] + esperando["curadoria"]
+    da_base = acervo.get("artigo", 0) + sum(esperando.values())
     falta = referencias.MINIMO_DE_ARTIGOS - da_base
     registro = {"em": timezone.now().isoformat(), "da_base": da_base, "ligados": ligados}
     novos: list = []
