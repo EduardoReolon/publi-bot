@@ -90,6 +90,7 @@ class Command(BaseCommand):
         ).first()
 
         if existente and not options["atualizar"]:
+            self._cargas_extras(existente)
             self.stdout.write(
                 f"Conexao {nome!r} ja existe e foi preservada ({existente.base_url}).\n"
                 f"Para sobrescrever com o .env:  manage.py configurar_conversao --atualizar"
@@ -106,6 +107,7 @@ class Command(BaseCommand):
         # dispositivo (cpu/cuda) e decisao do worker, no `.env` dele.
         conexao.default_model = ""
         conexao.workloads = [InferenceConnection.Workload.VISION_PARSE]
+        self._cargas_extras(conexao, gravar=False)
         # Uma conversao por vez, e o worker tambem recusa a segunda com 503.
         # Sao dois lugares de proposito: este evita a viagem, aquele protege a
         # maquina de um cliente que nao respeite este.
@@ -132,6 +134,24 @@ class Command(BaseCommand):
 
         if options["testar"]:
             self._testar(conexao)
+
+    def _cargas_extras(self, conexao: InferenceConnection, *, gravar: bool = True) -> None:
+        """As cargas do CONVERSAO_CARGAS_EXTRAS, somadas a conversao.
+
+        Aplicadas tambem na conexao preservada: ligar a vetorizacao no worker
+        e so mudar o .env e implantar. Tirar do .env tira da conexao.
+        """
+        validas = {InferenceConnection.Workload.EMBEDDING, InferenceConnection.Workload.YOUTUBE}
+        pedidas = [c for c in settings.CONVERSAO_CARGAS_EXTRAS if c in validas]
+        for invalida in set(settings.CONVERSAO_CARGAS_EXTRAS) - validas:
+            self.stderr.write(f"Carga desconhecida em CONVERSAO_CARGAS_EXTRAS: {invalida!r}")
+        base = [c for c in (conexao.workloads or []) if c not in validas]
+        novas = base + pedidas
+        if novas != (conexao.workloads or []):
+            conexao.workloads = novas
+            if gravar:
+                conexao.save(update_fields=["workloads"])
+            self.stdout.write(f"Cargas do worker: {', '.join(novas)}.")
 
     def _testar(self, conexao: InferenceConnection) -> None:
         """Confere que o worker responde AGORA, e diz em que dispositivo roda.

@@ -293,3 +293,18 @@ def _fingir_health(monkeypatch, corpo: dict, status: int = 200) -> None:
         return httpx.Response(status, json=corpo, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(httpx, "get", get)
+
+
+def test_cargas_extras_do_env_valem_tambem_na_conexao_preservada(capsys):
+    with override_settings(**CONFIG):
+        call_command("configurar_conversao")
+    with override_settings(**CONFIG, CONVERSAO_CARGAS_EXTRAS=["embedding", "youtube", "xyz"]):
+        call_command("configurar_conversao")
+    conexao = InferenceConnection.objects.get(name="Conversao de PDF")
+    assert conexao.workloads == ["vision_parse", "embedding", "youtube"]
+    assert "xyz" in capsys.readouterr().err
+    # Tirar do .env tira da conexao.
+    with override_settings(**CONFIG, CONVERSAO_CARGAS_EXTRAS=["youtube"]):
+        call_command("configurar_conversao")
+    conexao.refresh_from_db()
+    assert conexao.workloads == ["vision_parse", "youtube"]

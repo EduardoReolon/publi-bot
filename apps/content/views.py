@@ -267,6 +267,22 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
         )
         return redirect("content:pautas")
 
+    # Antes de ir para a fila: poucos videos no acervo, a primeira tentativa
+    # busca no YouTube e para, para a pessoa olhar. Gerar de novo segue.
+    from apps.knowledge.referencias import videos_antes_de_gerar
+
+    achados = videos_antes_de_gerar(pauta)
+    if achados:
+        messages.warning(
+            request,
+            _(
+                "Achei %(n)s video(s) para esta pauta: estao em Fontes sugeridas para voce "
+                "conferir. Gere de novo para seguir sem eles (ou depois de aprova-los)."
+            )
+            % {"n": achados},
+        )
+        return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+
     job = gerar_artigo(pauta)
     messages.success(
         request,
@@ -320,8 +336,12 @@ def ignorar_falta_de_artigos(request: HttpRequest, pk) -> HttpResponse:
     from apps.knowledge.referencias import registrar
 
     pauta = get_object_or_404(Topic, pk=pk)
-    registrar(pauta, "artigos", ignorado=True)
-    messages.success(request, _("Esta pauta segue sem buscar mais artigos cientificos."))
+    if request.POST.get("tipo") == "videos":
+        registrar(pauta, "videos", ignorado=True)
+        messages.success(request, _("Esta pauta segue sem buscar videos."))
+    else:
+        registrar(pauta, "artigos", ignorado=True)
+        messages.success(request, _("Esta pauta segue sem buscar mais artigos cientificos."))
     return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
 
 

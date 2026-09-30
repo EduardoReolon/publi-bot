@@ -573,6 +573,12 @@ CONVERSAO_BASE_URL = env.get("CONVERSAO_BASE_URL", "")
 # O mesmo valor de `WORKER_SHARED_SECRET` no `.env` do worker. Sem ele o worker
 # devolve 401 e a conversao falha sem dizer que o problema e credencial.
 CONVERSAO_SEGREDO = env.get("CONVERSAO_SEGREDO", "")
+# Cargas a mais que o mesmo worker atende, separadas por virgula:
+# "embedding" (docs/WORKER_VETORIZACAO.md) e "youtube" (docs/WORKER_YOUTUBE.md).
+# Aplicadas a cada implantacao, inclusive a conexao ja existente.
+CONVERSAO_CARGAS_EXTRAS = [
+    c.strip() for c in env.get("CONVERSAO_CARGAS_EXTRAS", "").split(",") if c.strip()
+]
 
 # ---------------------------------------------------------------------------
 # Semente da conexao de imagem de capa

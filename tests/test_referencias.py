@@ -309,3 +309,32 @@ def test_capa_de_download_nao_engana_o_cabecalho_com_doi(monkeypatch):
     assert certo["title"].startswith("An Empirical Investigation")
     assert certo["authors"].startswith("Michael A. McCollough") and certo["year"] == 2000
     assert certo["fonte"] == "openalex"
+
+
+def test_gerar_busca_videos_uma_vez_e_depois_segue(ambiente, monkeypatch):  # noqa: F811
+    from apps.content import views as telas
+    from apps.knowledge import referencias as ref
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Retencao", status=Topic.Status.APPROVED)
+    _acervo(monkeypatch, artigos=5, suficiente=True)
+    monkeypatch.setattr(ref, "youtube_ligado", lambda: True)
+    achados = []
+
+    def buscar(p, *, falta):
+        achados.append(falta)
+        return [object(), object()]
+
+    monkeypatch.setattr("apps.radar.youtube.buscar_para_pauta", buscar)
+    gerados = []
+    monkeypatch.setattr(
+        telas, "gerar_artigo", lambda p: gerados.append(p) or type("J", (), {"pk": "x" * 8})()
+    )
+    url = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
+
+    resposta = client.post(url, follow=True)
+    assert "Achei 2 video(s)" in resposta.content.decode() and not gerados
+    assert achados == [3]
+    # Segunda vez: segue sem buscar de novo.
+    client.post(url)
+    assert gerados and achados == [3]

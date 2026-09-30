@@ -270,7 +270,7 @@ def estatisticas(videos: list[dict], *, contas: ContasExternas) -> dict[str, dic
     return saida
 
 
-def _registrar_candidato(video: dict, *, consulta: str, metricas: dict | None = None):
+def _registrar_candidato(video: dict, *, consulta: str, metricas: dict | None = None, pauta=None):
     """O video como candidato a fonte. Canal confiavel (APROVAR) ja aprova."""
     from apps.knowledge.fontes_web import _ja_conhecida, aprovar, caminho_do_canal
     from apps.knowledge.models import CandidatoDeFonte
@@ -294,6 +294,7 @@ def _registrar_candidato(video: dict, *, consulta: str, metricas: dict | None = 
         consulta=consulta[:500],
         preferido=caminho is not None,
         metricas=metricas or {},
+        pauta=pauta,
     )
     if caminho is not None and caminho.nivel == "aprovar":
         aprovar(candidato, categoria=caminho.categoria, automatico=True)
@@ -348,18 +349,10 @@ def colher_sinais(
         achados = buscar_videos(
             semente, quantos=por_semente, contas=contas, idioma=config.codigo_de_idioma
         )
-        numeros = estatisticas(achados, contas=contas) if achados else {}
+        # O video em si nao vira sugestao de fonte aqui: fonte em video e
+        # buscada na hora da pauta (`buscar_para_pauta`), para o assunto dela.
         for video in achados:
             lidos = comentarios(video["id"], contas=contas, canal_id=video["canal_id"])
-            perguntas = [c for c in lidos if e_pergunta(c["texto"])]
-            metricas = {
-                **numeros.get(video["id"], {}),
-                "perguntas_nos_comentarios": len(perguntas),
-                "perguntas_respondidas_pelo_canal": sum(
-                    c["respondido_pelo_canal"] for c in perguntas
-                ),
-            }
-            _registrar_candidato(video, consulta=semente, metricas=metricas)
             for comentario in lidos:
                 if not e_pergunta(comentario["texto"]):
                     continue
@@ -373,4 +366,35 @@ def colher_sinais(
                 )
                 if sinal is not None:
                     novos.append(sinal)
+    return novos
+
+
+def buscar_para_pauta(pauta, *, falta: int) -> list:
+    """Videos para a pauta, como sugestao de fonte (a pessoa confere).
+
+    Uma busca (100 unidades da cota) e as estatisticas (2). Levanta
+    `ProvedorIndisponivel` sem chave ou sem cota.
+    """
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    contas = ContasExternas.carregar()
+    if COTA_DIARIA - FOLGA_DA_COTA - unidades_nas_ultimas_24h() < UNIDADES_DA_BUSCA + 2:
+        raise ProvedorIndisponivel("a cota diaria do YouTube esta quase no fim.")
+    consulta = pauta.target_keyword or pauta.title
+    achados = buscar_videos(
+        consulta,
+        quantos=min(25, falta * 3),
+        contas=contas,
+        idioma=ConfiguracaoDoRadar.carregar().codigo_de_idioma,
+    )
+    numeros = estatisticas(achados, contas=contas) if achados else {}
+    novos = []
+    for video in achados:
+        if len(novos) >= falta:
+            break
+        candidato = _registrar_candidato(
+            video, consulta=consulta, metricas=numeros.get(video["id"], {}), pauta=pauta
+        )
+        if candidato is not None:
+            novos.append(candidato)
     return novos
