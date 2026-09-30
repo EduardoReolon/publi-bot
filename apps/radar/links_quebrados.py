@@ -88,9 +88,30 @@ def decodificar(conteudo: bytes, tipo: str = "") -> str:
         return conteudo.decode("cp1252", errors="replace")
 
 
-def links_de_saida(html: str, base: str) -> tuple[str, list[tuple[str, str]]]:
-    """(titulo da pagina, [(url absoluta, texto)]) dos links para OUTROS sites,
-    so os que estao no TEXTO PRINCIPAL da pagina.
+BLOCOS_DE_TEXTO = {"p", "item", "cell", "quote", "head", "list", "row"}
+JANELA_DO_TRECHO = 350  # caracteres de cada lado do link
+
+
+def _paragrafo(ref) -> str:
+    """O paragrafo (ou item de lista, celula...) em que o link esta."""
+    no = ref.getparent()
+    while no is not None and no.tag not in BLOCOS_DE_TEXTO:
+        no = no.getparent()
+    alvo = no if no is not None else ref
+    paragrafo = " ".join("".join(alvo.itertext()).split())
+    if len(paragrafo) <= JANELA_DO_TRECHO * 2:
+        return paragrafo
+    # Paragrafo longo: a janela em volta do link, e nao o comeco dele.
+    texto_do_link = " ".join("".join(ref.itertext()).split())
+    meio = max(paragrafo.find(texto_do_link), 0) + len(texto_do_link) // 2
+    inicio = max(0, meio - JANELA_DO_TRECHO)
+    trecho = paragrafo[inicio : inicio + JANELA_DO_TRECHO * 2]
+    return ("…" if inicio else "") + trecho + ("…" if inicio + len(trecho) < len(paragrafo) else "")
+
+
+def links_de_saida(html: str, base: str) -> tuple[str, list[tuple[str, str, str]]]:
+    """(titulo da pagina, [(url absoluta, texto, paragrafo)]) dos links para
+    OUTROS sites, so os que estao no TEXTO PRINCIPAL da pagina.
 
     O texto principal sai da mesma extracao das fontes (trafilatura): menu,
     rodape, barra lateral e o que esta escondido ficam de fora. E ai que o link
@@ -123,7 +144,7 @@ def links_de_saida(html: str, base: str) -> tuple[str, list[tuple[str, str]]]:
         ):
             continue
         vistos.add(url)
-        saida.append((url, " ".join("".join(ref.itertext()).split())[:300]))
+        saida.append((url, " ".join("".join(ref.itertext()).split())[:300], _paragrafo(ref)))
     return titulo, saida[:LINKS_POR_PAGINA]
 
 
@@ -236,30 +257,117 @@ def verificar_pagina(url: str, artigos: list) -> int:
         return 0
     titulo, links = links_de_saida(decodificar(conteudo, tipo), url_final)
     guardados = 0
-    for link, texto in links:
+    for link, texto, contexto in links:
         codigo = situacao_do_link(link)
         if codigo is None:
             continue
         artigo, proximidade = _relacionar(texto, link, artigos)
         if artigo is None and (proximidade or 0) < PERTO_DO_TEMA:
             continue
-        _, criado = LinkQuebrado.objects.get_or_create(
+        quebrado, criado = LinkQuebrado.objects.get_or_create(
             pagina_url=url[:500],
             link_url=link[:500],
             defaults={
                 "pagina_titulo": titulo,
                 "dominio": _dominio(url)[:255],
                 "texto": texto,
+                "contexto": contexto,
                 "status_http": codigo,
                 "artigo": artigo,
                 "proximidade": proximidade,
             },
         )
+        if criado:
+            consultar_arquivo(quebrado)
         guardados += criado
     PaginaVerificada.objects.update_or_create(
         url=url[:500], defaults={"links": len(links), "erro": "", "verificada_em": timezone.now()}
     )
     return guardados
+
+
+ARQUIVO_CDX = "https://web.archive.org/cdx/search/cdx"
+HISTORICOS_POR_VEZ = 5
+
+
+def ultima_copia_boa(url: str) -> tuple[str, str] | None:
+    """(timestamp, endereco original) da ultima copia com HTTP 200 no Internet
+    Archive. A mais recente de todas costuma ser justamente a pagina de erro."""
+    from apps.knowledge.web import AGENTE
+
+    try:
+        resposta = httpx.get(
+            ARQUIVO_CDX,
+            params={
+                "url": url,
+                "output": "json",
+                "filter": "statuscode:200",
+                "fl": "timestamp,original",
+                "limit": "-1",
+            },
+            headers={"User-Agent": AGENTE},
+            timeout=TIMEOUT * 2,
+        )
+        resposta.raise_for_status()
+        linhas = resposta.json() if resposta.content.strip() else []
+    except (httpx.HTTPError, ValueError):
+        return None
+    # A primeira linha e o cabecalho (["timestamp", "original"]).
+    dados = [linha for linha in linhas[1:] if len(linha) == 2]
+    return (dados[-1][0], dados[-1][1]) if dados else None
+
+
+def consultar_arquivo(link) -> None:
+    """Preenche o link com o que a pagina que sumiu era, pelo Internet Archive.
+
+    Marca a consulta mesmo sem copia: nao se pergunta de novo a cada hora.
+    """
+    import datetime
+
+    import trafilatura
+
+    from apps.knowledge.web import PaginaIndisponivel, baixar
+
+    link.arquivo_consultado_em = timezone.now()
+    copia = ultima_copia_boa(link.link_url)
+    if copia is not None:
+        carimbo, original = copia
+        link.arquivo_url = f"https://web.archive.org/web/{carimbo}/{original}"[:700]
+        try:
+            link.arquivo_data = datetime.datetime.strptime(carimbo[:8], "%Y%m%d").date()
+        except ValueError:
+            link.arquivo_data = None
+        try:
+            # `id_` pede a pagina original, sem a barra do Archive por cima.
+            conteudo, _, tipo = baixar(f"https://web.archive.org/web/{carimbo}id_/{original}")
+            html = decodificar(conteudo, tipo)
+            metadados = trafilatura.extract_metadata(html, default_url=original)
+            link.arquivo_titulo = " ".join((getattr(metadados, "title", "") or "").split())[:300]
+            texto = trafilatura.extract(html, url=original, favor_precision=True) or ""
+            link.arquivo_trecho = " ".join(texto.split())[:800]
+        except PaginaIndisponivel:
+            pass
+    link.save(
+        update_fields=[
+            "arquivo_consultado_em",
+            "arquivo_url",
+            "arquivo_data",
+            "arquivo_titulo",
+            "arquivo_trecho",
+        ]
+    )
+
+
+def completar_historicos(limite: int = HISTORICOS_POR_VEZ) -> int:
+    """Os links novos ainda sem consulta ao Internet Archive (os de antes do campo)."""
+    from apps.radar.models import LinkQuebrado
+
+    pendentes = LinkQuebrado.objects.filter(
+        situacao=LinkQuebrado.Situacao.NOVO, arquivo_consultado_em__isnull=True
+    )[:limite]
+    for link in pendentes:
+        consultar_arquivo(link)
+    return len(pendentes)
 
 
 def _artigos_publicados() -> list:
@@ -276,11 +384,38 @@ def verificar_um_lote() -> int:
 
     if not ConfiguracaoDoRadar.carregar().procurar_links_quebrados:
         return 0
+    completar_historicos()
     paginas = paginas_para_verificar()
     if not paginas:
         return 0
     artigos = _artigos_publicados()
     return sum(verificar_pagina(url, artigos) for url in paginas)
+
+
+def orientacao_da_pauta(link) -> str:
+    """A orientacao da pauta, com a origem de cada parte separada."""
+    partes = [
+        f'Link quebrado: {link.link_url} (texto do link: "{link.texto or "-"}").',
+        "",
+        f"ONDE O LINK ESTA — {link.pagina_titulo or link.pagina_url} ({link.pagina_url}):",
+        f'"{link.contexto}"' if link.contexto else "(trecho nao guardado)",
+        "",
+    ]
+    if link.arquivo_url:
+        data = link.arquivo_data.strftime("%d/%m/%Y") if link.arquivo_data else "?"
+        partes += [
+            f"A PAGINA QUE SUMIU — copia do Internet Archive de {data} ({link.arquivo_url}):",
+            f"Titulo: {link.arquivo_titulo or '-'}",
+            f"Comeco do texto: {link.arquivo_trecho or '-'}",
+        ]
+    else:
+        partes.append("A PAGINA QUE SUMIU: sem copia no Internet Archive.")
+    partes += [
+        "",
+        "Um artigo que cubra o que essa pagina cobria, no contexto em que ela era "
+        "citada, pode ocupar o lugar do link.",
+    ]
+    return "\n".join(partes)
 
 
 def email(link) -> str:

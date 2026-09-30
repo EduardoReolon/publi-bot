@@ -24,6 +24,10 @@ def _sem_bases_academicas(request, monkeypatch):
     from apps.radar import provedores
 
     monkeypatch.setattr(provedores, "atualizar_saldo_dataforseo", lambda: None)
+    # Nem o Internet Archive, consultado para cada link quebrado novo.
+    from apps.radar import links_quebrados
+
+    monkeypatch.setattr(links_quebrados, "ultima_copia_boa", lambda url: None)
     if "bases_academicas" in request.fixturenames:
         return
     from apps.knowledge import academicos

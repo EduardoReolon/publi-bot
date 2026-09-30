@@ -872,14 +872,15 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
     link = get_object_or_404(LinkQuebrado, pk=pk)
     decisao = request.POST.get("decisao")
     if decisao == "pauta":
-        titulo = (link.texto or link.link_url)[:300]
+        from apps.radar.links_quebrados import orientacao_da_pauta
+
+        # O titulo da pagina que sumiu diz o assunto melhor que o texto do link.
+        titulo = (link.arquivo_titulo or link.texto or link.link_url)[:300]
+        palavra = link.texto if len((link.texto or "").split()) >= 2 else titulo
         Topic.objects.create(
             title=titulo,
-            target_keyword=titulo[:120],
-            briefing=(
-                f"Link quebrado em {link.pagina_url} apontava para {link.link_url}. "
-                "Um artigo sobre isso pode ocupar o lugar do link."
-            ),
+            target_keyword=palavra[:120],
+            briefing=orientacao_da_pauta(link),
             status=Topic.Status.SUGGESTED,
         )
         messages.success(request, _("Pauta criada: %(t)s") % {"t": titulo})

@@ -52,7 +52,7 @@ def test_links_de_saida_so_do_texto_principal_e_para_outros_sites():
     proprio site com a barra faltando tambem."""
     titulo, links = links_quebrados.links_de_saida(HTML, "https://blog.com.br/guia")
     assert titulo == "Guia de varejo"
-    assert [u for u, _ in links] == [
+    assert [u for u, *_ in links] == [
         "https://morto.com.br/analise-rfm-clientes",
         "https://vivo.com.br/x",
         "https://morto.com.br/receita-de-bolo",
@@ -183,3 +183,58 @@ def test_agente_leva_o_dominio_publico_como_contato(settings):
 
     settings.PUBLIBOT_DOMINIO_PUBLICO = "publibot.exemplo.com"
     assert "+https://publibot.exemplo.com/" in web._agente()
+
+
+def test_guarda_o_paragrafo_em_que_o_link_esta():
+    _, links = links_quebrados.links_de_saida(HTML, "https://blog.com.br/guia")
+    _, texto, contexto = links[0]
+    assert texto == "analise rfm de clientes"
+    # Paragrafo longo: a janela em volta do link, e nao so o comeco.
+    assert "analise rfm de clientes" in contexto and contexto.startswith("…")
+    assert len(contexto) <= 2 * links_quebrados.JANELA_DO_TRECHO + 2
+
+
+@pytest.mark.django_db
+def test_pagina_que_sumiu_vem_do_internet_archive_e_vai_para_a_pauta(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.models import Topic
+
+    _, _, client = ambiente
+    link = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia",
+        pagina_titulo="Guia de varejo",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/lms",
+        texto="plataforma EAD",
+        contexto="Para treinar a equipe, use uma plataforma EAD com trilhas.",
+        status_http=404,
+    )
+    antiga = (
+        "<html><head><title>O que e uma plataforma LMS</title></head><body><article><p>"
+        + "Uma plataforma LMS organiza cursos e trilhas de treinamento. " * 20
+        + "</p></article></body></html>"
+    )
+    monkeypatch.setattr(links_quebrados, "ultima_copia_boa", lambda url: ("20190312000000", url))
+    monkeypatch.setattr(
+        "apps.knowledge.web.baixar", lambda url: (antiga.encode(), url, "text/html")
+    )
+
+    links_quebrados.consultar_arquivo(link)
+    link.refresh_from_db()
+    assert link.arquivo_titulo == "O que e uma plataforma LMS"
+    assert link.arquivo_url == "https://web.archive.org/web/20190312000000/https://morto.com.br/lms"
+    assert link.arquivo_data.year == 2019 and link.arquivo_trecho.startswith("Uma plataforma LMS")
+
+    pagina = client.get(reverse("radar:imprensa", urlconf="core.urls_tenants")).content.decode()
+    assert (
+        "A pagina que sumiu, pelo Internet Archive" in pagina
+        and "Ver a copia de 12/03/2019" in pagina
+    )
+
+    client.post(
+        reverse("radar:decidir_link_quebrado", args=[link.pk], urlconf="core.urls_tenants"),
+        {"decisao": "pauta"},
+    )
+    pauta = Topic.objects.get()
+    assert pauta.title == "O que e uma plataforma LMS"
+    assert "ONDE O LINK ESTA" in pauta.briefing and "use uma plataforma EAD" in pauta.briefing
+    assert "A PAGINA QUE SUMIU" in pauta.briefing and "web.archive.org" in pauta.briefing

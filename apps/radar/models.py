@@ -1169,6 +1169,16 @@ class LinkQuebrado(models.Model):
         verbose_name=_("artigo sugerido"),
     )
     proximidade = models.FloatField(_("proximidade"), null=True, blank=True)
+    # O paragrafo do artigo onde o link esta: o que o autor quis citar.
+    contexto = models.TextField(_("trecho do artigo"), blank=True)
+    # A pagina que sumiu, pela ultima copia boa no Internet Archive.
+    arquivo_url = models.URLField(_("copia no Internet Archive"), max_length=700, blank=True)
+    arquivo_data = models.DateField(_("data da copia"), null=True, blank=True)
+    arquivo_titulo = models.CharField(_("titulo da pagina que sumiu"), max_length=300, blank=True)
+    arquivo_trecho = models.TextField(_("comeco do texto da pagina que sumiu"), blank=True)
+    arquivo_consultado_em = models.DateTimeField(
+        _("Internet Archive consultado em"), null=True, blank=True
+    )
     situacao = models.CharField(
         _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.NOVO
     )

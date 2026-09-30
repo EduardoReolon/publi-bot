@@ -95,6 +95,23 @@
       <strong><a href="{{ link.pagina_url }}" target="_blank" rel="noopener noreferrer">{{ link.pagina_titulo|default:link.pagina_url|truncatechars:90 }}</a></strong>
       <span class="ajuda">{{ link.dominio }}</span>
       <div class="pre-visualizacao">{% translate "Link morto" %}: "{{ link.texto|default:"—" }}" → {{ link.link_url|truncatechars:90 }} ({% if link.status_http %}HTTP {{ link.status_http }}{% else %}{% translate "site fora do ar" %}{% endif %})</div>
+      <details>
+        <summary>{% translate "Previa: o trecho do artigo e a pagina que sumiu" %}</summary>
+        <div class="ajuda" style="margin-top:.4rem"><strong>{% blocktranslate with d=link.dominio %}No artigo de {{ d }}, onde o link esta:{% endblocktranslate %}</strong></div>
+        {% if link.contexto %}<blockquote class="pre-visualizacao">{{ link.contexto }}</blockquote>{% else %}<div class="pre-visualizacao">{% translate "(trecho nao guardado: link achado antes desta versao)" %}</div>{% endif %}
+        <div class="ajuda" style="margin-top:.4rem"><strong>{% translate "A pagina que sumiu, pelo Internet Archive:" %}</strong></div>
+        {% if link.arquivo_url %}
+          <div class="pre-visualizacao">
+            {% if link.arquivo_titulo %}<strong>{{ link.arquivo_titulo }}</strong><br>{% endif %}
+            {{ link.arquivo_trecho|default:_("(sem texto aproveitavel na copia)")|truncatechars:500 }}
+          </div>
+          <div class="ajuda"><a href="{{ link.arquivo_url }}" target="_blank" rel="noopener noreferrer">{% blocktranslate with d=link.arquivo_data|date:"d/m/Y" %}Ver a copia de {{ d }}{% endblocktranslate %}</a></div>
+        {% elif link.arquivo_consultado_em %}
+          <div class="pre-visualizacao">{% translate "Sem copia no Internet Archive." %}</div>
+        {% else %}
+          <div class="pre-visualizacao">{% translate "Ainda nao consultado: a procura de hora em hora preenche." %}</div>
+        {% endif %}
+      </details>
       {% if link.artigo %}
         <div class="ajuda">{% translate "Seu artigo que cobre o mesmo" %}: <a href="{{ link.artigo.published_url }}" target="_blank" rel="noopener">{{ link.artigo.title }}</a></div>
       {% else %}
