@@ -257,6 +257,8 @@ class Document(models.Model):
         AUDIO = "audio", _("Audio transcrito")
         # Pagina web: texto principal extraido, sem menu, rodape e anuncio.
         WEB = "web", _("Pagina web (texto principal)")
+        # Resumo de artigo cientifico (OpenAlex), antes de haver o PDF.
+        RESUMO = "resumo", _("Resumo do artigo (sem o PDF)")
 
     # Registrado no documento, e nao so no trabalho que o converteu, porque e
     # informacao que a curadoria precisa ver: o `pypdf` devolve a camada de

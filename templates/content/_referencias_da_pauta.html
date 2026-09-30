@@ -13,7 +13,15 @@
       {{ r.acervo.artigo }} {% translate "artigos cientificos" %} ·
       {{ r.acervo.documento }} {% translate "documentos enviados" %}
       {% if r.acervo.suficiente %}<span class="selo ok">{% translate "sustenta a pauta" %}</span>{% else %}<span class="selo ruim">{% translate "ainda nao sustenta" %}</span>{% endif %}
+      {% if r.acervo.nao_curados %}<span class="ajuda">({% blocktranslate trimmed count n=r.acervo.nao_curados %}{{ n }} ainda nao curado{% plural %}{{ n }} ainda nao curados{% endblocktranslate %})</span>{% endif %}
     </div>
+    {% if r.acervo.por_curar %}
+      <div class="aviso espera" style="margin:.3rem 0">
+        <strong>{% translate "Para gerar, cure estas fontes" %}</strong>
+        <span class="ajuda">{% translate "(sao as que o artigo usaria; recusar uma faz a pauta procurar outra)" %}</span>
+        <ul>{% for d in r.acervo.por_curar %}<li><a href="{% url 'knowledge:curar' d.id %}">{{ d.titulo }}</a></li>{% endfor %}</ul>
+      </div>
+    {% endif %}
   {% else %}
     <div>{% translate "O acervo ainda nao foi conferido para esta pauta." %}</div>
   {% endif %}

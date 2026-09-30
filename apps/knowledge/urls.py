@@ -10,6 +10,7 @@ app_name = "knowledge"
 
 urlpatterns = [
     path("", views.documentos, name="documentos"),
+    path("apagar-nao-curados/", views.apagar_nao_curados, name="apagar_nao_curados"),
     path("enviar/", views.enviar_documento, name="enviar"),
     path("enviar/url/", views.enviar_url, name="enviar_url"),
     path("nota/", views.nota_do_especialista, name="nota"),
@@ -40,5 +41,6 @@ urlpatterns = [
     path("<uuid:pk>/markdown/", views.baixar_markdown, name="baixar_markdown"),
     path("<uuid:pk>/reprocessar/", views.reprocessar, name="reprocessar"),
     path("<uuid:pk>/excluir/", views.excluir_documento, name="excluir"),
+    path("<uuid:pk>/recusar/", views.recusar_fonte, name="recusar_fonte"),
     path("<uuid:pk>/marcar/", views.marcar_extracao, name="marcar_extracao"),
 ]

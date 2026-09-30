@@ -54,6 +54,7 @@ def _acervo(monkeypatch, artigos=0, suficiente=False):
             "artigo": artigos,
             "documento": 0,
             "suficiente": suficiente,
+            "por_curar": [],
             "em": "2026-09-30T10:00:00",
         },
     )
@@ -70,14 +71,14 @@ def _artigo_pendente(n, pauta=None):
 
 def test_com_artigos_suficientes_na_base_nao_busca_no_openalex(tenant, monkeypatch, sem_rede):
     pauta = Topic.objects.create(title="Retencao de clientes", target_keyword="retencao")
-    _acervo(monkeypatch, artigos=2)
+    _acervo(monkeypatch, artigos=4)
     _artigo_pendente(1, pauta)
 
     buscar_fontes(pauta)
     pauta.refresh_from_db()
     assert sem_rede["openalex"] == []
     assert pauta.busca_de_fontes["artigos"]["buscou"] is False
-    assert pauta.busca_de_fontes["artigos"]["da_base"] == 3
+    assert pauta.busca_de_fontes["artigos"]["da_base"] == 5
     assert pauta.busca_de_fontes["paginas"]["em"] and sem_rede["web"]
 
 
@@ -93,8 +94,8 @@ def test_busca_so_a_falta_e_liga_os_das_sementes(tenant, monkeypatch, sem_rede):
 
     buscar_fontes(pauta)
     pauta.refresh_from_db()
-    # Um ja achado pelas sementes passou a ser da pauta: faltam 2.
-    assert sem_rede["openalex"] == [("retencao", 2)]
+    # Um ja achado pelas sementes passou a ser da pauta: faltam 4.
+    assert sem_rede["openalex"] == [("retencao", 4)]
     assert pauta.busca_de_fontes["artigos"]["buscou"] is True
 
 

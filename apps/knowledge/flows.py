@@ -175,6 +175,13 @@ def passo_converter(job: GenerationJob) -> dict:
             curar_automaticamente(document)
         except Exception:
             logger.exception("Curadoria automatica do documento %s falhou.", document.pk)
+    else:
+        # Com worker que vetoriza, a fonte entra no indice ja, como provisoria;
+        # a curadoria e pedida quando uma pauta for usa-la.
+        from apps.knowledge import provisorias
+
+        if provisorias.ligado():
+            provisorias.indexar(document)
     return {
         "metodo": resultado.metodo,
         "caracteres": len(resultado.markdown),

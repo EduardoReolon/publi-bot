@@ -33,6 +33,8 @@ logger = logging.getLogger("publibot.knowledge")
 
 @login_required
 def documentos(request: HttpRequest) -> HttpResponse:
+    from apps.knowledge.provisorias import espaco
+
     """Lista o acervo, filtrando por situacao."""
     situacao = request.GET.get("situacao", "")
 
@@ -63,8 +65,35 @@ def documentos(request: HttpRequest) -> HttpResponse:
             "marcados": Document.objects.filter(extraction_flagged_at__isnull=False).count(),
             "filtro_extracao": request.GET.get("extracao", ""),
             "fontes_pendentes": _fontes_pendentes(),
+            "espaco": espaco(_meses(request.GET.get("meses"))),
         },
     )
+
+
+def _meses(valor) -> int | None:
+    try:
+        meses = int(valor or 0)
+    except ValueError:
+        return None
+    return meses if 0 < meses <= 120 else None
+
+
+@login_required
+@require_POST
+def apagar_nao_curados(request: HttpRequest) -> HttpResponse:
+    """Apaga os nao curados mais antigos que N meses (nunca os curados)."""
+    import datetime
+
+    from apps.knowledge.provisorias import apagaveis
+
+    meses = _meses(request.POST.get("meses"))
+    if meses is None or request.POST.get("confirmo") != "1":
+        messages.error(request, _("Informe os meses e confirme."))
+        return redirect("knowledge:documentos")
+    limite = timezone.now() - datetime.timedelta(days=30 * meses)
+    apagados, _detalhe = apagaveis(limite).delete()
+    messages.success(request, _("Apagados: %(n)s registro(s) do acervo.") % {"n": apagados})
+    return redirect("knowledge:documentos")
 
 
 def _fontes_pendentes() -> int:
@@ -213,6 +242,21 @@ def _processar_curadoria(request: HttpRequest, documento: Document) -> HttpRespo
         return redirect("knowledge:documentos")
     messages.success(request, _("Salvo. Os trechos estao sendo vetorizados em segundo plano."))
     return redirect("knowledge:curar", pk=documento.pk)
+
+
+@login_required
+@require_POST
+def recusar_fonte(request: HttpRequest, pk) -> HttpResponse:
+    """Nao serve: sai do indice, nao volta a ser sugerida, e as pautas que a
+    usariam procuram outra."""
+    from apps.knowledge.provisorias import recusar
+
+    documento = get_object_or_404(Document, pk=pk)
+    recusar(documento, por=request.user)
+    messages.success(
+        request, _("Fonte recusada: saiu do indice. As pautas que a usariam procuram outra.")
+    )
+    return redirect("knowledge:documentos")
 
 
 @login_required

@@ -289,7 +289,7 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
         return None  # artigo retratado nunca vira fonte
     if trabalho.doi and CandidatoDeFonte.objects.filter(doi=trabalho.doi).exists():
         return None
-    return CandidatoDeFonte.objects.create(
+    candidato = CandidatoDeFonte.objects.create(
         url=url,
         tipo=CandidatoDeFonte.Tipo.ARTIGO,
         titulo=trabalho.titulo[:500],
@@ -306,6 +306,11 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
         origem=origem,
         metricas=trabalho.metricas,
     )
+    # O resumo entra no indice como fonte provisoria, se houver worker.
+    from apps.knowledge.provisorias import acolher_se_ligado
+
+    acolher_se_ligado(candidato)
+    return candidato
 
 
 def buscar_para_pauta(pauta, *, limite: int = 5, consulta: str = "") -> list:
@@ -547,6 +552,9 @@ def aprovar_artigo(candidato, *, categoria, por=None, automatico: bool = False):
             por=por,
             motivo=f"O endereco do PDF devolveu uma pagina. Abra {pdf} e envie o arquivo.",
         )
+    from apps.knowledge.provisorias import descartar_resumo
+
+    descartar_resumo(candidato)
     if not resultado.ja_existia:
         _completar_documento(documento, candidato)
         if automatico:
@@ -563,11 +571,13 @@ def aprovar_artigo(candidato, *, categoria, por=None, automatico: bool = False):
 
 def receber_pdf(candidato, arquivo, *, categoria, por=None) -> Document:
     """O PDF que a pessoa baixou: vira documento e segue para a curadoria."""
+    from apps.knowledge.provisorias import descartar_resumo
     from apps.knowledge.services import ingerir_documento
     from apps.knowledge.tasks import iniciar_ingestao
 
     resultado = ingerir_documento(arquivo=arquivo, category=categoria, uploaded_by=por)
     documento = resultado.document
+    descartar_resumo(candidato)
     if not resultado.ja_existia:
         _completar_documento(documento, candidato)
         iniciar_ingestao(documento)
