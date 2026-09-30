@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n radar %}
 {% block titulo %}{% translate "Fontes sugeridas" %} — PubliBot{% endblock %}
 {% block largura %}largo{% endblock %}
 {% block menu %}{% include "_menu.html" %}{% endblock %}
@@ -17,12 +17,24 @@
   {% for candidato in pendentes %}
     <div class="aviso" id="candidato-{{ candidato.pk }}">
       <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
-      {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %} · {{ candidato.canal_nome }}</span>{% endif %}
+      {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %} · {{ candidato.canal_nome }}</span>
+        {% with m=candidato.metricas %}{% if m %}
+          <div class="ajuda">
+            {% if candidato.publicado_em %}{{ candidato.publicado_em|date:"d/m/Y" }}{% endif %}
+            {% if m.visualizacoes is not None %} · {{ m.visualizacoes|numero_curto }} {% translate "visualizacoes" %}{% endif %}
+            {% if m.curtidas is not None %} · {{ m.curtidas|numero_curto }} {% translate "curtidas" %}{% if m.visualizacoes %} ({{ m.curtidas|porcentagem_de:m.visualizacoes }}){% endif %}{% endif %}
+            {% if m.comentarios is not None %} · {{ m.comentarios|numero_curto }} {% translate "comentarios" %}{% endif %}
+            {% if m.duracao_segundos %} · {{ m.duracao_segundos|duracao }}{% endif %}
+            {% if m.inscritos_do_canal is not None %} · {% translate "canal com" %} {{ m.inscritos_do_canal|numero_curto }} {% translate "inscritos" %}{% endif %}
+            {% if m.perguntas_nos_comentarios %} · {% blocktranslate with r=m.perguntas_respondidas_pelo_canal p=m.perguntas_nos_comentarios %}o canal respondeu {{ r }} de {{ p }} perguntas{% endblocktranslate %}{% endif %}
+          </div>
+        {% endif %}{% endwith %}
+      {% endif %}
       {% if candidato.tipo == 'artigo' %}
         <span class="selo ok">{% translate "artigo cientifico" %}</span>
         {% if candidato.pdf_url %}<span class="selo ok">{% translate "PDF aberto" %}</span>{% else %}<span class="selo alerta" title="{% translate 'Ao aprovar, voce envia o PDF' %}">{% translate "sem PDF aberto" %}</span>{% endif %}
         <div class="ajuda">
-          {% if candidato.autores %}{{ candidato.autores|truncatechars:120 }}{% endif %}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}{% if candidato.revista %} · {{ candidato.revista }}{% endif %}{% if candidato.citacoes is not None %} · {% blocktranslate trimmed count n=candidato.citacoes %}{{ n }} citacao{% plural %}{{ n }} citacoes{% endblocktranslate %}{% endif %}
+          {% if candidato.autores %}{{ candidato.autores|truncatechars:120 }}{% endif %}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}{% if candidato.revista %} · {{ candidato.revista }}{% endif %}{% if candidato.citacoes is not None %} · {% blocktranslate trimmed count n=candidato.citacoes %}{{ n }} citacao{% plural %}{{ n }} citacoes{% endblocktranslate %}{% endif %}{% if candidato.metricas.top_10_por_cento %} · <span title="{% translate 'Entre os 10% mais citados da mesma area e ano' %}">{% translate "top 10% em citacoes" %}</span>{% endif %}
         </div>
       {% endif %}
       {% if candidato.preferido %}<span class="selo ok">{% if candidato.tipo == 'video' %}{% translate "canal preferido" %}{% else %}{% translate "caminho preferido" %}{% endif %}</span>{% endif %}

@@ -74,7 +74,13 @@ COMENTARIOS = {
                 "topLevelComment": {
                     "snippet": {"textOriginal": "Como calculo o BDI da obra?", "likeCount": 12}
                 }
-            }
+            },
+            # O proprio canal respondeu esta pergunta.
+            "replies": {
+                "comments": [
+                    {"snippet": {"authorChannelId": {"value": "UCcanal1"}, "textOriginal": "Veja"}}
+                ]
+            },
         },
         {
             "snippet": {
@@ -97,12 +103,28 @@ COMENTARIOS = {
 }
 
 
+ESTATISTICAS = {
+    "items": [
+        {
+            "id": "abc123",
+            "statistics": {"viewCount": "12345", "likeCount": "540", "commentCount": "87"},
+            "contentDetails": {"duration": "PT12M5S"},
+        }
+    ]
+}
+CANAIS = {"items": [{"id": "UCcanal1", "statistics": {"subscriberCount": "48000"}}]}
+
+
 def _youtube_responde(monkeypatch, *, busca=BUSCA, comentarios=COMENTARIOS, status=200, erro=""):
     def get(url, params=None, timeout=None):
         if status != 200:
             corpo = {"error": {"errors": [{"reason": erro}]}}
             return httpx.Response(status, json=corpo, request=httpx.Request("GET", url))
-        corpo = busca if url.endswith("/search") else comentarios
+        corpo = {
+            "/search": busca,
+            "/videos": ESTATISTICAS,
+            "/channels": CANAIS,
+        }.get("/" + url.rsplit("/", 1)[-1], comentarios)
         return httpx.Response(200, json=corpo, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(httpx, "get", get)
@@ -168,8 +190,18 @@ def test_comentarios_que_perguntam_viram_sinais_e_o_video_vira_candidato(tenant,
     assert candidato.tipo == "video"
     assert candidato.canal_nome == "Engenharia Pratica"
     assert candidato.dominio == "youtube.com/channel/UCcanal1"
+    assert candidato.metricas == {
+        "visualizacoes": 12345,
+        "curtidas": 540,
+        "comentarios": 87,
+        "duracao_segundos": 725,
+        "inscritos_do_canal": 48000,
+        "perguntas_nos_comentarios": 2,
+        "perguntas_respondidas_pelo_canal": 1,
+    }
     chamadas = ChamadaExterna.objects.filter(provedor="youtube")
-    assert chamadas.count() == 2
+    # busca, estatisticas dos videos, inscritos dos canais e comentarios
+    assert chamadas.count() == 4
     assert all(c.custo_usd == 0 for c in chamadas)
 
 

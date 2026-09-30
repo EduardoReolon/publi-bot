@@ -264,3 +264,39 @@ def test_tela_salva_as_sementes_e_busca_agora(ambiente, bases_academicas):  # no
     html = pagina.content.decode()
     assert "Novos na fila" in html and "rfm analysis" in html
     assert CandidatoDeFonte.objects.filter(consulta="rfm analysis").exists()
+
+
+def test_metricas_do_openalex_e_retratado_nunca_vira_fonte():
+    dados = {
+        "display_name": "Churn em varejo",
+        "doi": "https://doi.org/10.1/churn",
+        "fwci": 2.4,
+        "citation_normalized_percentile": {"value": 0.93, "is_in_top_10_percent": True},
+        "is_retracted": False,
+        "type": "article",
+        "primary_topic": {
+            "display_name": "Customer retention",
+            "field": {"display_name": "Business"},
+        },
+    }
+    trabalho = academicos.ler_trabalho(dados)
+    assert trabalho.metricas["fwci"] == 2.4 and trabalho.metricas["top_10_por_cento"] is True
+    assert trabalho.metricas["area"] == "Business"
+
+    retratado = academicos.ler_trabalho({**dados, "is_retracted": True})
+    assert retratado.metricas["retratado"] is True
+
+
+@pytest.mark.django_db
+def test_retratado_nao_e_registrado(radar):  # noqa: F811
+    trabalho = academicos.Trabalho(titulo="X", doi="10.1/x", metricas={"retratado": True})
+    assert academicos.registrar(trabalho, consulta="x", origem="openalex") is None
+
+
+def test_filtros_de_numero():
+    from apps.radar.templatetags.radar import duracao, numero_curto, porcentagem_de
+
+    assert numero_curto(12345) == "12 mil" and numero_curto(2_300_000) == "2,3 mi"
+    assert numero_curto(None) == "" and numero_curto(950) == "950"
+    assert porcentagem_de(540, 12345) == "4,4%"
+    assert duracao(725) == "12min05" and duracao(3723) == "1h02"

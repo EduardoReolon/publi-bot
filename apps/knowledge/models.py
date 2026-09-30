@@ -833,6 +833,11 @@ class CandidatoDeFonte(models.Model):
     # Por que o classificador achou que a pagina e um artigo (JSON-LD, og:type,
     # tamanho do texto). So preenchido quando a pagina foi conferida antes.
     classificacao = models.CharField(_("classificacao"), max_length=200, blank=True)
+    # O que a fonte diz sobre a propria reputacao, para a curadoria: no video,
+    # visualizacoes, curtidas, comentarios, inscritos do canal e se o canal
+    # responde as perguntas; no artigo, impacto normalizado, percentil,
+    # retratacao. So dos candidatos achados depois deste campo existir.
+    metricas = models.JSONField(_("metricas"), default=dict, blank=True)
     situacao = models.CharField(
         _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.PENDENTE
     )

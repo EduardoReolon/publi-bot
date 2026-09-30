@@ -175,11 +175,14 @@ def buscar_videos(consulta: str, *, quantos: int, contas: ContasExternas, idioma
     return videos
 
 
-def comentarios(video_id: str, *, contas: ContasExternas, quantos: int = 100) -> list[dict]:
+def comentarios(
+    video_id: str, *, contas: ContasExternas, quantos: int = 100, canal_id: str = ""
+) -> list[dict]:
+    """Os comentarios de topo. Com `canal_id`, marca os que o proprio canal respondeu."""
     dados = _get(
         "commentThreads",
         {
-            "part": "snippet",
+            "part": "snippet,replies",
             "videoId": video_id,
             "maxResults": max(1, min(quantos, 100)),
             "order": "relevance",
@@ -192,12 +195,82 @@ def comentarios(video_id: str, *, contas: ContasExternas, quantos: int = 100) ->
     for item in dados.get("items") or []:
         topo = ((item.get("snippet") or {}).get("topLevelComment") or {}).get("snippet") or {}
         texto = topo.get("textOriginal") or topo.get("textDisplay") or ""
+        respostas = (item.get("replies") or {}).get("comments") or []
+        respondido = bool(canal_id) and any(
+            ((r.get("snippet") or {}).get("authorChannelId") or {}).get("value") == canal_id
+            for r in respostas
+        )
         if texto:
-            saida.append({"texto": texto, "curtidas": int(topo.get("likeCount") or 0)})
+            saida.append(
+                {
+                    "texto": texto,
+                    "curtidas": int(topo.get("likeCount") or 0),
+                    "respondido_pelo_canal": respondido,
+                }
+            )
     return saida
 
 
-def _registrar_candidato(video: dict, *, consulta: str):
+def _inteiro(valor) -> int | None:
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _duracao_em_segundos(iso: str) -> int | None:
+    """PT1H2M3S -> 3723."""
+    achado = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", iso or "")
+    if not achado:
+        return None
+    horas, minutos, segundos = (int(g or 0) for g in achado.groups())
+    return horas * 3600 + minutos * 60 + segundos
+
+
+def estatisticas(videos: list[dict], *, contas: ContasExternas) -> dict[str, dict]:
+    """{video_id: metricas} com duas chamadas (1 unidade cada, ate 50 por vez).
+
+    Descurtidas nao entram: o YouTube deixou de mostra-las pela API em 2021.
+    """
+    ids = [v["id"] for v in videos][:50]
+    if not ids:
+        return {}
+    dados = _get(
+        "videos",
+        {"part": "statistics,contentDetails", "id": ",".join(ids)},
+        contas=contas,
+        consulta="estatisticas",
+    )
+    saida = {}
+    for item in dados.get("items") or []:
+        numeros = item.get("statistics") or {}
+        saida[item["id"]] = {
+            "visualizacoes": _inteiro(numeros.get("viewCount")),
+            "curtidas": _inteiro(numeros.get("likeCount")),
+            "comentarios": _inteiro(numeros.get("commentCount")),
+            "duracao_segundos": _duracao_em_segundos(
+                (item.get("contentDetails") or {}).get("duration", "")
+            ),
+        }
+    canais = list(dict.fromkeys(v["canal_id"] for v in videos if v.get("canal_id")))[:50]
+    if canais:
+        dados = _get(
+            "channels",
+            {"part": "statistics", "id": ",".join(canais)},
+            contas=contas,
+            consulta="inscritos",
+        )
+        inscritos = {
+            item["id"]: _inteiro((item.get("statistics") or {}).get("subscriberCount"))
+            for item in dados.get("items") or []
+        }
+        for video in videos:
+            if video["id"] in saida:
+                saida[video["id"]]["inscritos_do_canal"] = inscritos.get(video["canal_id"])
+    return saida
+
+
+def _registrar_candidato(video: dict, *, consulta: str, metricas: dict | None = None):
     """O video como candidato a fonte. Canal confiavel (APROVAR) ja aprova."""
     from apps.knowledge.fontes_web import _ja_conhecida, aprovar, caminho_do_canal
     from apps.knowledge.models import CandidatoDeFonte
@@ -220,6 +293,7 @@ def _registrar_candidato(video: dict, *, consulta: str):
         publicado_em=data_do_youtube(video["publicado"]),
         consulta=consulta[:500],
         preferido=caminho is not None,
+        metricas=metricas or {},
     )
     if caminho is not None and caminho.nivel == "aprovar":
         aprovar(candidato, categoria=caminho.categoria, automatico=True)
@@ -260,7 +334,9 @@ def colher_sinais(
         return []
     por_semente = min(videos, 25)
     livre = COTA_DIARIA - FOLGA_DA_COTA - unidades_nas_ultimas_24h()
-    cabem = max(0, livre // (UNIDADES_DA_BUSCA + por_semente))
+    # Por semente: a busca, os comentarios de cada video e 2 unidades das
+    # estatisticas (videos e canais).
+    cabem = max(0, livre // (UNIDADES_DA_BUSCA + por_semente + 2))
     if cabem == 0:
         raise ProvedorIndisponivel(
             "a cota diaria do YouTube esta quase no fim; a proxima rodada busca de novo."
@@ -269,11 +345,22 @@ def colher_sinais(
 
     novos: list[SinalDeDemanda] = []
     for semente in sementes:
-        for video in buscar_videos(
+        achados = buscar_videos(
             semente, quantos=por_semente, contas=contas, idioma=config.codigo_de_idioma
-        ):
-            _registrar_candidato(video, consulta=semente)
-            for comentario in comentarios(video["id"], contas=contas):
+        )
+        numeros = estatisticas(achados, contas=contas) if achados else {}
+        for video in achados:
+            lidos = comentarios(video["id"], contas=contas, canal_id=video["canal_id"])
+            perguntas = [c for c in lidos if e_pergunta(c["texto"])]
+            metricas = {
+                **numeros.get(video["id"], {}),
+                "perguntas_nos_comentarios": len(perguntas),
+                "perguntas_respondidas_pelo_canal": sum(
+                    c["respondido_pelo_canal"] for c in perguntas
+                ),
+            }
+            _registrar_candidato(video, consulta=semente, metricas=metricas)
+            for comentario in lidos:
                 if not e_pergunta(comentario["texto"]):
                     continue
                 texto = re.sub(r"\s+", " ", comentario["texto"]).strip()
