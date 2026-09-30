@@ -39,7 +39,8 @@ UNPAYWALL = "https://api.unpaywall.org/v2"
 TIMEOUT = 30.0
 CAMPOS = (
     "id,doi,display_name,publication_year,cited_by_count,language,type,"
-    "abstract_inverted_index,open_access,best_oa_location,primary_location,authorships"
+    "abstract_inverted_index,open_access,best_oa_location,primary_location,authorships,"
+    "fwci,citation_normalized_percentile,is_retracted,primary_topic"
 )
 MAXIMO_DE_PENDENTES = 30
 SEMELHANCA_DO_TITULO = 0.85
@@ -60,6 +61,7 @@ class Trabalho:
     pdf_url: str = ""
     pagina_url: str = ""
     revista: str = ""
+    metricas: dict = field(default_factory=dict)
 
     @property
     def url(self) -> str:
@@ -136,7 +138,30 @@ def ler_trabalho(dados: dict) -> Trabalho:
         pdf_url=pdf,
         pagina_url=melhor.get("landing_page_url") or principal.get("landing_page_url") or "",
         revista=((principal.get("source") or {}).get("display_name") or ""),
+        metricas=_metricas(dados),
     )
+
+
+def _metricas(dados: dict) -> dict:
+    """Reputacao do artigo, para a curadoria (e para nunca citar retratado).
+
+    `fwci`: citacoes comparadas com artigos da mesma area e ano (1 = media).
+    `percentil`: posicao nas citacoes entre os da mesma area e ano.
+    """
+    percentil = dados.get("citation_normalized_percentile") or {}
+    topico = dados.get("primary_topic") or {}
+    metricas = {
+        "fwci": dados.get("fwci"),
+        "percentil": percentil.get("value"),
+        "top_10_por_cento": percentil.get("is_in_top_10_percent"),
+        "retratado": dados.get("is_retracted"),
+        "tipo": dados.get("type"),
+        "idioma": dados.get("language"),
+        "acesso_aberto": (dados.get("open_access") or {}).get("oa_status"),
+        "topico": topico.get("display_name"),
+        "area": (topico.get("field") or {}).get("display_name"),
+    }
+    return {k: v for k, v in metricas.items() if v not in (None, "")}
 
 
 def buscar_openalex(consulta: str, *, quantos: int = 5, idiomas: str = "pt|en") -> list[Trabalho]:
@@ -228,6 +253,8 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
     url = trabalho.url[:500]
     if not url or _ja_conhecida(url) or bloqueada(trabalho.pagina_url or url):
         return None
+    if trabalho.metricas.get("retratado"):
+        return None  # artigo retratado nunca vira fonte
     if trabalho.doi and CandidatoDeFonte.objects.filter(doi=trabalho.doi).exists():
         return None
     return CandidatoDeFonte.objects.create(
@@ -245,6 +272,7 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
         consulta=consulta[:500],
         pauta=pauta,
         origem=origem,
+        metricas=trabalho.metricas,
     )
 
 
