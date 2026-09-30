@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from django.conf import settings
 from django.contrib import messages
@@ -693,11 +694,15 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     from apps.knowledge.fontes_web import natureza_sugerida
     from apps.knowledge.models import CaminhoConfiavel, CandidatoDeFonte
 
-    pendentes = list(
-        CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE).select_related(
-            "pauta"
-        )[:100]
-    )
+    consulta = CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE)
+    # Vindo do painel de referencias de uma pauta: so as dela.
+    pauta_id = request.GET.get("pauta", "")
+    if pauta_id:
+        try:
+            consulta = consulta.filter(pauta_id=uuid.UUID(pauta_id))
+        except ValueError:
+            pauta_id = ""
+    pendentes = list(consulta.select_related("pauta")[:100])
     for candidato in pendentes:
         candidato.natureza_padrao = natureza_sugerida(candidato)
     return render(

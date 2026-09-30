@@ -30,7 +30,7 @@
         </thead>
         <tbody>
           {% for pauta in pautas %}
-            <tr>
+            <tr id="pauta-{{ pauta.pk }}">
               <td>
                 <strong>{{ pauta.title }}</strong>
                 {% if pauta.origin == 'radar' %}
@@ -62,6 +62,7 @@
                 {% elif pauta.briefing %}
                   <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>
                 {% endif %}
+                {% if pauta.referencias %}{% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}{% endif %}
               </td>
               <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}
                 {% with d=pauta.evidence.dificuldade %}{% if d %}<div><span class="selo {% if d.rotulo == 'brecha' %}ok{% elif d.rotulo == 'dificil' %}ruim{% else %}alerta{% endif %}" title="{% translate 'Links para a 1a pagina' %}: {{ d.links }}">{% if d.rotulo == 'brecha' %}{% translate "brecha" %}{% elif d.rotulo == 'dificil' %}{% translate "dificil" %}{% else %}{% translate "media" %}{% endif %} · {{ d.nota }}</span></div>{% endif %}{% endwith %}

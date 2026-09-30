@@ -483,6 +483,9 @@ def marcar_curado(*, document: Document, revisado_por, segundos: int = 0) -> Doc
     document.valid_until = calcular_validade(document)
     document.save()
     aposentar_anterior(document)
+    from apps.knowledge.tasks import ao_concluir_curadoria
+
+    ao_concluir_curadoria()
     return document
 
 

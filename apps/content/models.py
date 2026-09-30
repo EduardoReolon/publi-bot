@@ -46,6 +46,7 @@ class PromptTemplate(models.Model):
         OPPORTUNITY_BRIEF = "opportunity_brief", _("Descricao de oportunidade")
         SEED_SUGGESTION = "seed_suggestion", _("Sugestao de sementes e dores")
         IMAGE_PROMPT = "image_prompt", _("Prompt de imagem")
+        SOURCE_QUERIES = "source_queries", _("Outras palavras para buscar fontes")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     key = models.CharField(_("chave"), max_length=32, choices=Key.choices, unique=True)
@@ -321,6 +322,10 @@ class Topic(models.Model):
     # dados" e "Guia para contratar consultoria de dados" sao canibalizacao pura
     # e passariam batido numa comparacao literal.
     cannibalization_score = models.FloatField(_("risco de canibalizacao"), default=0.0)
+    # O que ja se sabe das referencias da pauta: o que o acervo tem, cada busca
+    # feita (quando, com que palavras, quantas novas) e se a falta de artigos
+    # foi ignorada. Ver apps/knowledge/referencias.py.
+    busca_de_fontes = models.JSONField(_("busca de fontes"), default=dict, blank=True)
     # Artigo publicado DEPOIS da pauta nascer e que ja cobre o mesmo assunto.
     # Aviso, nao descarte: a pessoa decide se muda o angulo ou desiste.
     artigo_parecido = models.ForeignKey(

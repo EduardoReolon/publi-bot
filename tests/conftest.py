@@ -34,6 +34,10 @@ def _sem_bases_academicas(request, monkeypatch):
     from apps.integrations import publishing
 
     monkeypatch.setattr(publishing, "_rever_o_radar", lambda pk: None)
+    # Nem a conferencia das pautas depois de cada curadoria.
+    from apps.knowledge import tasks as tarefas_do_acervo
+
+    monkeypatch.setattr(tarefas_do_acervo, "ao_concluir_curadoria", lambda: None)
     if "bases_academicas" in request.fixturenames:
         return
     from apps.knowledge import academicos

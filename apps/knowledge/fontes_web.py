@@ -157,36 +157,91 @@ def _ja_conhecida(url: str) -> bool:
     )
 
 
-def buscar_fontes(pauta, *, limite: int | None = None) -> list[CandidatoDeFonte]:
-    """Busca paginas que podem sustentar a pauta e as registra como candidatas.
+def buscar_fontes(pauta, *, limite: int | None = None, variar: bool = False) -> list:
+    """Busca o que pode sustentar a pauta e registra como candidatas.
 
-    Caminhos PREFERIR primeiro (com `site:`), depois a consulta aberta. URL ja
-    vista — candidata, recusada ou documento — nao volta. Da caminho APROVAR,
-    a pagina entra direto no acervo, sem curadoria.
+    Primeiro confere o acervo (`referencias.no_acervo`). Artigos cientificos:
+    so a falta ate `MINIMO_DE_ARTIGOS` vai ao OpenAlex, depois de contar os do
+    acervo e os que as sementes cientificas ja trouxeram. Paginas: caminhos
+    PREFERIR primeiro (com `site:`), depois a consulta aberta. URL ja vista nao
+    volta; de caminho APROVAR, entra direto no acervo.
+
+    `variar`: a busca de novo, com palavras ainda nao usadas
+    (`referencias.outras_consultas`). Cada busca fica registrada na pauta.
     """
-    from apps.radar.models import ChamadaExterna, ConfiguracaoDoRadar
-    from apps.radar.provedores import buscar
+    from apps.knowledge import referencias
+    from apps.radar.models import ConfiguracaoDoRadar
 
     config = ConfiguracaoDoRadar.carregar()
     limite = limite or config.fontes_por_pauta
     termo = pauta.target_keyword or pauta.title
+    acervo = referencias.conferir(pauta)
+    outras = referencias.outras_consultas(pauta) if variar else None
+    agora = timezone.now().isoformat()
 
-    consultas = [
-        f"site:{c.prefixo} {termo}"
-        for c in CaminhoConfiavel.objects.filter(nivel=CaminhoConfiavel.Nivel.PREFERIR)[:3]
-    ]
-    consultas.append(termo)
-
-    # Artigos cientificos primeiro: gratuitos, e fonte primaria. Falha aqui
-    # nao impede a busca na web.
     academicos: list[CandidatoDeFonte] = []
-    if config.artigos_cientificos:
-        from apps.knowledge.academicos import BaseIndisponivel, buscar_para_pauta
+    ignorado = ((pauta.busca_de_fontes or {}).get("artigos") or {}).get("ignorado")
+    if config.artigos_cientificos and not ignorado:
+        academicos = _buscar_artigos(pauta, acervo, outras["artigos"] if outras else [termo])
 
+    consultas = (
+        outras["web"]
+        if outras
+        else [
+            f"site:{c.prefixo} {termo}"
+            for c in CaminhoConfiavel.objects.filter(nivel=CaminhoConfiavel.Nivel.PREFERIR)[:3]
+        ]
+        + [termo]
+    )
+    novos = _buscar_paginas(pauta, consultas, limite)
+    referencias.registrar(
+        pauta,
+        "paginas",
+        em=agora,
+        consultas=referencias.acumular_consultas(pauta, "paginas", consultas),
+        novos=len(novos),
+        variada=variar,
+    )
+    logger.info(
+        "Pauta %s: %s candidato(s) a fonte, %s artigo(s) cientifico(s).",
+        pauta.pk,
+        len(novos),
+        len(academicos),
+    )
+    return academicos + novos
+
+
+def _buscar_artigos(pauta, acervo: dict, consultas: list[str]) -> list:
+    from apps.knowledge import referencias
+    from apps.knowledge.academicos import BaseIndisponivel, buscar_para_pauta
+
+    # Na base: os do acervo e os ja achados para a pauta que esperam a pessoa
+    # (conferencia ou curadoria) — contando os que as sementes trouxeram.
+    ligados = referencias.ligar_artigos_da_base(pauta)
+    esperando = referencias.aguardando(pauta)["artigo"]
+    da_base = acervo.get("artigo", 0) + esperando["conferencia"] + esperando["curadoria"]
+    falta = referencias.MINIMO_DE_ARTIGOS - da_base
+    registro = {"em": timezone.now().isoformat(), "da_base": da_base, "ligados": ligados}
+    novos: list = []
+    if falta > 0 and consultas:
         try:
-            academicos = buscar_para_pauta(pauta, limite=limite)
+            for consulta in consultas:
+                if len(novos) >= falta:
+                    break
+                novos += buscar_para_pauta(pauta, limite=falta - len(novos), consulta=consulta)
+            registro["consultas"] = referencias.acumular_consultas(pauta, "artigos", consultas)
         except BaseIndisponivel as exc:
             logger.warning("Pauta %s: artigos cientificos nao buscados: %s", pauta.pk, exc)
+            registro["erro"] = str(exc)[:200]
+    registro["novos"] = len(novos)
+    registro["buscou"] = falta > 0
+    referencias.registrar(pauta, "artigos", **registro)
+    return novos
+
+
+def _buscar_paginas(pauta, consultas: list[str], limite: int) -> list[CandidatoDeFonte]:
+    from apps.radar.models import ChamadaExterna
+    from apps.radar.provedores import buscar
 
     novos: list[CandidatoDeFonte] = []
     for consulta in consultas:
@@ -212,14 +267,7 @@ def buscar_fontes(pauta, *, limite: int | None = None) -> list[CandidatoDeFonte]
             if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
                 aprovar(candidato, categoria=caminho.categoria, automatico=True)
             novos.append(candidato)
-
-    logger.info(
-        "Pauta %s: %s candidato(s) a fonte, %s artigo(s) cientifico(s).",
-        pauta.pk,
-        len(novos),
-        len(academicos),
-    )
-    return academicos + novos
+    return novos
 
 
 def aprovar(

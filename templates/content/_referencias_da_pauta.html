@@ -1,0 +1,67 @@
+{% load i18n %}
+{% comment %}
+  As referencias da pauta: o que o acervo tem, o que cada busca achou e o que
+  espera a pessoa. Os numeros do acervo sao da ultima conferencia.
+{% endcomment %}
+<div class="aviso" style="margin-top:.5rem">
+  <strong>{% translate "Referencias" %}</strong>
+  {% if r.acervo %}
+    <div>
+      {% translate "No acervo" %}:
+      {{ r.acervo.pagina }} {% translate "paginas de veiculos e sites" %} ·
+      {{ r.acervo.video }} {% translate "videos" %} ·
+      {{ r.acervo.artigo }} {% translate "artigos cientificos" %} ·
+      {{ r.acervo.documento }} {% translate "documentos enviados" %}
+      {% if r.acervo.suficiente %}<span class="selo ok">{% translate "sustenta a pauta" %}</span>{% else %}<span class="selo ruim">{% translate "ainda nao sustenta" %}</span>{% endif %}
+    </div>
+  {% else %}
+    <div>{% translate "O acervo ainda nao foi conferido para esta pauta." %}</div>
+  {% endif %}
+
+  <div>
+    {% translate "Busca de paginas" %}:
+    {% if r.paginas.em %}
+      {% translate "feita" %}{% if r.paginas.variada %} {% translate "com outras palavras" %}{% endif %} —
+      {% if r.paginas.novos %}{{ r.paginas.novos }} {% translate "nova(s)" %}{% else %}{% translate "nada novo encontrado" %}{% endif %}.
+    {% else %}{% translate "ainda nao feita" %}.{% endif %}
+    {% with a=r.aguardando.pagina %}{% if a.conferencia or a.curadoria %}
+      <span class="selo alerta">{% if a.conferencia %}{{ a.conferencia }} {% translate "aguardando conferencia" %}{% endif %}{% if a.conferencia and a.curadoria %} · {% endif %}{% if a.curadoria %}{{ a.curadoria }} {% translate "aguardando curadoria" %}{% endif %}</span>
+    {% endif %}{% endwith %}
+  </div>
+
+  <div>
+    {% translate "Busca de artigos cientificos" %}:
+    {% if r.artigos.ignorado %}
+      {% translate "falta ignorada" %}.
+    {% elif r.artigos.em %}
+      {% if not r.artigos.buscou %}
+        {% blocktranslate trimmed with n=r.artigos.da_base %}nao precisou: ja havia {{ n }} na base{% endblocktranslate %}.
+      {% elif r.artigos.erro %}
+        {% translate "a base de artigos nao respondeu" %}.
+      {% else %}
+        {% translate "feita" %} — {% if r.artigos.novos %}{{ r.artigos.novos }} {% translate "novo(s)" %}{% else %}{% translate "nada novo encontrado" %}{% endif %}.
+      {% endif %}
+      {% if r.artigos.ligados %}{% blocktranslate trimmed count n=r.artigos.ligados %}{{ n }} ja achado pelas sementes cientificas passou a ser desta pauta{% plural %}{{ n }} ja achados pelas sementes cientificas passaram a ser desta pauta{% endblocktranslate %}.{% endif %}
+    {% else %}{% translate "ainda nao feita" %}.{% endif %}
+    {% with a=r.aguardando.artigo %}{% if a.conferencia or a.curadoria %}
+      <span class="selo alerta">{% if a.conferencia %}{{ a.conferencia }} {% translate "aguardando conferencia" %}{% endif %}{% if a.conferencia and a.curadoria %} · {% endif %}{% if a.curadoria %}{{ a.curadoria }} {% translate "aguardando curadoria" %}{% endif %}</span>
+    {% endif %}{% endwith %}
+    {% if r.falta_artigos %}<span class="selo alerta">{% blocktranslate trimmed with n=r.minimo_de_artigos %}menos de {{ n }} no acervo{% endblocktranslate %}</span>{% endif %}
+  </div>
+
+  <div class="acoes" style="margin-top:.3rem">
+    <form method="post" action="{% url 'content:conferir_referencias' pauta.pk %}" style="display:inline">{% csrf_token %}
+      <button class="botao secundario pequeno" title="{% translate 'Reconta o que o acervo tem. Use depois de conferir e curar as fontes.' %}">{% translate "Verificar referencias de novo" %}</button>
+    </form>
+    <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">{% csrf_token %}
+      <input type="hidden" name="variar" value="1">
+      <button class="botao discreto pequeno" title="{% translate 'Busca de novo com palavras ainda nao usadas: frases do tema do radar e, com modelo configurado, sugestoes dele (as de artigos em ingles).' %}">{% translate "Buscar de novo com outras palavras" %}</button>
+    </form>
+    {% if r.falta_artigos %}
+      <form method="post" action="{% url 'content:ignorar_falta_de_artigos' pauta.pk %}" style="display:inline">{% csrf_token %}
+        <button class="botao discreto pequeno">{% translate "Ignorar falta de artigos" %}</button>
+      </form>
+    {% endif %}
+    <a class="botao discreto pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Conferir as fontes sugeridas" %}</a>
+  </div>
+</div>

@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
@@ -29,6 +30,7 @@ from apps.content.services import (
     aprovar_resposta_e_agendar,
 )
 from apps.content.tasks import gerar_artigo, responder_pergunta
+from apps.knowledge.referencias import painel as painel_de_referencias
 from apps.ops.models import GenerationJob
 from apps.radar.links_quebrados import cobertura_do_artigo
 
@@ -89,6 +91,9 @@ def pautas(request: HttpRequest) -> HttpResponse:
         pauta.grupo_avaliado = next(
             (g for g in pauta.grupos_de_demanda.all() if g.avaliacao_ia), None
         )
+        # As referencias: so onde ja houve busca ou a pauta espera fontes.
+        if pauta.busca_de_fontes or pauta.status == Topic.Status.WAITING_SOURCES:
+            pauta.referencias = painel_de_referencias(pauta)
     return render(
         request,
         "content/pautas.html",
@@ -277,16 +282,47 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
 @login_required
 @require_POST
 def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
-    """Busca na web paginas que podem sustentar a pauta."""
+    """Busca referencias para a pauta; com `variar`, com palavras ainda nao usadas."""
     from apps.knowledge.tasks import buscar_fontes_da_pauta
 
     pauta = get_object_or_404(Topic, pk=pk)
-    transaction.on_commit(lambda: buscar_fontes_da_pauta.delay(str(pauta.pk)))
+    variar = request.POST.get("variar") == "1"
+    transaction.on_commit(lambda: buscar_fontes_da_pauta.delay(str(pauta.pk), variar))
     messages.success(
         request,
-        _("Buscando fontes na web. As candidatas aparecem em Documentos > Fontes sugeridas."),
+        _("Buscando com outras palavras. Recarregue em instantes para ver o resultado.")
+        if variar
+        else _("Buscando referencias. Recarregue em instantes para ver o resultado."),
     )
-    return redirect("content:pautas")
+    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+
+
+@login_required
+@require_POST
+def conferir_referencias(request: HttpRequest, pk) -> HttpResponse:
+    """Reconta o acervo (depois de uma curadoria, por exemplo)."""
+    from apps.knowledge.referencias import conferir
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    acervo = conferir(pauta)
+    if acervo.get("liberada"):
+        messages.success(request, _("O acervo agora sustenta a pauta: ela pode ser gerada."))
+    elif acervo["suficiente"]:
+        messages.success(request, _("O acervo sustenta a pauta."))
+    else:
+        messages.info(request, _("O acervo ainda nao sustenta a pauta."))
+    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+
+
+@login_required
+@require_POST
+def ignorar_falta_de_artigos(request: HttpRequest, pk) -> HttpResponse:
+    from apps.knowledge.referencias import registrar
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    registrar(pauta, "artigos", ignorado=True)
+    messages.success(request, _("Esta pauta segue sem buscar mais artigos cientificos."))
+    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
 
 
 @login_required

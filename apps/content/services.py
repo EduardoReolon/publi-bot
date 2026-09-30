@@ -135,12 +135,10 @@ def fontes_da_pauta(topic) -> list:
     central, nao ha artigo. A pauta fica "aguardando fontes" e, se ligado, a
     busca de fontes na web vai para a fila.
     """
-    from apps.knowledge.models import RetrievalQuery
-    from apps.knowledge.services import recuperar
+    from apps.knowledge.referencias import trechos_da_pauta
     from apps.knowledge.tasks import pauta_sem_fontes
 
-    consulta = " ".join(filter(None, [topic.title, topic.target_keyword, topic.briefing]))
-    _, trechos = recuperar(consulta=consulta, origem=RetrievalQuery.Origin.ARTICLE)
+    trechos = trechos_da_pauta(topic)
 
     if not trechos:
         pauta_sem_fontes(topic)

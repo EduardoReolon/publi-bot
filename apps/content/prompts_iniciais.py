@@ -527,4 +527,29 @@ PROMPTS_INICIAIS: dict[str, dict] = {
         # portugues — por isso o lembrete no fim, onde ele pesa mais.
         "usuario": ("Titulo: {titulo}\nResumo: {resumo}\n\nWrite the English image prompt:"),
     },
+    "source_queries": {
+        "descricao": "Outras palavras para buscar fontes quando a primeira busca nao achou.",
+        "variaveis": ["pauta", "palavra_chave", "ja_usadas", "idioma"],
+        "temperatura": 0.5,
+        "sistema": (
+            "Voce ajuda a achar referencias para um artigo. A busca com as palavras "
+            "de sempre ja foi feita e trouxe pouco. Proponha OUTRAS formas de buscar "
+            "o mesmo assunto: sinonimos, o termo tecnico, o nome do problema visto "
+            "por outro angulo, o conceito mais amplo que o contem.\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "web": ate 3 buscas curtas (2 a 6 palavras) no idioma pedido, como '
+            "alguem digitaria no Google;\n"
+            '  "artigos": ate 3 buscas curtas EM INGLES, com o vocabulario de artigo '
+            "cientifico (bases como OpenAlex quase so tem ingles).\n\n"
+            "Regras:\n"
+            "- Nada igual ou quase igual as buscas ja usadas.\n"
+            "- Mesmo assunto: nao mude o tema da pauta para achar mais resultado."
+        ),
+        "usuario": (
+            "Pauta: {pauta}\n"
+            "Palavra-chave: {palavra_chave}\n"
+            "Idioma das buscas na web: {idioma}\n\n"
+            "Buscas ja usadas:\n{ja_usadas}"
+        ),
+    },
 }

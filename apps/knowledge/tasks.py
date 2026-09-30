@@ -46,8 +46,10 @@ def iniciar_ingestao(document: Document) -> GenerationJob:
 
 
 @shared_task
-def buscar_fontes_da_pauta(topic_id: str) -> int:
-    """Busca candidatos a fonte para a pauta. Despachada de dentro do tenant."""
+def buscar_fontes_da_pauta(topic_id: str, variar: bool = False) -> int:
+    """Busca candidatos a fonte para a pauta. Despachada de dentro do tenant.
+
+    `variar`: a busca de novo, com palavras ainda nao usadas."""
     from apps.content.models import Topic
     from apps.knowledge.fontes_web import buscar_fontes
     from apps.radar.custos import TetoAtingido
@@ -57,7 +59,7 @@ def buscar_fontes_da_pauta(topic_id: str) -> int:
     if pauta is None:
         return 0
     try:
-        return len(buscar_fontes(pauta))
+        return len(buscar_fontes(pauta, variar=variar))
     except (ProvedorIndisponivel, TetoAtingido) as exc:
         logger.warning("Busca de fontes da pauta %s nao completou: %s", topic_id, exc)
         return 0
@@ -80,3 +82,23 @@ def pauta_sem_fontes(topic, *, marcar: bool = True) -> None:
         Topic.objects.filter(pk=topic.pk).update(status=Topic.Status.WAITING_SOURCES)
     if ConfiguracaoDoRadar.carregar().buscar_fontes:
         transaction.on_commit(lambda: buscar_fontes_da_pauta.delay(str(topic.pk)))
+
+
+@shared_task
+def conferir_pautas_que_esperam() -> int:
+    """Depois de uma curadoria: as pautas aguardando fontes sao conferidas de novo."""
+    from apps.knowledge.referencias import conferir_as_que_esperam
+
+    return conferir_as_que_esperam()
+
+
+def ao_concluir_curadoria() -> None:
+    """A fonte nova pode ser a que faltava: confere as pautas que esperam, na fila."""
+
+    def despachar():
+        try:
+            conferir_pautas_que_esperam.delay()
+        except Exception:
+            logger.exception("Nao foi possivel despachar a conferencia das pautas.")
+
+    transaction.on_commit(despachar)

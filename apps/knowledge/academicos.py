@@ -280,9 +280,9 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
     )
 
 
-def buscar_para_pauta(pauta, *, limite: int = 5) -> list:
+def buscar_para_pauta(pauta, *, limite: int = 5, consulta: str = "") -> list:
     """Artigos para a pauta sem fonte. Gratuito; o limite e so da fila."""
-    consulta = pauta.target_keyword or pauta.title
+    consulta = consulta or pauta.target_keyword or pauta.title
     novos = []
     for trabalho in buscar_openalex(consulta, quantos=limite * 2):
         if len(novos) >= limite:
