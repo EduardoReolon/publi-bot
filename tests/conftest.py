@@ -49,6 +49,7 @@ def _sem_bases_academicas(request, monkeypatch):
     monkeypatch.setattr(academicos, "buscar_openalex", lambda *a, **k: [])
 
     monkeypatch.setattr(academicos, "consultar_unpaywall", lambda *a, **k: "")
+    monkeypatch.setattr(academicos, "por_doi", lambda *a, **k: None)
 
 
 @pytest.fixture

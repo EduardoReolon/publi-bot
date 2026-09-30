@@ -275,3 +275,36 @@ def test_curadoria_na_fila_mostra_processando(ambiente, monkeypatch, settings): 
     assert "Processando" in html and "disabled" in html
     html = client.get(reverse("knowledge:documentos", urlconf="core.urls_tenants")).content.decode()
     assert "processando" in html
+
+
+CAPA_DA_SAGE = """http://jsr.sagepub.com/
+Journal of Service Research
+The online version of this article can be found at:
+DOI: 10.1177/109467050032002
+Published by:
+http://www.sagepublications.com
+at St Petersburg State University on November 15, 2013 jsr.sagepub.com Downloaded from
+"""
+
+
+def test_capa_de_download_nao_engana_o_cabecalho_com_doi(monkeypatch):
+    from apps.knowledge import academicos
+    from apps.knowledge.flows import completar_pelo_doi, sugerir_metadados
+
+    sugestoes = sugerir_metadados(CAPA_DA_SAGE, e_markdown=False)
+    assert sugestoes["doi"] == "10.1177/109467050032002"
+    monkeypatch.setattr(
+        academicos,
+        "por_doi",
+        lambda doi: academicos.Trabalho(
+            titulo="An Empirical Investigation of Customer Satisfaction after Service "
+            "Failure and Recovery",
+            doi=doi,
+            ano=2000,
+            autores=["Michael A. McCollough", "Leonard L. Berry", "Manjit S. Yadav"],
+        ),
+    )
+    certo = completar_pelo_doi(sugestoes)
+    assert certo["title"].startswith("An Empirical Investigation")
+    assert certo["authors"].startswith("Michael A. McCollough") and certo["year"] == 2000
+    assert certo["fonte"] == "openalex"

@@ -186,6 +186,34 @@ def buscar_openalex(consulta: str, *, quantos: int = 5, idiomas: str = "pt|en") 
     return [t for t in (ler_trabalho(i) for i in itens) if t.titulo]
 
 
+def por_doi(doi: str) -> Trabalho | None:
+    """O trabalho do OpenAlex pelo DOI, ou None (DOI desconhecido ou base fora).
+
+    Titulo, autores e ano de registro da editora: melhores que qualquer
+    heuristica sobre a primeira pagina, que pode ser uma capa de download.
+    """
+    from apps.radar.models import ChamadaExterna
+
+    if not doi:
+        return None
+    try:
+        resposta = httpx.get(
+            f"{OPENALEX}/https://doi.org/{doi}",
+            params={"select": CAMPOS, **_parametros_da_conta()},
+            timeout=TIMEOUT,
+        )
+        if resposta.status_code == 404:
+            _registrar(ChamadaExterna.Provedor.OPENALEX, "works/doi", doi)
+            return None
+        resposta.raise_for_status()
+        trabalho = ler_trabalho(resposta.json())
+    except (httpx.HTTPError, ValueError) as exc:
+        _registrar(ChamadaExterna.Provedor.OPENALEX, "works/doi", doi, erro=str(exc)[:500])
+        return None
+    _registrar(ChamadaExterna.Provedor.OPENALEX, "works/doi", doi, itens=1)
+    return trabalho if trabalho.titulo else None
+
+
 def _normalizar(texto: str) -> str:
     sem_acento = "".join(
         c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c)
