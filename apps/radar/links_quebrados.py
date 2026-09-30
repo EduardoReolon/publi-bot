@@ -278,7 +278,7 @@ def verificar_pagina(url: str, artigos: list) -> int:
             },
         )
         if criado:
-            consultar_arquivo(quebrado)
+            completar(quebrado)
         guardados += criado
     PaginaVerificada.objects.update_or_create(
         url=url[:500], defaults={"links": len(links), "erro": "", "verificada_em": timezone.now()}
@@ -359,14 +359,21 @@ def consultar_arquivo(link) -> None:
 
 
 def completar_historicos(limite: int = HISTORICOS_POR_VEZ) -> int:
-    """Os links novos ainda sem consulta ao Internet Archive (os de antes do campo)."""
+    """Os links ainda sem consulta ao Internet Archive ou sem procura de contato
+    (os achados antes desses campos existirem)."""
+    from django.db.models import Q
+
     from apps.radar.models import LinkQuebrado
 
-    pendentes = LinkQuebrado.objects.filter(
-        situacao=LinkQuebrado.Situacao.NOVO, arquivo_consultado_em__isnull=True
-    )[:limite]
+    pendentes = list(
+        LinkQuebrado.objects.filter(
+            situacao__in=[LinkQuebrado.Situacao.NOVO, LinkQuebrado.Situacao.PAUTA]
+        ).filter(Q(arquivo_consultado_em__isnull=True) | Q(contato_consultado_em__isnull=True))[
+            :limite
+        ]
+    )
     for link in pendentes:
-        consultar_arquivo(link)
+        completar(link)
     return len(pendentes)
 
 
@@ -385,6 +392,7 @@ def verificar_um_lote() -> int:
     if not ConfiguracaoDoRadar.carregar().procurar_links_quebrados:
         return 0
     completar_historicos()
+    conferir_conquistas()
     paginas = paginas_para_verificar()
     if not paginas:
         return 0
@@ -418,14 +426,250 @@ def orientacao_da_pauta(link) -> str:
     return "\n".join(partes)
 
 
+# Fonte do numero citado no e-mail: estudo do Pew Research Center (maio de 2024)
+# sobre paginas que somem da internet. Numero com fonte convence quem nao
+# entende de SEO; numero inventado derruba o e-mail inteiro.
+ESTUDO_DO_PEW = "https://www.pewresearch.org/data-labs/2024/05/17/when-online-content-disappears/"
+
+
+def artigo_do_link(link):
+    """O seu artigo que pode entrar no lugar: o que ja cobria, ou o da pauta, publicado."""
+    if link.artigo_id:
+        return link.artigo
+    if link.pauta_id:
+        from apps.content.models import Article
+
+        return (
+            Article.objects.filter(topic=link.pauta, status=Article.Status.PUBLISHED)
+            .exclude(published_url="")
+            .order_by("-published_at")
+            .first()
+        )
+    return None
+
+
 def email(link) -> str:
-    """O pedido de troca, curto, pronto para copiar."""
-    substituto = link.artigo.published_url if link.artigo else "[o endereco do seu artigo]"
+    """O pedido de troca: curto, para quem nao entende de SEO, com a proposta no inicio.
+
+    Abre com o fato (ha um link quebrado no texto DELE), explica em duas frases
+    por que isso importa, com um numero de fonte conhecida, e so entao propoe
+    a troca, dizendo exatamente onde.
+    """
+    artigo = artigo_do_link(link)
+    substituto = artigo.published_url if artigo else "[o endereço do seu artigo]"
+    titulo_do_meu = f' — "{artigo.title}", que trata do mesmo assunto' if artigo else ""
+    titulo = link.pagina_titulo or link.pagina_url
+    trecho = f'\n\nO trecho é este: "{link.contexto[:280]}"' if link.contexto else ""
+    # O endereco morto junto do texto: e por ele que o dono acha o link no editor.
+    qual = f'"{link.texto}" ({link.link_url})' if link.texto else link.link_url
     return (
-        f'Ola! Lendo "{link.pagina_titulo or link.pagina_url}" ({link.pagina_url}), '
-        f'vi que o link "{link.texto or link.link_url}" aponta para {link.link_url}, '
-        "que nao existe mais (a pagina da erro). Isso costuma atrapalhar o proprio "
-        "texto no Google.\n\n"
-        f"Tenho um conteudo sobre o mesmo assunto que pode substituir: {substituto}\n\n"
-        "Fica a sugestao — e obrigado pelo material."
+        f'Assunto: Link quebrado no seu artigo "{titulo}"\n\n'
+        "Olá, tudo bem?\n\n"
+        f'Encontrei um link quebrado no seu artigo "{titulo}": o link {qual} '
+        "leva a uma página que não existe mais.\n\n"
+        "Quem clica ali cai numa página de erro e costuma sair desconfiado do resto do "
+        "texto. E o Google procura mostrar páginas úteis e atualizadas; link que não leva "
+        "a lugar nenhum é justamente sinal de página desatualizada. Acontece com todo "
+        "mundo: um estudo do Pew Research Center (2024) mostrou que um quarto das páginas "
+        f"publicadas entre 2013 e 2023 já saiu do ar ({ESTUDO_DO_PEW}).\n\n"
+        f"Uma sugestão que resolve em um minuto: trocar esse link por {substituto}"
+        f"{titulo_do_meu}.{trecho}\n\n"
+        f"Página: {link.pagina_url}\n\n"
+        "Obrigado pelo conteúdo!"
     )
+
+
+# -- Contato do site ------------------------------------------------------------
+# So o que o proprio site publica como contato: link mailto e link de WhatsApp.
+# E-mail solto no texto, formulario e "adivinhar contato@" ficam de fora: seria
+# arbitrario, e e-mail errado queima a abordagem.
+PAGINAS_DE_CONTATO = ("", "contato", "contato/", "fale-conosco", "fale-conosco/", "contact")
+_MAILTO = re.compile(r'href=["\']mailto:([^"\'?]+)', re.IGNORECASE)
+_WHATSAPP = re.compile(
+    r'href=["\']https?://(?:wa\.me/|api\.whatsapp\.com/send\?phone=)(\+?\d{10,15})',
+    re.IGNORECASE,
+)
+
+
+def contato_no_html(html: str, dominio: str) -> tuple[str, str]:
+    """(e-mail, whatsapp) publicados na pagina; o e-mail do proprio dominio primeiro."""
+    emails = [e.strip().lower() for e in _MAILTO.findall(html) if "@" in e]
+    do_site = [e for e in emails if e.split("@", 1)[1].removeprefix("www.").endswith(dominio)]
+    email_achado = (do_site or emails or [""])[0]
+    whatsapp = next(iter(_WHATSAPP.findall(html)), "")
+    return email_achado[:254], whatsapp[:30]
+
+
+def procurar_contato(link) -> None:
+    """Procura na propria pagina, na inicial e nas de contato. Um site por vez:
+    se outro link do mesmo site ja achou, reaproveita."""
+    from apps.knowledge.web import PaginaIndisponivel, baixar
+    from apps.radar.models import LinkQuebrado
+
+    link.contato_consultado_em = timezone.now()
+    campos = ["contato_consultado_em", "contato_email", "contato_whatsapp", "contato_fonte"]
+    ja_achado = (
+        LinkQuebrado.objects.filter(dominio=link.dominio, contato_consultado_em__isnull=False)
+        .exclude(pk=link.pk)
+        .first()
+    )
+    if ja_achado is not None:
+        link.contato_email = ja_achado.contato_email
+        link.contato_whatsapp = ja_achado.contato_whatsapp
+        link.contato_fonte = ja_achado.contato_fonte
+        link.save(update_fields=campos)
+        return
+
+    raiz = f"{urlparse(link.pagina_url).scheme or 'https'}://{urlparse(link.pagina_url).netloc}/"
+    for endereco in [link.pagina_url, *(raiz + caminho for caminho in PAGINAS_DE_CONTATO)]:
+        try:
+            conteudo, url_final, tipo = baixar(endereco)
+        except PaginaIndisponivel:
+            continue
+        email_achado, whatsapp = contato_no_html(decodificar(conteudo, tipo), link.dominio)
+        if email_achado or whatsapp:
+            link.contato_email, link.contato_whatsapp = email_achado, whatsapp
+            link.contato_fonte = url_final[:500]
+            break
+    link.save(update_fields=campos)
+
+
+def reavaliar_aderencia(link) -> None:
+    """Com o titulo da pagina que sumiu e o trecho do artigo, a proximidade com o
+    seu negocio sai bem melhor que so do texto do link ("plataforma EAD")."""
+    if link.artigo_id:
+        return
+    from apps.radar.concorrentes import aderencia_da_consulta
+
+    descricao = " ".join(p for p in (link.arquivo_titulo, link.texto, link.contexto[:300]) if p)
+    if len(descricao.split()) >= 2:
+        link.proximidade = aderencia_da_consulta(descricao)
+        link.save(update_fields=["proximidade"])
+
+
+def completar(link) -> None:
+    """Tudo o que se descobre depois de achar o link: o que a pagina era, a
+    proximidade com o negocio e o contato do site."""
+    consultar_arquivo(link)
+    reavaliar_aderencia(link)
+    procurar_contato(link)
+
+
+def reprocessar(link) -> None:
+    """Le a pagina de novo (trecho, titulo, texto do link) e completa tudo de novo."""
+    from apps.knowledge.web import PaginaIndisponivel, baixar
+
+    try:
+        conteudo, url_final, tipo = baixar(link.pagina_url)
+        titulo, links = links_de_saida(decodificar(conteudo, tipo), url_final)
+    except PaginaIndisponivel:
+        titulo, links = "", []
+    for url, texto, contexto in links:
+        if url == link.link_url:
+            link.texto, link.contexto = texto or link.texto, contexto
+            break
+    if titulo:
+        link.pagina_titulo = titulo
+    link.save(update_fields=["texto", "contexto", "pagina_titulo"])
+    link.contato_consultado_em = None  # procura de novo, sem reaproveitar
+    completar(link)
+
+
+CONFERIR_DEPOIS_EM_DIAS = 7
+CONFERENCIAS_POR_VEZ = 3
+
+
+def conferir_conquistas(limite: int = CONFERENCIAS_POR_VEZ) -> int:
+    """Depois do contato, a pagina e lida de novo de semana em semana: se o link
+    do seu artigo apareceu nela, o link foi conquistado."""
+    from apps.knowledge.web import PaginaIndisponivel, baixar
+    from apps.radar.models import LinkQuebrado
+
+    limite_de_data = timezone.now() - timezone.timedelta(days=CONFERIR_DEPOIS_EM_DIAS)
+    candidatos = LinkQuebrado.objects.filter(situacao=LinkQuebrado.Situacao.CONTATADO).filter(
+        models_q_conferir(limite_de_data)
+    )[:limite]
+    conquistados = 0
+    for link in candidatos:
+        link.conferido_depois_em = timezone.now()
+        artigo = artigo_do_link(link)
+        if artigo is not None and artigo.published_url:
+            try:
+                conteudo, _, tipo = baixar(link.pagina_url)
+                if _endereco_sem_esquema(artigo.published_url) in decodificar(conteudo, tipo):
+                    link.situacao = LinkQuebrado.Situacao.CONQUISTADO
+                    link.conquistado_em = timezone.now()
+                    conquistados += 1
+            except PaginaIndisponivel:
+                pass
+        link.save(update_fields=["conferido_depois_em", "situacao", "conquistado_em"])
+    return conquistados
+
+
+def models_q_conferir(limite_de_data):
+    from django.db.models import Q
+
+    return Q(conferido_depois_em__isnull=True) | Q(conferido_depois_em__lt=limite_de_data)
+
+
+def _endereco_sem_esquema(url: str) -> str:
+    """O link pode estar com http ou https, com ou sem www."""
+    partes = urlparse(url)
+    return (partes.netloc.removeprefix("www.") + partes.path).rstrip("/")
+
+
+# Abaixo disto, o artigo novo parece tratar de outra coisa que a pagina que
+# sumiu. Distancia de cosseno entre o artigo e o que a pagina antiga cobria.
+COBERTURA_BOA = 0.75
+COBERTURA_FRACA = 0.6
+
+
+def o_que_a_pagina_cobria(link) -> str:
+    return " ".join(p for p in (link.arquivo_titulo, link.arquivo_trecho, link.contexto) if p)
+
+
+def cobertura_do_artigo(artigo) -> list[dict]:
+    """Para cada link quebrado da pauta: o artigo responde o que a pagina que
+    sumiu respondia? Aviso, nao trava — quem decide e a pessoa.
+
+    A conferencia e por proximidade de texto (o mesmo embedding do radar), e o
+    titulo diferente do da pagina antiga so vira lembrete: e pelo titulo que o
+    dono do site reconhece a troca.
+    """
+    if not artigo.topic_id:
+        return []
+    links = list(artigo.topic.links_quebrados.all())
+    if not links:
+        return []
+    from django.utils.html import strip_tags
+
+    from apps.radar.agrupamento import _distancia, _vetor
+
+    corpo = artigo.body_markdown or strip_tags(artigo.body_html or "")
+    texto_do_artigo = f"{artigo.title}\n{corpo[:3000]}"
+    try:
+        vetor_do_artigo = _vetor(texto_do_artigo)
+    except Exception:  # sem embedding, fica so o lembrete do titulo
+        vetor_do_artigo = None
+    saida = []
+    for link in links:
+        cobria = o_que_a_pagina_cobria(link)
+        proximidade = None
+        if vetor_do_artigo is not None and cobria:
+            try:
+                proximidade = round(1.0 - _distancia(vetor_do_artigo, _vetor(cobria)), 2)
+            except Exception:
+                proximidade = None
+        titulo_antigo = link.arquivo_titulo or link.texto
+        saida.append(
+            {
+                "link": link,
+                "titulo_antigo": titulo_antigo,
+                "titulo_diferente": bool(titulo_antigo)
+                and titulo_antigo.strip().lower() != artigo.title.strip().lower(),
+                "proximidade": proximidade,
+                "fraca": proximidade is not None and proximidade < COBERTURA_FRACA,
+                "boa": proximidade is not None and proximidade >= COBERTURA_BOA,
+            }
+        )
+    return saida

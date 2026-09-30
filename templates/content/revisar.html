@@ -18,6 +18,27 @@
     {% endif %}
     {% if artigo.version_number > 1 %}<span class="selo espera">{% translate "versao" %} {{ artigo.version_number }}</span>{% endif %}
   </p>
+  {% if links_quebrados %}
+    <div class="aviso">
+      <strong>{% translate "Esta pauta nasceu de um link quebrado" %}</strong>
+      {% for c in links_quebrados %}
+        <p>
+          {% translate "Pagina que sumiu" %}: <em>{{ c.titulo_antigo|default:c.link.link_url }}</em>
+          {% if c.link.pagina_titulo %}· {% translate "citada em" %} <a href="{{ c.link.pagina_url }}" target="_blank" rel="noopener">{{ c.link.pagina_titulo }}</a>{% endif %}
+        </p>
+        {% if c.titulo_diferente %}
+          <p class="ajuda">{% translate "O titulo deste artigo e diferente do da pagina que sumiu. Pode mudar, mas o dono do site reconhece a troca mais facil quando o titulo lembra o antigo." %}</p>
+        {% endif %}
+        {% if c.proximidade is not None %}
+          <p>
+            <span class="selo {% if c.boa %}ok{% elif c.fraca %}ruim{% else %}alerta{% endif %}">{% translate "cobre o que a pagina antiga cobria" %}: {% widthratio c.proximidade 1 100 %}%</span>
+            {% if c.fraca %}<span class="ajuda">{% translate "O artigo parece tratar de outra coisa. Confira se ele responde o que o trecho abaixo pedia antes de mandar o e-mail." %}</span>{% endif %}
+          </p>
+        {% endif %}
+        {% if c.link.contexto %}<div class="pre-visualizacao">{{ c.link.contexto|truncatechars:350 }}</div>{% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
 
   {% if artigo.previous_version %}
     <div class="explica">

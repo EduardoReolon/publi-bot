@@ -1149,7 +1149,10 @@ class LinkQuebrado(models.Model):
 
     class Situacao(models.TextChoices):
         NOVO = "novo", _("Novo")
+        PAUTA = "pauta", _("Virou pauta")
         CONTATADO = "contatado", _("Contatado")
+        # O site trocou o link pelo do seu artigo (conferido depois do contato).
+        CONQUISTADO = "conquistado", _("Link conquistado")
         DESCARTADO = "descartado", _("Descartado")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1179,8 +1182,26 @@ class LinkQuebrado(models.Model):
     arquivo_consultado_em = models.DateTimeField(
         _("Internet Archive consultado em"), null=True, blank=True
     )
+    # A pauta criada para ocupar o lugar do link (quando nao havia artigo).
+    pauta = models.ForeignKey(
+        "content.Topic",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="links_quebrados",
+        verbose_name=_("pauta"),
+    )
+    # Contato do dono do site: so o que o proprio site publica (mailto, wa.me).
+    contato_email = models.CharField(_("e-mail do site"), max_length=254, blank=True)
+    contato_whatsapp = models.CharField(_("WhatsApp do site"), max_length=30, blank=True)
+    contato_fonte = models.URLField(_("contato achado em"), max_length=500, blank=True)
+    contato_consultado_em = models.DateTimeField(_("contato procurado em"), null=True, blank=True)
+    contatado_em = models.DateField(_("contatado em"), null=True, blank=True)
+    # Depois do contato, a pagina e conferida de tempos em tempos.
+    conferido_depois_em = models.DateTimeField(_("conferido depois em"), null=True, blank=True)
+    conquistado_em = models.DateTimeField(_("conquistado em"), null=True, blank=True)
     situacao = models.CharField(
-        _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.NOVO
+        _("situacao"), max_length=12, choices=Situacao.choices, default=Situacao.NOVO
     )
     encontrado_em = models.DateTimeField(_("encontrado em"), default=timezone.now)
 

@@ -28,6 +28,8 @@ def _sem_bases_academicas(request, monkeypatch):
     from apps.radar import links_quebrados
 
     monkeypatch.setattr(links_quebrados, "ultima_copia_boa", lambda url: None)
+    # Nem a busca do contato do site, que baixa a home e a pagina de contato.
+    monkeypatch.setattr(links_quebrados, "procurar_contato", lambda link: None)
     if "bases_academicas" in request.fixturenames:
         return
     from apps.knowledge import academicos

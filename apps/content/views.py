@@ -30,6 +30,7 @@ from apps.content.services import (
 )
 from apps.content.tasks import gerar_artigo, responder_pergunta
 from apps.ops.models import GenerationJob
+from apps.radar.links_quebrados import cobertura_do_artigo
 
 logger = logging.getLogger("publibot.content")
 
@@ -385,6 +386,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "faq": artigo.faq.all(),
         "conferencia": _conferencia_editorial(artigo),
+        "links_quebrados": cobertura_do_artigo(artigo),
         # O FAQ vai num campo proprio, e o site so o exibe se implementou.
         # Sem este aviso, a pessoa revisaria perguntas que ninguem vai ver.
         "site_sem_faq": site is not None and not site.suporta("faq"),

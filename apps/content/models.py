@@ -325,6 +325,7 @@ class Topic(models.Model):
     class Origin(models.TextChoices):
         MANUAL = "manual", _("Criada a mao")
         RADAR = "radar", _("Sugerida pelo radar")
+        LINK_QUEBRADO = "link", _("Link quebrado de outro site")
 
     origin = models.CharField(
         _("origem"), max_length=8, choices=Origin.choices, default=Origin.MANUAL

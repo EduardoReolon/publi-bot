@@ -80,7 +80,7 @@ def test_so_guarda_o_quebrado_perto_de_um_artigo(radar, monkeypatch):  # noqa: F
     assert links_quebrados.verificar_um_lote() == 1
     [link] = LinkQuebrado.objects.all()
     assert link.artigo == artigo and link.texto == "analise rfm de clientes"
-    assert "nao existe mais" in links_quebrados.email(link)
+    assert "não existe mais" in links_quebrados.email(link)
     assert artigo.published_url in links_quebrados.email(link)
     # A pagina nao volta tao cedo.
     assert PaginaVerificada.objects.get().links == 3
@@ -149,9 +149,19 @@ def test_tela_de_imprensa_e_links(ambiente, settings):  # noqa: F811
     )
     from apps.content.models import Topic
 
-    assert Topic.objects.get().title == "precificacao de servicos"
+    pauta = Topic.objects.get()
+    assert pauta.title == "precificacao de servicos" and pauta.origin == "link"
     link.refresh_from_db()
-    assert link.situacao == "descartado"
+    assert link.situacao == "pauta" and link.pauta == pauta
+    # Virou pauta: o botao some e a tela mostra a situacao da pauta.
+    html = client.get(url).content.decode()
+    assert "Virar pauta" not in html and pauta.get_status_display() in html
+    # Clicar de novo nao cria outra pauta.
+    client.post(
+        reverse("radar:decidir_link_quebrado", args=[link.pk], urlconf="core.urls_tenants"),
+        {"decisao": "pauta"},
+    )
+    assert Topic.objects.count() == 1
 
 
 @pytest.mark.django_db
@@ -238,3 +248,111 @@ def test_pagina_que_sumiu_vem_do_internet_archive_e_vai_para_a_pauta(ambiente, m
     assert pauta.title == "O que e uma plataforma LMS"
     assert "ONDE O LINK ESTA" in pauta.briefing and "use uma plataforma EAD" in pauta.briefing
     assert "A PAGINA QUE SUMIU" in pauta.briefing and "web.archive.org" in pauta.briefing
+
+
+def test_contato_so_de_mailto_e_whatsapp_do_proprio_site():
+    html = """<html><body>
+    <a href="mailto:contato@blog.com.br?subject=oi">fale</a>
+    <a href="mailto:joao@gmail.com">outro</a>
+    <a href="https://wa.me/5541999998888">zap</a>
+    <p>escreva para naoconta@blog.com.br</p>
+    </body></html>"""
+    email, whatsapp = links_quebrados.contato_no_html(html, "blog.com.br")
+    assert email == "contato@blog.com.br"
+    assert whatsapp == "5541999998888"
+
+
+def test_email_curto_com_a_troca_e_a_fonte(ambiente):  # noqa: F811
+    link = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia",
+        pagina_titulo="Guia de varejo",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/lms",
+        texto="plataforma EAD",
+        contexto="Para treinar a equipe, use uma plataforma EAD com trilhas.",
+        status_http=404,
+        artigo=_artigo("Plataforma EAD", "plataforma ead"),
+    )
+    texto = links_quebrados.email(link)
+    assert "Guia de varejo" in texto and "https://morto.com.br/lms" in texto
+    assert link.artigo.published_url in texto
+    assert links_quebrados.ESTUDO_DO_PEW in texto
+
+
+def test_marcar_enviado_com_data_e_conferir_a_conquista(ambiente, monkeypatch):  # noqa: F811
+    _, _, client = ambiente
+    artigo = _artigo("Plataforma EAD", "plataforma ead")
+    link = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/lms",
+        texto="plataforma EAD",
+        status_http=404,
+        artigo=artigo,
+    )
+    client.post(
+        reverse("radar:decidir_link_quebrado", args=[link.pk], urlconf="core.urls_tenants"),
+        {"decisao": "contatado", "contatado_em": "2026-01-10"},
+    )
+    link.refresh_from_db()
+    assert link.situacao == "contatado" and str(link.contatado_em) == "2026-01-10"
+
+    pagina = (
+        f"<html><body><article><p>{PARAGRAFO}"
+        f'<a href="{artigo.published_url}">ead</a></p></article></body></html>'
+    )
+    monkeypatch.setattr(
+        "apps.knowledge.web.baixar", lambda url: (pagina.encode(), url, "text/html")
+    )
+    links_quebrados.conferir_conquistas()
+    link.refresh_from_db()
+    assert link.situacao == "conquistado" and link.conquistado_em
+
+
+def test_reprocessar_pela_tela(ambiente, monkeypatch):  # noqa: F811
+    _, _, client = ambiente
+    link = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/lms",
+        texto="x",
+        status_http=404,
+    )
+    chamados = []
+    monkeypatch.setattr(links_quebrados, "reprocessar", lambda item: chamados.append(item.pk))
+    client.post(
+        reverse("radar:decidir_link_quebrado", args=[link.pk], urlconf="core.urls_tenants"),
+        {"decisao": "reprocessar"},
+    )
+    link.refresh_from_db()
+    assert chamados == [link.pk] and link.situacao == "novo"
+
+
+def test_revisao_avisa_o_titulo_e_a_cobertura(ambiente):  # noqa: F811
+    from apps.content.models import Article, Topic
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="O que e uma plataforma LMS", origin="link")
+    LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/lms",
+        texto="plataforma EAD",
+        arquivo_titulo="O que e uma plataforma LMS",
+        arquivo_trecho="Uma plataforma LMS organiza cursos e trilhas.",
+        status_http=404,
+        situacao="pauta",
+        pauta=pauta,
+    )
+    artigo = Article.objects.create(
+        title="Como escolher um LMS",
+        slug="lms",
+        topic=pauta,
+        body_markdown="Uma plataforma LMS organiza cursos.",
+    )
+    cobertura = links_quebrados.cobertura_do_artigo(artigo)
+    assert len(cobertura) == 1 and cobertura[0]["titulo_diferente"]
+    html = client.get(
+        reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Esta pauta nasceu de um link quebrado" in html

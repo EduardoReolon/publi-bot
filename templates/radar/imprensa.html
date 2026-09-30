@@ -91,14 +91,21 @@
   </div>
   <div data-recolher="5">
   {% for link in links %}
-    <div class="aviso">
+    <div class="aviso" id="link-{{ link.pk }}">
       <strong><a href="{{ link.pagina_url }}" target="_blank" rel="noopener noreferrer">{{ link.pagina_titulo|default:link.pagina_url|truncatechars:90 }}</a></strong>
       <span class="ajuda">{{ link.dominio }}</span>
+      {% if link.artigo %}
+        <span class="selo ok">{% translate "voce ja tem artigo" %}</span>
+      {% elif link.proximidade is not None %}
+        <span class="selo {% if link.proximidade >= 0.5 %}ok{% elif link.proximidade < 0.35 %}ruim{% else %}alerta{% endif %}" title="{% translate 'Proximidade com o seu negocio (tema, oferta, sementes), pelo titulo da pagina que sumiu e pelo trecho' %}">{% translate "perto do negocio" %}: {% widthratio link.proximidade 1 100 %}%</span>
+      {% endif %}
+      {% if link.situacao == 'contatado' %}<span class="selo">{% translate "contatado em" %} {{ link.contatado_em|date:"d/m/Y" }}</span>{% endif %}
+      {% if link.situacao == 'conquistado' %}<span class="selo ok">{% translate "link conquistado em" %} {{ link.conquistado_em|date:"d/m/Y" }}</span>{% endif %}
       <div class="pre-visualizacao">{% translate "Link morto" %}: "{{ link.texto|default:"—" }}" → {{ link.link_url|truncatechars:90 }} ({% if link.status_http %}HTTP {{ link.status_http }}{% else %}{% translate "site fora do ar" %}{% endif %})</div>
       <details>
         <summary>{% translate "Previa: o trecho do artigo e a pagina que sumiu" %}</summary>
         <div class="ajuda" style="margin-top:.4rem"><strong>{% blocktranslate with d=link.dominio %}No artigo de {{ d }}, onde o link esta:{% endblocktranslate %}</strong></div>
-        {% if link.contexto %}<blockquote class="pre-visualizacao">{{ link.contexto }}</blockquote>{% else %}<div class="pre-visualizacao">{% translate "(trecho nao guardado: link achado antes desta versao)" %}</div>{% endif %}
+        {% if link.contexto %}<blockquote class="pre-visualizacao">{{ link.contexto }}</blockquote>{% else %}<div class="pre-visualizacao">{% translate "(trecho nao guardado: use Reprocessar)" %}</div>{% endif %}
         <div class="ajuda" style="margin-top:.4rem"><strong>{% translate "A pagina que sumiu, pelo Internet Archive:" %}</strong></div>
         {% if link.arquivo_url %}
           <div class="pre-visualizacao">
@@ -112,18 +119,42 @@
           <div class="pre-visualizacao">{% translate "Ainda nao consultado: a procura de hora em hora preenche." %}</div>
         {% endif %}
       </details>
-      {% if link.artigo %}
-        <div class="ajuda">{% translate "Seu artigo que cobre o mesmo" %}: <a href="{{ link.artigo.published_url }}" target="_blank" rel="noopener">{{ link.artigo.title }}</a></div>
+      {% if link.contato_email or link.contato_whatsapp %}
+        <div class="ajuda">{% translate "Contato publicado pelo site" %}:
+          {% if link.contato_email %}<a href="mailto:{{ link.contato_email }}">{{ link.contato_email }}</a>{% endif %}
+          {% if link.contato_whatsapp %} · <a href="https://wa.me/{{ link.contato_whatsapp|cut:'+' }}" target="_blank" rel="noopener noreferrer">WhatsApp {{ link.contato_whatsapp }}</a>{% endif %}
+          · <a href="{{ link.contato_fonte }}" target="_blank" rel="noopener noreferrer">{% translate "onde achei" %}</a>
+        </div>
+      {% elif link.contato_consultado_em %}
+        <div class="ajuda">{% translate "O site nao publica e-mail nem WhatsApp nas paginas de contato: procure um formulario." %}</div>
+      {% endif %}
+
+      {% if link.meu_artigo %}
+        <div class="ajuda">{% translate "Seu artigo que entra no lugar" %}: <a href="{{ link.meu_artigo.published_url }}" target="_blank" rel="noopener">{{ link.meu_artigo.title }}</a></div>
+      {% elif link.pauta %}
+        <div class="ajuda">
+          {% translate "Virou pauta" %}: <a href="{% url 'content:pautas' %}">{{ link.pauta.title }}</a> —
+          {% if link.artigo_da_pauta %}{% translate "artigo" %}: {{ link.artigo_da_pauta.get_status_display }}{% if link.artigo_da_pauta.status == 'approved_scheduled' and link.artigo_da_pauta.scheduled_for %} {{ link.artigo_da_pauta.scheduled_for|date:"d/m H:i" }}{% endif %}{% else %}{% translate "pauta" %}: {{ link.pauta.get_status_display }}{% endif %}.
+          {% translate "O e-mail fica pronto quando o artigo for publicado." %}
+        </div>
       {% else %}
         <div class="ajuda">{% translate "Voce ainda nao tem artigo sobre isso." %}</div>
       {% endif %}
-      <details><summary>{% translate "Ver o e-mail" %}</summary><textarea id="email-{{ link.pk }}" readonly rows="8" style="width:100%">{{ link.email }}</textarea></details>
+
+      <details><summary>{% translate "Ver o e-mail" %}</summary><textarea id="email-{{ link.pk }}" readonly rows="14" style="width:100%">{{ link.email }}</textarea></details>
       <form method="post" action="{% url 'radar:decidir_link_quebrado' link.pk %}" class="acoes">
         {% csrf_token %}
-        {% if link.artigo %}<button type="button" class="botao secundario pequeno" data-copiar="email-{{ link.pk }}">{% translate "Copiar e-mail" %}</button>
-        <button type="submit" name="decisao" value="contatado" class="botao discreto pequeno">{% translate "Contatado" %}</button>
-        {% else %}<button type="submit" name="decisao" value="pauta" class="botao secundario pequeno">{% translate "Virar pauta" %}</button>{% endif %}
-        <button type="submit" name="decisao" value="descartar" class="botao discreto pequeno">{% translate "Descartar" %}</button>
+        {% if link.meu_artigo %}
+          <button type="button" class="botao secundario pequeno" data-copiar="email-{{ link.pk }}">{% translate "Copiar e-mail" %}</button>
+          {% if link.situacao != 'contatado' and link.situacao != 'conquistado' %}
+            <input type="date" name="contatado_em" value="{% now 'Y-m-d' %}" style="width:auto" title="{% translate 'Quando voce mandou' %}">
+            <button type="submit" name="decisao" value="contatado" class="botao discreto pequeno">{% translate "Marcar como enviado" %}</button>
+          {% endif %}
+        {% elif not link.pauta %}
+          <button type="submit" name="decisao" value="pauta" class="botao secundario pequeno">{% translate "Virar pauta" %}</button>
+        {% endif %}
+        <button type="submit" name="decisao" value="reprocessar" class="botao discreto pequeno" title="{% translate 'Le a pagina de novo e consulta o Internet Archive e o contato' %}">{% translate "Reprocessar" %}</button>
+        {% if link.situacao != 'conquistado' %}<button type="submit" name="decisao" value="descartar" class="botao discreto pequeno">{% translate "Descartar" %}</button>{% endif %}
       </form>
     </div>
   {% empty %}

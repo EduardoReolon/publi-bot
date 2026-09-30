@@ -823,19 +823,37 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
 def imprensa(request: HttpRequest) -> HttpResponse:
     """Painel de imprensa (um e-mail por veiculo) e links quebrados do assunto."""
     from apps.content.imprensa import painel, pedido_de_email
-    from apps.radar.links_quebrados import email
+    from apps.radar.links_quebrados import artigo_do_link, email
     from apps.radar.models import LinkQuebrado
 
     veiculos = painel()
     for veiculo in veiculos:
         veiculo.pedido = pedido_de_email(veiculo)
+    ativos = [
+        LinkQuebrado.Situacao.NOVO,
+        LinkQuebrado.Situacao.PAUTA,
+        LinkQuebrado.Situacao.CONTATADO,
+        LinkQuebrado.Situacao.CONQUISTADO,
+    ]
     links = list(
-        LinkQuebrado.objects.filter(situacao=LinkQuebrado.Situacao.NOVO).select_related("artigo")[
-            :50
-        ]
+        LinkQuebrado.objects.filter(situacao__in=ativos)
+        .select_related("artigo", "pauta")
+        .prefetch_related("pauta__articles")[:100]
     )
     for link in links:
+        link.meu_artigo = artigo_do_link(link)
+        link.artigo_da_pauta = (
+            max(link.pauta.articles.all(), key=lambda a: a.created_at, default=None)
+            if link.pauta_id
+            else None
+        )
         link.email = email(link)
+    # Os que pedem acao primeiro; entre eles, os mais perto do seu negocio (os que
+    # ja tem artigo seu contam como perto de tudo).
+    ordem = {"novo": 0, "pauta": 1, "contatado": 2, "conquistado": 3}
+    links.sort(
+        key=lambda lk: (ordem[lk.situacao], -(1.0 if lk.artigo_id else (lk.proximidade or 0)))
+    )
     return render(
         request,
         "radar/imprensa.html",
@@ -871,23 +889,39 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
 
     link = get_object_or_404(LinkQuebrado, pk=pk)
     decisao = request.POST.get("decisao")
+    if decisao == "reprocessar":
+        from apps.radar.links_quebrados import reprocessar
+
+        reprocessar(link)
+        messages.success(request, _("Link reprocessado: trecho, pagina que sumiu e contato."))
+        return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
+    if decisao == "pauta" and link.pauta_id:
+        messages.info(request, _("Este link ja virou pauta."))
+        return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
     if decisao == "pauta":
         from apps.radar.links_quebrados import orientacao_da_pauta
 
         # O titulo da pagina que sumiu diz o assunto melhor que o texto do link.
         titulo = (link.arquivo_titulo or link.texto or link.link_url)[:300]
         palavra = link.texto if len((link.texto or "").split()) >= 2 else titulo
-        Topic.objects.create(
+        link.pauta = Topic.objects.create(
             title=titulo,
             target_keyword=palavra[:120],
             briefing=orientacao_da_pauta(link),
             status=Topic.Status.SUGGESTED,
+            origin=Topic.Origin.LINK_QUEBRADO,
         )
         messages.success(request, _("Pauta criada: %(t)s") % {"t": titulo})
-        link.situacao = LinkQuebrado.Situacao.DESCARTADO
+        link.situacao = LinkQuebrado.Situacao.PAUTA
     elif decisao == "contatado":
+        import datetime
+
+        try:
+            link.contatado_em = datetime.date.fromisoformat(request.POST.get("contatado_em", ""))
+        except ValueError:
+            link.contatado_em = timezone.localdate()
         link.situacao = LinkQuebrado.Situacao.CONTATADO
     else:
         link.situacao = LinkQuebrado.Situacao.DESCARTADO
-    link.save(update_fields=["situacao"])
+    link.save(update_fields=["situacao", "pauta", "contatado_em"])
     return redirect(reverse("radar:imprensa") + "#links-quebrados")
