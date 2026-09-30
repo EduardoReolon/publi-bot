@@ -130,12 +130,23 @@
       {% endif %}
 
       {% if link.meu_artigo %}
-        <div class="ajuda">{% translate "Seu artigo que entra no lugar" %}: <a href="{{ link.meu_artigo.published_url }}" target="_blank" rel="noopener">{{ link.meu_artigo.title }}</a></div>
+        <div class="ajuda">{% translate "Seu artigo que entra no lugar" %}: <a href="{{ link.meu_artigo.published_url }}" target="_blank" rel="noopener">{{ link.meu_artigo.title }}</a>
+          · <a href="{% url 'content:revisar' link.meu_artigo.pk %}">{% translate "revisar" %}</a>
+          {% if link.ja_oferecido %}<span class="selo alerta" title="{% translate 'O mesmo artigo substituindo links em sites diferentes e normal; so confira se serve para este contexto.' %}">{% blocktranslate trimmed count n=link.ja_oferecido %}ja oferecido em {{ n }} outro link{% plural %}ja oferecido em {{ n }} outros links{% endblocktranslate %}{% if link.ja_conquistado %} · {{ link.ja_conquistado }} {% translate "conquistado(s)" %}{% endif %}</span>{% endif %}
+        </div>
       {% elif link.pauta %}
         <div class="ajuda">
           {% translate "Virou pauta" %}: <a href="{% url 'content:pautas' %}">{{ link.pauta.title }}</a> —
           {% if link.artigo_da_pauta %}{% translate "artigo" %}: {{ link.artigo_da_pauta.get_status_display }}{% if link.artigo_da_pauta.status == 'approved_scheduled' and link.artigo_da_pauta.scheduled_for %} {{ link.artigo_da_pauta.scheduled_for|date:"d/m H:i" }}{% endif %}{% else %}{% translate "pauta" %}: {{ link.pauta.get_status_display }}{% endif %}.
           {% translate "O e-mail fica pronto quando o artigo for publicado." %}
+        </div>
+      {% elif link.artigo_parecido %}
+        <div class="ajuda">
+          {% translate "Artigo parecido" %}: <a href="{{ link.artigo_parecido.published_url }}" target="_blank" rel="noopener">{{ link.artigo_parecido.title }}</a>
+          <span class="selo alerta">{% widthratio link.parecido_proximidade 1 100 %}%</span>
+          · <a href="{% url 'content:revisar' link.artigo_parecido.pk %}">{% translate "revisar" %}</a>
+          {% if link.ja_oferecido %}<span class="selo alerta">{% blocktranslate trimmed count n=link.ja_oferecido %}ja oferecido em {{ n }} outro link{% plural %}ja oferecido em {{ n }} outros links{% endblocktranslate %}</span>{% endif %}
+          <br>{% translate "Nao cobre sozinho. Revisado, com um titulo mais perto do da pagina que sumiu, pode servir." %}
         </div>
       {% else %}
         <div class="ajuda">{% translate "Voce ainda nao tem artigo sobre isso." %}</div>
@@ -151,7 +162,8 @@
             <button type="submit" name="decisao" value="contatado" class="botao discreto pequeno">{% translate "Marcar como enviado" %}</button>
           {% endif %}
         {% elif not link.pauta %}
-          <button type="submit" name="decisao" value="pauta" class="botao secundario pequeno">{% translate "Virar pauta" %}</button>
+          {% if link.artigo_parecido %}<button type="submit" name="decisao" value="usar_artigo" class="botao secundario pequeno">{% translate "Usar este artigo" %}</button>{% endif %}
+          <button type="submit" name="decisao" value="pauta" class="botao {% if link.artigo_parecido %}discreto{% else %}secundario{% endif %} pequeno">{% translate "Virar pauta" %}</button>
         {% endif %}
         <button type="submit" name="decisao" value="reprocessar" class="botao discreto pequeno" title="{% translate 'Le a pagina de novo e consulta o Internet Archive e o contato' %}">{% translate "Reprocessar" %}</button>
         {% if link.situacao != 'conquistado' %}<button type="submit" name="decisao" value="descartar" class="botao discreto pequeno">{% translate "Descartar" %}</button>{% endif %}

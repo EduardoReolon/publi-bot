@@ -823,7 +823,7 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
 def imprensa(request: HttpRequest) -> HttpResponse:
     """Painel de imprensa (um e-mail por veiculo) e links quebrados do assunto."""
     from apps.content.imprensa import painel, pedido_de_email
-    from apps.radar.links_quebrados import artigo_do_link, email
+    from apps.radar.links_quebrados import artigo_do_link, email, ofertas_do_artigo
     from apps.radar.models import LinkQuebrado
 
     veiculos = painel()
@@ -837,11 +837,20 @@ def imprensa(request: HttpRequest) -> HttpResponse:
     ]
     links = list(
         LinkQuebrado.objects.filter(situacao__in=ativos)
-        .select_related("artigo", "pauta")
+        .select_related("artigo", "artigo_parecido", "pauta")
         .prefetch_related("pauta__articles")[:100]
     )
+    ofertas = ofertas_do_artigo()
     for link in links:
         link.meu_artigo = artigo_do_link(link)
+        # Em quantos OUTROS links o mesmo artigo ja foi oferecido.
+        oferta = ofertas.get(getattr(link.meu_artigo or link.artigo_parecido, "pk", None))
+        if oferta:
+            outros = oferta["links"] - {link.pk}
+            link.ja_oferecido = len(outros)
+            link.ja_conquistado = oferta["conquistado"] - (
+                link.pk in oferta["links"] and link.situacao == LinkQuebrado.Situacao.CONQUISTADO
+            )
         link.artigo_da_pauta = (
             max(link.pauta.articles.all(), key=lambda a: a.created_at, default=None)
             if link.pauta_id
@@ -894,6 +903,12 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
 
         reprocessar(link)
         messages.success(request, _("Link reprocessado: trecho, pagina que sumiu e contato."))
+        return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
+    if decisao == "usar_artigo" and link.artigo_parecido_id:
+        from apps.radar.links_quebrados import usar_artigo_parecido
+
+        usar_artigo_parecido(link)
+        messages.success(request, _("Artigo ligado ao link. Confira o titulo antes do e-mail."))
         return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
     if decisao == "pauta" and link.pauta_id:
         messages.info(request, _("Este link ja virou pauta."))

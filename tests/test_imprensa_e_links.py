@@ -356,3 +356,110 @@ def test_revisao_avisa_o_titulo_e_a_cobertura(ambiente):  # noqa: F811
         reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
     ).content.decode()
     assert "Esta pauta nasceu de um link quebrado" in html
+
+
+def _vetores(monkeypatch, mapa):
+    """Embedding controlado: cada texto vira o vetor da primeira chave que contem."""
+    import numpy as np
+
+    def vetor(texto):
+        for chave, valor in mapa.items():
+            if chave in texto:
+                return np.asarray(valor, dtype=np.float32)
+        return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+
+    monkeypatch.setattr("apps.radar.agrupamento._vetor", vetor)
+
+
+def test_link_ganha_artigo_parecido_e_pode_usar(ambiente, monkeypatch):  # noqa: F811
+    _, _, client = ambiente
+    _vetores(monkeypatch, {"LMS": [1.0, 0.0, 0.0], "treinamento": [0.6, 0.8, 0.0]})
+    monkeypatch.setattr("apps.radar.concorrentes.aderencia_da_consulta", lambda texto: 0.4)
+    artigo = _artigo("Guia de treinamento de equipes", "treinamento")
+    link = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/lms",
+        texto="plataforma EAD",
+        arquivo_titulo="O que e uma plataforma LMS",
+        status_http=404,
+    )
+    # Distancia 0.4: entre PERTO e QUASE, vira sugestao.
+    assert links_quebrados.comparar_com_o_publicado(artigo) == 1
+    link.refresh_from_db()
+    assert link.artigo is None and link.artigo_parecido == artigo
+    assert link.parecido_proximidade == 0.6
+
+    url = reverse("radar:imprensa", urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert "Artigo parecido" in html and "Usar este artigo" in html
+
+    client.post(
+        reverse("radar:decidir_link_quebrado", args=[link.pk], urlconf="core.urls_tenants"),
+        {"decisao": "usar_artigo"},
+    )
+    link.refresh_from_db()
+    assert link.artigo == artigo and link.artigo_parecido is None
+
+
+def test_avisa_artigo_ja_oferecido_em_outro_link(ambiente):  # noqa: F811
+    _, _, client = ambiente
+    artigo = _artigo("Plataforma LMS", "lms")
+    for n, situacao in enumerate(["conquistado", "novo"]):
+        LinkQuebrado.objects.create(
+            pagina_url=f"https://blog{n}.com.br/guia",
+            dominio=f"blog{n}.com.br",
+            link_url="https://morto.com.br/lms",
+            texto="plataforma lms",
+            status_http=404,
+            artigo=artigo,
+            situacao=situacao,
+        )
+    html = client.get(reverse("radar:imprensa", urlconf="core.urls_tenants")).content.decode()
+    assert "ja oferecido em 1 outro link" in html
+
+
+def test_publicar_avisa_a_pauta_aberta_parecida(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.models import Topic
+    from apps.radar import publicados
+
+    _vetores(monkeypatch, {"LMS": [1.0, 0.0, 0.0]})
+    parecida = Topic.objects.create(title="Como escolher um LMS")
+    outra = Topic.objects.create(title="Receita de bolo")
+    artigo = _artigo("Plataforma LMS: guia", "lms")
+
+    assert publicados.rever_pautas(artigo) == 1
+    parecida.refresh_from_db()
+    outra.refresh_from_db()
+    assert parecida.artigo_parecido == artigo and parecida.cannibalization_score == 1.0
+    assert outra.artigo_parecido is None
+
+    _, _, client = ambiente
+    html = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
+    assert "ja ha artigo parecido" in html
+
+
+def test_publicar_refaz_a_nota_dos_temas(radar, monkeypatch):  # noqa: F811
+    from apps.radar import publicados
+    from apps.radar.models import GrupoDeDemanda
+
+    vistos = []
+    monkeypatch.setattr(
+        "apps.radar.agrupamento.pontuar", lambda grupo, **kw: vistos.append(grupo.pk)
+    )
+    monkeypatch.setattr("apps.radar.agrupamento.vetores_do_que_ja_foi_escrito", lambda: None)
+    monkeypatch.setattr("apps.radar.agrupamento.vetor_do_negocio", lambda: None)
+    vivo = GrupoDeDemanda.objects.create(rotulo="lms")
+    GrupoDeDemanda.objects.create(rotulo="x", situacao="descartado")
+    assert publicados.rever_temas() == 1 and vistos == [vivo.pk]
+
+
+def test_publicacao_despacha_a_revisao_do_radar(monkeypatch):
+    from apps.integrations import publishing
+
+    chamados = []
+    # O conftest troca _rever_o_radar; aqui vale a funcao de verdade.
+    monkeypatch.undo()
+    monkeypatch.setattr("apps.radar.tasks.depois_de_publicar.delay", lambda pk: chamados.append(pk))
+    publishing._rever_o_radar("abc")
+    assert chamados == ["abc"]

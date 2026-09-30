@@ -6,6 +6,7 @@ import hashlib
 import logging
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from apps.content.models import Article
@@ -354,6 +355,9 @@ def _concluir(conteudo, site: Site, resposta, tentativa: int, payload: dict):
     conteudo.next_retry_at = None
     conteudo.save()
 
+    if isinstance(conteudo, Article):
+        transaction.on_commit(lambda: _rever_o_radar(conteudo.pk))
+
     if getattr(conteudo, "e_atualizacao", False):
         from apps.content.versoes import marcar_anteriores_como_substituidas
 
@@ -374,6 +378,17 @@ def _concluir(conteudo, site: Site, resposta, tentativa: int, payload: dict):
         registrar_pedido_de_foto(conteudo, site)
 
     return conteudo
+
+
+def _rever_o_radar(pk) -> None:
+    """O artigo novo muda o radar, as pautas abertas e os links quebrados
+    (apps/radar/publicados.py). Fila fora do ar nao desfaz a publicacao."""
+    from apps.radar.tasks import depois_de_publicar
+
+    try:
+        depois_de_publicar.delay(str(pk))
+    except Exception:
+        logger.exception("Nao foi possivel despachar a revisao do radar de %s.", pk)
 
 
 def _falhar(conteudo, site: Site, erro, tentativa: int, payload: dict, *, terminal: bool):

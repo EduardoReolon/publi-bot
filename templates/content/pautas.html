@@ -39,6 +39,11 @@
                 {% if pauta.origin == 'link' %}
                   <span class="selo alerta" title="{% translate 'O titulo segue a pagina que sumiu, para o dono do site reconhecer a troca. Pode mudar.' %}">{% translate "link quebrado" %}</span>
                 {% endif %}
+                {% if pauta.artigo_parecido and not pauta.artigos %}
+                  <div class="ajuda"><span class="selo alerta">{% translate "ja ha artigo parecido" %}</span>
+                    <a href="{% url 'content:revisar' pauta.artigo_parecido.pk %}">{{ pauta.artigo_parecido.title }}</a>{% if pauta.artigo_parecido.published_at %}, {% translate "publicado em" %} {{ pauta.artigo_parecido.published_at|date:"d/m/Y" }}{% endif %}.
+                    {% translate "Mude o angulo, transforme em atualizacao do artigo ou rejeite." %}</div>
+                {% endif %}
                 {% if pauta.content_type %}<span class="selo">{{ pauta.get_content_type_display }}</span>{% endif %}
                 {% with g=pauta.grupo_avaliado %}{% if g %}
                   <span class="selo {% if g.avaliacao_ia == 'boa' %}ok{% else %}ruim{% endif %}" title="{{ g.motivo_ia }}">{% if g.avaliacao_ia == 'boa' %}{% translate "IA: boa" %}{% else %}{% translate "IA: ruim" %}{% endif %}</span>

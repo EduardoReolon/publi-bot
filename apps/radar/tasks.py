@@ -151,3 +151,14 @@ def procurar_links_quebrados() -> int:
     from apps.radar.links_quebrados import verificar_um_lote
 
     return para_cada_tenant(verificar_um_lote, "procurar_links_quebrados")
+
+
+@shared_task
+def depois_de_publicar(pk: str) -> None:
+    """Despachada de dentro do tenant quando um artigo e publicado."""
+    from apps.content.models import Article
+    from apps.radar.publicados import depois_de_publicar as rever
+
+    artigo = Article.objects.filter(pk=pk).first()
+    if artigo is not None:
+        rever(artigo)

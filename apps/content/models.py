@@ -321,6 +321,16 @@ class Topic(models.Model):
     # dados" e "Guia para contratar consultoria de dados" sao canibalizacao pura
     # e passariam batido numa comparacao literal.
     cannibalization_score = models.FloatField(_("risco de canibalizacao"), default=0.0)
+    # Artigo publicado DEPOIS da pauta nascer e que ja cobre o mesmo assunto.
+    # Aviso, nao descarte: a pessoa decide se muda o angulo ou desiste.
+    artigo_parecido = models.ForeignKey(
+        "content.Article",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("artigo publicado parecido"),
+    )
 
     class Origin(models.TextChoices):
         MANUAL = "manual", _("Criada a mao")

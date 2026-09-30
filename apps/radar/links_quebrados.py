@@ -30,6 +30,9 @@ TIMEOUT = 10.0
 # de robo, instabilidade) e nao contam.
 QUEBRADO = {404, 410}
 PERTO_DO_ARTIGO = 0.35  # distancia de cosseno do texto do link ao titulo
+# Entre PERTO e QUASE: o artigo nao cobre sozinho, mas revisado (titulo mais
+# perto do da pagina que sumiu) pode servir. Vira sugestao, nao ligacao.
+QUASE_O_ARTIGO = 0.45
 PERTO_DO_TEMA = 0.3  # proximidade com o negocio (0 a 1), sem artigo
 
 
@@ -221,21 +224,28 @@ def paginas_para_verificar(limite: int = PAGINAS_POR_VEZ) -> list[str]:
 
 def _relacionar(texto: str, url: str, artigos: list) -> tuple[object | None, float | None]:
     """(artigo publicado mais perto, proximidade com o tema) do texto do link."""
-    from apps.radar.agrupamento import _distancia, _vetor
+    from apps.radar.agrupamento import _vetor
     from apps.radar.concorrentes import aderencia_da_consulta
 
     descricao = texto or urlparse(url).path.replace("-", " ").replace("/", " ")
     if len(descricao.split()) < 2:
         return None, None
-    vetor = _vetor(descricao)
-    melhor, menor = None, 1.0
+    melhor, menor = _mais_perto(_vetor(descricao), artigos)
+    if melhor is not None and menor <= PERTO_DO_ARTIGO:
+        return melhor, None
+    return None, aderencia_da_consulta(descricao)
+
+
+def _mais_perto(vetor, artigos: list) -> tuple[object | None, float]:
+    """(artigo, distancia) do artigo publicado mais perto do vetor."""
+    from apps.radar.agrupamento import _distancia
+
+    melhor, menor = None, 2.0
     for artigo, vetor_do_artigo in artigos:
         distancia = _distancia(vetor, vetor_do_artigo)
         if distancia < menor:
             melhor, menor = artigo, distancia
-    if melhor is not None and menor <= PERTO_DO_ARTIGO:
-        return melhor, None
-    return None, aderencia_da_consulta(descricao)
+    return melhor, menor
 
 
 def verificar_pagina(url: str, artigos: list) -> int:
@@ -278,7 +288,7 @@ def verificar_pagina(url: str, artigos: list) -> int:
             },
         )
         if criado:
-            completar(quebrado)
+            completar(quebrado, artigos)
         guardados += criado
     PaginaVerificada.objects.update_or_create(
         url=url[:500], defaults={"links": len(links), "erro": "", "verificada_em": timezone.now()}
@@ -372,17 +382,23 @@ def completar_historicos(limite: int = HISTORICOS_POR_VEZ) -> int:
             :limite
         ]
     )
+    artigos = _artigos_publicados() if pendentes else []
     for link in pendentes:
-        completar(link)
+        completar(link, artigos)
     return len(pendentes)
+
+
+def vetor_do_artigo(artigo):
+    from apps.radar.agrupamento import _vetor
+
+    return _vetor(f"{artigo.title}. {artigo.focus_keyword}")
 
 
 def _artigos_publicados() -> list:
     from apps.content.models import Article
-    from apps.radar.agrupamento import _vetor
 
     artigos = Article.objects.filter(status=Article.Status.PUBLISHED).exclude(published_url="")
-    return [(a, _vetor(f"{a.title}. {a.focus_keyword}")) for a in artigos[:200]]
+    return [(a, vetor_do_artigo(a)) for a in artigos[:200]]
 
 
 def verificar_um_lote() -> int:
@@ -534,6 +550,49 @@ def procurar_contato(link) -> None:
     link.save(update_fields=campos)
 
 
+def descricao_do_link(link) -> str:
+    """O que se sabe do assunto do link: titulo da pagina que sumiu, texto e trecho."""
+    return " ".join(p for p in (link.arquivo_titulo, link.texto, link.contexto[:300]) if p)
+
+
+def comparar_com_artigos(link, artigos: list | None = None) -> None:
+    """Procura, entre os publicados, o artigo que cobre o link, agora com a
+    descricao completa (e nao so o texto do link, como na descoberta).
+
+    Perto: o link passa a apontar o artigo. Quase: fica como sugestao, com a
+    proximidade, e a pessoa decide se revisa o artigo e o usa.
+    """
+    from apps.radar.agrupamento import _vetor
+    from apps.radar.models import LinkQuebrado
+
+    if link.artigo_id or link.pauta_id or link.situacao != LinkQuebrado.Situacao.NOVO:
+        return
+    descricao = descricao_do_link(link)
+    if len(descricao.split()) < 2:
+        return
+    if artigos is None:
+        artigos = _artigos_publicados()
+    melhor, menor = _mais_perto(_vetor(descricao), artigos)
+    if melhor is None or menor > QUASE_O_ARTIGO:
+        return
+    if menor <= PERTO_DO_ARTIGO:
+        link.artigo, link.artigo_parecido, link.parecido_proximidade = melhor, None, None
+    elif link.parecido_proximidade is None or 1 - menor > link.parecido_proximidade:
+        link.artigo_parecido, link.parecido_proximidade = melhor, round(1 - menor, 2)
+    else:
+        return
+    link.save(update_fields=["artigo", "artigo_parecido", "parecido_proximidade"])
+
+
+def usar_artigo_parecido(link) -> None:
+    link.artigo, link.artigo_parecido, link.parecido_proximidade = (
+        link.artigo_parecido,
+        None,
+        None,
+    )
+    link.save(update_fields=["artigo", "artigo_parecido", "parecido_proximidade"])
+
+
 def reavaliar_aderencia(link) -> None:
     """Com o titulo da pagina que sumiu e o trecho do artigo, a proximidade com o
     seu negocio sai bem melhor que so do texto do link ("plataforma EAD")."""
@@ -541,16 +600,17 @@ def reavaliar_aderencia(link) -> None:
         return
     from apps.radar.concorrentes import aderencia_da_consulta
 
-    descricao = " ".join(p for p in (link.arquivo_titulo, link.texto, link.contexto[:300]) if p)
+    descricao = descricao_do_link(link)
     if len(descricao.split()) >= 2:
         link.proximidade = aderencia_da_consulta(descricao)
         link.save(update_fields=["proximidade"])
 
 
-def completar(link) -> None:
-    """Tudo o que se descobre depois de achar o link: o que a pagina era, a
-    proximidade com o negocio e o contato do site."""
+def completar(link, artigos: list | None = None) -> None:
+    """Tudo o que se descobre depois de achar o link: o que a pagina era, o
+    artigo seu que a substitui, a proximidade com o negocio e o contato do site."""
     consultar_arquivo(link)
+    comparar_com_artigos(link, artigos)
     reavaliar_aderencia(link)
     procurar_contato(link)
 
@@ -673,3 +733,40 @@ def cobertura_do_artigo(artigo) -> list[dict]:
             }
         )
     return saida
+
+
+def comparar_com_o_publicado(artigo) -> int:
+    """Artigo recem-publicado: os links ainda sem artigo sao comparados com ele.
+    Devolve quantos ganharam artigo ou sugestao."""
+    from apps.radar.models import LinkQuebrado
+
+    if artigo.status != artigo.Status.PUBLISHED or not artigo.published_url:
+        return 0
+    so_ele = [(artigo, vetor_do_artigo(artigo))]
+    mudaram = 0
+    for link in LinkQuebrado.objects.filter(
+        situacao=LinkQuebrado.Situacao.NOVO, artigo__isnull=True, pauta__isnull=True
+    ):
+        antes = (link.artigo_id, link.artigo_parecido_id)
+        comparar_com_artigos(link, so_ele)
+        mudaram += antes != (link.artigo_id, link.artigo_parecido_id)
+    return mudaram
+
+
+def ofertas_do_artigo() -> dict:
+    """{id do artigo: {"oferecido": n, "conquistado": n}} dos links ja contatados,
+    para a tela avisar quando o mesmo artigo ja foi oferecido em outro lugar."""
+    from apps.radar.models import LinkQuebrado
+
+    contagem: dict = {}
+    for link in LinkQuebrado.objects.filter(
+        situacao__in=[LinkQuebrado.Situacao.CONTATADO, LinkQuebrado.Situacao.CONQUISTADO]
+    ).select_related("artigo", "pauta"):
+        artigo = artigo_do_link(link)
+        if artigo is None:
+            continue
+        item = contagem.setdefault(artigo.pk, {"oferecido": 0, "conquistado": 0, "links": set()})
+        item["oferecido"] += 1
+        item["conquistado"] += link.situacao == LinkQuebrado.Situacao.CONQUISTADO
+        item["links"].add(link.pk)
+    return contagem

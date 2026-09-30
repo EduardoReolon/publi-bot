@@ -77,7 +77,11 @@ def pautas(request: HttpRequest) -> HttpResponse:
     from apps.content.imprensa import dados_de_imprensa, veiculos
     from apps.content.outra_ia import motivos_de_peso
 
-    lista = list(consulta.prefetch_related("articles", "grupos_de_demanda")[:200])
+    lista = list(
+        consulta.select_related("artigo_parecido").prefetch_related(
+            "articles", "grupos_de_demanda"
+        )[:200]
+    )
     dados = dados_de_imprensa()
     for pauta in lista:
         pauta.de_peso = motivos_de_peso(pauta)

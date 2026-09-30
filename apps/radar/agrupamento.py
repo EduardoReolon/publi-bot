@@ -110,6 +110,11 @@ def agrupar(sinais: list[SinalDeDemanda]) -> set:
     return tocados
 
 
+def canibalizacao(distancia: float) -> float:
+    """0 a 1: quanto um tema compete com o que ja foi escrito, pela distancia."""
+    return _escala(distancia, 0.06, 0.16)
+
+
 def _escala(valor: float, perto: float, longe: float) -> float:
     """1 em `perto` ou menos, 0 em `longe` ou mais, linear entre os dois."""
     if valor <= perto:
@@ -214,9 +219,9 @@ def pontuar(
 
     # O proprio titulo do grupo, se ja virou pauta, nao conta contra ele.
     if grupo.pauta_id:
-        canibalizacao = 0.0
+        risco = 0.0
     else:
-        canibalizacao = _escala(_menor_distancia(centroide, ja_escrito), 0.06, 0.16)
+        risco = canibalizacao(_menor_distancia(centroide, ja_escrito))
     limiar = RetrievalSettings.carregar().max_cosine_distance
     cobertura = _escala(_menor_distancia_ao_acervo(centroide), limiar, limiar + 0.10)
 
@@ -224,14 +229,14 @@ def pontuar(
         "demanda": round(demanda, 3),
         "diversidade": round(diversidade, 3),
         "aderencia": round(aderencia, 3),
-        "canibalizacao": round(canibalizacao, 3),
+        "canibalizacao": round(risco, 3),
         "cobertura": round(cobertura, 3),
     }
     nota = 100 * (
         PESOS["demanda"] * demanda
         + PESOS["diversidade"] * diversidade
         + PESOS["aderencia"] * aderencia
-        + PESOS["canibalizacao"] * (1 - canibalizacao)
+        + PESOS["canibalizacao"] * (1 - risco)
         + PESOS["cobertura"] * cobertura
     )
 

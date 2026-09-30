@@ -1172,6 +1172,17 @@ class LinkQuebrado(models.Model):
         verbose_name=_("artigo sugerido"),
     )
     proximidade = models.FloatField(_("proximidade"), null=True, blank=True)
+    # Artigo publicado que QUASE cobre o assunto: com um titulo mais perto do
+    # da pagina que sumiu, pode servir. A pessoa decide ("Usar este artigo").
+    artigo_parecido = models.ForeignKey(
+        "content.Article",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("artigo parecido"),
+    )
+    parecido_proximidade = models.FloatField(_("proximidade do parecido"), null=True, blank=True)
     # O paragrafo do artigo onde o link esta: o que o autor quis citar.
     contexto = models.TextField(_("trecho do artigo"), blank=True)
     # A pagina que sumiu, pela ultima copia boa no Internet Archive.

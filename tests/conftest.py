@@ -30,6 +30,10 @@ def _sem_bases_academicas(request, monkeypatch):
     monkeypatch.setattr(links_quebrados, "ultima_copia_boa", lambda url: None)
     # Nem a busca do contato do site, que baixa a home e a pagina de contato.
     monkeypatch.setattr(links_quebrados, "procurar_contato", lambda link: None)
+    # A revisao do radar depois de publicar vai para a fila; nos testes, nao.
+    from apps.integrations import publishing
+
+    monkeypatch.setattr(publishing, "_rever_o_radar", lambda pk: None)
     if "bases_academicas" in request.fixturenames:
         return
     from apps.knowledge import academicos
