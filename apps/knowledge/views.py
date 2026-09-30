@@ -216,6 +216,18 @@ def _processar_curadoria(request: HttpRequest, documento: Document) -> HttpRespo
 
 
 @login_required
+@require_POST
+def vetorizar_no_servidor(request: HttpRequest, pk) -> HttpResponse:
+    """O worker da placa esta fora: vetoriza aqui mesmo (mais lento)."""
+    from apps.knowledge.tasks import vetorizar_no_servidor as no_servidor
+
+    documento = get_object_or_404(Document, pk=pk)
+    if no_servidor(documento):
+        messages.success(request, _("Vetorizando no servidor. Pode levar alguns minutos."))
+    return redirect("knowledge:curar", pk=documento.pk)
+
+
+@login_required
 def baixar_original(request: HttpRequest, pk) -> HttpResponse:
     """Devolve o arquivo que foi enviado, com o nome original.
 

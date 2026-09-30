@@ -85,7 +85,49 @@ def markdown_da_transcricao(titulo: str, trechos: list[tuple[float, str]]) -> st
     return "\n\n".join(partes)
 
 
+def _legenda_no_worker(conexao, video_id: str, idiomas) -> list[tuple[float, str]] | None:
+    """A legenda lida pelo worker da placa (docs/WORKER_YOUTUBE.md), ou None
+    quando ele nao pode agora (e o servidor tenta)."""
+    import httpx
+
+    from apps.inference.security import decifrar_chave
+
+    try:
+        resposta = httpx.post(
+            f"{conexao.base_url.rstrip('/')}/v1/youtube/legenda",
+            json={"video_id": video_id, "idiomas": list(idiomas)},
+            headers={"Authorization": f"Bearer {decifrar_chave(conexao) or ''}"},
+            timeout=120.0,
+        )
+    except httpx.TransportError:
+        return None
+    if resposta.status_code == 404:
+        codigo = ""
+        try:
+            codigo = (resposta.json().get("error") or {}).get("code", "")
+        except ValueError:
+            pass
+        if codigo == "sem_legenda":
+            raise LegendaIndisponivel("o video nao tem legenda disponivel.")
+        return None  # worker sem a rota: o servidor tenta
+    if resposta.status_code >= 400:
+        return None
+    segmentos = resposta.json().get("segmentos") or []
+    return [(float(s["start"]), s["text"]) for s in segmentos if s.get("text")]
+
+
 def buscar_legenda(video_id: str, idiomas=("pt", "pt-BR", "en")) -> list[tuple[float, str]]:
+    """A legenda do video. Primeiro pelo worker da placa, quando ha um marcado
+    para isso (IP de casa, que o YouTube costuma aceitar); senao, daqui."""
+    from apps.inference.models import InferenceConnection
+
+    for conexao in InferenceConnection.objects.filter(is_active=True).order_by("created_at"):
+        if conexao.atende(InferenceConnection.Workload.YOUTUBE):
+            trechos = _legenda_no_worker(conexao, video_id, idiomas)
+            if trechos is not None:
+                return trechos
+            break
+
     from youtube_transcript_api import (
         YouTubeTranscriptApi,
         YouTubeTranscriptApiException,

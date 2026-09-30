@@ -223,3 +223,95 @@ def get_embedding_client() -> EmbeddingClient:
 
     classe = import_string(settings.EMBEDDING_CLIENT)
     return classe()
+
+
+class VetorizacaoAdiada(RuntimeError):
+    """O worker nao pode vetorizar agora (ocupado, desligado, baixando o
+    modelo). Nao e erro: o trabalho volta para a fila."""
+
+    def __init__(self, mensagem: str, *, retry_after: int | None = None):
+        super().__init__(mensagem)
+        self.retry_after = retry_after
+
+
+def conexao_de_vetorizacao():
+    """A conexao do worker que vetoriza, se alguma foi marcada para isso."""
+    from apps.inference.models import InferenceConnection
+
+    for conexao in InferenceConnection.objects.filter(is_active=True).order_by("created_at"):
+        if conexao.atende(InferenceConnection.Workload.EMBEDDING) and not conexao.circuito_aberto:
+            return conexao
+    return None
+
+
+def _no_worker(conexao, textos: list[str], *, dono: str) -> list[list[float]]:
+    """`POST /v1/embeddings` no dialeto da OpenAI (docs/WORKER_VETORIZACAO.md).
+
+    Os textos vao ja com o prefixo `passage: `: o worker nao acrescenta nada, e
+    assim o vetor sai igual ao do servidor.
+    """
+    import httpx
+
+    from apps.inference.leases import SemCapacidade, reserva
+    from apps.inference.providers.openai_compatible import _retry_after
+    from apps.inference.security import decifrar_chave
+
+    segredo = decifrar_chave(conexao) or ""
+    try:
+        with reserva(conexao, owner_key=dono):
+            resposta = httpx.post(
+                f"{conexao.base_url.rstrip('/')}/v1/embeddings",
+                json={
+                    "model": settings.EMBEDDING_MODEL,
+                    "input": [f"passage: {t}" for t in textos],
+                },
+                headers={"Authorization": f"Bearer {segredo}"},
+                timeout=600.0,
+            )
+    except SemCapacidade as exc:
+        raise VetorizacaoAdiada(f"a maquina da placa esta ocupada: {exc}") from exc
+    except httpx.TransportError as exc:
+        raise VetorizacaoAdiada(f"worker inalcancavel: {type(exc).__name__}") from exc
+
+    if resposta.status_code == 503:
+        raise VetorizacaoAdiada(
+            "o worker pediu para esperar (placa ocupada ou modelo carregando).",
+            retry_after=_retry_after(resposta),
+        )
+    if resposta.status_code == 404:
+        raise VetorizacaoAdiada(
+            "o worker nao tem a rota /v1/embeddings (docs/WORKER_VETORIZACAO.md)."
+        )
+    resposta.raise_for_status()
+    dados = resposta.json()
+    if dados.get("model") and dados["model"] != settings.EMBEDDING_MODEL:
+        # Vetor de outro modelo no mesmo indice estraga a busca sem aviso.
+        raise RuntimeError(
+            f"o worker vetorizou com {dados['model']}, e o indice usa {settings.EMBEDDING_MODEL}."
+        )
+    vetores = [item["embedding"] for item in sorted(dados["data"], key=lambda i: i["index"])]
+    if len(vetores) != len(textos) or any(len(v) != settings.EMBEDDING_DIM for v in vetores):
+        raise RuntimeError("o worker devolveu vetores em numero ou tamanho errado.")
+    return [_normalizar(v) for v in vetores]
+
+
+def vetorizar_passagens(
+    textos: list[str], *, permitir_local: bool = True, dono: str = "vetorizacao"
+) -> list[list[float]]:
+    """Vetoriza passagens no worker da placa, se houver um marcado para isso;
+    senao (ou se ele nao puder agora e `permitir_local`), no servidor.
+
+    Sem worker cadastrado, vetoriza no servidor (como sempre foi). Com worker que
+    nao pode agora e sem `permitir_local`, levanta `VetorizacaoAdiada`: quem
+    chamou tenta de novo depois, ou oferece "vetorizar agora no servidor".
+    """
+    if not textos:
+        return []
+    conexao = conexao_de_vetorizacao()
+    if conexao is not None:
+        try:
+            return _no_worker(conexao, textos, dono=dono)
+        except VetorizacaoAdiada:
+            if not permitir_local:
+                raise
+    return get_embedding_client().embed_passage(textos)

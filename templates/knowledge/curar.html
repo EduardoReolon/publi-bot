@@ -21,6 +21,12 @@
       <strong>{% translate "Processando" %}</strong> —
       {% if documento.indexacao_pedida.concluir %}{% translate "concluindo a curadoria" %}{% else %}{% translate "salvando" %}{% endif %}:
       {% translate "os trechos marcados estao sendo vetorizados em segundo plano. Atualize a pagina em instantes; enquanto isso, os botoes ficam travados." %}
+      {% if documento.indexacao_pedida.aguardando_worker and not documento.indexacao_pedida.local %}
+        <div class="ajuda">{% translate "Esperando o worker da placa" %}: {{ documento.indexacao_pedida.aguardando_worker }}</div>
+        <form method="post" action="{% url 'knowledge:vetorizar_no_servidor' documento.pk %}" style="margin-top:.3rem">{% csrf_token %}
+          <button type="submit" class="botao secundario pequeno" title="{% translate 'Mais lento, e ocupa o servidor; use quando o worker estiver desligado' %}">{% translate "Vetorizar agora no servidor" %}</button>
+        </form>
+      {% endif %}
     </div>
   {% elif documento.indexacao_erro %}
     <div class="aviso ruim"><strong>{% translate "A ultima indexacao falhou" %}</strong>: {{ documento.indexacao_erro }}</div>

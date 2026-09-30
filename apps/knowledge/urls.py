@@ -13,6 +13,11 @@ urlpatterns = [
     path("enviar/", views.enviar_documento, name="enviar"),
     path("enviar/url/", views.enviar_url, name="enviar_url"),
     path("nota/", views.nota_do_especialista, name="nota"),
+    path(
+        "<uuid:pk>/vetorizar-no-servidor/",
+        views.vetorizar_no_servidor,
+        name="vetorizar_no_servidor",
+    ),
     path("fontes-sugeridas/", views.fontes_sugeridas, name="fontes_sugeridas"),
     path("fontes-sugeridas/<uuid:pk>/", views.decidir_candidato, name="decidir_candidato"),
     path("fontes-sugeridas/<uuid:pk>/pdf/", views.enviar_pdf, name="enviar_pdf"),
