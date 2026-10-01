@@ -147,7 +147,9 @@ def test_painel_na_tela_de_pautas(ambiente, monkeypatch):  # noqa: F811
         },
     )
     _artigo_pendente(1, pauta)
-    html = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
+    html = client.get(
+        reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    ).content.decode()
     assert "2 paginas de veiculos e sites" in html and "1 videos" in html
     assert "ainda nao sustenta" in html and "nada novo encontrado" in html
     assert "1 aguardando conferencia" in html and "Verificar referencias de novo" in html

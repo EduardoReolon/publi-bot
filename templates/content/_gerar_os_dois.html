@@ -1,0 +1,6 @@
+{% load i18n %}{% if not pauta.fluxos.0.trabalho and not pauta.fluxos.1.trabalho and not pauta.fluxos.1.pesquisa.rodando %}
+  <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
+    <input type="hidden" name="fluxo" value="ligados">
+    <button type="submit" class="botao pequeno" title="{% translate 'Gera um artigo por fluxo, para comparar; na revisao voce escolhe qual vai ao ar' %}">{% translate "Gerar A e B" %}</button>
+  </form>
+{% endif %}

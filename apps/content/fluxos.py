@@ -100,7 +100,7 @@ def _disparar_b(pauta) -> tuple[str, str]:
 
     nome = NOMES[B]
     situacao = ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("situacao")
-    if situacao in (None, "erro"):
+    if situacao in (None, "erro") or situacao_da_pesquisa(pauta)["parada"]:
         iniciar_pesquisa(pauta, gerar_depois=True)
         return "info", _(
             "%(f)s: pesquisando artigos; o artigo e gerado sozinho quando a pesquisa terminar."
@@ -125,13 +125,17 @@ def _disparar_b(pauta) -> tuple[str, str]:
     }
 
 
-def iniciar_pesquisa(pauta, *, gerar_depois: bool = False) -> None:
+def iniciar_pesquisa(pauta, *, gerar_depois: bool | None = False) -> None:
+    """Poe a pesquisa do B na fila. `gerar_depois=None` mantem o pedido de
+    gerar ao terminar que ja houver (recomecar uma pesquisa parada)."""
     from django.db import transaction
     from django.utils import timezone
 
     from apps.knowledge.referencias import registrar
     from apps.knowledge.tasks import pesquisar_pauta
 
+    if gerar_depois is None:
+        gerar_depois = situacao_da_pesquisa(pauta)["gerar_depois"]
     registrar(
         pauta,
         "pesquisa",
@@ -171,13 +175,107 @@ def arquivar_o_outro(artigo) -> int:
     return arquivados
 
 
-def para_a_tela(pauta, config) -> list[dict]:
-    """Por fluxo ligado: o artigo (se houver) e se ainda da para gerar."""
+def pesquisas_paradas() -> int:
+    """Recomeca as pesquisas do B que a tarefa abandonou (servidor reiniciado
+    no meio, por exemplo). Roda com a varredura de pedidos parados."""
+    from apps.content.models import Topic
+
+    recomecadas = 0
+    for pauta in Topic.objects.filter(
+        busca_de_fontes__pesquisa__situacao__in=["na_fila", "pesquisando"]
+    ):
+        if situacao_da_pesquisa(pauta)["parada"]:
+            iniciar_pesquisa(pauta, gerar_depois=None)
+            recomecadas += 1
+    return recomecadas
+
+
+def desistir(trabalho, motivo: str) -> None:
+    """Encerra uma geracao em curso (placa desligada ha horas, por exemplo):
+    o fluxo volta a poder ser gerado. O que ja foi feito fica no trabalho."""
+    from django.utils import timezone
+
+    GenerationJob.objects.filter(pk=trabalho.pk).update(
+        status=GenerationJob.Status.FAILED,
+        last_error=motivo,
+        lease_token=None,
+        lease_expires_at=None,
+        next_attempt_at=None,
+        finished_at=timezone.now(),
+    )
+
+
+def trabalhos_em_curso(pautas) -> dict:
+    """{(pauta_id, fluxo): trabalho} das geracoes em curso, numa consulta so."""
+    saida = {}
+    trabalhos = GenerationJob.objects.filter(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id__in=[p.pk for p in pautas],
+        status__in=EM_CURSO,
+    ).order_by("created_at")
+    for trabalho in trabalhos:
+        fluxo = (trabalho.step_payloads or {}).get("fluxo", A)
+        saida[(trabalho.target_object_id, fluxo)] = trabalho
+    return saida
+
+
+def situacao_da_pesquisa(pauta) -> dict:
+    """A pesquisa do B como a tela mostra: situacao, desde quando e se parou."""
+    import datetime
+
+    from django.utils import timezone
+
+    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    situacao = pesquisa.get("situacao") or ""
+    desde = None
+    try:
+        desde = datetime.datetime.fromisoformat(pesquisa.get("em") or "")
+    except ValueError:
+        pass
+    if desde and timezone.is_naive(desde):
+        desde = timezone.make_aware(desde)
+    rodando = situacao in ("na_fila", "pesquisando")
+    return {
+        "situacao": situacao,
+        "rodando": rodando,
+        "desde": desde,
+        "parada": bool(
+            rodando
+            and desde
+            and timezone.now() - desde > datetime.timedelta(minutes=PESQUISA_PARADA_MINUTOS)
+        ),
+        "gerar_depois": bool(pesquisa.get("gerar_depois")),
+        "erro": pesquisa.get("erro") or pesquisa.get("erro_ao_gerar") or "",
+    }
+
+
+# Uma pesquisa leva minutos (algumas buscas e uma chamada ao modelo). Passado
+# isto sem terminar, a tarefa morreu (o servidor reiniciou, por exemplo).
+PESQUISA_PARADA_MINUTOS = 30
+
+
+def para_a_tela(pauta, config, trabalhos: dict | None = None) -> list[dict]:
+    """Por fluxo ligado: o artigo (se houver), o trabalho em curso, a pesquisa
+    (no B) e se ainda da para gerar."""
     saida = []
     for fluxo, ligado in ((A, config.fluxo_do_acervo), (B, config.fluxo_da_pesquisa)):
         if not ligado:
             continue
         artigos = [a for a in pauta.articles.all() if a.fluxo == fluxo]
         vivos = [a for a in artigos if a.status != Article.Status.REJECTED]
-        saida.append({"fluxo": fluxo, "nome": NOMES[fluxo], "artigos": artigos, "falta": not vivos})
+        trabalho = (
+            trabalhos.get((pauta.pk, fluxo))
+            if trabalhos is not None
+            else em_andamento(pauta, fluxo)
+        )
+        saida.append(
+            {
+                "fluxo": fluxo,
+                "nome": NOMES[fluxo],
+                "artigos": artigos,
+                "falta": not vivos,
+                "trabalho": trabalho,
+                "pesquisa": situacao_da_pesquisa(pauta) if fluxo == B else None,
+            }
+        )
     return saida

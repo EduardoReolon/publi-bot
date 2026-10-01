@@ -154,7 +154,11 @@ def test_tela_da_pauta_oferece_o_caminho(ambiente, embedding_falso):  # noqa: F8
     _, _, client = ambiente
     pauta = Topic.objects.create(title="Tema sem acervo", status="approved")
     lista = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
-    assert "Artigo com outra IA" in lista
+    assert "Abrir a pauta" in lista
+    pagina = client.get(
+        reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Artigo com outra IA" in pagina
 
     url = reverse("content:artigo_por_outra_ia", args=[pauta.pk], urlconf="core.urls_tenants")
     assert "Separar as fontes" in client.get(url).content.decode()

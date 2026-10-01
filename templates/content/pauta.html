@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% load i18n radar %}
+{% block titulo %}{{ pauta.title }} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <p class="ajuda"><a href="{% url 'content:pautas' %}#pauta-{{ pauta.pk }}">← {% translate "Pautas" %}</a></p>
+  <h1>{{ pauta.title }}</h1>
+  <p>
+    <span class="selo {% if pauta.status == 'used' %}ok{% elif pauta.status == 'rejected' or pauta.status == 'waiting_sources' %}ruim{% endif %}">{{ pauta.get_status_display }}</span>
+    {% include "content/_selos_da_pauta.html" %}
+    {% if pauta.target_keyword %}<span class="ajuda">{% translate "Palavra-chave" %}: <strong>{{ pauta.target_keyword }}</strong></span>{% endif %}
+    {% with d=pauta.evidence.dificuldade %}{% if d %}<span class="selo {% if d.rotulo == 'brecha' %}ok{% elif d.rotulo == 'dificil' %}ruim{% else %}alerta{% endif %}" title="{% translate 'Links para a 1a pagina' %}: {{ d.links }}">{% if d.rotulo == 'brecha' %}{% translate "brecha" %}{% elif d.rotulo == 'dificil' %}{% translate "dificil" %}{% else %}{% translate "media" %}{% endif %} · {{ d.nota }}</span>{% endif %}{% endwith %}
+  </p>
+  {% with g=pauta.grupo_avaliado %}{% if g %}<p class="pre-visualizacao">{{ g.motivo_ia }}</p>{% endif %}{% endwith %}
+
+  <section class="cartao">
+    <h2>{% translate "Artigos" %}</h2>
+    {% include "content/_fluxos_da_pauta.html" with completo=True %}
+    {% if pauta.status != 'rejected' and pauta.faltam_os_dois %}{% include "content/_gerar_os_dois.html" %}{% endif %}
+  </section>
+
+  {% if pauta.referencias and config.fluxo_do_acervo %}
+    <section class="cartao">
+      <h2>{% translate "Referencias (A)" %}</h2>
+      {% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}
+    </section>
+  {% endif %}
+  {% if pauta.busca_de_fontes.pesquisa and config.fluxo_da_pesquisa %}
+    <section class="cartao">
+      <h2>{% translate "Pesquisa de artigos (B)" %}</h2>
+      {% include "content/_pesquisa_da_pauta.html" with p=pauta.busca_de_fontes.pesquisa %}
+    </section>
+  {% endif %}
+
+  <section class="cartao">
+    <h2>{% translate "Sobre a pauta" %}</h2>
+    {% if pauta.evidence.sinais %}
+      <details>
+        <summary>{% translate "Por que esta pauta" %}</summary>
+        <ul>
+          {% for sinal in pauta.evidence.sinais %}
+            <li>{{ sinal.texto }} <span class="selo">{{ sinal.fonte }}</span>{% if sinal.volume is not None %} {{ sinal.volume }}/{% translate "mes" %}{% endif %}</li>
+          {% endfor %}
+        </ul>
+        <div>{% for nome, valor in pauta.evidence.parcelas.items %}{{ nome|rotulo_da_parcela }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+      </details>
+    {% endif %}
+    {% if pauta.briefing %}
+      <details>
+        <summary>{% translate "Orientacao" %}</summary>
+        <div class="pre-visualizacao" style="white-space:pre-wrap">{{ pauta.briefing }}</div>
+      </details>
+    {% endif %}
+    {% if pauta.de_peso %}<div class="ajuda"><span class="selo ok">{% translate "vale o modelo grande" %}</span> {{ pauta.de_peso|join:", " }}</div>{% endif %}
+    {% if pauta.imprensa.tem_angulo %}<div class="ajuda"><span class="selo ok">{% translate "angulo de imprensa" %}</span>
+      {% if pauta.imprensa.na_busca %}{% blocktranslate trimmed count n=pauta.imprensa.na_busca|length %}{{ n }} veiculo nesta busca{% plural %}{{ n }} veiculos nesta busca{% endblocktranslate %}{% endif %}
+      {% if pauta.imprensa.ausentes %}· {% blocktranslate trimmed count n=pauta.imprensa.ausentes|length %}{{ n }} cobre o tema e nao aparece{% plural %}{{ n }} cobrem o tema e nao aparecem{% endblocktranslate %}{% endif %}</div>{% endif %}
+    {% if pauta.status != 'rejected' %}
+      <div class="acoes">
+        <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
+        <a class="botao {% if not pauta.imprensa.tem_angulo %}discreto{% endif %}" href="{% url 'content:imprensa_da_pauta' pauta.pk %}" title="{% translate 'Outra IA julga se a pauta vira materia de jornal, e escreve' %}">{% translate "Imprensa (outra IA)" %}</a>
+        <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
+          <button type="submit" class="botao secundario">{% translate "Rejeitar" %}</button>
+        </form>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

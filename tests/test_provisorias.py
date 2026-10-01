@@ -85,8 +85,12 @@ def test_geracao_para_e_lista_o_que_curar(ambiente, com_worker):  # noqa: F811
     assert pauta.busca_de_fontes["acervo"]["por_curar"][0]["id"] == str(documento.pk)
 
     _, _, client = ambiente
-    html = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
+    html = client.get(
+        reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    ).content.decode()
     assert "Para gerar, cure estas fontes" in html
+    lista = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
+    assert "fontes para curar" in lista
 
     marcar_curado(document=documento, revisado_por=None)
     from apps.knowledge.referencias import conferir_as_que_esperam

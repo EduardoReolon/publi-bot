@@ -11,7 +11,13 @@ app_name = "content"
 urlpatterns = [
     path("pautas/", views.pautas, name="pautas"),
     path("pautas/nova/", views.nova_pauta, name="nova_pauta"),
+    path("pautas/<uuid:pk>/", views.pauta, name="pauta"),
     path("pautas/<uuid:pk>/gerar/", views.gerar, name="gerar"),
+    path(
+        "pautas/<uuid:pk>/desistir/<uuid:trabalho>/",
+        views.desistir_da_geracao,
+        name="desistir_da_geracao",
+    ),
     path("pautas/<uuid:pk>/rejeitar/", views.rejeitar_pauta, name="rejeitar_pauta"),
     path("pautas/<uuid:pk>/fontes/", views.buscar_fontes, name="buscar_fontes"),
     path("pautas/<uuid:pk>/pesquisar/", views.pesquisar_artigos, name="pesquisar_artigos"),

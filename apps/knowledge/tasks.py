@@ -239,7 +239,13 @@ def reenfileirar_parados() -> int:
 def reenfileirar_vetorizacoes() -> int:
     from apps.accounts.varredura import para_cada_tenant
 
-    return para_cada_tenant(reenfileirar_parados, "reenfileirar_vetorizacoes")
+    return para_cada_tenant(_reenfileirar_tudo, "reenfileirar_vetorizacoes")
+
+
+def _reenfileirar_tudo() -> int:
+    from apps.content.fluxos import pesquisas_paradas
+
+    return reenfileirar_parados() + pesquisas_paradas()
 
 
 @shared_task

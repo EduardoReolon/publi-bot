@@ -32,48 +32,9 @@
           {% for pauta in pautas %}
             <tr id="pauta-{{ pauta.pk }}">
               <td>
-                <strong>{{ pauta.title }}</strong>
-                {% if pauta.origin == 'radar' %}
-                  <span class="selo">{% translate "radar" %} · {{ pauta.demand_score|floatformat:0 }}</span>
-                {% endif %}
-                {% if pauta.origin == 'link' %}
-                  <span class="selo alerta" title="{% translate 'O titulo segue a pagina que sumiu, para o dono do site reconhecer a troca. Pode mudar.' %}">{% translate "link quebrado" %}</span>
-                {% endif %}
-                {% if pauta.artigo_parecido and not pauta.artigos %}
-                  <div class="ajuda"><span class="selo alerta">{% translate "ja ha artigo parecido" %}</span>
-                    <a href="{% url 'content:revisar' pauta.artigo_parecido.pk %}">{{ pauta.artigo_parecido.title }}</a>{% if pauta.artigo_parecido.published_at %}, {% translate "publicado em" %} {{ pauta.artigo_parecido.published_at|date:"d/m/Y" }}{% endif %}.
-                    {% translate "Mude o angulo, transforme em atualizacao do artigo ou rejeite." %}</div>
-                {% endif %}
-                {% if pauta.content_type %}<span class="selo">{{ pauta.get_content_type_display }}</span>{% endif %}
-                {% with g=pauta.grupo_avaliado %}{% if g %}
-                  <span class="selo {% if g.avaliacao_ia == 'boa' %}ok{% else %}ruim{% endif %}" title="{{ g.motivo_ia }}">{% if g.avaliacao_ia == 'boa' %}{% translate "IA: boa" %}{% else %}{% translate "IA: ruim" %}{% endif %}</span>
-                  <div class="pre-visualizacao">{{ g.motivo_ia }}</div>
-                {% endif %}{% endwith %}
-                {% if pauta.evidence.sinais %}
-                  <details class="pre-visualizacao">
-                    <summary>{% translate "Por que esta pauta" %}</summary>
-                    <ul>
-                      {% for sinal in pauta.evidence.sinais %}
-                        <li>{{ sinal.texto }} <span class="selo">{{ sinal.fonte }}</span>{% if sinal.volume is not None %} {{ sinal.volume }}/{% translate "mes" %}{% endif %}</li>
-                      {% endfor %}
-                    </ul>
-                    <div>{% for nome, valor in pauta.evidence.parcelas.items %}{{ nome|rotulo_da_parcela }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
-                  </details>
-                {% elif pauta.briefing %}
-                  <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>
-                {% endif %}
-                {% if pauta.referencias and config.fluxo_do_acervo %}
-                  <details{% if pauta.referencias.acervo.por_curar %} open{% endif %}>
-                    <summary class="ajuda">{% translate "Referencias (A)" %}{% if pauta.referencias.acervo.por_curar %} — <strong>{% translate "fontes para curar" %}</strong>{% elif pauta.referencias.acervo.suficiente %} — {% translate "sustenta a pauta" %}{% endif %}</summary>
-                    {% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}
-                  </details>
-                {% endif %}
-                {% if pauta.busca_de_fontes.pesquisa and config.fluxo_da_pesquisa %}
-                  <details>
-                    <summary class="ajuda">{% translate "Pesquisa de artigos (B)" %} — {% with s=pauta.busca_de_fontes.pesquisa.situacao %}{% if s == 'pronta' %}{{ pauta.busca_de_fontes.pesquisa.artigos|length }} {% translate "artigos" %}{% elif s == 'erro' %}{% translate "falhou" %}{% else %}{% translate "pesquisando" %}{% endif %}{% endwith %}</summary>
-                    {% include "content/_pesquisa_da_pauta.html" with p=pauta.busca_de_fontes.pesquisa %}
-                  </details>
-                {% endif %}
+                <a href="{% url 'content:pauta' pauta.pk %}"><strong>{{ pauta.title }}</strong></a>
+                {% include "content/_selos_da_pauta.html" %}
+                {% if pauta.por_curar %}<div class="ajuda"><span class="selo alerta">{% translate "fontes para curar" %}</span></div>{% endif %}
               </td>
               <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}
                 {% with d=pauta.evidence.dificuldade %}{% if d %}<div><span class="selo {% if d.rotulo == 'brecha' %}ok{% elif d.rotulo == 'dificil' %}ruim{% else %}alerta{% endif %}" title="{% translate 'Links para a 1a pagina' %}: {{ d.links }}">{% if d.rotulo == 'brecha' %}{% translate "brecha" %}{% elif d.rotulo == 'dificil' %}{% translate "dificil" %}{% else %}{% translate "media" %}{% endif %} · {{ d.nota }}</span></div>{% endif %}{% endwith %}
@@ -84,67 +45,10 @@
                 </span>
               </td>
               <td>
-                {% for f in pauta.fluxos %}
-                  <div class="fluxo">
-                    <strong>{{ f.nome }}</strong>
-                    {% if f.fluxo == '' %}
-                      <span class="ajuda">{% translate "usa o acervo que voce cura (paginas, videos, artigos, documentos); falta fonte, a busca sugere e a geracao pede a curadoria." %}</span>
-                    {% else %}
-                      <span class="ajuda">{% translate "pesquisa artigos cientificos por sentido, escreve pelos resumos e so pede o PDF do que o texto precisar." %}</span>
-                    {% endif %}
-                    {% for artigo in f.artigos %}
-                      <div>
-                        {% if artigo.status == 'drafting' and artigo.thesis_json.origem == 'outra_ia' %}
-                          <a href="{% url 'content:artigo_por_outra_ia' pauta.pk %}{% if f.fluxo %}?fluxo=pesquisa{% endif %}">{% translate "esperando o texto da outra IA" %}</a>
-                        {% else %}
-                          <a class="botao pequeno" href="{% url 'content:revisar' artigo.pk %}" title="{% translate 'Secoes, fontes, capa e o texto final' %}">{% translate "Abrir o artigo" %}</a>
-                          <span class="ajuda">{{ artigo.title|truncatechars:70 }}</span>
-                          <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{{ artigo.get_status_display }}</span>
-                          {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
-                        {% endif %}
-                      </div>
-                    {% endfor %}
-                    {% if f.falta and pauta.status != 'rejected' %}
-                      {% if f.fluxo == '' %}
-                        <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
-                          <button type="submit" class="botao secundario pequeno">{% translate "Gerar so A" %}</button>
-                        </form>
-                        <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">{% csrf_token %}
-                          <button type="submit" class="botao discreto pequeno">{% translate "Buscar fontes na web" %}</button>
-                        </form>
-                        <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA (A)" %}</a>
-                      {% else %}
-                        <form method="post" action="{% url 'content:pesquisar_artigos' pauta.pk %}" style="display:inline">{% csrf_token %}
-                          <button type="submit" class="botao discreto pequeno">{% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}{% translate "Pesquisar de novo" %}{% else %}{% translate "Pesquisar artigos" %}{% endif %}</button>
-                        </form>
-                        <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
-                          <input type="hidden" name="fluxo" value="pesquisa">
-                          <button type="submit" class="botao secundario pequeno" title="{% translate 'Sem pesquisa ainda, pesquisa primeiro e gera sozinho ao terminar' %}">{% translate "Gerar so B" %}</button>
-                        </form>
-                        {% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}
-                          <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}?fluxo=pesquisa">{% translate "Artigo com outra IA (B)" %}</a>
-                        {% endif %}
-                      {% endif %}
-                    {% endif %}
-                  </div>
-                {% endfor %}
-                {% if pauta.status != 'rejected' %}
-                  {% if pauta.faltam_os_dois %}
-                    <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
-                      <input type="hidden" name="fluxo" value="ligados">
-                      <button type="submit" class="botao" title="{% translate 'Gera um artigo por fluxo, para comparar; na revisao voce escolhe qual vai ao ar' %}">{% translate "Gerar A e B" %}</button>
-                    </form>
-                  {% endif %}
-                  <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
-                  <a class="botao {% if pauta.imprensa.tem_angulo %}{% else %}discreto{% endif %}" href="{% url 'content:imprensa_da_pauta' pauta.pk %}" title="{% translate 'Outra IA julga se a pauta vira materia de jornal, e escreve' %}">{% translate "Imprensa (outra IA)" %}</a>
-                  {% if pauta.imprensa.tem_angulo %}<div class="ajuda"><span class="selo ok">{% translate "angulo de imprensa" %}</span>
-                    {% if pauta.imprensa.na_busca %}{% blocktranslate trimmed count n=pauta.imprensa.na_busca|length %}{{ n }} veiculo nesta busca{% plural %}{{ n }} veiculos nesta busca{% endblocktranslate %}{% endif %}
-                    {% if pauta.imprensa.ausentes %}· {% blocktranslate trimmed count n=pauta.imprensa.ausentes|length %}{{ n }} cobre o tema e nao aparece{% plural %}{{ n }} cobrem o tema e nao aparecem{% endblocktranslate %}{% endif %}</div>{% endif %}
-                  {% if pauta.de_peso %}<div class="ajuda"><span class="selo ok">{% translate "vale o modelo grande" %}</span> {{ pauta.de_peso|join:", " }}</div>{% endif %}
-                  <form method="post" action="{% url 'content:rejeitar_pauta' pauta.pk %}" style="display:inline">
-                    {% csrf_token %}
-                    <button type="submit" class="botao secundario">{% translate "Rejeitar" %}</button>
-                  </form>
+                <a class="botao pequeno" href="{% url 'content:pauta' pauta.pk %}">{% translate "Abrir a pauta" %}</a>
+                {% include "content/_fluxos_da_pauta.html" with completo=False %}
+                {% if pauta.status != 'rejected' and pauta.faltam_os_dois %}
+                  {% include "content/_gerar_os_dois.html" %}
                 {% endif %}
               </td>
             </tr>

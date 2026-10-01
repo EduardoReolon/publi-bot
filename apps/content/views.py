@@ -68,7 +68,6 @@ def _proximo_horario():
 @login_required
 def pautas(request: HttpRequest) -> HttpResponse:
     situacao = request.GET.get("situacao", "")
-    from apps.content.fluxos import para_a_tela
     from apps.radar.models import ConfiguracaoDoRadar
 
     config = ConfiguracaoDoRadar.carregar()
@@ -80,26 +79,12 @@ def pautas(request: HttpRequest) -> HttpResponse:
     if ia in {"boa", "ruim"}:
         consulta = consulta.filter(grupos_de_demanda__avaliacao_ia=ia).distinct()
 
-    from apps.content.imprensa import dados_de_imprensa, veiculos
-    from apps.content.outra_ia import motivos_de_peso
-
     lista = list(
         consulta.select_related("artigo_parecido").prefetch_related(
             "articles", "grupos_de_demanda"
         )[:200]
     )
-    dados = dados_de_imprensa()
-    for pauta in lista:
-        pauta.de_peso = motivos_de_peso(pauta)
-        pauta.imprensa = veiculos(pauta, dados)
-        pauta.grupo_avaliado = next(
-            (g for g in pauta.grupos_de_demanda.all() if g.avaliacao_ia), None
-        )
-        pauta.fluxos = para_a_tela(pauta, config)
-        pauta.faltam_os_dois = len(pauta.fluxos) == 2 and all(f["falta"] for f in pauta.fluxos)
-        # As referencias: so onde ja houve busca ou a pauta espera fontes.
-        if pauta.busca_de_fontes or pauta.status == Topic.Status.WAITING_SOURCES:
-            pauta.referencias = painel_de_referencias(pauta)
+    _preparar_pautas(lista, config, completo=False)
     return render(
         request,
         "content/pautas.html",
@@ -112,6 +97,73 @@ def pautas(request: HttpRequest) -> HttpResponse:
             "form": PautaForm(),
         },
     )
+
+
+@login_required
+def pauta(request: HttpRequest, pk) -> HttpResponse:
+    """A pagina da pauta: os dois fluxos, o que esta em curso, as referencias,
+    a pesquisa e as acoes."""
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    config = ConfiguracaoDoRadar.carregar()
+    alvo = get_object_or_404(
+        Topic.objects.select_related("artigo_parecido").prefetch_related(
+            "articles", "grupos_de_demanda"
+        ),
+        pk=pk,
+    )
+    _preparar_pautas([alvo], config, completo=True)
+    return render(request, "content/pauta.html", {"aba": "pautas", "pauta": alvo, "config": config})
+
+
+def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
+    """O que a lista e a pagina da pauta mostram de cada uma. A lista fica sem
+    os paineis pesados (referencias, imprensa)."""
+    from apps.content.fluxos import para_a_tela, trabalhos_em_curso
+    from apps.content.outra_ia import motivos_de_peso
+
+    trabalhos = trabalhos_em_curso(lista)
+    if completo:
+        from apps.content.imprensa import dados_de_imprensa, veiculos
+
+        dados = dados_de_imprensa()
+    for item in lista:
+        item.grupo_avaliado = next(
+            (g for g in item.grupos_de_demanda.all() if g.avaliacao_ia), None
+        )
+        item.fluxos = para_a_tela(item, config, trabalhos)
+        item.faltam_os_dois = len(item.fluxos) == 2 and all(f["falta"] for f in item.fluxos)
+        item.por_curar = ((item.busca_de_fontes or {}).get("acervo") or {}).get("por_curar")
+        if not completo:
+            continue
+        item.de_peso = motivos_de_peso(item)
+        item.imprensa = veiculos(item, dados)
+        # As referencias: so onde ja houve busca ou a pauta espera fontes.
+        if item.busca_de_fontes or item.status == Topic.Status.WAITING_SOURCES:
+            item.referencias = painel_de_referencias(item)
+
+
+def _de_volta(pauta) -> HttpResponse:
+    return redirect("content:pauta", pauta.pk)
+
+
+@login_required
+@require_POST
+def desistir_da_geracao(request: HttpRequest, pk, trabalho) -> HttpResponse:
+    """Encerra a geracao em curso de um fluxo (presa esperando a placa, por
+    exemplo), para poder gerar de novo ou ir pela outra IA."""
+    from apps.content.fluxos import desistir
+
+    alvo = get_object_or_404(Topic, pk=pk)
+    job = get_object_or_404(
+        GenerationJob, pk=trabalho, target_object_id=alvo.pk, kind=GenerationJob.Kind.PILLAR_ARTICLE
+    )
+    if job.status in (GenerationJob.Status.DONE, GenerationJob.Status.FAILED):
+        messages.info(request, _("Esta geracao ja tinha terminado."))
+    else:
+        desistir(job, _("Encerrada pela pessoa, na pagina da pauta."))
+        messages.success(request, _("Geracao encerrada. O fluxo pode ser gerado de novo."))
+    return _de_volta(alvo)
 
 
 @login_required
@@ -130,7 +182,7 @@ def intencao_da_pauta(request: HttpRequest, pk) -> HttpResponse:
                 request,
                 _("Pauta atualizada (titulo, tipo e orientacao conforme a resposta)."),
             )
-            return redirect("content:pautas")
+            return _de_volta(pauta)
         messages.error(request, _("Nao achei TITULO, TIPO nem ORIENTACAO na resposta colada."))
     return render(
         request,
@@ -255,7 +307,7 @@ def nova_pauta(request: HttpRequest) -> HttpResponse:
     pauta.approved_at = timezone.now()
     pauta.save()
     messages.success(request, _("Pauta criada."))
-    return redirect("content:pautas")
+    return _de_volta(pauta)
 
 
 @login_required
@@ -273,7 +325,7 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
     for fluxo in escolhidos:
         nivel, mensagem = fluxos.disparar(pauta, fluxo)
         getattr(messages, nivel)(request, mensagem)
-    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+    return _de_volta(pauta)
 
 
 @login_required
@@ -291,7 +343,7 @@ def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
         if variar
         else _("Buscando referencias. Recarregue em instantes para ver o resultado."),
     )
-    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+    return _de_volta(pauta)
 
 
 @login_required
@@ -301,7 +353,7 @@ def pesquisar_artigos(request: HttpRequest, pk) -> HttpResponse:
     from apps.content.fluxos import iniciar_pesquisa
 
     pauta = get_object_or_404(Topic, pk=pk)
-    iniciar_pesquisa(pauta)
+    iniciar_pesquisa(pauta, gerar_depois=None)
     messages.success(
         request,
         _(
@@ -309,7 +361,7 @@ def pesquisar_artigos(request: HttpRequest, pk) -> HttpResponse:
             "angulos. Leva alguns minutos; recarregue a pagina."
         ),
     )
-    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+    return _de_volta(pauta)
 
 
 @login_required
@@ -334,7 +386,7 @@ def pdf_da_pesquisa(request: HttpRequest, pk, candidato) -> HttpResponse:
             request,
             _("PDF enviado ao acervo. Depois da curadoria, ele substitui o resumo na pauta."),
         )
-    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+    return _de_volta(pauta)
 
 
 @login_required
@@ -351,7 +403,7 @@ def conferir_referencias(request: HttpRequest, pk) -> HttpResponse:
         messages.success(request, _("O acervo sustenta a pauta."))
     else:
         messages.info(request, _("O acervo ainda nao sustenta a pauta."))
-    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+    return _de_volta(pauta)
 
 
 @login_required
@@ -366,7 +418,7 @@ def ignorar_falta_de_artigos(request: HttpRequest, pk) -> HttpResponse:
     else:
         registrar(pauta, "artigos", ignorado=True)
         messages.success(request, _("Esta pauta segue sem buscar mais artigos cientificos."))
-    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+    return _de_volta(pauta)
 
 
 @login_required
