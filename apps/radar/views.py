@@ -902,6 +902,9 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
         from apps.radar.links_quebrados import reprocessar
 
         reprocessar(link)
+        if link.situacao == LinkQuebrado.Situacao.DESCARTADO:
+            messages.info(request, _("O link voltou a funcionar: saiu da lista."))
+            return redirect(reverse("radar:imprensa") + "#links-quebrados")
         messages.success(request, _("Link reprocessado: trecho, pagina que sumiu e contato."))
         return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
     if decisao == "usar_artigo" and link.artigo_parecido_id:

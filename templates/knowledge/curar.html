@@ -58,6 +58,13 @@
         {% translate "Baixar o arquivo enviado" %}
       </a>
     {% endif %}
+    {% if documento.original_file and not documento.failure_reason %}
+      <form method="post" action="{% url 'knowledge:reprocessar' documento.pk %}" style="display:inline"
+            title="{% translate 'Converte o arquivo de novo e refaz a sugestao de titulo, autores, ano e DOI (o que voce ja confirmou na curadoria nao muda)' %}">
+        {% csrf_token %}
+        <button type="submit" class="botao secundario">{% translate "Converter de novo (reextrair dados)" %}</button>
+      </form>
+    {% endif %}
     {% if documento.markdown_full %}
       <a class="botao secundario" href="{% url 'knowledge:baixar_markdown' documento.pk %}">
         {% translate "Baixar o texto convertido (.md)" %}

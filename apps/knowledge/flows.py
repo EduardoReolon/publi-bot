@@ -135,9 +135,18 @@ def passo_converter(job: GenerationJob) -> dict:
     # motivou a reconversao. Foi o que aconteceu com um artigo real cujos
     # "autores" eram a primeira linha do resumo — reconverter nao consertava.
     conferido = document.metadata_confidence == Document.MetadataConfidence.MANUAL
+    # Artigo cientifico aprovado de uma sugestao: titulo, autores e ano vieram do
+    # registro (OpenAlex), melhor que qualquer heuristica sobre a primeira pagina.
+    candidato = (
+        document.candidatos.filter(tipo="artigo").first()
+        or document.candidatos_pelo_completo.filter(tipo="artigo").first()
+    )
+    do_registro = candidato is not None
+    if candidato is not None and candidato.doi and not sugestoes["doi"]:
+        sugestoes["doi"] = candidato.doi
 
     def _manter(valor) -> bool:
-        return bool(valor) and conferido
+        return bool(valor) and (conferido or do_registro)
 
     if not _manter(document.title):
         document.title = sugestoes["title"] or document.title

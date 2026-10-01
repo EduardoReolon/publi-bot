@@ -463,3 +463,31 @@ def test_publicacao_despacha_a_revisao_do_radar(monkeypatch):
     monkeypatch.setattr("apps.radar.tasks.depois_de_publicar.delay", lambda pk: chamados.append(pk))
     publishing._rever_o_radar("abc")
     assert chamados == ["abc"]
+
+
+def test_link_que_voltou_a_funcionar_sai_da_lista(ambiente, monkeypatch):  # noqa: F811
+    import datetime
+
+    from django.utils import timezone
+
+    antigo = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia",
+        dominio="blog.com.br",
+        link_url="https://vivo.com.br/x",
+        texto="x",
+        status_http=404,
+        encontrado_em=timezone.now() - datetime.timedelta(days=2),
+    )
+    novo = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/guia2",
+        dominio="blog.com.br",
+        link_url="https://vivo.com.br/y",
+        texto="y",
+        status_http=404,
+    )
+    monkeypatch.setattr(links_quebrados, "situacao_do_link", lambda url: None)
+    assert links_quebrados.rechecar_links() == 1
+    antigo.refresh_from_db()
+    novo.refresh_from_db()
+    assert antigo.situacao == "descartado" and antigo.rechecado_em
+    assert novo.situacao == "novo"  # achado ha menos de um dia: ainda nao rechecado
