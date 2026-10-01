@@ -333,7 +333,8 @@ def registrar_fontes(pauta, escolhidos: list[dict]) -> list[str]:
             blocos = {b.ordem for b in preparar_blocos(documento) if b.paragrafos}
             if blocos:
                 # Resumo do registro: curado automaticamente ao ser indexado.
-                pedir_indexacao(documento, blocos=blocos, concluir=True, por=None)
+                # Curto: com o worker fora (ou sem a rota), vai no servidor.
+                pedir_indexacao(documento, blocos=blocos, concluir=True, por=None, local=True)
         ids.append(str(candidato.pk))
     return ids
 
