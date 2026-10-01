@@ -24,12 +24,17 @@ from django.utils import timezone
 
 logger = logging.getLogger("publibot.knowledge")
 
-MINIMO_DE_ARTIGOS = 3
+# Com o resumo vetorizado antes da curadoria, vale ter folga: algum pode se
+# mostrar fora do assunto quando uma pauta for usa-lo.
+MINIMO_DE_ARTIGOS = 5
 # Quantos trechos a contagem do acervo olha. A geracao usa so os primeiros
 # (o top_k do tenant); a contagem olha mais para dizer o que ha.
 TRECHOS_CONTADOS = 20
 CONSULTAS_POR_BUSCA = 3
 PENDENTES_COMPARADOS = 60
+
+# Videos sao complemento: se o acervo ja tem estes perto da pauta, nao busca.
+MINIMO_DE_VIDEOS = 3
 
 TIPOS = ("pagina", "video", "artigo", "documento")
 # Ainda nao virou fonte: esta convertendo ou esperando curadoria.
@@ -73,7 +78,11 @@ def tipo_do_documento(documento) -> str:
 
 
 def no_acervo(pauta) -> dict:
-    """{tipo: documentos distintos perto da pauta, "suficiente": bool, "em": iso}."""
+    """{tipo: documentos distintos perto da pauta, "suficiente": bool, "em": iso,
+    "nao_curados": n, "por_curar": [{id, titulo}]}.
+
+    "por_curar": os ainda nao curados entre os que a geracao usaria (os
+    primeiros `top_k`). Enquanto houver, a pauta nao e gerada."""
     from apps.knowledge.models import Document, RetrievalSettings
 
     trechos = trechos_da_pauta(pauta, top_k=TRECHOS_CONTADOS)
@@ -83,10 +92,18 @@ def no_acervo(pauta) -> dict:
         documento_id = getattr(_chunk(trecho), "document_id", None)
         if documento_id and documento_id not in ids:
             ids.append(documento_id)
+    from apps.knowledge.provisorias import CURADO, por_curar
+
     contagem = dict.fromkeys(TIPOS, 0)
+    contagem["nao_curados"] = 0
     for documento in Document.objects.filter(pk__in=ids).prefetch_related("candidatos"):
         contagem[tipo_do_documento(documento)] += 1
+        contagem["nao_curados"] += documento.status not in CURADO
     contagem["suficiente"] = sustenta(trechos[:top_k])
+    contagem["por_curar"] = [
+        {"id": str(d.pk), "titulo": (d.title or d.nome_do_arquivo)[:200]}
+        for d in por_curar(trechos[:top_k])
+    ]
     contagem["em"] = timezone.now().isoformat()
     return contagem
 
@@ -234,7 +251,8 @@ def conferir(pauta) -> dict:
 
     acervo = no_acervo(pauta)
     registrar(pauta, "acervo", **acervo)
-    if acervo["suficiente"] and pauta.status == Topic.Status.WAITING_SOURCES:
+    pronta = acervo["suficiente"] and not acervo["por_curar"]
+    if pronta and pauta.status == Topic.Status.WAITING_SOURCES:
         pauta.status = Topic.Status.APPROVED
         pauta.save(update_fields=["status"])
         acervo["liberada"] = True
@@ -266,6 +284,7 @@ def painel(pauta) -> dict:
         "acervo": acervo,
         "paginas": busca.get("paginas") or {},
         "artigos": artigos,
+        "videos": busca.get("videos") or {},
         "aguardando": aguardando(pauta),
         "falta_artigos": (
             ConfiguracaoDoRadar.carregar().artigos_cientificos
@@ -275,3 +294,40 @@ def painel(pauta) -> dict:
         ),
         "minimo_de_artigos": MINIMO_DE_ARTIGOS,
     }
+
+
+def youtube_ligado() -> bool:
+    from apps.radar.models import ConfiguracaoDoRadar, ContasExternas
+
+    return ConfiguracaoDoRadar.carregar().usar_youtube and ContasExternas.carregar().tem_youtube
+
+
+def buscar_videos_da_pauta(pauta, acervo: dict) -> list:
+    """Busca no YouTube so a falta ate `MINIMO_DE_VIDEOS`, contando os do acervo
+    e os ja achados que esperam a pessoa. Registra na pauta."""
+    from apps.radar.provedores import ProvedorIndisponivel
+    from apps.radar.youtube import buscar_para_pauta
+
+    esperando = aguardando(pauta)["video"]
+    da_base = acervo.get("video", 0) + sum(esperando.values())
+    falta = MINIMO_DE_VIDEOS - da_base
+    registro = {"em": timezone.now().isoformat(), "da_base": da_base, "buscou": falta > 0}
+    novos: list = []
+    if falta > 0:
+        try:
+            novos = buscar_para_pauta(pauta, falta=falta)
+        except ProvedorIndisponivel as exc:
+            registro["erro"] = str(exc)[:200]
+    registro["novos"] = len(novos)
+    registrar(pauta, "videos", **registro)
+    return novos
+
+
+def videos_antes_de_gerar(pauta) -> int:
+    """Na primeira tentativa de gerar: poucos videos no acervo, busca no YouTube
+    e devolve quantos achou — a tela para uma vez, para a pessoa olhar. Da
+    segunda em diante (ou com a falta ignorada), segue sem videos."""
+    busca = (pauta.busca_de_fontes or {}).get("videos") or {}
+    if busca.get("em") or busca.get("ignorado") or not youtube_ligado():
+        return 0
+    return len(buscar_videos_da_pauta(pauta, conferir(pauta)))

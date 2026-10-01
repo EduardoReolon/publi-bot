@@ -45,6 +45,12 @@ class InferenceConnection(models.Model):
         TEXT = "text", _("Geracao de texto")
         VISION_PARSE = "vision_parse", _("Conversao de documento")
         IMAGE = "image", _("Geracao de imagem")
+        # Vetorizar passagens (indexar documentos). A consulta continua no
+        # servidor: buscar nao pode depender da maquina da placa estar ligada.
+        EMBEDDING = "embedding", _("Vetorizacao de documentos")
+        # Ler a legenda do YouTube a partir do IP da maquina da placa: o
+        # YouTube costuma recusar IP de servidor em nuvem.
+        YOUTUBE = "youtube", _("Legenda do YouTube")
 
     class Health(models.TextChoices):
         UNKNOWN = "unknown", _("Desconhecida")

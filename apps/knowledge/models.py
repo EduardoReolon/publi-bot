@@ -257,6 +257,8 @@ class Document(models.Model):
         AUDIO = "audio", _("Audio transcrito")
         # Pagina web: texto principal extraido, sem menu, rodape e anuncio.
         WEB = "web", _("Pagina web (texto principal)")
+        # Resumo de artigo cientifico (OpenAlex), antes de haver o PDF.
+        RESUMO = "resumo", _("Resumo do artigo (sem o PDF)")
 
     # Registrado no documento, e nao so no trabalho que o converteu, porque e
     # informacao que a curadoria precisa ver: o `pypdf` devolve a camada de
@@ -378,6 +380,11 @@ class Document(models.Model):
         verbose_name=_("revisado por"),
     )
     reviewed_at = models.DateTimeField(_("revisado em"), null=True, blank=True)
+    # Vetorizar os blocos marcados e demorado (um vetor por paragrafo, num
+    # servidor pequeno): vai para a fila. Enquanto houver pedido, a tela mostra
+    # "processando". {"blocos": [...], "concluir": bool, "por": id, "em": iso}.
+    indexacao_pedida = models.JSONField(_("indexacao pedida"), default=dict, blank=True)
+    indexacao_erro = models.TextField(_("erro da indexacao"), blank=True)
 
     # Sem este numero nao existe modelo de negocio: e ele que diz quanto custa
     # cada documento em trabalho humano qualificado.

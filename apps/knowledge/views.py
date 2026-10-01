@@ -22,9 +22,7 @@ from apps.knowledge.forms import CuradoriaDeDocumento, EnvioDeDocumento
 from apps.knowledge.models import Document, DocumentCategory
 from apps.knowledge.services import (
     blocos_marcados,
-    indexar_blocos,
     ingerir_documento,
-    marcar_curado,
     possiveis_duplicatas,
 )
 from apps.knowledge.tasks import iniciar_ingestao
@@ -35,6 +33,8 @@ logger = logging.getLogger("publibot.knowledge")
 
 @login_required
 def documentos(request: HttpRequest) -> HttpResponse:
+    from apps.knowledge.provisorias import espaco
+
     """Lista o acervo, filtrando por situacao."""
     situacao = request.GET.get("situacao", "")
 
@@ -65,8 +65,35 @@ def documentos(request: HttpRequest) -> HttpResponse:
             "marcados": Document.objects.filter(extraction_flagged_at__isnull=False).count(),
             "filtro_extracao": request.GET.get("extracao", ""),
             "fontes_pendentes": _fontes_pendentes(),
+            "espaco": espaco(_meses(request.GET.get("meses"))),
         },
     )
+
+
+def _meses(valor) -> int | None:
+    try:
+        meses = int(valor or 0)
+    except ValueError:
+        return None
+    return meses if 0 < meses <= 120 else None
+
+
+@login_required
+@require_POST
+def apagar_nao_curados(request: HttpRequest) -> HttpResponse:
+    """Apaga os nao curados mais antigos que N meses (nunca os curados)."""
+    import datetime
+
+    from apps.knowledge.provisorias import apagaveis
+
+    meses = _meses(request.POST.get("meses"))
+    if meses is None or request.POST.get("confirmo") != "1":
+        messages.error(request, _("Informe os meses e confirme."))
+        return redirect("knowledge:documentos")
+    limite = timezone.now() - datetime.timedelta(days=30 * meses)
+    apagados, _detalhe = apagaveis(limite).delete()
+    messages.success(request, _("Apagados: %(n)s registro(s) do acervo.") % {"n": apagados})
+    return redirect("knowledge:documentos")
 
 
 def _fontes_pendentes() -> int:
@@ -159,7 +186,12 @@ def _contexto_da_curadoria(documento: Document, form=None) -> dict:
         "documento": documento,
         "form": form or CuradoriaDeDocumento(instance=documento),
         "blocos": preparar_blocos(documento),
-        "marcados": blocos_marcados(documento),
+        # Enquanto processa, a tela volta com o que foi pedido, e nao com o
+        # indice antigo.
+        "marcados": set(documento.indexacao_pedida.get("blocos", []))
+        if documento.indexacao_pedida
+        else blocos_marcados(documento),
+        "processando": bool(documento.indexacao_pedida),
         "trechos": documento.chunks.order_by("block_index", "paragraph_index"),
         "duplicatas": possiveis_duplicatas(documento),
         "limite_de_tokens": settings.EMBEDDING_MAX_TOKENS,
@@ -186,41 +218,56 @@ def _processar_curadoria(request: HttpRequest, documento: Document) -> HttpRespo
     documento.save()
 
     marcados = {int(v) for v in request.POST.getlist("bloco") if v.isdigit()}
-
-    try:
-        criados = indexar_blocos(document=documento, blocos_marcados=marcados)
-    except Exception as exc:
-        # Indexar carrega o modelo de embedding — 2 GB, baixados na primeira
-        # utilizacao. Sem rede isso levantava uma excecao de HTTP no meio da
-        # requisicao e virava 500, sem nenhuma pista de que o problema era o
-        # modelo e nao o texto.
-        logger.exception("Falha ao indexar blocos do documento %s", documento.pk)
+    concluir = acao == "concluir"
+    if concluir and not marcados:
         messages.error(
             request,
-            _(
-                "Nao foi possivel vetorizar: %(erro)s. O modelo de embedding e "
-                "baixado na primeira utilizacao (cerca de 2 GB) e precisa de rede."
-            )
-            % {"erro": str(exc)[:200]},
+            _("Marque ao menos um bloco: sem trecho no indice o documento nao e citavel."),
         )
         return redirect("knowledge:curar", pk=documento.pk)
 
-    if acao == "concluir":
-        if not criados:
-            messages.error(
-                request,
-                _("Marque ao menos um bloco: sem trecho no indice o documento nao e citavel."),
-            )
-            return redirect("knowledge:curar", pk=documento.pk)
+    # Vetorizar e demorado num servidor pequeno: vai para a fila, e a tela
+    # mostra "processando" ate terminar.
+    from apps.knowledge.tasks import pedir_indexacao
 
-        marcar_curado(document=documento, revisado_por=request.user)
+    pedir_indexacao(documento, blocos=marcados, concluir=concluir, por=request.user)
+    if concluir:
         messages.success(
             request,
-            _("Documento curado com %(total)s trecho(s) no indice.") % {"total": criados},
+            _(
+                "Concluindo a curadoria em segundo plano: os trechos estao sendo "
+                "vetorizados. O documento aparece como curado quando terminar."
+            ),
         )
         return redirect("knowledge:documentos")
+    messages.success(request, _("Salvo. Os trechos estao sendo vetorizados em segundo plano."))
+    return redirect("knowledge:curar", pk=documento.pk)
 
-    messages.success(request, _("Salvo. %(total)s trecho(s) no indice.") % {"total": criados})
+
+@login_required
+@require_POST
+def recusar_fonte(request: HttpRequest, pk) -> HttpResponse:
+    """Nao serve: sai do indice, nao volta a ser sugerida, e as pautas que a
+    usariam procuram outra."""
+    from apps.knowledge.provisorias import recusar
+
+    documento = get_object_or_404(Document, pk=pk)
+    recusar(documento, por=request.user)
+    messages.success(
+        request, _("Fonte recusada: saiu do indice. As pautas que a usariam procuram outra.")
+    )
+    return redirect("knowledge:documentos")
+
+
+@login_required
+@require_POST
+def vetorizar_no_servidor(request: HttpRequest, pk) -> HttpResponse:
+    """O worker da placa esta fora: vetoriza aqui mesmo (mais lento)."""
+    from apps.knowledge.tasks import vetorizar_no_servidor as no_servidor
+
+    documento = get_object_or_404(Document, pk=pk)
+    if no_servidor(documento):
+        messages.success(request, _("Vetorizando no servidor. Pode levar alguns minutos."))
     return redirect("knowledge:curar", pk=documento.pk)
 
 

@@ -16,6 +16,27 @@
       </span>
     {% endif %}
   </p>
+  {% if documento.status == 'pending_curation' and trechos and not processando %}
+    <div class="aviso espera">
+      <strong>{% translate "Fonte provisoria" %}</strong> —
+      {% translate "ja esta no indice, sem curadoria. Nenhum artigo a usa antes de voce concluir a curadoria (ou recusa-la)." %}
+    </div>
+  {% endif %}
+  {% if processando %}
+    <div class="aviso espera">
+      <strong>{% translate "Processando" %}</strong> —
+      {% if documento.indexacao_pedida.concluir %}{% translate "concluindo a curadoria" %}{% else %}{% translate "salvando" %}{% endif %}:
+      {% translate "os trechos marcados estao sendo vetorizados em segundo plano. Atualize a pagina em instantes; enquanto isso, os botoes ficam travados." %}
+      {% if documento.indexacao_pedida.aguardando_worker and not documento.indexacao_pedida.local %}
+        <div class="ajuda">{% translate "Esperando o worker da placa" %}: {{ documento.indexacao_pedida.aguardando_worker }}</div>
+        <form method="post" action="{% url 'knowledge:vetorizar_no_servidor' documento.pk %}" style="margin-top:.3rem">{% csrf_token %}
+          <button type="submit" class="botao secundario pequeno" title="{% translate 'Mais lento, e ocupa o servidor; use quando o worker estiver desligado' %}">{% translate "Vetorizar agora no servidor" %}</button>
+        </form>
+      {% endif %}
+    </div>
+  {% elif documento.indexacao_erro %}
+    <div class="aviso ruim"><strong>{% translate "A ultima indexacao falhou" %}</strong>: {{ documento.indexacao_erro }}</div>
+  {% endif %}
 
   {% comment %}
     Os dois arquivos que respondem "o que o conversor entendeu?".
@@ -248,14 +269,20 @@
     {% endif %}
 
     <div class="acoes">
-      <button type="submit" name="acao" value="salvar" class="botao secundario">
+      <button type="submit" name="acao" value="salvar" class="botao secundario" {% if processando %}disabled{% endif %}>
         {% translate "Salvar" %}
       </button>
-      <button type="submit" name="acao" value="concluir">
+      <button type="submit" name="acao" value="concluir" {% if processando %}disabled{% endif %}>
         {% translate "Concluir curadoria" %}
       </button>
     </div>
   </form>
+  {% if documento.status != 'rejected' and documento.status != 'curated' and documento.status != 'embedded' %}
+    <form method="post" action="{% url 'knowledge:recusar_fonte' documento.pk %}" class="acoes" style="margin-top:.4rem">
+      {% csrf_token %}
+      <button type="submit" class="botao discreto" title="{% translate 'Sai do indice e nao volta a ser sugerida; as pautas que a usariam procuram outra' %}">{% translate "Recusar esta fonte" %}</button>
+    </form>
+  {% endif %}
 
   {% comment %}
     Fora do formulario de curadoria porque nao faz parte dele: marcar a extracao

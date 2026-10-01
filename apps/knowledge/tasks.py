@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task
+from django.conf import settings
 from django.db import transaction
 
 from apps.knowledge.models import Document
@@ -102,3 +103,89 @@ def ao_concluir_curadoria() -> None:
             logger.exception("Nao foi possivel despachar a conferencia das pautas.")
 
     transaction.on_commit(despachar)
+
+
+# Quanto esperar para tentar o worker de novo quando ele nao diz (Retry-After).
+ESPERA_DO_WORKER = 300
+
+
+@shared_task
+def indexar_documento(document_id: str) -> int:
+    """Vetoriza os blocos marcados na curadoria e, se pedido, conclui.
+
+    Fora da requisicao: um vetor por paragrafo leva tempo demais para a pessoa
+    esperar a tela. Vai ao worker da placa quando ha um marcado para vetorizar;
+    se ele pedir para esperar (ocupado, desligado, baixando o modelo), o pedido
+    continua de pe e volta para a fila — nao falha. "Vetorizar agora no
+    servidor" (`local` no pedido) faz aqui mesmo. Despachada de dentro do tenant.
+    """
+    from django.contrib.auth import get_user_model
+
+    from apps.knowledge.embeddings import VetorizacaoAdiada
+    from apps.knowledge.services import indexar_blocos, marcar_curado
+
+    documento = Document.objects.filter(pk=document_id).first()
+    if documento is None or not documento.indexacao_pedida:
+        return 0
+    pedido = documento.indexacao_pedida
+    erro = ""
+    try:
+        criados = indexar_blocos(
+            document=documento,
+            blocos_marcados=set(pedido.get("blocos", [])),
+            local=bool(pedido.get("local")),
+        )
+        if pedido.get("concluir"):
+            if criados:
+                por = get_user_model().objects.filter(pk=pedido.get("por")).first()
+                marcar_curado(document=documento, revisado_por=por)
+            else:
+                erro = "Nenhum trecho foi para o indice: marque ao menos um bloco com texto."
+    except VetorizacaoAdiada as exc:
+        Document.objects.filter(pk=documento.pk).update(
+            indexacao_pedida={**pedido, "aguardando_worker": str(exc)[:300]}
+        )
+        indexar_documento.apply_async((document_id,), countdown=exc.retry_after or ESPERA_DO_WORKER)
+        return 0
+    except Exception as exc:
+        logger.exception("Falha ao indexar o documento %s", document_id)
+        erro = f"Nao foi possivel vetorizar: {str(exc)[:300]}"
+        criados = 0
+    Document.objects.filter(pk=documento.pk).update(indexacao_pedida={}, indexacao_erro=erro)
+    return criados
+
+
+def pedir_indexacao(
+    documento: Document, *, blocos: set[int], concluir: bool, por, local: bool = False
+) -> None:
+    """Registra o pedido (a tela passa a mostrar "processando") e o poe na fila."""
+    from django.utils import timezone
+
+    Document.objects.filter(pk=documento.pk).update(
+        indexacao_pedida={
+            "blocos": sorted(blocos),
+            "concluir": concluir,
+            "local": local,
+            "por": str(por.pk) if getattr(por, "pk", None) else None,
+            "em": timezone.now().isoformat(),
+        },
+        indexacao_erro="",
+    )
+    # Nos testes (e em quem roda sem worker), na hora.
+    if getattr(settings, "PUBLIBOT_INDEXAR_NA_HORA", False):
+        indexar_documento(str(documento.pk))
+        return
+    transaction.on_commit(lambda: indexar_documento.delay(str(documento.pk)))
+
+
+def vetorizar_no_servidor(documento: Document) -> bool:
+    """O pedido que espera o worker passa a ser feito no servidor."""
+    pedido = documento.indexacao_pedida
+    if not pedido:
+        return False
+    Document.objects.filter(pk=documento.pk).update(indexacao_pedida={**pedido, "local": True})
+    if getattr(settings, "PUBLIBOT_INDEXAR_NA_HORA", False):
+        indexar_documento(str(documento.pk))
+    else:
+        transaction.on_commit(lambda: indexar_documento.delay(str(documento.pk)))
+    return True

@@ -13,7 +13,15 @@
       {{ r.acervo.artigo }} {% translate "artigos cientificos" %} ·
       {{ r.acervo.documento }} {% translate "documentos enviados" %}
       {% if r.acervo.suficiente %}<span class="selo ok">{% translate "sustenta a pauta" %}</span>{% else %}<span class="selo ruim">{% translate "ainda nao sustenta" %}</span>{% endif %}
+      {% if r.acervo.nao_curados %}<span class="ajuda">({% blocktranslate trimmed count n=r.acervo.nao_curados %}{{ n }} ainda nao curado{% plural %}{{ n }} ainda nao curados{% endblocktranslate %})</span>{% endif %}
     </div>
+    {% if r.acervo.por_curar %}
+      <div class="aviso espera" style="margin:.3rem 0">
+        <strong>{% translate "Para gerar, cure estas fontes" %}</strong>
+        <span class="ajuda">{% translate "(sao as que o artigo usaria; recusar uma faz a pauta procurar outra)" %}</span>
+        <ul>{% for d in r.acervo.por_curar %}<li><a href="{% url 'knowledge:curar' d.id %}">{{ d.titulo }}</a></li>{% endfor %}</ul>
+      </div>
+    {% endif %}
   {% else %}
     <div>{% translate "O acervo ainda nao foi conferido para esta pauta." %}</div>
   {% endif %}
@@ -45,6 +53,17 @@
     {% if r.falta_artigos %}<span class="selo alerta">{% blocktranslate trimmed with n=r.minimo_de_artigos %}menos de {{ n }} no acervo{% endblocktranslate %}</span>{% endif %}
   </div>
 
+  {% if r.videos.em or r.videos.ignorado %}
+    <div>
+      {% translate "Busca de videos" %}:
+      {% if r.videos.ignorado %}{% translate "falta ignorada" %}.
+      {% elif not r.videos.buscou %}{% blocktranslate trimmed with n=r.videos.da_base %}nao precisou: ja havia {{ n }} no acervo ou esperando voce{% endblocktranslate %}.
+      {% elif r.videos.erro %}{% translate "o YouTube nao respondeu" %} ({{ r.videos.erro }}).
+      {% else %}{% translate "feita" %} — {% if r.videos.novos %}{{ r.videos.novos }} {% translate "novo(s)" %}{% else %}{% translate "nada novo encontrado" %}{% endif %}.{% endif %}
+      {% include "content/_aguardando_referencia.html" with a=r.aguardando.video %}
+    </div>
+  {% endif %}
+
   <div class="acoes" style="margin-top:.3rem">
     <form method="post" action="{% url 'content:conferir_referencias' pauta.pk %}" style="display:inline">{% csrf_token %}
       <button class="botao secundario pequeno" title="{% translate 'Reconta o que o acervo tem. Use depois de conferir e curar as fontes.' %}">{% translate "Verificar referencias de novo" %}</button>
@@ -56,6 +75,12 @@
     {% if r.falta_artigos %}
       <form method="post" action="{% url 'content:ignorar_falta_de_artigos' pauta.pk %}" style="display:inline">{% csrf_token %}
         <button class="botao discreto pequeno">{% translate "Ignorar falta de artigos" %}</button>
+      </form>
+    {% endif %}
+    {% if r.videos.buscou and r.videos.novos and not r.videos.ignorado %}
+      <form method="post" action="{% url 'content:ignorar_falta_de_artigos' pauta.pk %}" style="display:inline">{% csrf_token %}
+        <input type="hidden" name="tipo" value="videos">
+        <button class="botao discreto pequeno">{% translate "Seguir sem videos" %}</button>
       </form>
     {% endif %}
     <a class="botao discreto pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Conferir as fontes sugeridas" %}</a>

@@ -175,7 +175,7 @@ def test_transcricao_vira_secoes_por_janela_de_tempo():
 # Coleta
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db
-def test_comentarios_que_perguntam_viram_sinais_e_o_video_vira_candidato(tenant, monkeypatch):
+def test_comentarios_que_perguntam_viram_sinais_e_o_video_nao_vira_candidato(tenant, monkeypatch):
     _com_youtube()
     _youtube_responde(monkeypatch)
 
@@ -186,23 +186,29 @@ def test_comentarios_que_perguntam_viram_sinais_e_o_video_vira_candidato(tenant,
         "qual planilha voce usa pra orcar reforma",
     }
     assert all(s.fonte == SinalDeDemanda.Fonte.YOUTUBE for s in sinais)
-    candidato = CandidatoDeFonte.objects.get()
-    assert candidato.tipo == "video"
+    # Fonte em video e buscada na hora da pauta, nao na rodada do radar.
+    assert not CandidatoDeFonte.objects.exists()
+    chamadas = ChamadaExterna.objects.filter(provedor="youtube")
+    # busca e comentarios
+    assert chamadas.count() == 2
+    assert all(c.custo_usd == 0 for c in chamadas)
+
+
+@pytest.mark.django_db
+def test_video_para_a_pauta_vira_candidato_com_os_numeros(tenant, monkeypatch):
+    from apps.content.models import Topic
+    from apps.radar.youtube import buscar_para_pauta
+
+    _com_youtube()
+    _youtube_responde(monkeypatch)
+    pauta = Topic.objects.create(title="Orcamento de obra", target_keyword="orcamento de obra")
+
+    [candidato] = buscar_para_pauta(pauta, falta=1)
+    assert candidato.tipo == "video" and candidato.pauta == pauta
     assert candidato.canal_nome == "Engenharia Pratica"
     assert candidato.dominio == "youtube.com/channel/UCcanal1"
-    assert candidato.metricas == {
-        "visualizacoes": 12345,
-        "curtidas": 540,
-        "comentarios": 87,
-        "duracao_segundos": 725,
-        "inscritos_do_canal": 48000,
-        "perguntas_nos_comentarios": 2,
-        "perguntas_respondidas_pelo_canal": 1,
-    }
-    chamadas = ChamadaExterna.objects.filter(provedor="youtube")
-    # busca, estatisticas dos videos, inscritos dos canais e comentarios
-    assert chamadas.count() == 4
-    assert all(c.custo_usd == 0 for c in chamadas)
+    assert candidato.metricas["visualizacoes"] == 12345
+    assert candidato.metricas["inscritos_do_canal"] == 48000
 
 
 @pytest.mark.django_db
@@ -240,7 +246,10 @@ def test_canal_confiavel_aprova_o_video_sozinho(tenant, monkeypatch):
         "apps.knowledge.videos.buscar_legenda", lambda video_id: [(0, "Texto do video sobre BDI.")]
     )
 
-    colher_sinais(["orcamento"], rodada=None, videos=1)
+    from apps.content.models import Topic
+    from apps.radar.youtube import buscar_para_pauta
+
+    buscar_para_pauta(Topic.objects.create(title="Orcamento"), falta=1)
 
     candidato = CandidatoDeFonte.objects.get()
     assert candidato.situacao == "aprovado"

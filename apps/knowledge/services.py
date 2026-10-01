@@ -540,7 +540,7 @@ def possiveis_duplicatas(document: Document):
 
 
 @transaction.atomic
-def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
+def indexar_blocos(*, document: Document, blocos_marcados: set[int], local: bool = True) -> int:
     """Refaz o indice do documento a partir dos blocos marcados.
 
     Substitui tudo, em vez de acrescentar: o conjunto marcado na tela e a
@@ -553,27 +553,39 @@ def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
 
     Cada paragrafo vira um vetor, e nao o bloco inteiro. Ver `blocos.py` para o
     porque.
+
+    Os vetores saem todos antes de o indice antigo ser apagado: se o worker
+    pedir para esperar (`VetorizacaoAdiada`), o documento continua como estava.
+    `local=False` nao deixa cair no servidor quando o worker nao pode.
     """
     from apps.knowledge.blocos import montar_texto_vetorizavel, preparar_blocos
+    from apps.knowledge.embeddings import vetorizar_passagens
 
     cliente = get_embedding_client()
     blocos = preparar_blocos(document)
 
-    document.chunks.all().delete()
-
-    criados = 0
-    novos = []
+    escolhidos = []
     for bloco in blocos:
         if bloco.ordem not in blocos_marcados:
             continue
-
         for posicao, paragrafo in enumerate(bloco.paragrafos):
             texto = montar_texto_vetorizavel(
                 paragrafo.texto,
                 titulo_do_documento=document.title or "",
                 titulo_do_bloco=bloco.titulo,
             )
-            novo = SuperChunk.objects.create(
+            escolhidos.append((bloco, posicao, paragrafo, texto))
+    vetores = vetorizar_passagens(
+        [texto for *_, texto in escolhidos],
+        permitir_local=local,
+        dono=f"vetorizacao:{document.pk}",
+    )
+
+    document.chunks.all().delete()
+    novos = []
+    for (bloco, posicao, paragrafo, _texto), vetor in zip(escolhidos, vetores, strict=True):
+        novos.append(
+            SuperChunk.objects.create(
                 document=document,
                 kind=SuperChunk.Kind.CUSTOM,
                 content=paragrafo.texto,
@@ -582,15 +594,15 @@ def indexar_blocos(*, document: Document, blocos_marcados: set[int]) -> int:
                 paragraph_index=posicao,
                 # O vetor cobre o texto COM o prefixo de contexto; o `content`
                 # guarda so o paragrafo, que e o que o revisor precisa ler.
-                embedding=cliente.embed_passage([texto])[0],
+                embedding=vetor,
                 embedding_model=cliente.model_name,
                 embedding_dim=cliente.dimensions,
                 token_count=paragrafo.tokens,
                 **campos_da_fonte(document),
                 is_active=True,
             )
-            novos.append(novo)
-            criados += 1
+        )
+    criados = len(novos)
 
     atualizar_indice_textual(novos)
     logger.info("Documento %s: %s trecho(s) indexados.", document.pk, criados)

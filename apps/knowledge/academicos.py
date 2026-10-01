@@ -186,6 +186,34 @@ def buscar_openalex(consulta: str, *, quantos: int = 5, idiomas: str = "pt|en") 
     return [t for t in (ler_trabalho(i) for i in itens) if t.titulo]
 
 
+def por_doi(doi: str) -> Trabalho | None:
+    """O trabalho do OpenAlex pelo DOI, ou None (DOI desconhecido ou base fora).
+
+    Titulo, autores e ano de registro da editora: melhores que qualquer
+    heuristica sobre a primeira pagina, que pode ser uma capa de download.
+    """
+    from apps.radar.models import ChamadaExterna
+
+    if not doi:
+        return None
+    try:
+        resposta = httpx.get(
+            f"{OPENALEX}/https://doi.org/{doi}",
+            params={"select": CAMPOS, **_parametros_da_conta()},
+            timeout=TIMEOUT,
+        )
+        if resposta.status_code == 404:
+            _registrar(ChamadaExterna.Provedor.OPENALEX, "works/doi", doi)
+            return None
+        resposta.raise_for_status()
+        trabalho = ler_trabalho(resposta.json())
+    except (httpx.HTTPError, ValueError) as exc:
+        _registrar(ChamadaExterna.Provedor.OPENALEX, "works/doi", doi, erro=str(exc)[:500])
+        return None
+    _registrar(ChamadaExterna.Provedor.OPENALEX, "works/doi", doi, itens=1)
+    return trabalho if trabalho.titulo else None
+
+
 def _normalizar(texto: str) -> str:
     sem_acento = "".join(
         c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c)
@@ -261,7 +289,7 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
         return None  # artigo retratado nunca vira fonte
     if trabalho.doi and CandidatoDeFonte.objects.filter(doi=trabalho.doi).exists():
         return None
-    return CandidatoDeFonte.objects.create(
+    candidato = CandidatoDeFonte.objects.create(
         url=url,
         tipo=CandidatoDeFonte.Tipo.ARTIGO,
         titulo=trabalho.titulo[:500],
@@ -278,6 +306,11 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
         origem=origem,
         metricas=trabalho.metricas,
     )
+    # O resumo entra no indice como fonte provisoria, se houver worker.
+    from apps.knowledge.provisorias import acolher_se_ligado
+
+    acolher_se_ligado(candidato)
+    return candidato
 
 
 def buscar_para_pauta(pauta, *, limite: int = 5, consulta: str = "") -> list:
@@ -519,6 +552,9 @@ def aprovar_artigo(candidato, *, categoria, por=None, automatico: bool = False):
             por=por,
             motivo=f"O endereco do PDF devolveu uma pagina. Abra {pdf} e envie o arquivo.",
         )
+    from apps.knowledge.provisorias import descartar_resumo
+
+    descartar_resumo(candidato)
     if not resultado.ja_existia:
         _completar_documento(documento, candidato)
         if automatico:
@@ -535,11 +571,13 @@ def aprovar_artigo(candidato, *, categoria, por=None, automatico: bool = False):
 
 def receber_pdf(candidato, arquivo, *, categoria, por=None) -> Document:
     """O PDF que a pessoa baixou: vira documento e segue para a curadoria."""
+    from apps.knowledge.provisorias import descartar_resumo
     from apps.knowledge.services import ingerir_documento
     from apps.knowledge.tasks import iniciar_ingestao
 
     resultado = ingerir_documento(arquivo=arquivo, category=categoria, uploaded_by=por)
     documento = resultado.document
+    descartar_resumo(candidato)
     if not resultado.ja_existia:
         _completar_documento(documento, candidato)
         iniciar_ingestao(documento)

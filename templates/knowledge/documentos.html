@@ -20,6 +20,33 @@
     <a class="botao secundario" href="{% url 'knowledge:caminhos' %}">{% translate "Caminhos confiaveis" %}</a>
   </div>
 
+  {% with e=espaco %}
+    <details class="pre-visualizacao" style="margin-top:1rem" {% if e.meses %}open{% endif %}>
+      <summary>
+        {% blocktranslate trimmed with c=e.curados t=e.total p=e.porcentagem_nao_curada %}
+          {{ c }} documentos curados, {{ t }} no total: {{ p }}% nao curado
+        {% endblocktranslate %}
+        · {{ e.bytes_total|filesizeformat }} ({{ e.bytes_nao_curados|filesizeformat }} {% translate "nao curados" %})
+      </summary>
+      <div class="ajuda">{% translate "Nao curado e fonte provisoria: fica no indice, mas nenhum artigo a usa antes da curadoria. Manter nao atrapalha; apague so se o espaco pesar." %}</div>
+      <form method="get" class="acoes" style="margin-top:.4rem">
+        <label>{% translate "Nao curados com mais de" %} <input type="number" name="meses" min="1" max="120" value="{{ e.meses|default:3 }}" style="width:5rem"> {% translate "meses" %}</label>
+        <button type="submit" class="botao secundario pequeno">{% translate "Calcular" %}</button>
+      </form>
+      {% if e.meses %}
+        <p>{% blocktranslate trimmed with n=e.antigos m=e.meses %}{{ n }} documento(s) nao curado(s) com mais de {{ m }} meses{% endblocktranslate %}: {{ e.bytes_antigos|filesizeformat }}.</p>
+        {% if e.antigos %}
+          <form method="post" action="{% url 'knowledge:apagar_nao_curados' %}" class="acoes">
+            {% csrf_token %}
+            <input type="hidden" name="meses" value="{{ e.meses }}">
+            <label><input type="checkbox" name="confirmo" value="1" style="width:auto"> {% translate "Confirmo: apagar (nao da para desfazer)" %}</label>
+            <button type="submit" class="botao discreto pequeno">{% translate "Apagar" %}</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </details>
+  {% endwith %}
+
   {% if marcados %}
     <p class="pre-visualizacao" style="margin-top:1rem">
       <a href="?extracao=marcada" {% if filtro_extracao %}style="font-weight:600"{% endif %}>
@@ -79,6 +106,11 @@
                   {% elif documento.status == 'pending_curation' %}espera{% endif %}">
                   {{ documento.get_status_display }}
                 </span>
+                {% if documento.indexacao_pedida %}
+                  <span class="selo espera" title="{% translate 'Vetorizando os trechos marcados na curadoria' %}">{% translate "processando" %}</span>
+                {% elif documento.indexacao_erro %}
+                  <span class="selo ruim" title="{{ documento.indexacao_erro }}">{% translate "indexacao falhou" %}</span>
+                {% endif %}
                 {% if not documento.extracao_e_confiavel %}
                   <span class="selo ruim">{% translate "sem analise de layout" %}</span>
                 {% endif %}

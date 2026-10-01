@@ -240,6 +240,7 @@ def _buscar_artigos(pauta, acervo: dict, consultas: list[str]) -> list:
 
 
 def _buscar_paginas(pauta, consultas: list[str], limite: int) -> list[CandidatoDeFonte]:
+    from apps.knowledge.provisorias import acolher_se_ligado
     from apps.radar.models import ChamadaExterna
     from apps.radar.provedores import buscar
 
@@ -266,6 +267,8 @@ def _buscar_paginas(pauta, consultas: list[str], limite: int) -> list[CandidatoD
             )
             if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
                 aprovar(candidato, categoria=caminho.categoria, automatico=True)
+            else:
+                acolher_se_ligado(candidato)
             novos.append(candidato)
     return novos
 
@@ -349,6 +352,9 @@ def recusar(
     (`exemplo.com/forum/tópico` -> `exemplo.com/forum`) — para o site que tem
     uma parte boa e outra nao.
     """
+    from apps.knowledge.provisorias import descartar_resumo
+
+    descartar_resumo(candidato)
     candidato.situacao = CandidatoDeFonte.Situacao.RECUSADO
     candidato.motivo = motivo[:2000]
     candidato.decidido_por = por

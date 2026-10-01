@@ -145,5 +145,9 @@ def sugerir_fontes(rodada, *, cota: int) -> int:
         )
         if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
             aprovar(candidato, categoria=caminho.categoria, automatico=True)
+        else:
+            from apps.knowledge.provisorias import acolher_se_ligado
+
+            acolher_se_ligado(candidato)
         criadas += 1
     return criadas

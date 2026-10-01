@@ -103,6 +103,11 @@ def passo_converter(job: GenerationJob) -> dict:
         e_markdown=resultado.metodo != Document.ExtractionMethod.PYPDF,
     )
 
+    # Com DOI, o registro da editora (pelo OpenAlex) vale mais que a heuristica:
+    # a primeira pagina pode ser uma capa de download ("Downloaded from...",
+    # "The online version of this article..."), e dela sai tudo errado.
+    sugestoes = completar_pelo_doi(sugestoes)
+
     document.markdown_full = resultado.markdown
     document.extraction_method = resultado.metodo
     # Data de publicacao declarada pela pagina. So preenche: uma data que a
@@ -119,6 +124,7 @@ def passo_converter(job: GenerationJob) -> dict:
         "year": sugestoes["year"],
         "doi": sugestoes["doi"],
         "metodo": resultado.metodo,
+        "fonte": sugestoes.get("fonte", "heuristica"),
     }
     document.status = Document.Status.PENDING_CURATION
     document.failure_reason = ""
@@ -169,6 +175,13 @@ def passo_converter(job: GenerationJob) -> dict:
             curar_automaticamente(document)
         except Exception:
             logger.exception("Curadoria automatica do documento %s falhou.", document.pk)
+    else:
+        # Com worker que vetoriza, a fonte entra no indice ja, como provisoria;
+        # a curadoria e pedida quando uma pauta for usa-la.
+        from apps.knowledge import provisorias
+
+        if provisorias.ligado():
+            provisorias.indexar(document)
     return {
         "metodo": resultado.metodo,
         "caracteres": len(resultado.markdown),
@@ -325,6 +338,23 @@ def _ano_do_cabecalho(cabecalho: list[str]) -> int | None:
     # Entre os que sobraram, o mais recente: uma primeira pagina pode trazer a
     # data de recebimento junto com a de publicacao.
     return max(int(ano) for ano in candidatos)
+
+
+def completar_pelo_doi(sugestoes: dict) -> dict:
+    """Troca titulo, autores e ano pelos do OpenAlex quando o DOI e conhecido.
+    Sem DOI, ou sem resposta, fica a heuristica — e a curadoria confere."""
+    from apps.knowledge.academicos import por_doi
+
+    trabalho = por_doi(sugestoes.get("doi") or "")
+    if trabalho is None:
+        return sugestoes
+    return {
+        **sugestoes,
+        "title": trabalho.titulo[:500],
+        "authors": (", ".join(trabalho.autores) or sugestoes["authors"])[:300],
+        "year": trabalho.ano or sugestoes["year"],
+        "fonte": "openalex",
+    }
 
 
 def sugerir_metadados(

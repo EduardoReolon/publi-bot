@@ -70,6 +70,19 @@ class SemFontesSuficientes(RuntimeError):
     """
 
 
+class FontesPorCurar(SemFontesSuficientes):
+    """As fontes que sustentariam a pauta ainda nao foram curadas.
+
+    Fontes provisorias (`knowledge.provisorias`) entram no indice antes da
+    curadoria; nenhuma vai para um texto sem que alguem a confira. A pauta
+    espera, com a lista do que curar.
+    """
+
+    def __init__(self, mensagem: str, documentos: list):
+        super().__init__(mensagem)
+        self.documentos = documentos
+
+
 class SemEmbasamentoCentral(SemFontesSuficientes):
     """Ha fontes, mas nenhuma sustenta a ideia central da publicacao.
 
@@ -154,6 +167,22 @@ def fontes_da_pauta(topic) -> list:
             f"o acervo tem {len(trechos)} trecho(s) perto da pauta {topic.title!r}, "
             f"mas todos de categorias que so dao contexto (nenhum pode sustentar "
             f"a ideia central). Acrescente um artigo de referencia sobre o tema."
+        )
+    from apps.content.models import Topic
+    from apps.knowledge.provisorias import por_curar
+    from apps.knowledge.referencias import conferir
+
+    faltam = por_curar(trechos)
+    if faltam:
+        # A pauta espera a curadoria; `conferir` registra a lista e a tela a mostra.
+        Topic.objects.filter(pk=topic.pk).update(status=Topic.Status.WAITING_SOURCES)
+        topic.refresh_from_db()
+        conferir(topic)
+        raise FontesPorCurar(
+            f"a pauta {topic.title!r} usaria {len(faltam)} fonte(s) ainda nao curada(s): "
+            + "; ".join(d.title or d.nome_do_arquivo for d in faltam)
+            + ". Cure-as (Pautas > Referencias) e gere de novo.",
+            faltam,
         )
     return trechos
 

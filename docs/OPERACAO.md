@@ -631,6 +631,38 @@ python manage.py configurar_conversao --testar
 python manage.py configurar_imagem --testar
 ```
 
+### Vetorizacao e legendas do YouTube no worker (opcional)
+
+Duas cargas a mais que a conexao do worker pode marcar em **Inferencia**:
+
+| Carga | Rota no worker | O que muda |
+|---|---|---|
+| Vetorizacao de documentos (`embedding`) | `/v1/embeddings` — [WORKER_VETORIZACAO.md](WORKER_VETORIZACAO.md) | a indexacao sai do servidor (1 CPU) e vai para a placa; a consulta continua no servidor. Liga tambem as **fontes provisorias**: pagina e resumo de artigo entram no indice antes da curadoria, e a curadoria so e pedida quando uma pauta for usa-los. |
+| Legenda do YouTube (`youtube`) | `/v1/youtube/legenda` — [WORKER_YOUTUBE.md](WORKER_YOUTUBE.md) | a legenda e lida pelo IP de casa, que o YouTube costuma aceitar. |
+
+Para marcar, no `.env` do servidor (o segredo `PRODUCTION_ENV_FILE`), quando o
+worker ja tiver as rotas, e implantar:
+
+```
+CONVERSAO_CARGAS_EXTRAS=embedding,youtube
+```
+
+(ou so uma delas). O `configurar_conversao`, que roda em toda implantacao,
+aplica na conexao existente. Sem as marcas, tudo roda no servidor, como antes. Com o worker fora do ar, a
+vetorizacao espera na fila; a curadoria oferece "Vetorizar agora no servidor".
+
+Para por no indice, como provisorio, o que ja esperava curadoria:
+
+```bash
+python manage.py tenant_command vetorizar_fontes_provisorias --schema=<schema> --seco
+python manage.py tenant_command vetorizar_fontes_provisorias --schema=<schema>
+# sem worker, ou para nao esperar por ele (lento: usa a CPU do servidor):
+python manage.py tenant_command vetorizar_fontes_provisorias --schema=<schema> --local
+```
+
+Rode de novo depois que as paginas terminarem de converter (o comando pula o
+que ja foi feito).
+
 ### Em desenvolvimento, na mesma maquina
 
 `manage.py dev` sobe o worker junto quando o checkout esta aqui e a porta

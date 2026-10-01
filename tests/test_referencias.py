@@ -54,6 +54,7 @@ def _acervo(monkeypatch, artigos=0, suficiente=False):
             "artigo": artigos,
             "documento": 0,
             "suficiente": suficiente,
+            "por_curar": [],
             "em": "2026-09-30T10:00:00",
         },
     )
@@ -70,14 +71,14 @@ def _artigo_pendente(n, pauta=None):
 
 def test_com_artigos_suficientes_na_base_nao_busca_no_openalex(tenant, monkeypatch, sem_rede):
     pauta = Topic.objects.create(title="Retencao de clientes", target_keyword="retencao")
-    _acervo(monkeypatch, artigos=2)
+    _acervo(monkeypatch, artigos=4)
     _artigo_pendente(1, pauta)
 
     buscar_fontes(pauta)
     pauta.refresh_from_db()
     assert sem_rede["openalex"] == []
     assert pauta.busca_de_fontes["artigos"]["buscou"] is False
-    assert pauta.busca_de_fontes["artigos"]["da_base"] == 3
+    assert pauta.busca_de_fontes["artigos"]["da_base"] == 5
     assert pauta.busca_de_fontes["paginas"]["em"] and sem_rede["web"]
 
 
@@ -93,8 +94,8 @@ def test_busca_so_a_falta_e_liga_os_das_sementes(tenant, monkeypatch, sem_rede):
 
     buscar_fontes(pauta)
     pauta.refresh_from_db()
-    # Um ja achado pelas sementes passou a ser da pauta: faltam 2.
-    assert sem_rede["openalex"] == [("retencao", 2)]
+    # Um ja achado pelas sementes passou a ser da pauta: faltam 4.
+    assert sem_rede["openalex"] == [("retencao", 4)]
     assert pauta.busca_de_fontes["artigos"]["buscou"] is True
 
 
@@ -247,3 +248,93 @@ def test_recusado_por_engano_volta_para_as_sugestoes(ambiente):  # noqa: F811
     client.post(reverse("knowledge:voltar_a_sugestao", args=[novo.pk], urlconf="core.urls_tenants"))
     novo.refresh_from_db()
     assert novo.situacao == CandidatoDeFonte.Situacao.PENDENTE and novo.decidido_em is None
+
+
+def test_curadoria_na_fila_mostra_processando(ambiente, monkeypatch, settings):  # noqa: F811
+    from apps.knowledge import tasks
+    from apps.knowledge.models import Document
+
+    _, _, client = ambiente
+    settings.PUBLIBOT_INDEXAR_NA_HORA = False
+    from tests.test_interface import _documento_curado
+
+    documento = _documento_curado()
+    Document.objects.filter(pk=documento.pk).update(status=Document.Status.PENDING_CURATION)
+    despachados = []
+    monkeypatch.setattr(tasks.indexar_documento, "delay", lambda pk: despachados.append(pk))
+
+    from django.db import transaction
+
+    monkeypatch.setattr(transaction, "on_commit", lambda funcao: funcao())
+    tasks.pedir_indexacao(documento, blocos={0, 2}, concluir=True, por=None)
+    documento.refresh_from_db()
+    assert documento.indexacao_pedida["blocos"] == [0, 2] and despachados == [str(documento.pk)]
+
+    html = client.get(
+        reverse("knowledge:curar", args=[documento.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Processando" in html and "disabled" in html
+    html = client.get(reverse("knowledge:documentos", urlconf="core.urls_tenants")).content.decode()
+    assert "processando" in html
+
+
+CAPA_DA_SAGE = """http://jsr.sagepub.com/
+Journal of Service Research
+The online version of this article can be found at:
+DOI: 10.1177/109467050032002
+Published by:
+http://www.sagepublications.com
+at St Petersburg State University on November 15, 2013 jsr.sagepub.com Downloaded from
+"""
+
+
+def test_capa_de_download_nao_engana_o_cabecalho_com_doi(monkeypatch):
+    from apps.knowledge import academicos
+    from apps.knowledge.flows import completar_pelo_doi, sugerir_metadados
+
+    sugestoes = sugerir_metadados(CAPA_DA_SAGE, e_markdown=False)
+    assert sugestoes["doi"] == "10.1177/109467050032002"
+    monkeypatch.setattr(
+        academicos,
+        "por_doi",
+        lambda doi: academicos.Trabalho(
+            titulo="An Empirical Investigation of Customer Satisfaction after Service "
+            "Failure and Recovery",
+            doi=doi,
+            ano=2000,
+            autores=["Michael A. McCollough", "Leonard L. Berry", "Manjit S. Yadav"],
+        ),
+    )
+    certo = completar_pelo_doi(sugestoes)
+    assert certo["title"].startswith("An Empirical Investigation")
+    assert certo["authors"].startswith("Michael A. McCollough") and certo["year"] == 2000
+    assert certo["fonte"] == "openalex"
+
+
+def test_gerar_busca_videos_uma_vez_e_depois_segue(ambiente, monkeypatch):  # noqa: F811
+    from apps.content import views as telas
+    from apps.knowledge import referencias as ref
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Retencao", status=Topic.Status.APPROVED)
+    _acervo(monkeypatch, artigos=5, suficiente=True)
+    monkeypatch.setattr(ref, "youtube_ligado", lambda: True)
+    achados = []
+
+    def buscar(p, *, falta):
+        achados.append(falta)
+        return [object(), object()]
+
+    monkeypatch.setattr("apps.radar.youtube.buscar_para_pauta", buscar)
+    gerados = []
+    monkeypatch.setattr(
+        telas, "gerar_artigo", lambda p: gerados.append(p) or type("J", (), {"pk": "x" * 8})()
+    )
+    url = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
+
+    resposta = client.post(url, follow=True)
+    assert "Achei 2 video(s)" in resposta.content.decode() and not gerados
+    assert achados == [3]
+    # Segunda vez: segue sem buscar de novo.
+    client.post(url)
+    assert gerados and achados == [3]
