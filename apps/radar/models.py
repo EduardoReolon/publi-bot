@@ -1229,6 +1229,9 @@ class LinkQuebrado(models.Model):
     # Depois do contato, a pagina e conferida de tempos em tempos.
     conferido_depois_em = models.DateTimeField(_("conferido depois em"), null=True, blank=True)
     conquistado_em = models.DateTimeField(_("conquistado em"), null=True, blank=True)
+    # O link e conferido de novo depois de achado: site fora do ar na hora da
+    # verificacao nao e link quebrado.
+    rechecado_em = models.DateTimeField(_("rechecado em"), null=True, blank=True)
     situacao = models.CharField(
         _("situacao"), max_length=12, choices=Situacao.choices, default=Situacao.NOVO
     )

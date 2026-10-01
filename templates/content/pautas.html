@@ -62,8 +62,18 @@
                 {% elif pauta.briefing %}
                   <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>
                 {% endif %}
-                {% if pauta.referencias and config.fluxo_do_acervo %}{% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}{% endif %}
-                {% if pauta.busca_de_fontes.pesquisa and config.fluxo_da_pesquisa %}{% include "content/_pesquisa_da_pauta.html" with p=pauta.busca_de_fontes.pesquisa %}{% endif %}
+                {% if pauta.referencias and config.fluxo_do_acervo %}
+                  <details{% if pauta.referencias.acervo.por_curar %} open{% endif %}>
+                    <summary class="ajuda">{% translate "Referencias (A)" %}{% if pauta.referencias.acervo.por_curar %} — <strong>{% translate "fontes para curar" %}</strong>{% elif pauta.referencias.acervo.suficiente %} — {% translate "sustenta a pauta" %}{% endif %}</summary>
+                    {% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}
+                  </details>
+                {% endif %}
+                {% if pauta.busca_de_fontes.pesquisa and config.fluxo_da_pesquisa %}
+                  <details>
+                    <summary class="ajuda">{% translate "Pesquisa de artigos (B)" %} — {% with s=pauta.busca_de_fontes.pesquisa.situacao %}{% if s == 'pronta' %}{{ pauta.busca_de_fontes.pesquisa.artigos|length }} {% translate "artigos" %}{% elif s == 'erro' %}{% translate "falhou" %}{% else %}{% translate "pesquisando" %}{% endif %}{% endwith %}</summary>
+                    {% include "content/_pesquisa_da_pauta.html" with p=pauta.busca_de_fontes.pesquisa %}
+                  </details>
+                {% endif %}
               </td>
               <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}
                 {% with d=pauta.evidence.dificuldade %}{% if d %}<div><span class="selo {% if d.rotulo == 'brecha' %}ok{% elif d.rotulo == 'dificil' %}ruim{% else %}alerta{% endif %}" title="{% translate 'Links para a 1a pagina' %}: {{ d.links }}">{% if d.rotulo == 'brecha' %}{% translate "brecha" %}{% elif d.rotulo == 'dificil' %}{% translate "dificil" %}{% else %}{% translate "media" %}{% endif %} · {{ d.nota }}</span></div>{% endif %}{% endwith %}
@@ -87,7 +97,8 @@
                         {% if artigo.status == 'drafting' and artigo.thesis_json.origem == 'outra_ia' %}
                           <a href="{% url 'content:artigo_por_outra_ia' pauta.pk %}{% if f.fluxo %}?fluxo=pesquisa{% endif %}">{% translate "esperando o texto da outra IA" %}</a>
                         {% else %}
-                          <a href="{% url 'content:revisar' artigo.pk %}">{% translate "ver artigo" %}</a>
+                          <a class="botao pequeno" href="{% url 'content:revisar' artigo.pk %}" title="{% translate 'Secoes, fontes, capa e o texto final' %}">{% translate "Abrir o artigo" %}</a>
+                          <span class="ajuda">{{ artigo.title|truncatechars:70 }}</span>
                           <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{{ artigo.get_status_display }}</span>
                           {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
                         {% endif %}

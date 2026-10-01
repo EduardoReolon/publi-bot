@@ -409,6 +409,7 @@ def verificar_um_lote() -> int:
         return 0
     completar_historicos()
     conferir_conquistas()
+    rechecar_links()
     paginas = paginas_para_verificar()
     if not paginas:
         return 0
@@ -615,9 +616,56 @@ def completar(link, artigos: list | None = None) -> None:
     procurar_contato(link)
 
 
+RECHECAR_PRIMEIRO_EM_DIAS = 1
+RECHECAR_A_CADA_DIAS = 7
+RECHECAGENS_POR_VEZ = 10
+
+
+def rechecar(link) -> bool:
+    """Confere de novo se o link continua quebrado. Voltou a funcionar: sai da
+    lista (descartado). Devolve se continua quebrado."""
+    from apps.radar.models import LinkQuebrado
+
+    codigo = situacao_do_link(link.link_url)
+    link.rechecado_em = timezone.now()
+    campos = ["rechecado_em"]
+    if codigo is None:
+        link.situacao = LinkQuebrado.Situacao.DESCARTADO
+        campos.append("situacao")
+    else:
+        link.status_http = codigo
+        campos.append("status_http")
+    link.save(update_fields=campos)
+    return codigo is not None
+
+
+def rechecar_links(limite: int = RECHECAGENS_POR_VEZ) -> int:
+    """Os links ainda em aberto, um dia depois de achados e depois de semana em
+    semana. Devolve quantos voltaram a funcionar."""
+    from django.db.models import Q
+
+    from apps.radar.models import LinkQuebrado
+
+    agora = timezone.now()
+    devidos = LinkQuebrado.objects.filter(
+        situacao__in=[LinkQuebrado.Situacao.NOVO, LinkQuebrado.Situacao.PAUTA]
+    ).filter(
+        Q(
+            rechecado_em__isnull=True,
+            encontrado_em__lt=agora - timezone.timedelta(days=RECHECAR_PRIMEIRO_EM_DIAS),
+        )
+        | Q(rechecado_em__lt=agora - timezone.timedelta(days=RECHECAR_A_CADA_DIAS))
+    )
+    return sum(not rechecar(link) for link in devidos.order_by("rechecado_em")[:limite])
+
+
 def reprocessar(link) -> None:
-    """Le a pagina de novo (trecho, titulo, texto do link) e completa tudo de novo."""
+    """Confere se o link continua quebrado e le a pagina de novo (trecho, titulo,
+    texto do link), completando tudo de novo."""
     from apps.knowledge.web import PaginaIndisponivel, baixar
+
+    if not rechecar(link):
+        return
 
     try:
         conteudo, url_final, tipo = baixar(link.pagina_url)

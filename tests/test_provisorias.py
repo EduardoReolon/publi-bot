@@ -143,3 +143,35 @@ def test_comando_aplica_ao_que_ja_existe(ambiente, com_worker, capsys):  # noqa:
     call_command("vetorizar_fontes_provisorias")
     aprovado_sem_pdf.refresh_from_db()
     assert aprovado_sem_pdf.documento.chunks.exists()
+
+
+def test_conversao_nao_troca_o_cabecalho_vindo_do_openalex(ambiente, monkeypatch):  # noqa: F811
+    """Artigo aprovado de uma sugestao: titulo, autores e ano do registro ficam,
+    mesmo que a primeira pagina do PDF seja uma capa de download."""
+    from types import SimpleNamespace
+
+    from apps.knowledge import extraction
+    from apps.knowledge.flows import passo_converter
+    from tests.test_interface import _documento_curado
+
+    documento = _documento_curado(url="https://doi.org/10.1/7")
+    Document.objects.filter(pk=documento.pk).update(
+        title="An Empirical Investigation",
+        authors="McCollough, M.",
+        year=2000,
+        status=Document.Status.UPLOADED,
+    )
+    candidato = _artigo(7)
+    CandidatoDeFonte.objects.filter(pk=candidato.pk).update(documento=documento)
+    monkeypatch.setattr(
+        "apps.knowledge.flows.extrair_markdown",
+        lambda doc, **kw: extraction.ResultadoDaExtracao(
+            markdown="http://jsr.sagepub.com/\nThe online version of this article\nDownloaded from",
+            metodo=Document.ExtractionMethod.PYPDF,
+            metadados={},
+        ),
+    )
+    passo_converter(SimpleNamespace(target_object_id=str(documento.pk)))
+    documento.refresh_from_db()
+    assert documento.title == "An Empirical Investigation"
+    assert documento.authors == "McCollough, M." and documento.year == 2000

@@ -543,7 +543,6 @@ def possiveis_duplicatas(document: Document):
     return Document.objects.filter(content_fingerprint=impressao).exclude(pk=document.pk)
 
 
-@transaction.atomic
 def indexar_blocos(*, document: Document, blocos_marcados: set[int], local: bool = True) -> int:
     """Refaz o indice do documento a partir dos blocos marcados.
 
@@ -585,30 +584,32 @@ def indexar_blocos(*, document: Document, blocos_marcados: set[int], local: bool
         dono=f"vetorizacao:{document.pk}",
     )
 
-    document.chunks.all().delete()
-    novos = []
-    for (bloco, posicao, paragrafo, _texto), vetor in zip(escolhidos, vetores, strict=True):
-        novos.append(
-            SuperChunk.objects.create(
-                document=document,
-                kind=SuperChunk.Kind.CUSTOM,
-                content=paragrafo.texto,
-                heading=bloco.titulo[:300],
-                block_index=bloco.ordem,
-                paragraph_index=posicao,
-                # O vetor cobre o texto COM o prefixo de contexto; o `content`
-                # guarda so o paragrafo, que e o que o revisor precisa ler.
-                embedding=vetor,
-                embedding_model=cliente.model_name,
-                embedding_dim=cliente.dimensions,
-                token_count=paragrafo.tokens,
-                **campos_da_fonte(document),
-                is_active=True,
+    # So a gravacao fica na transacao: a vetorizacao acima pode esperar o worker
+    # (rede), e transacao aberta durante a espera segura conexao e locks.
+    with transaction.atomic():
+        document.chunks.all().delete()
+        novos = []
+        for (bloco, posicao, paragrafo, _texto), vetor in zip(escolhidos, vetores, strict=True):
+            novos.append(
+                SuperChunk.objects.create(
+                    document=document,
+                    kind=SuperChunk.Kind.CUSTOM,
+                    content=paragrafo.texto,
+                    heading=bloco.titulo[:300],
+                    block_index=bloco.ordem,
+                    paragraph_index=posicao,
+                    # O vetor cobre o texto COM o prefixo de contexto; o `content`
+                    # guarda so o paragrafo, que e o que o revisor precisa ler.
+                    embedding=vetor,
+                    embedding_model=cliente.model_name,
+                    embedding_dim=cliente.dimensions,
+                    token_count=paragrafo.tokens,
+                    **campos_da_fonte(document),
+                    is_active=True,
+                )
             )
-        )
+        atualizar_indice_textual(novos)
     criados = len(novos)
-
-    atualizar_indice_textual(novos)
     logger.info("Documento %s: %s trecho(s) indexados.", document.pk, criados)
     return criados
 

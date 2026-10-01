@@ -266,7 +266,9 @@ def _no_worker(conexao, textos: list[str], *, dono: str) -> list[list[float]]:
                     "input": [f"passage: {t}" for t in textos],
                 },
                 headers={"Authorization": f"Bearer {segredo}"},
-                timeout=600.0,
+                # Conectar e rapido ou nao vai: maquina desligada atras de VPN
+                # pode engolir o pacote e prender a tarefa ate o fim do prazo.
+                timeout=httpx.Timeout(600.0, connect=10.0),
             )
     except SemCapacidade as exc:
         raise VetorizacaoAdiada(f"a maquina da placa esta ocupada: {exc}") from exc
