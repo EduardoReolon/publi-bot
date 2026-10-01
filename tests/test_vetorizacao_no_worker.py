@@ -160,3 +160,25 @@ def test_legenda_pelo_worker_e_sem_legenda(public_tenant, monkeypatch):
     _responder(monkeypatch, 404, {"error": {"code": "sem_legenda"}})
     with pytest.raises(LegendaIndisponivel):
         buscar_legenda("abc")
+
+
+def test_pedido_parado_volta_para_a_fila(ambiente, monkeypatch):  # noqa: F811
+    import datetime
+
+    from django.utils import timezone
+
+    from apps.knowledge import tasks
+    from apps.knowledge.models import Document
+
+    documento = _documento_curado()
+    antigo = (timezone.now() - datetime.timedelta(hours=1)).isoformat()
+    recente = timezone.now().isoformat()
+    Document.objects.filter(pk=documento.pk).update(indexacao_pedida={"blocos": [1], "em": antigo})
+    outro = _documento_curado(url="https://revista.exemplo.org/outro")
+    Document.objects.filter(pk=outro.pk).update(indexacao_pedida={"blocos": [1], "em": recente})
+    enviados = []
+    monkeypatch.setattr(tasks.indexar_documento, "delay", lambda pk: enviados.append(pk))
+
+    assert tasks.reenfileirar_parados() == 1 and enviados == [str(documento.pk)]
+    documento.refresh_from_db()
+    assert documento.indexacao_pedida["em"] > antigo

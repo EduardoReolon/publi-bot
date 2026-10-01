@@ -25,10 +25,11 @@
   {% if processando %}
     <div class="aviso espera">
       <strong>{% translate "Processando" %}</strong> —
-      {% if documento.indexacao_pedida.concluir %}{% translate "concluindo a curadoria" %}{% else %}{% translate "salvando" %}{% endif %}:
+      {% if documento.indexacao_pedida.concluir %}{% translate "concluindo a curadoria" %}{% elif documento.status == 'pending_curation' and not trechos %}{% translate "entrando no indice como fonte provisoria" %}{% else %}{% translate "salvando" %}{% endif %}:
       {% translate "os trechos marcados estao sendo vetorizados em segundo plano. Atualize a pagina em instantes; enquanto isso, os botoes ficam travados." %}
-      {% if documento.indexacao_pedida.aguardando_worker and not documento.indexacao_pedida.local %}
-        <div class="ajuda">{% translate "Esperando o worker da placa" %}: {{ documento.indexacao_pedida.aguardando_worker }}</div>
+      <div class="ajuda">{% translate "Pedido em" %} {{ documento.indexacao_pedida.em|slice:":16"|default:"?" }} (UTC){% if not documento.indexacao_pedida.aguardando_worker %} — {% translate "ainda nao tentado; pedidos parados ha mais de 20 minutos voltam para a fila sozinhos" %}{% endif %}.</div>
+      {% if not documento.indexacao_pedida.local %}
+        {% if documento.indexacao_pedida.aguardando_worker %}<div class="ajuda">{% translate "Esperando o worker da placa" %}: {{ documento.indexacao_pedida.aguardando_worker }}</div>{% endif %}
         <form method="post" action="{% url 'knowledge:vetorizar_no_servidor' documento.pk %}" style="margin-top:.3rem">{% csrf_token %}
           <button type="submit" class="botao secundario pequeno" title="{% translate 'Mais lento, e ocupa o servidor; use quando o worker estiver desligado' %}">{% translate "Vetorizar agora no servidor" %}</button>
         </form>
