@@ -714,6 +714,11 @@ EMBEDDING_LOCAL_FILES_ONLY = env.boolean("EMBEDDING_LOCAL_FILES_ONLY", False)
 # evita carregar 2 GB de modelo a cada execucao da suite.
 EMBEDDING_CLIENT = env.get("EMBEDDING_CLIENT", "apps.knowledge.embeddings.FastEmbedClient")
 
+# Onde o servico de vetores escuta (`manage.py servir_vetores`). Em producao o
+# cliente padrao e o `ServicoDeVetoresClient`: uma copia do modelo (~2 GB) para
+# a maquina toda, em vez de uma por processo do Gunicorn e do Celery.
+EMBEDDING_SERVICO_URL = env.get("EMBEDDING_SERVICO_URL", "http://127.0.0.1:8601")
+
 # Licencas cujo texto integral e APAGADO ao concluir a curadoria. Vazia por
 # padrao: o sistema guarda tudo.
 #

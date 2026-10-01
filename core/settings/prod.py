@@ -11,6 +11,10 @@ from core.settings.base import ROOT_DOMAIN
 
 DEBUG = False
 
+# Um processo so abre o modelo de embedding (vetores-publibot.service); os
+# outros pedem a ele. Ver `ServicoDeVetoresClient`.
+EMBEDDING_CLIENT = env.get("EMBEDDING_CLIENT", "apps.knowledge.embeddings.ServicoDeVetoresClient")
+
 # Sem default: se a variavel faltar, o processo nao sobe. Um ALLOWED_HOSTS
 # vazio em producao e uma falha de configuracao, nao um caso a tolerar.
 ALLOWED_HOSTS = env.csv_list("DJANGO_ALLOWED_HOSTS") or [ROOT_DOMAIN, f".{ROOT_DOMAIN}"]

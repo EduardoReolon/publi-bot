@@ -54,6 +54,7 @@ def test_primeira_execucao_instala_todos_os_units(tmp_path):
         "celery-publibot.service",
         "publibot.service",
         "publibot.socket",
+        "vetores-publibot.service",
     ]
     assert "recarregando o systemd" in resultado.stdout
 
