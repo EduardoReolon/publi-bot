@@ -158,7 +158,7 @@ def test_tela_mostra_os_dois_fluxos_e_a_config_esconde(ambiente, openalex, model
 
     _, _, client = ambiente
     pauta = Topic.objects.create(title="Recuperar o cliente")
-    url = reverse("content:pautas", urlconf="core.urls_tenants")
+    url = reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
     html = client.get(url).content.decode()
     assert "A · Fontes curadas" in html and "B · Pesquisa cientifica" in html
     assert "Gerar A e B" in html
@@ -342,3 +342,78 @@ def test_nao_achei_o_pdf_segue_com_o_resumo(ambiente, openalex, modelo):  # noqa
         p for a in pauta.busca_de_fontes["pesquisa"]["angulos"] for p in a.get("pedidos", [])
     ]
     assert all(p.get("atendido") == "sem_pdf" for p in pedidos if p["artigo"] == 1)
+
+
+def test_pesquisa_parada_recomeca_e_a_tela_avisa(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    """O servidor reiniciou no meio da pesquisa: a varredura recomeca, mantendo
+    o pedido de gerar ao terminar."""
+    import datetime
+
+    from django.utils import timezone
+
+    from apps.content import fluxos
+
+    despachadas = []
+    monkeypatch.setattr(
+        "apps.knowledge.tasks.pesquisar_pauta.delay", lambda pk: despachadas.append(pk)
+    )
+    antiga = (timezone.now() - datetime.timedelta(hours=2)).isoformat()
+    parada = Topic.objects.create(
+        title="Parada",
+        busca_de_fontes={
+            "pesquisa": {"situacao": "pesquisando", "em": antiga, "gerar_depois": True}
+        },
+    )
+    Topic.objects.create(
+        title="Recente",
+        busca_de_fontes={"pesquisa": {"situacao": "pesquisando", "em": timezone.now().isoformat()}},
+    )
+
+    _, _, client = ambiente
+    url = reverse("content:pauta", args=[parada.pk], urlconf="core.urls_tenants")
+    assert "pesquisa parada" in client.get(url).content.decode()
+
+    with django_capture_on_commit_callbacks(execute=True):
+        assert fluxos.pesquisas_paradas() == 1
+    assert despachadas == [str(parada.pk)]
+    parada.refresh_from_db()
+    assert parada.busca_de_fontes["pesquisa"]["situacao"] == "na_fila"
+    assert parada.busca_de_fontes["pesquisa"]["gerar_depois"] is True
+
+
+def test_geracao_esperando_a_maquina_aparece_e_pode_ser_encerrada(ambiente):  # noqa: F811
+    from apps.content import fluxos
+    from apps.ops.models import GenerationJob
+
+    pauta = Topic.objects.create(title="Esperando a placa", status="approved")
+    trabalho = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=pauta.pk,
+        status=GenerationJob.Status.WAITING_CAPACITY,
+        step_payloads={"fluxo": fluxos.B},
+        last_error="maquina desligada",
+        total_steps=8,
+    )
+    _, _, client = ambiente
+    url = reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert "esperando a maquina do modelo" in html and "maquina desligada" in html
+    assert "Gerar so B" not in html
+    lista = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
+    assert "esperando a maquina do modelo" in lista
+
+    resposta = client.post(
+        reverse(
+            "content:desistir_da_geracao",
+            args=[pauta.pk, trabalho.pk],
+            urlconf="core.urls_tenants",
+        )
+    )
+    assert resposta.status_code == 302 and resposta.url.endswith(f"/pautas/{pauta.pk}/")
+    trabalho.refresh_from_db()
+    assert trabalho.status == GenerationJob.Status.FAILED
+    assert "Gerar so B" in client.get(url).content.decode()

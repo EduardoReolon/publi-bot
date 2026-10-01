@@ -1,0 +1,76 @@
+{% load i18n %}{# Os fluxos A e B de uma pauta. `completo`: com descricao e acoes (pagina da pauta). #}
+{% for f in pauta.fluxos %}
+  <div class="fluxo">
+    <strong>{{ f.nome }}</strong>
+    {% if completo %}
+      {% if f.fluxo == '' %}
+        <span class="ajuda">{% translate "usa o acervo que voce cura (paginas, videos, artigos, documentos); falta fonte, a busca sugere e a geracao pede a curadoria." %}</span>
+      {% else %}
+        <span class="ajuda">{% translate "pesquisa artigos cientificos por sentido, escreve pelos resumos e so pede o PDF do que o texto precisar." %}</span>
+      {% endif %}
+    {% endif %}
+    {% for artigo in f.artigos %}
+      <div>
+        {% if artigo.status == 'drafting' and artigo.thesis_json.origem == 'outra_ia' %}
+          <a href="{% url 'content:artigo_por_outra_ia' pauta.pk %}{% if f.fluxo %}?fluxo=pesquisa{% endif %}">{% translate "esperando o texto da outra IA" %}</a>
+        {% else %}
+          <a class="botao pequeno" href="{% url 'content:revisar' artigo.pk %}" title="{% translate 'Secoes, fontes, capa e o texto final' %}">{% translate "Abrir o artigo" %}</a>
+          <span class="ajuda">{{ artigo.title|truncatechars:70 }}</span>
+          <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{{ artigo.get_status_display }}</span>
+          {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+    {% with t=f.trabalho %}{% if t %}
+      <div>
+        <span class="selo espera">{% if t.status == 'waiting_capacity' %}{% translate "esperando a maquina do modelo" %}{% elif t.status == 'pending' %}{% translate "na fila para gerar" %}{% else %}{% translate "gerando" %}{% endif %}</span>
+        <span class="ajuda">{% translate "passo" %} {{ t.current_step }}/{{ t.total_steps|default:"?" }} · {% translate "pedido ha" %} {{ t.created_at|timesince }}</span>
+        {% if completo %}
+          {% if t.last_error %}<div class="ajuda">{% translate "Ultimo aviso" %}: {{ t.last_error|truncatechars:240 }}</div>{% endif %}
+          {% if t.status == 'waiting_capacity' %}<div class="ajuda">{% translate "A geracao espera a maquina que roda o modelo (ligada e livre). Ela continua sozinha quando a maquina voltar." %}</div>{% endif %}
+          <form method="post" action="{% url 'content:desistir_da_geracao' pauta.pk t.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="botao discreto pequeno" title="{% translate 'Para poder gerar de novo ou ir pela outra IA' %}">{% translate "Desistir desta geracao" %}</button>
+          </form>
+          <a class="botao discreto pequeno" href="{% url 'operacao:trabalho' t.pk %}">{% translate "Ver o trabalho" %}</a>
+        {% endif %}
+      </div>
+    {% endif %}{% endwith %}
+    {% with p=f.pesquisa %}{% if p and p.rodando %}
+      <div>
+        <span class="selo {% if p.parada %}ruim{% else %}espera{% endif %}">{% if p.parada %}{% translate "pesquisa parada" %}{% else %}{% translate "pesquisando artigos" %}{% endif %}</span>
+        {% if p.desde %}<span class="ajuda">{% translate "desde ha" %} {{ p.desde|timesince }}{% if p.gerar_depois %} · {% translate "gera o artigo ao terminar" %}{% endif %}</span>{% endif %}
+        {% if p.parada %}<div class="ajuda">{% translate "A tarefa parou no meio (o servidor reiniciou, por exemplo). Ela recomeca sozinha em ate 15 minutos, ou pesquise de novo." %}</div>{% endif %}
+      </div>
+    {% elif p and p.situacao == 'erro' %}
+      <div><span class="selo ruim">{% translate "a pesquisa falhou" %}</span> <span class="ajuda">{{ p.erro|truncatechars:200 }}</span></div>
+    {% endif %}{% endwith %}
+    {% if completo and f.falta and not f.trabalho and pauta.status != 'rejected' %}
+      <div>
+      {% if f.fluxo == '' %}
+        <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
+          <button type="submit" class="botao secundario pequeno">{% translate "Gerar so A" %}</button>
+        </form>
+        <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">{% csrf_token %}
+          <button type="submit" class="botao discreto pequeno">{% translate "Buscar fontes na web" %}</button>
+        </form>
+        <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA (A)" %}</a>
+      {% else %}
+        <form method="post" action="{% url 'content:pesquisar_artigos' pauta.pk %}" style="display:inline">{% csrf_token %}
+          <button type="submit" class="botao discreto pequeno">{% if f.pesquisa.situacao == 'pronta' or f.pesquisa.parada %}{% translate "Pesquisar de novo" %}{% else %}{% translate "Pesquisar artigos" %}{% endif %}</button>
+        </form>
+        {% if not f.pesquisa.rodando or f.pesquisa.parada %}
+          <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
+            <input type="hidden" name="fluxo" value="pesquisa">
+            <button type="submit" class="botao secundario pequeno" title="{% translate 'Sem pesquisa ainda, pesquisa primeiro e gera sozinho ao terminar' %}">{% translate "Gerar so B" %}</button>
+          </form>
+        {% endif %}
+        {% if f.pesquisa.situacao == 'pronta' %}
+          <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}?fluxo=pesquisa">{% translate "Artigo com outra IA (B)" %}</a>
+        {% endif %}
+      {% endif %}
+      </div>
+    {% elif not completo and f.falta and not f.trabalho and not f.pesquisa.rodando %}
+      <span class="ajuda">{% translate "sem artigo" %}</span>
+    {% endif %}
+  </div>
+{% endfor %}
