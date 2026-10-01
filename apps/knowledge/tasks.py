@@ -142,8 +142,14 @@ def indexar_documento(document_id: str) -> int:
             else:
                 erro = "Nenhum trecho foi para o indice: marque ao menos um bloco com texto."
     except VetorizacaoAdiada as exc:
+        from django.utils import timezone
+
         Document.objects.filter(pk=documento.pk).update(
-            indexacao_pedida={**pedido, "aguardando_worker": str(exc)[:300]}
+            indexacao_pedida={
+                **pedido,
+                "aguardando_worker": str(exc)[:300],
+                "em": timezone.now().isoformat(),
+            }
         )
         indexar_documento.apply_async((document_id,), countdown=exc.retry_after or ESPERA_DO_WORKER)
         return 0
@@ -189,3 +195,44 @@ def vetorizar_no_servidor(documento: Document) -> bool:
     else:
         transaction.on_commit(lambda: indexar_documento.delay(str(documento.pk)))
     return True
+
+
+# Sem sinal de vida ha tanto tempo, o pedido perdeu a tarefa.
+PEDIDO_PARADO_MINUTOS = 20
+
+
+def reenfileirar_parados() -> int:
+    """Os pedidos parados voltam para a fila. Devolve quantos.
+
+    Parado: sem tentativa ha mais de `PEDIDO_PARADO_MINUTOS` (o "em" do pedido,
+    atualizado a cada vez que o worker manda esperar). Acontece quando a tarefa
+    foi despachada a um worker do Celery que ainda rodava o codigo antigo e a
+    descartou. Repetir e seguro: indexar o mesmo pedido duas vezes da o mesmo
+    indice.
+    """
+    import datetime
+
+    from django.utils import timezone
+
+    limite = timezone.now() - datetime.timedelta(minutes=PEDIDO_PARADO_MINUTOS)
+    reenviados = 0
+    for documento in Document.objects.exclude(indexacao_pedida={}):
+        em = documento.indexacao_pedida.get("em") or ""
+        try:
+            parado = datetime.datetime.fromisoformat(em) < limite
+        except ValueError:
+            parado = True
+        if parado:
+            Document.objects.filter(pk=documento.pk).update(
+                indexacao_pedida={**documento.indexacao_pedida, "em": timezone.now().isoformat()}
+            )
+            indexar_documento.delay(str(documento.pk))
+            reenviados += 1
+    return reenviados
+
+
+@shared_task
+def reenfileirar_vetorizacoes() -> int:
+    from apps.accounts.varredura import para_cada_tenant
+
+    return para_cada_tenant(reenfileirar_parados, "reenfileirar_vetorizacoes")

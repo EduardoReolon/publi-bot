@@ -440,6 +440,13 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 3600.0,
         "options": {"expires": 3000},
     },
+    # Pedido de vetorizacao que ficou sem tarefa (despachado durante uma
+    # implantacao, antes do worker do Celery conhecer a tarefa) volta para a fila.
+    "reenfileirar-vetorizacoes": {
+        "task": "apps.knowledge.tasks.reenfileirar_vetorizacoes",
+        "schedule": 900.0,
+        "options": {"expires": 800},
+    },
     "procurar-links-quebrados": {
         "task": "apps.radar.tasks.procurar_links_quebrados",
         # Devagar de proposito: algumas paginas por tenant, a cada hora.
