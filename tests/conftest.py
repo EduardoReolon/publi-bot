@@ -50,6 +50,10 @@ def _sem_bases_academicas(request, monkeypatch):
 
     monkeypatch.setattr(academicos, "consultar_unpaywall", lambda *a, **k: "")
     monkeypatch.setattr(academicos, "por_doi", lambda *a, **k: None)
+    if "openalex" not in request.fixturenames:  # test_pesquisa simula o OpenAlex
+        from apps.knowledge import pesquisa
+
+        monkeypatch.setattr(pesquisa, "busca_semantica", lambda *a, **k: [])
 
 
 @pytest.fixture

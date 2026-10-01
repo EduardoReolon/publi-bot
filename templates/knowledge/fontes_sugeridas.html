@@ -54,6 +54,12 @@
           <input type="file" name="pdf" accept="application/pdf,.pdf" required>
           <button type="submit">{% translate "Enviar o PDF" %}</button>
         </form>
+        {% if candidato.documento and candidato.documento.extraction_method == 'resumo' %}
+          <form method="post" action="{% url 'knowledge:seguir_com_o_resumo' candidato.pk %}" class="acoes">
+            {% csrf_token %}
+            <button type="submit" class="botao secundario pequeno" title="{% translate 'O artigo usa o resumo, sem o texto completo' %}">{% translate "Nao achei o PDF: seguir com o resumo" %}</button>
+          </form>
+        {% endif %}
         <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}" class="acoes">
           {% csrf_token %}
           <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>

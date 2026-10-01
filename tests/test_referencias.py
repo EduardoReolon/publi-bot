@@ -312,7 +312,6 @@ def test_capa_de_download_nao_engana_o_cabecalho_com_doi(monkeypatch):
 
 
 def test_gerar_busca_videos_uma_vez_e_depois_segue(ambiente, monkeypatch):  # noqa: F811
-    from apps.content import views as telas
     from apps.knowledge import referencias as ref
 
     _, _, client = ambiente
@@ -328,12 +327,13 @@ def test_gerar_busca_videos_uma_vez_e_depois_segue(ambiente, monkeypatch):  # no
     monkeypatch.setattr("apps.radar.youtube.buscar_para_pauta", buscar)
     gerados = []
     monkeypatch.setattr(
-        telas, "gerar_artigo", lambda p: gerados.append(p) or type("J", (), {"pk": "x" * 8})()
+        "apps.content.tasks.gerar_artigo",
+        lambda p, **kw: gerados.append(p) or type("J", (), {"pk": "x" * 8})(),
     )
     url = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
 
     resposta = client.post(url, follow=True)
-    assert "Achei 2 video(s)" in resposta.content.decode() and not gerados
+    assert "achei 2 video(s)" in resposta.content.decode() and not gerados
     assert achados == [3]
     # Segunda vez: segue sem buscar de novo.
     client.post(url)

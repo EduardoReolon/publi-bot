@@ -36,12 +36,21 @@
         </ol>
         {% for pedido in angulo.pedidos %}
           <div class="ajuda">
-            <span class="selo espera">{% translate "pede o texto completo" %}</span> [{{ pedido.artigo }}] {{ pedido.o_que }}
-            {% for artigo in p.artigos %}{% if artigo.numero == pedido.artigo and artigo.candidato %}
-              <form method="post" action="{% url 'content:pdf_da_pesquisa' pauta.pk artigo.candidato %}" style="display:inline">{% csrf_token %}
-                <button type="submit" class="botao discreto pequeno">{% if pedido.pdf_aberto %}{% translate "Baixar o PDF aberto" %}{% else %}{% translate "Sem PDF aberto: pedir a voce" %}{% endif %}</button>
-              </form>
-            {% endif %}{% endfor %}
+            {% if pedido.atendido == 'pdf' %}<span class="selo ok">{% translate "lido do PDF" %}</span>
+            {% elif pedido.atendido == 'sem_pdf' %}<span class="selo">{% translate "sem PDF: segue com o resumo" %}</span>
+            {% else %}<span class="selo espera">{% translate "pede o texto completo" %}</span>{% endif %}
+            [{{ pedido.artigo }}] {{ pedido.o_que }}
+            {% if not pedido.atendido %}
+              {% for artigo in p.artigos %}{% if artigo.numero == pedido.artigo and artigo.candidato %}
+                <form method="post" action="{% url 'content:pdf_da_pesquisa' pauta.pk artigo.candidato %}" style="display:inline">{% csrf_token %}
+                  <button type="submit" class="botao discreto pequeno">{% if pedido.pdf_aberto %}{% translate "Baixar o PDF aberto" %}{% else %}{% translate "Sem PDF aberto: vou enviar" %}{% endif %}</button>
+                </form>
+                <form method="post" action="{% url 'knowledge:seguir_com_o_resumo' artigo.candidato %}" style="display:inline">{% csrf_token %}
+                  <input type="hidden" name="voltar" value="{% url 'content:pautas' %}#pauta-{{ pauta.pk }}">
+                  <button type="submit" class="botao discreto pequeno">{% translate "Nao achei o PDF" %}</button>
+                </form>
+              {% endif %}{% endfor %}
+            {% endif %}
           </div>
         {% endfor %}
       </details>

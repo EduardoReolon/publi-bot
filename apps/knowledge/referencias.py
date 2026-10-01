@@ -42,10 +42,13 @@ _EM_CURADORIA = ("uploaded", "queued", "parsing", "parsed", "pending_curation")
 
 
 def consulta_da_pauta(pauta) -> str:
-    return " ".join(filter(None, [pauta.title, pauta.target_keyword, pauta.briefing]))
+    from apps.knowledge.pesquisa import _orientacao_sem_pesquisa
+
+    orientacao = _orientacao_sem_pesquisa(pauta.briefing or "")
+    return " ".join(filter(None, [pauta.title, pauta.target_keyword, orientacao]))
 
 
-def trechos_da_pauta(pauta, *, top_k: int | None = None) -> list:
+def trechos_da_pauta(pauta, *, top_k: int | None = None, fluxo: str = "") -> list:
     """Os trechos que sustentam a pauta. No fluxo da pesquisa, so os dos artigos
     achados para ela (`knowledge.pesquisa`), sem limiar: foram escolhidos para a
     pauta, e o modelo os le todos."""
@@ -53,7 +56,7 @@ def trechos_da_pauta(pauta, *, top_k: int | None = None) -> list:
     from apps.knowledge.services import recuperar
 
     extra = {}
-    if getattr(pauta, "fluxo", "") == "pesquisa":
+    if fluxo == "pesquisa":
         from apps.knowledge.pesquisa import TRECHOS_DA_PESQUISA, documentos_da_pesquisa
 
         extra = {"documentos": documentos_da_pesquisa(pauta), "distancia_maxima": 2.0}

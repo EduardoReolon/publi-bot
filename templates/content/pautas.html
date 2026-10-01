@@ -74,46 +74,55 @@
                 </span>
               </td>
               <td>
-                {% if pauta.artigos %}
-                  {% for artigo in pauta.articles.all %}
-                    {% if artigo.status == 'drafting' and artigo.thesis_json.origem == 'outra_ia' %}
-                      <a href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "esperando o texto da outra IA" %}</a>
+                {% for f in pauta.fluxos %}
+                  <div class="fluxo">
+                    <strong>{{ f.nome }}</strong>
+                    {% if f.fluxo == '' %}
+                      <span class="ajuda">{% translate "usa o acervo que voce cura (paginas, videos, artigos, documentos); falta fonte, a busca sugere e a geracao pede a curadoria." %}</span>
                     {% else %}
-                      <a href="{% url 'content:revisar' artigo.pk %}">{% translate "ver artigo" %}</a>
+                      <span class="ajuda">{% translate "pesquisa artigos cientificos por sentido, escreve pelos resumos e so pede o PDF do que o texto precisar." %}</span>
                     {% endif %}
-                  {% endfor %}
-                {% elif pauta.status != 'rejected' %}
-                  {% if config.fluxo_do_acervo %}
-                    <div class="fluxo">
-                      <strong>{% translate "Pelo acervo" %}</strong>
-                      <span class="ajuda">{% translate "o artigo usa o que voce ja curou; falta fonte, a busca sugere e voce cura antes." %}</span><br>
-                      <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
-                        {% csrf_token %}
-                        <button type="submit" class="botao secundario">{% translate "Gerar artigo" %}</button>
-                      </form>
-                      <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">
-                        {% csrf_token %}
-                        <button type="submit" class="botao secundario">{% translate "Buscar fontes na web" %}</button>
-                      </form>
-                      <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA" %}</a>
-                    </div>
-                  {% endif %}
-                  {% if config.fluxo_da_pesquisa %}
-                    <div class="fluxo">
-                      <strong>{% translate "Pela pesquisa de artigos" %}</strong>
-                      <span class="ajuda">{% translate "o sistema pesquisa artigos cientificos por sentido, escreve pelos resumos e so pede o PDF do que o texto precisar." %}</span><br>
-                      <form method="post" action="{% url 'content:pesquisar_artigos' pauta.pk %}" style="display:inline">
-                        {% csrf_token %}
-                        <button type="submit" class="botao secundario">{% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}{% translate "Pesquisar de novo" %}{% else %}{% translate "Pesquisar artigos" %}{% endif %}</button>
-                      </form>
-                      {% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}
-                        <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
-                          {% csrf_token %}<input type="hidden" name="fluxo" value="pesquisa">
-                          <button type="submit" class="botao secundario">{% translate "Gerar com a pesquisa" %}</button>
+                    {% for artigo in f.artigos %}
+                      <div>
+                        {% if artigo.status == 'drafting' and artigo.thesis_json.origem == 'outra_ia' %}
+                          <a href="{% url 'content:artigo_por_outra_ia' pauta.pk %}{% if f.fluxo %}?fluxo=pesquisa{% endif %}">{% translate "esperando o texto da outra IA" %}</a>
+                        {% else %}
+                          <a href="{% url 'content:revisar' artigo.pk %}">{% translate "ver artigo" %}</a>
+                          <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{{ artigo.get_status_display }}</span>
+                          {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                    {% if f.falta and pauta.status != 'rejected' %}
+                      {% if f.fluxo == '' %}
+                        <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
+                          <button type="submit" class="botao secundario pequeno">{% translate "Gerar so A" %}</button>
                         </form>
-                        <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}?fluxo=pesquisa">{% translate "Com a pesquisa, em outra IA" %}</a>
+                        <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">{% csrf_token %}
+                          <button type="submit" class="botao discreto pequeno">{% translate "Buscar fontes na web" %}</button>
+                        </form>
+                        <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA (A)" %}</a>
+                      {% else %}
+                        <form method="post" action="{% url 'content:pesquisar_artigos' pauta.pk %}" style="display:inline">{% csrf_token %}
+                          <button type="submit" class="botao discreto pequeno">{% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}{% translate "Pesquisar de novo" %}{% else %}{% translate "Pesquisar artigos" %}{% endif %}</button>
+                        </form>
+                        <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
+                          <input type="hidden" name="fluxo" value="pesquisa">
+                          <button type="submit" class="botao secundario pequeno" title="{% translate 'Sem pesquisa ainda, pesquisa primeiro e gera sozinho ao terminar' %}">{% translate "Gerar so B" %}</button>
+                        </form>
+                        {% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}
+                          <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}?fluxo=pesquisa">{% translate "Artigo com outra IA (B)" %}</a>
+                        {% endif %}
                       {% endif %}
-                    </div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+                {% if pauta.status != 'rejected' %}
+                  {% if pauta.faltam_os_dois %}
+                    <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
+                      <input type="hidden" name="fluxo" value="ligados">
+                      <button type="submit" class="botao" title="{% translate 'Gera um artigo por fluxo, para comparar; na revisao voce escolhe qual vai ao ar' %}">{% translate "Gerar A e B" %}</button>
+                    </form>
                   {% endif %}
                   <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
                   <a class="botao {% if pauta.imprensa.tem_angulo %}{% else %}discreto{% endif %}" href="{% url 'content:imprensa_da_pauta' pauta.pk %}" title="{% translate 'Outra IA julga se a pauta vira materia de jornal, e escreve' %}">{% translate "Imprensa (outra IA)" %}</a>

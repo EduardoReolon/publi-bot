@@ -22,8 +22,8 @@
     <p class="pre-visualizacao">{% translate "Busca no acervo o que sustenta a pauta e cria o artigo em espera. A pauta sai da lista de sugeridas (volta se voce desistir)." %}</p>
     <form method="post" class="acoes">
       {% csrf_token %}<input type="hidden" name="acao" value="preparar">
-      <input type="hidden" name="fluxo" value="{{ request.GET.fluxo }}">
-      {% if request.GET.fluxo == 'pesquisa' %}<p class="ajuda">{% translate "Pela pesquisa de artigos: as fontes sao os resumos achados para a pauta, e a resposta pode pedir o texto completo de algum (PEDIDOS)." %}</p>{% endif %}
+      <input type="hidden" name="fluxo" value="{{ fluxo }}">
+      {% if fluxo == 'pesquisa' %}<p class="ajuda">{% translate "Pela pesquisa de artigos: as fontes sao os resumos achados para a pauta, e a resposta pode pedir o texto completo de algum (PEDIDOS)." %}</p>{% endif %}
       <button type="submit">{% translate "Separar as fontes e montar o pedido" %}</button>
       <a class="botao discreto" href="{% url 'content:pautas' %}">{% translate "Voltar" %}</a>
     </form>
@@ -52,12 +52,12 @@
   <section class="secao">
     <h2>{% translate "2. Cole a resposta inteira" %}</h2>
     <form method="post">
-      {% csrf_token %}<input type="hidden" name="acao" value="colar">
+      {% csrf_token %}<input type="hidden" name="acao" value="colar"><input type="hidden" name="fluxo" value="{{ fluxo }}">
       <textarea name="resposta" rows="16" style="width:100%" aria-label="{% translate 'Resposta do modelo' %}">{{ colado }}</textarea>
       <div class="acoes"><button type="submit">{% translate "Gravar e ir para a revisao" %}</button></div>
     </form>
     <form method="post" class="acoes">
-      {% csrf_token %}<input type="hidden" name="acao" value="desistir">
+      {% csrf_token %}<input type="hidden" name="acao" value="desistir"><input type="hidden" name="fluxo" value="{{ fluxo }}">
       <button type="submit" class="botao discreto">{% translate "Desistir (a pauta volta para a lista)" %}</button>
     </form>
   </section>

@@ -75,6 +75,23 @@ def _chunks_do_payload(job: GenerationJob, passo: str) -> list[SuperChunk]:
 # ---------------------------------------------------------------------------
 # Artigo pilar
 # ---------------------------------------------------------------------------
+def _tese_com_angulos(job, article) -> str:
+    """No fluxo B, a tese leva junto os angulos e as sinteses da pesquisa."""
+    tese = _tese_do_job(job, article)
+    if article.fluxo == "pesquisa" and article.topic_id:
+        from apps.knowledge.pesquisa import orientacao_dos_angulos
+
+        angulos = orientacao_dos_angulos(article.topic)
+        if angulos:
+            return f"{tese}\n\n{angulos}"
+    return tese
+
+
+def fluxo_do_job(job: GenerationJob) -> str:
+    """O fluxo (A ou B) que o trabalho gera; gravado ao criar (`tasks.gerar_artigo`)."""
+    return (job.step_payloads or {}).get("fluxo", "")
+
+
 def passo_recuperar_fontes(job: GenerationJob) -> dict:
     """Busca no acervo o que sustenta a pauta.
 
@@ -86,7 +103,7 @@ def passo_recuperar_fontes(job: GenerationJob) -> dict:
     if topic is None:
         raise ValueError(f"pauta {job.target_object_id} nao existe")
 
-    trechos = fontes_da_pauta(topic)
+    trechos = fontes_da_pauta(topic, fluxo=fluxo_do_job(job))
 
     return {
         "chunk_ids": [str(t.chunk.pk) for t in trechos],
@@ -124,6 +141,7 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
         slug=slugify(topic.title)[:300],
         focus_keyword=topic.target_keyword,
         content_type=topic.content_type,
+        fluxo=fluxo_do_job(job),
         thesis_json=tese.bruto,
         consensus=MAPA_DE_CONCORDANCIA[tese.concordancia],
         single_source=len(trechos) == 1,
@@ -200,7 +218,7 @@ def passo_planejar(job: GenerationJob) -> dict:
         key="article_outline",
         variaveis={
             "titulo": article.title,
-            "tese": _tese_do_job(job, article),
+            "tese": _tese_com_angulos(job, article),
             "fontes": montar_contexto_das_fontes(trechos),
             "palavra_chave": article.focus_keyword or article.title,
             "publico": article.audience or _publico_padrao(site),
@@ -225,7 +243,7 @@ def passo_planejar(job: GenerationJob) -> dict:
         if article.topic_id:
             from apps.knowledge.tasks import pauta_sem_fontes
 
-            pauta_sem_fontes(article.topic, marcar=False)
+            pauta_sem_fontes(article.topic, marcar=False, fluxo=article.fluxo)
         raise
     secoes = aplicar_plano(article, plano, trechos=trechos)
     from apps.content.chamada import aplicar_decisao

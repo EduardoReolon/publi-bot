@@ -285,6 +285,18 @@ CHAMADAS = [
 ]
 
 
+class Fluxo(models.TextChoices):
+    """Os dois jeitos de embasar um artigo. Uma pauta pode ter um de cada, para
+    comparar; so um vai ao ar."""
+
+    # A: o artigo usa o acervo (paginas, videos, artigos, documentos) que a
+    # pessoa curou — antes, ou quando a geracao pede.
+    CURADAS = "", _("A · Fontes curadas")
+    # B: artigos cientificos achados para a pauta por sentido; o texto parte dos
+    # resumos, e o PDF so do que ele pedir (`knowledge.pesquisa`).
+    PESQUISA = "pesquisa", _("B · Pesquisa cientifica")
+
+
 class Topic(models.Model):
     """Uma pauta aprovada por um humano antes de virar artigo."""
 
@@ -329,16 +341,6 @@ class Topic(models.Model):
     # foi ignorada. Ver apps/knowledge/referencias.py.
     busca_de_fontes = models.JSONField(_("busca de fontes"), default=dict, blank=True)
 
-    class Fluxo(models.TextChoices):
-        # A curadoria antes: o artigo usa o acervo curado (o caminho de sempre).
-        ACERVO = "", _("Pelo acervo")
-        # A pesquisa antes: artigos cientificos achados para a pauta, pelos
-        # resumos, e o PDF so do que o texto pedir (`knowledge.pesquisa`).
-        PESQUISA = "pesquisa", _("Pela pesquisa de artigos")
-
-    fluxo = models.CharField(
-        _("fluxo"), max_length=10, choices=Fluxo.choices, default=Fluxo.ACERVO, blank=True
-    )
     # Artigo publicado DEPOIS da pauta nascer e que ja cobre o mesmo assunto.
     # Aviso, nao descarte: a pessoa decide se muda o angulo ou desiste.
     artigo_parecido = models.ForeignKey(
@@ -500,6 +502,10 @@ class Article(models.Model):
     outbound_link_url = models.URLField(_("link de saida"), max_length=500, blank=True)
     anchor_text = models.CharField(_("texto-ancora"), max_length=200, blank=True)
 
+    # Qual dos dois fluxos produziu este artigo (ver `Fluxo`).
+    fluxo = models.CharField(
+        _("fluxo"), max_length=10, choices=Fluxo.choices, default=Fluxo.CURADAS, blank=True
+    )
     status = models.CharField(
         _("situacao"), max_length=24, choices=Status.choices, default=Status.DRAFTING
     )

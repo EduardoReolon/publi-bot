@@ -20,7 +20,7 @@ from apps.ops.tasks import advance_generation_job
 logger = logging.getLogger("publibot.content")
 
 
-def iniciar_geracao(*, kind: str, target_object_id) -> GenerationJob:
+def iniciar_geracao(*, kind: str, target_object_id, payload: dict | None = None) -> GenerationJob:
     """Cria o trabalho e agenda o primeiro passo apos o COMMIT.
 
     `on_commit` importa: sem ele o worker pode buscar o trabalho antes de ele
@@ -28,13 +28,21 @@ def iniciar_geracao(*, kind: str, target_object_id) -> GenerationJob:
     intermitente e desagradavel de diagnosticar.
     """
     job = criar_job(kind=kind, target_object_id=target_object_id)
+    if payload:
+        job.step_payloads = payload
+        job.save(update_fields=["step_payloads"])
     transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
     logger.info("Trabalho %s criado (%s) para %s", job.pk, kind, target_object_id)
     return job
 
 
-def gerar_artigo(topic) -> GenerationJob:
-    return iniciar_geracao(kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(topic.pk))
+def gerar_artigo(topic, *, fluxo: str = "") -> GenerationJob:
+    """`fluxo`: "" (A, fontes curadas) ou "pesquisa" (B). Vai no trabalho."""
+    return iniciar_geracao(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(topic.pk),
+        payload={"fluxo": fluxo},
+    )
 
 
 def responder_pergunta(question) -> GenerationJob:
@@ -63,3 +71,28 @@ def answer_pending_questions(limite: int = 20) -> int:
     if total:
         logger.info("%s pergunta(s) enfileirada(s) para resposta.", total)
     return total
+
+
+@shared_task(bind=True, max_retries=20)
+def gerar_b_quando_pronta(self, topic_id: str) -> bool:
+    """Fluxo B pedido antes da pesquisa terminar: gera quando ela fica pronta
+    (os resumos vetorizados). Despachada de dentro do tenant."""
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.knowledge.pesquisa import pronta_para_gerar
+    from apps.knowledge.referencias import registrar
+
+    pauta = Topic.objects.filter(pk=topic_id).first()
+    if pauta is None or fluxos.B not in fluxos.ligados():
+        return False
+    if fluxos.artigo_do_fluxo(pauta, fluxos.B) or fluxos.em_andamento(pauta, fluxos.B):
+        return False
+    motivo = pronta_para_gerar(pauta)
+    if motivo:
+        if "vetoriz" in motivo:
+            raise self.retry(countdown=120)
+        registrar(pauta, "pesquisa", gerar_depois=False, erro_ao_gerar=motivo)
+        return False
+    gerar_artigo(pauta, fluxo=fluxos.B)
+    registrar(pauta, "pesquisa", gerar_depois=False)
+    return True

@@ -29,7 +29,7 @@ from apps.content.services import (
     aprovar_e_agendar,
     aprovar_resposta_e_agendar,
 )
-from apps.content.tasks import gerar_artigo, responder_pergunta
+from apps.content.tasks import responder_pergunta
 from apps.knowledge.referencias import painel as painel_de_referencias
 from apps.ops.models import GenerationJob
 from apps.radar.links_quebrados import cobertura_do_artigo
@@ -68,8 +68,10 @@ def _proximo_horario():
 @login_required
 def pautas(request: HttpRequest) -> HttpResponse:
     situacao = request.GET.get("situacao", "")
+    from apps.content.fluxos import para_a_tela
     from apps.radar.models import ConfiguracaoDoRadar
 
+    config = ConfiguracaoDoRadar.carregar()
     consulta = Topic.objects.annotate(artigos=Count("articles")).order_by("-created_at")
     if situacao:
         consulta = consulta.filter(status=situacao)
@@ -93,6 +95,8 @@ def pautas(request: HttpRequest) -> HttpResponse:
         pauta.grupo_avaliado = next(
             (g for g in pauta.grupos_de_demanda.all() if g.avaliacao_ia), None
         )
+        pauta.fluxos = para_a_tela(pauta, config)
+        pauta.faltam_os_dois = len(pauta.fluxos) == 2 and all(f["falta"] for f in pauta.fluxos)
         # As referencias: so onde ja houve busca ou a pauta espera fontes.
         if pauta.busca_de_fontes or pauta.status == Topic.Status.WAITING_SOURCES:
             pauta.referencias = painel_de_referencias(pauta)
@@ -102,7 +106,7 @@ def pautas(request: HttpRequest) -> HttpResponse:
         {
             "aba": "pautas",
             "pautas": lista,
-            "config": ConfiguracaoDoRadar.carregar(),
+            "config": config,
             "situacao": situacao,
             "ia": ia,
             "form": PautaForm(),
@@ -139,13 +143,18 @@ def intencao_da_pauta(request: HttpRequest, pk) -> HttpResponse:
 def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
     """O artigo escrito por um modelo grande de fora: prepara, copia, cola."""
     from apps.content import outra_ia
+    from apps.content.fluxos import artigo_do_fluxo
     from apps.content.rendering import LinkAlucinado
     from apps.content.services import SemFontesSuficientes
 
     pauta = get_object_or_404(Topic, pk=pk)
-    artigo = outra_ia.artigo_em_espera(pauta)
-    if artigo is None and pauta.articles.exists():
-        return redirect("content:revisar", pauta.articles.first().pk)
+    fluxo = (
+        "pesquisa" if (request.POST.get("fluxo") or request.GET.get("fluxo")) == "pesquisa" else ""
+    )
+    artigo = outra_ia.artigo_em_espera(pauta, fluxo)
+    pronto = artigo_do_fluxo(pauta, fluxo)
+    if artigo is None and pronto is not None:
+        return redirect("content:revisar", pronto.pk)
 
     colado = ""
     if request.method == "POST":
@@ -154,7 +163,6 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
             if pauta.status == Topic.Status.REJECTED:
                 messages.error(request, _("Pauta rejeitada nao vira artigo."))
                 return redirect("content:pautas")
-            fluxo = Topic.Fluxo.PESQUISA if request.POST.get("fluxo") == "pesquisa" else ""
             if fluxo:
                 from apps.knowledge.pesquisa import pronta_para_gerar
 
@@ -162,15 +170,15 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
                 if motivo:
                     messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
                     return redirect("content:pautas")
-            if pauta.fluxo != fluxo:
-                pauta.fluxo = fluxo
-                pauta.save(update_fields=["fluxo"])
             try:
-                outra_ia.preparar(pauta)
+                outra_ia.preparar(pauta, fluxo)
             except SemFontesSuficientes as exc:
                 messages.error(request, str(exc))
                 return redirect("content:pautas")
-            return redirect("content:artigo_por_outra_ia", pauta.pk)
+            return redirect(
+                reverse("content:artigo_por_outra_ia", args=[pauta.pk])
+                + ("?fluxo=pesquisa" if fluxo else "")
+            )
         if acao == "desistir" and artigo is not None:
             outra_ia.desistir(artigo)
             messages.success(request, _("Pronto: a pauta voltou para a lista, sem artigo."))
@@ -195,6 +203,7 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
             "pedido": outra_ia.pedido(artigo) if artigo else "",
             "motivos": outra_ia.motivos_de_peso(pauta),
             "colado": colado,
+            "fluxo": fluxo,
         },
         status=400 if colado else 200,
     )
@@ -252,74 +261,19 @@ def nova_pauta(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_POST
 def gerar(request: HttpRequest, pk) -> HttpResponse:
-    """Dispara a geracao do artigo para uma pauta."""
+    """Dispara a geracao. `fluxo`: "" (A), "pesquisa" (B) ou "ligados" (os dois,
+    se a configuracao estiver com os dois). Uma pauta tem um artigo por fluxo."""
+    from apps.content import fluxos
+
     pauta = get_object_or_404(Topic, pk=pk)
-
-    if pauta.articles.exists():
-        messages.error(request, _("Esta pauta ja tem artigo. Gerar de novo criaria concorrencia."))
-        return redirect("content:pautas")
-
-    # O artigo so passa a existir quando a geracao termina, entao a guarda
-    # acima nao cobre o segundo clique: ate la, `articles` esta vazio. Dois
-    # cliques criavam dois trabalhos para a mesma pauta — que disputam a mesma
-    # placa e, se ambos chegassem ao fim, produziriam dois artigos.
-    em_andamento = GenerationJob.objects.filter(
-        kind=GenerationJob.Kind.PILLAR_ARTICLE,
-        target_object_id=str(pauta.pk),
-        status__in=[
-            GenerationJob.Status.PENDING,
-            GenerationJob.Status.RUNNING,
-            GenerationJob.Status.WAITING_CAPACITY,
-        ],
-    ).first()
-
-    if em_andamento is not None:
-        messages.info(
-            request,
-            _("Esta pauta ja esta sendo gerada (trabalho %(id)s). Acompanhe em Operacao.")
-            % {"id": str(em_andamento.pk)[:8]},
-        )
-        return redirect("content:pautas")
-
-    # O fluxo escolhido no botao: pelo acervo (o de sempre) ou pela pesquisa.
-    fluxo = Topic.Fluxo.PESQUISA if request.POST.get("fluxo") == "pesquisa" else ""
-    if fluxo:
-        from apps.knowledge.pesquisa import pronta_para_gerar
-
-        motivo = pronta_para_gerar(pauta)
-        if motivo:
-            messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
-            return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
-    if pauta.fluxo != fluxo:
-        pauta.fluxo = fluxo
-        pauta.save(update_fields=["fluxo"])
-
-    # Antes de ir para a fila: poucos videos no acervo, a primeira tentativa
-    # busca no YouTube e para, para a pessoa olhar. Gerar de novo segue.
-    from apps.knowledge.referencias import videos_antes_de_gerar
-
-    achados = 0 if fluxo else videos_antes_de_gerar(pauta)
-    if achados:
-        messages.warning(
-            request,
-            _(
-                "Achei %(n)s video(s) para esta pauta: estao em Fontes sugeridas para voce "
-                "conferir. Gere de novo para seguir sem eles (ou depois de aprova-los)."
-            )
-            % {"n": achados},
-        )
-        return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
-
-    job = gerar_artigo(pauta)
-    messages.success(
-        request,
-        _(
-            "Geracao iniciada. Ela busca fontes no acervo, consolida a tese e "
-            "escreve — acompanhe em Operacao (trabalho %(id)s)."
-        )
-        % {"id": str(job.pk)[:8]},
+    pedido = request.POST.get("fluxo", "")
+    escolhidos = (
+        fluxos.ligados() if pedido == "ligados" else [pedido if pedido == "pesquisa" else ""]
     )
-    return redirect("content:pautas")
+    for fluxo in escolhidos:
+        nivel, mensagem = fluxos.disparar(pauta, fluxo)
+        getattr(messages, nivel)(request, mensagem)
+    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
 
 
 @login_required
@@ -343,13 +297,11 @@ def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
 @login_required
 @require_POST
 def pesquisar_artigos(request: HttpRequest, pk) -> HttpResponse:
-    """A pesquisa de artigos cientificos da pauta, na fila."""
-    from apps.knowledge.referencias import registrar
-    from apps.knowledge.tasks import pesquisar_pauta
+    """A pesquisa de artigos cientificos da pauta (fluxo B), na fila."""
+    from apps.content.fluxos import iniciar_pesquisa
 
     pauta = get_object_or_404(Topic, pk=pk)
-    registrar(pauta, "pesquisa", situacao="na_fila", em=timezone.now().isoformat(), erro="")
-    transaction.on_commit(lambda: pesquisar_pauta.delay(str(pauta.pk)))
+    iniciar_pesquisa(pauta)
     messages.success(
         request,
         _(
@@ -519,6 +471,8 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "faq": artigo.faq.all(),
         "conferencia": _conferencia_editorial(artigo),
         "links_quebrados": cobertura_do_artigo(artigo),
+        "nome_do_fluxo": _nome_do_fluxo(artigo.fluxo),
+        "irmaos": _irmaos(artigo),
         # O que a outra IA pediu do texto completo (fluxo da pesquisa).
         "pedidos_da_outra_ia": (artigo.thesis_json or {}).get("pedidos") or [],
         # O FAQ vai num campo proprio, e o site so o exibe se implementou.
@@ -530,6 +484,21 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": _proximo_horario(),
     }
+
+
+def _nome_do_fluxo(fluxo: str) -> str:
+    from apps.content.fluxos import NOMES
+
+    return NOMES.get(fluxo, "")
+
+
+def _irmaos(artigo) -> list:
+    from apps.content.fluxos import NOMES, irmaos
+
+    saida = irmaos(artigo)
+    for outro in saida:
+        outro.nome_do_fluxo = NOMES.get(outro.fluxo, "")
+    return saida
 
 
 def _lotes_de_capa(artigo) -> list[dict]:
@@ -581,7 +550,6 @@ def _motivo_sem_capa(artigo) -> str:
     Olha so o trabalho MAIS RECENTE: um lote que saiu depois de uma falha
     responde por ela.
     """
-    from apps.ops.models import GenerationJob
 
     # Os dois caminhos que geram capa: o passo do fluxo do artigo (que aponta
     # para a PAUTA) e o botao da tela (que aponta para o ARTIGO).
@@ -616,7 +584,6 @@ def _capas_em_curso(artigo):
     entao quem revisa pode continuar trabalhando enquanto o lote sai. Juntar os
     dois faria o botao "refazer" sumir porque uma imagem esta sendo desenhada.
     """
-    from apps.ops.models import GenerationJob
 
     return (
         GenerationJob.objects.filter(
@@ -640,7 +607,6 @@ def _trabalho_em_curso(artigo):
     oferecer "refazer" de novo criaria dois trabalhos escrevendo as mesmas
     secoes.
     """
-    from apps.ops.models import GenerationJob
 
     return (
         GenerationJob.objects.filter(
@@ -853,7 +819,6 @@ def salvar_faq(request: HttpRequest, pk) -> HttpResponse:
 def refazer_secoes(request: HttpRequest, pk) -> HttpResponse:
     """Reescreve APENAS as secoes marcadas. Uma chamada por secao."""
     from apps.content.services import marcar_secoes_para_refazer
-    from apps.ops.models import GenerationJob
     from apps.ops.orchestrator import criar_job
     from apps.ops.tasks import advance_generation_job
 
@@ -896,7 +861,6 @@ def replanejar(request: HttpRequest, pk) -> HttpResponse:
     queria consertar uma secao pode perder cinco boas.
     """
     from apps.content.services import limpar_plano
-    from apps.ops.models import GenerationJob
     from apps.ops.orchestrator import criar_job
     from apps.ops.tasks import advance_generation_job
 
@@ -981,7 +945,6 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
     artigo (`passo_gerar_capas`), entao as duas portas nao podem divergir.
     """
     from apps.content.capas import MAXIMO_DE_LOTES, ha_conexao_de_imagem
-    from apps.ops.models import GenerationJob
     from apps.ops.orchestrator import criar_job
     from apps.ops.tasks import advance_generation_job
 

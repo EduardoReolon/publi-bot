@@ -13,6 +13,7 @@ antes da consulta aberta.
 from __future__ import annotations
 
 import logging
+import time
 from urllib.parse import urlparse
 
 from django.utils import timezone
@@ -225,9 +226,11 @@ def _buscar_artigos(pauta, acervo: dict, consultas: list[str]) -> list:
     novos: list = []
     if falta > 0 and consultas:
         try:
-            for consulta in consultas:
+            for n, consulta in enumerate(consultas):
                 if len(novos) >= falta:
                     break
+                if n:
+                    time.sleep(1.1)  # busca semantica: 1 por segundo no OpenAlex
                 novos += buscar_para_pauta(pauta, limite=falta - len(novos), consulta=consulta)
             registro["consultas"] = referencias.acumular_consultas(pauta, "artigos", consultas)
         except BaseIndisponivel as exc:

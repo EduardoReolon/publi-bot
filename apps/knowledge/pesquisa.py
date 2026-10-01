@@ -333,7 +333,8 @@ def registrar_fontes(pauta, escolhidos: list[dict]) -> list[str]:
             blocos = {b.ordem for b in preparar_blocos(documento) if b.paragrafos}
             if blocos:
                 # Resumo do registro: curado automaticamente ao ser indexado.
-                pedir_indexacao(documento, blocos=blocos, concluir=True, por=None)
+                # Curto: com o worker fora (ou sem a rota), vai no servidor.
+                pedir_indexacao(documento, blocos=blocos, concluir=True, por=None, local=True)
         ids.append(str(candidato.pk))
     return ids
 
@@ -420,15 +421,19 @@ def _orientacao_sem_pesquisa(texto: str) -> str:
     return texto.split(MARCA_NA_ORIENTACAO)[0].rstrip()
 
 
-def _orientacao_com_pesquisa(pauta, angulos_: list[dict]) -> str:
-    """A orientacao da pauta leva os angulos e as sinteses: e dela que o
-    planejamento do artigo parte. Refeita a cada pesquisa."""
-    linhas = [MARCA_NA_ORIENTACAO]
-    for angulo in angulos_:
-        linhas.append(f"Angulo: {angulo['nome']}")
+def orientacao_dos_angulos(pauta) -> str:
+    """Os angulos e as sinteses da pesquisa, para o fluxo B planejar o texto (no
+    modelo local, junto da tese; na outra IA, na orientacao). O fluxo A nao ve."""
+    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    linhas = []
+    for angulo in pesquisa.get("angulos", []):
+        rotulo = "Contraponto" if angulo.get("contraponto") else "Angulo"
+        linhas.append(f"{rotulo}: {angulo.get('nome', '')}")
         if angulo.get("sintese"):
             linhas.append(angulo["sintese"])
-    return f"{_orientacao_sem_pesquisa(pauta.briefing or '')}\n\n" + "\n".join(linhas)
+    if not linhas:
+        return ""
+    return "Pesquisa de artigos (angulos achados):\n" + "\n".join(linhas)
 
 
 # -- A pesquisa inteira --------------------------------------------------------
@@ -480,9 +485,6 @@ def pesquisar(pauta) -> dict:
                 pdfs[indice] = _pdf_aberto(escolhidos[indice])
             pedido["pdf_aberto"] = pdfs[indice]
 
-    pauta.briefing = _orientacao_com_pesquisa(pauta, grupos)
-    pauta.save(update_fields=["briefing"])
-
     artigos = [
         {
             "numero": i + 1,
@@ -528,3 +530,141 @@ def pronta_para_gerar(pauta) -> str:
     if sem_indice == len(documentos):
         return "os resumos ainda estao sendo vetorizados; tente em instantes."
     return ""
+
+
+# -- PDF: so os trechos pedidos --------------------------------------------------
+TRECHOS_POR_PEDIDO = 3
+# Sem pedido da sintese (a pessoa enviou o PDF por conta propria): o que um
+# artigo de blog costuma precisar de um estudo.
+PEDIDO_PADRAO = "metodo, amostra (quem, quantos, onde) e os principais resultados com numeros"
+MARCA_DO_COMPLETO = "## Do texto completo"
+
+
+def pautas_do_candidato(candidato) -> list:
+    from apps.content.models import Topic
+
+    return list(
+        Topic.objects.filter(busca_de_fontes__pesquisa__candidatos__contains=[str(candidato.pk)])
+    )
+
+
+def em_pesquisa(candidato) -> bool:
+    """O artigo e fonte de alguma pesquisa (fluxo B), pelo resumo."""
+    from apps.knowledge.models import Document
+
+    documento = candidato.documento
+    return (
+        documento is not None
+        and documento.extraction_method == Document.ExtractionMethod.RESUMO
+        and bool(pautas_do_candidato(candidato))
+    )
+
+
+def _pedidos_do_candidato(candidato) -> list[tuple]:
+    """[(pauta, angulo, pedido)] que a sintese fez sobre este artigo."""
+    saida = []
+    for pauta in pautas_do_candidato(candidato):
+        pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+        numeros = {
+            a["numero"]
+            for a in pesquisa.get("artigos", [])
+            if a.get("candidato") == str(candidato.pk)
+        }
+        for angulo in pesquisa.get("angulos", []):
+            for pedido in angulo.get("pedidos", []):
+                if pedido.get("artigo") in numeros:
+                    saida.append((pauta, angulo, pedido))
+    return saida
+
+
+def _paragrafos_do_pdf(documento) -> list[str]:
+    from apps.knowledge.blocos import preparar_blocos
+    from apps.knowledge.provisorias import BLOCOS_DE_FORA
+
+    return [
+        p.texto
+        for bloco in preparar_blocos(documento)
+        if bloco.paragrafos and not BLOCOS_DE_FORA.search(bloco.titulo or "")
+        for p in bloco.paragrafos
+        if len(p.texto.split()) >= 12
+    ]
+
+
+def trechos_pedidos(documento_pdf, pedidos: list[str], *, titulo: str = "") -> dict:
+    """{pedido: [paragrafos]} — os paragrafos do PDF mais perto de cada pedido.
+
+    Por vetor: cada paragrafo do texto completo contra o pedido ("a amostra do
+    estudo"), com o titulo do artigo junto para dar contexto. O modelo e
+    multilingue: pedido em portugues acha paragrafo em ingles.
+    """
+    from apps.knowledge.embeddings import get_embedding_client, vetorizar_passagens
+
+    paragrafos = _paragrafos_do_pdf(documento_pdf)
+    if not paragrafos:
+        return {}
+    vetores = np.asarray(
+        vetorizar_passagens(paragrafos, dono=f"pdf-pedido:{documento_pdf.pk}"), dtype=np.float32
+    )
+    cliente = get_embedding_client()
+    saida = {}
+    for pedido in pedidos:
+        alvo = np.asarray(cliente.embed_query(f"{pedido}. {titulo}"[:1500]), dtype=np.float32)
+        ordem = np.argsort(-(vetores @ alvo))[:TRECHOS_POR_PEDIDO]
+        # Na ordem do texto, que e como se le.
+        saida[pedido] = [paragrafos[i] for i in sorted(ordem)]
+    return saida
+
+
+def extrair_do_pdf(documento_pdf) -> int:
+    """O PDF de um artigo da pesquisa chegou: os trechos pedidos entram no
+    documento do resumo (que continua sendo a fonte) e ele e reindexado. O
+    PDF fica no acervo, aguardando curadoria, se a pessoa quiser usa-lo inteiro.
+
+    Devolve quantos pedidos foram atendidos.
+    """
+    from apps.knowledge.referencias import registrar
+    from apps.knowledge.tasks import pedir_indexacao
+
+    atendidos = 0
+    for candidato in documento_pdf.candidatos_pelo_completo.select_related("documento"):
+        resumo = candidato.documento
+        if resumo is None:
+            continue
+        ligados = _pedidos_do_candidato(candidato)
+        pedidos = list(dict.fromkeys(p["o_que"] for _, _, p in ligados)) or [PEDIDO_PADRAO]
+        achados = trechos_pedidos(documento_pdf, pedidos, titulo=candidato.titulo)
+        if not achados:
+            continue
+        base = resumo.markdown_full.split(MARCA_DO_COMPLETO)[0].rstrip()
+        partes = [base]
+        for pedido, paragrafos in achados.items():
+            partes.append(
+                f"{MARCA_DO_COMPLETO} (extraido automaticamente): {pedido}\n\n"
+                + "\n\n".join(paragrafos)
+            )
+        resumo.markdown_full = "\n\n".join(partes) + "\n"
+        resumo.save(update_fields=["markdown_full"])
+        from apps.knowledge.blocos import preparar_blocos
+
+        blocos = {b.ordem for b in preparar_blocos(resumo) if b.paragrafos}
+        pedir_indexacao(resumo, blocos=blocos, concluir=True, por=None, local=True)
+        for pauta, _angulo, pedido in ligados:
+            pedido["atendido"] = "pdf"
+            pedido["trechos"] = len(achados.get(pedido["o_que"], []))
+            registrar(pauta, "pesquisa", angulos=(pauta.busca_de_fontes["pesquisa"]["angulos"]))
+        atendidos += len(achados)
+    return atendidos
+
+
+def seguir_com_o_resumo(candidato) -> None:
+    """Sem PDF: o artigo segue com o resumo, e os pedidos sobre ele saem da lista."""
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.referencias import registrar
+
+    candidato.situacao = CandidatoDeFonte.Situacao.APROVADO
+    candidato.motivo = "Sem PDF: segue com o resumo."
+    candidato.decidido_em = timezone.now()
+    candidato.save(update_fields=["situacao", "motivo", "decidido_em"])
+    for pauta, _angulo, pedido in _pedidos_do_candidato(candidato):
+        pedido["atendido"] = "sem_pdf"
+        registrar(pauta, "pesquisa", angulos=pauta.busca_de_fontes["pesquisa"]["angulos"])

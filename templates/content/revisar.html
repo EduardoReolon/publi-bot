@@ -18,6 +18,16 @@
     {% endif %}
     {% if artigo.version_number > 1 %}<span class="selo espera">{% translate "versao" %} {{ artigo.version_number }}</span>{% endif %}
   </p>
+  {% if nome_do_fluxo %}
+    <div class="aviso">
+      <strong>{{ nome_do_fluxo }}</strong>
+      {% if irmaos %}
+        — {% translate "esta pauta tem outra versao, para comparar" %}:
+        {% for outro in irmaos %}<a href="{% url 'content:revisar' outro.pk %}">{{ outro.nome_do_fluxo }}</a> ({{ outro.get_status_display }}){% if not forloop.last %}, {% endif %}{% endfor %}.
+        <span class="ajuda">{% translate "So uma vai ao ar: aprovar esta arquiva a outra (ela fica como rejeitada, com o motivo)." %}</span>
+      {% endif %}
+    </div>
+  {% endif %}
   {% if pedidos_da_outra_ia %}
     <div class="aviso espera">
       <strong>{% translate "A outra IA pediu o texto completo de" %}:</strong>
