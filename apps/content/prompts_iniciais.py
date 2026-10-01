@@ -552,4 +552,58 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Buscas ja usadas:\n{ja_usadas}"
         ),
     },
+    "research_hypotheses": {
+        "descricao": "Pesquisa da pauta: paragrafos hipoteticos que viram busca semantica.",
+        "variaveis": ["pauta", "palavra_chave", "orientacao"],
+        "temperatura": 0.7,
+        "sistema": (
+            "Voce prepara a pesquisa de um artigo. A busca de artigos cientificos e "
+            "semantica: acha melhor a partir de um texto parecido com o resumo de um "
+            "artigo do que a partir de uma pergunta. Escreva, EM INGLES, paragrafos "
+            "como se fossem resumos de estudos que responderiam a pauta.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "angulos": exatamente 3 itens {"angulo": nome curto em portugues, '
+            '"paragrafo": 4 a 6 frases em ingles}. Os tres o MAIS DIFERENTES possivel '
+            "entre si: o mecanismo do problema, a solucao e seus resultados, um terceiro "
+            "angulo menos obvio (outra area, outro publico, um efeito colateral);\n"
+            '  "refutavel": true se a ideia central da pauta e uma crenca popular, uma '
+            "regra pratica ou uma afirmacao que algum estudo poderia contradizer;\n"
+            '  "contrarias": se refutavel, 2 itens {"angulo", "paragrafo"} escritos '
+            "como resumos de estudos que encontraram o CONTRARIO ou um limite da "
+            "ideia; senao, lista vazia.\n\n"
+            "Regras:\n"
+            "- Nao invente nomes de autores, revistas ou numeros.\n"
+            "- Vocabulario de artigo cientifico (o termo tecnico, nao a frase do "
+            "cliente)."
+        ),
+        "usuario": (
+            "Pauta: {pauta}\nPalavra-chave: {palavra_chave}\n"
+            "Orientacao:\n<fonte>\n{orientacao}\n</fonte>"
+        ),
+    },
+    "research_synthesis": {
+        "descricao": "Pesquisa da pauta: o que os resumos de um angulo dizem, e o que falta.",
+        "variaveis": ["pauta", "angulo", "resumos", "idioma"],
+        "temperatura": 0.2,
+        "sistema": (
+            "Voce le resumos de artigos cientificos para um artigo de blog. Diga o que "
+            "eles sustentam juntos e o que falta para escrever com seguranca.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "sintese": 3 a 6 frases no idioma pedido, so com o que esta ESCRITO nos '
+            "resumos, citando o numero do artigo entre colchetes, ex.: [3]. Diga o "
+            "contexto (setor, pais, amostra) quando o resumo disser;\n"
+            '  "pedidos": ate 3 itens {"artigo": numero, "o_que": o que seria preciso '
+            "ler no texto completo (amostra, metodo, como mediram, os numeros, as "
+            "estrategias comparadas...)}. So peca o que muda o artigo; lista vazia se "
+            "os resumos bastam.\n\n"
+            "Regras:\n"
+            "- Nada que nao esteja nos resumos. Nenhum numero inventado.\n"
+            "- Resumo que nao trata do angulo: ignore."
+        ),
+        "usuario": (
+            "Pauta: {pauta}\nAngulo: {angulo}\nIdioma da resposta: {idioma}\n\nResumos:\n{resumos}"
+        ),
+    },
 }

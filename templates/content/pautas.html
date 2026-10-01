@@ -62,7 +62,8 @@
                 {% elif pauta.briefing %}
                   <div class="pre-visualizacao">{{ pauta.briefing|truncatechars:140 }}</div>
                 {% endif %}
-                {% if pauta.referencias %}{% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}{% endif %}
+                {% if pauta.referencias and config.fluxo_do_acervo %}{% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}{% endif %}
+                {% if pauta.busca_de_fontes.pesquisa and config.fluxo_da_pesquisa %}{% include "content/_pesquisa_da_pauta.html" with p=pauta.busca_de_fontes.pesquisa %}{% endif %}
               </td>
               <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}
                 {% with d=pauta.evidence.dificuldade %}{% if d %}<div><span class="selo {% if d.rotulo == 'brecha' %}ok{% elif d.rotulo == 'dificil' %}ruim{% else %}alerta{% endif %}" title="{% translate 'Links para a 1a pagina' %}: {{ d.links }}">{% if d.rotulo == 'brecha' %}{% translate "brecha" %}{% elif d.rotulo == 'dificil' %}{% translate "dificil" %}{% else %}{% translate "media" %}{% endif %} · {{ d.nota }}</span></div>{% endif %}{% endwith %}
@@ -82,16 +83,39 @@
                     {% endif %}
                   {% endfor %}
                 {% elif pauta.status != 'rejected' %}
-                  <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
-                    {% csrf_token %}
-                    <button type="submit" class="botao secundario">{% translate "Gerar artigo" %}</button>
-                  </form>
-                  <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">
-                    {% csrf_token %}
-                    <button type="submit" class="botao secundario">{% translate "Buscar fontes na web" %}</button>
-                  </form>
+                  {% if config.fluxo_do_acervo %}
+                    <div class="fluxo">
+                      <strong>{% translate "Pelo acervo" %}</strong>
+                      <span class="ajuda">{% translate "o artigo usa o que voce ja curou; falta fonte, a busca sugere e voce cura antes." %}</span><br>
+                      <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="botao secundario">{% translate "Gerar artigo" %}</button>
+                      </form>
+                      <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="botao secundario">{% translate "Buscar fontes na web" %}</button>
+                      </form>
+                      <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA" %}</a>
+                    </div>
+                  {% endif %}
+                  {% if config.fluxo_da_pesquisa %}
+                    <div class="fluxo">
+                      <strong>{% translate "Pela pesquisa de artigos" %}</strong>
+                      <span class="ajuda">{% translate "o sistema pesquisa artigos cientificos por sentido, escreve pelos resumos e so pede o PDF do que o texto precisar." %}</span><br>
+                      <form method="post" action="{% url 'content:pesquisar_artigos' pauta.pk %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="botao secundario">{% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}{% translate "Pesquisar de novo" %}{% else %}{% translate "Pesquisar artigos" %}{% endif %}</button>
+                      </form>
+                      {% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}
+                        <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">
+                          {% csrf_token %}<input type="hidden" name="fluxo" value="pesquisa">
+                          <button type="submit" class="botao secundario">{% translate "Gerar com a pesquisa" %}</button>
+                        </form>
+                        <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}?fluxo=pesquisa">{% translate "Com a pesquisa, em outra IA" %}</a>
+                      {% endif %}
+                    </div>
+                  {% endif %}
                   <a class="botao secundario" href="{% url 'content:intencao_da_pauta' pauta.pk %}">{% translate "Intencao (outra IA)" %}</a>
-                  <a class="botao secundario" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA" %}</a>
                   <a class="botao {% if pauta.imprensa.tem_angulo %}{% else %}discreto{% endif %}" href="{% url 'content:imprensa_da_pauta' pauta.pk %}" title="{% translate 'Outra IA julga se a pauta vira materia de jornal, e escreve' %}">{% translate "Imprensa (outra IA)" %}</a>
                   {% if pauta.imprensa.tem_angulo %}<div class="ajuda"><span class="selo ok">{% translate "angulo de imprensa" %}</span>
                     {% if pauta.imprensa.na_busca %}{% blocktranslate trimmed count n=pauta.imprensa.na_busca|length %}{{ n }} veiculo nesta busca{% plural %}{{ n }} veiculos nesta busca{% endblocktranslate %}{% endif %}

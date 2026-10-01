@@ -14,6 +14,12 @@ urlpatterns = [
     path("pautas/<uuid:pk>/gerar/", views.gerar, name="gerar"),
     path("pautas/<uuid:pk>/rejeitar/", views.rejeitar_pauta, name="rejeitar_pauta"),
     path("pautas/<uuid:pk>/fontes/", views.buscar_fontes, name="buscar_fontes"),
+    path("pautas/<uuid:pk>/pesquisar/", views.pesquisar_artigos, name="pesquisar_artigos"),
+    path(
+        "pautas/<uuid:pk>/pesquisa/<uuid:candidato>/pdf/",
+        views.pdf_da_pesquisa,
+        name="pdf_da_pesquisa",
+    ),
     path(
         "pautas/<uuid:pk>/referencias/",
         views.conferir_referencias,

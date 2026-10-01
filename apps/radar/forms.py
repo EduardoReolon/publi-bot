@@ -25,6 +25,8 @@ class ConfiguracaoForm(forms.ModelForm):
             "buscar_fontes",
             "fontes_por_pauta",
             "artigos_cientificos",
+            "fluxo_do_acervo",
+            "fluxo_da_pesquisa",
             "sementes_cientificas",
             "artigos_por_rodada",
             "procurar_links_quebrados",
@@ -72,6 +74,8 @@ class ConfiguracaoForm(forms.ModelForm):
         (
             _("Fontes para os artigos"),
             [
+                "fluxo_do_acervo",
+                "fluxo_da_pesquisa",
                 "fontes_pelo_radar",
                 "buscar_fontes",
                 "fontes_por_pauta",

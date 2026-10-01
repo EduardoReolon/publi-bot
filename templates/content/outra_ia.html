@@ -22,6 +22,8 @@
     <p class="pre-visualizacao">{% translate "Busca no acervo o que sustenta a pauta e cria o artigo em espera. A pauta sai da lista de sugeridas (volta se voce desistir)." %}</p>
     <form method="post" class="acoes">
       {% csrf_token %}<input type="hidden" name="acao" value="preparar">
+      <input type="hidden" name="fluxo" value="{{ request.GET.fluxo }}">
+      {% if request.GET.fluxo == 'pesquisa' %}<p class="ajuda">{% translate "Pela pesquisa de artigos: as fontes sao os resumos achados para a pauta, e a resposta pode pedir o texto completo de algum (PEDIDOS)." %}</p>{% endif %}
       <button type="submit">{% translate "Separar as fontes e montar o pedido" %}</button>
       <a class="botao discreto" href="{% url 'content:pautas' %}">{% translate "Voltar" %}</a>
     </form>

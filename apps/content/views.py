@@ -68,6 +68,8 @@ def _proximo_horario():
 @login_required
 def pautas(request: HttpRequest) -> HttpResponse:
     situacao = request.GET.get("situacao", "")
+    from apps.radar.models import ConfiguracaoDoRadar
+
     consulta = Topic.objects.annotate(artigos=Count("articles")).order_by("-created_at")
     if situacao:
         consulta = consulta.filter(status=situacao)
@@ -100,6 +102,7 @@ def pautas(request: HttpRequest) -> HttpResponse:
         {
             "aba": "pautas",
             "pautas": lista,
+            "config": ConfiguracaoDoRadar.carregar(),
             "situacao": situacao,
             "ia": ia,
             "form": PautaForm(),
@@ -151,6 +154,17 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
             if pauta.status == Topic.Status.REJECTED:
                 messages.error(request, _("Pauta rejeitada nao vira artigo."))
                 return redirect("content:pautas")
+            fluxo = Topic.Fluxo.PESQUISA if request.POST.get("fluxo") == "pesquisa" else ""
+            if fluxo:
+                from apps.knowledge.pesquisa import pronta_para_gerar
+
+                motivo = pronta_para_gerar(pauta)
+                if motivo:
+                    messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
+                    return redirect("content:pautas")
+            if pauta.fluxo != fluxo:
+                pauta.fluxo = fluxo
+                pauta.save(update_fields=["fluxo"])
             try:
                 outra_ia.preparar(pauta)
             except SemFontesSuficientes as exc:
@@ -267,11 +281,24 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
         )
         return redirect("content:pautas")
 
+    # O fluxo escolhido no botao: pelo acervo (o de sempre) ou pela pesquisa.
+    fluxo = Topic.Fluxo.PESQUISA if request.POST.get("fluxo") == "pesquisa" else ""
+    if fluxo:
+        from apps.knowledge.pesquisa import pronta_para_gerar
+
+        motivo = pronta_para_gerar(pauta)
+        if motivo:
+            messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
+            return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+    if pauta.fluxo != fluxo:
+        pauta.fluxo = fluxo
+        pauta.save(update_fields=["fluxo"])
+
     # Antes de ir para a fila: poucos videos no acervo, a primeira tentativa
     # busca no YouTube e para, para a pessoa olhar. Gerar de novo segue.
     from apps.knowledge.referencias import videos_antes_de_gerar
 
-    achados = videos_antes_de_gerar(pauta)
+    achados = 0 if fluxo else videos_antes_de_gerar(pauta)
     if achados:
         messages.warning(
             request,
@@ -310,6 +337,51 @@ def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
         if variar
         else _("Buscando referencias. Recarregue em instantes para ver o resultado."),
     )
+    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+
+
+@login_required
+@require_POST
+def pesquisar_artigos(request: HttpRequest, pk) -> HttpResponse:
+    """A pesquisa de artigos cientificos da pauta, na fila."""
+    from apps.knowledge.referencias import registrar
+    from apps.knowledge.tasks import pesquisar_pauta
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    registrar(pauta, "pesquisa", situacao="na_fila", em=timezone.now().isoformat(), erro="")
+    transaction.on_commit(lambda: pesquisar_pauta.delay(str(pauta.pk)))
+    messages.success(
+        request,
+        _(
+            "Pesquisando artigos: hipoteses, busca por sentido, artigos relacionados e "
+            "angulos. Leva alguns minutos; recarregue a pagina."
+        ),
+    )
+    return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
+
+
+@login_required
+@require_POST
+def pdf_da_pesquisa(request: HttpRequest, pk, candidato) -> HttpResponse:
+    """O PDF que a sintese pediu: aberto, vai para o acervo (e a curadoria); sem
+    ele, o artigo espera o PDF em Fontes sugeridas."""
+    from apps.knowledge.academicos import aprovar_artigo
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.perfis import categoria_da_natureza
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    alvo = get_object_or_404(CandidatoDeFonte, pk=candidato, pauta=pauta)
+    alvo = aprovar_artigo(alvo, categoria=categoria_da_natureza("cientifico"), por=request.user)
+    if alvo.situacao == CandidatoDeFonte.Situacao.AGUARDANDO_PDF:
+        messages.warning(
+            request,
+            _("Sem PDF aberto: o artigo esta em Fontes sugeridas, esperando voce enviar o PDF."),
+        )
+    else:
+        messages.success(
+            request,
+            _("PDF enviado ao acervo. Depois da curadoria, ele substitui o resumo na pauta."),
+        )
     return redirect(reverse("content:pautas") + f"#pauta-{pauta.pk}")
 
 
@@ -447,6 +519,8 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "faq": artigo.faq.all(),
         "conferencia": _conferencia_editorial(artigo),
         "links_quebrados": cobertura_do_artigo(artigo),
+        # O que a outra IA pediu do texto completo (fluxo da pesquisa).
+        "pedidos_da_outra_ia": (artigo.thesis_json or {}).get("pedidos") or [],
         # O FAQ vai num campo proprio, e o site so o exibe se implementou.
         # Sem este aviso, a pessoa revisaria perguntas que ninguem vai ver.
         "site_sem_faq": site is not None and not site.suporta("faq"),

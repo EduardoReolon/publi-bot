@@ -47,6 +47,8 @@ class PromptTemplate(models.Model):
         SEED_SUGGESTION = "seed_suggestion", _("Sugestao de sementes e dores")
         IMAGE_PROMPT = "image_prompt", _("Prompt de imagem")
         SOURCE_QUERIES = "source_queries", _("Outras palavras para buscar fontes")
+        RESEARCH_HYPOTHESES = "research_hypotheses", _("Pesquisa: paragrafos hipoteticos")
+        RESEARCH_SYNTHESIS = "research_synthesis", _("Pesquisa: sintese de um angulo")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     key = models.CharField(_("chave"), max_length=32, choices=Key.choices, unique=True)
@@ -326,6 +328,17 @@ class Topic(models.Model):
     # feita (quando, com que palavras, quantas novas) e se a falta de artigos
     # foi ignorada. Ver apps/knowledge/referencias.py.
     busca_de_fontes = models.JSONField(_("busca de fontes"), default=dict, blank=True)
+
+    class Fluxo(models.TextChoices):
+        # A curadoria antes: o artigo usa o acervo curado (o caminho de sempre).
+        ACERVO = "", _("Pelo acervo")
+        # A pesquisa antes: artigos cientificos achados para a pauta, pelos
+        # resumos, e o PDF so do que o texto pedir (`knowledge.pesquisa`).
+        PESQUISA = "pesquisa", _("Pela pesquisa de artigos")
+
+    fluxo = models.CharField(
+        _("fluxo"), max_length=10, choices=Fluxo.choices, default=Fluxo.ACERVO, blank=True
+    )
     # Artigo publicado DEPOIS da pauta nascer e que ja cobre o mesmo assunto.
     # Aviso, nao descarte: a pessoa decide se muda o angulo ou desiste.
     artigo_parecido = models.ForeignKey(

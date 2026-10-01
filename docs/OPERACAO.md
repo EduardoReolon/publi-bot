@@ -663,6 +663,25 @@ python manage.py tenant_command vetorizar_fontes_provisorias --schema=<schema> -
 Rode de novo depois que as paginas terminarem de converter (o comando pula o
 que ja foi feito).
 
+### Dois jeitos de embasar o artigo
+
+Cada pauta mostra os dois; em Radar > Configuracao ("Fontes para os artigos")
+da para esconder um deles.
+
+- **Pelo acervo** (o de sempre): o artigo usa o que foi curado. Falta fonte, a
+  busca sugere paginas e artigos, e a pessoa cura antes.
+- **Pela pesquisa de artigos** (`apps/knowledge/pesquisa.py`): o modelo escreve
+  3 paragrafos hipoteticos em ingles (mais 2 contrarios quando a ideia da pauta
+  pode ser refutada), cada um vira busca semantica no OpenAlex; os melhores
+  puxam os relacionados; tudo e ordenado por sentido, citacoes e idade e
+  agrupado em angulos (k-means), com o contraponto a parte. Cada angulo tem uma
+  sintese e os PEDIDOS do que precisaria do texto completo. Os escolhidos viram
+  fonte pelo resumo, curados automaticamente (dado do registro). Gerar usa so
+  eles; "Com a pesquisa, em outra IA" leva os resumos e pede o bloco PEDIDOS.
+
+A busca semantica do OpenAlex custa US$ 1 por mil chamadas, com US$ 1 gratis
+por dia: uma pesquisa usa 5 ou 6.
+
 ### Em desenvolvimento, na mesma maquina
 
 `manage.py dev` sobe o worker junto quando o checkout esta aqui e a porta
