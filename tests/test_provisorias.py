@@ -138,7 +138,8 @@ def test_espaco_e_apagar_os_antigos(ambiente, com_worker):  # noqa: F811
 def test_comando_aplica_ao_que_ja_existe(ambiente, com_worker, capsys):  # noqa: F811
     aprovado_sem_pdf = _artigo(2, situacao=CandidatoDeFonte.Situacao.AGUARDANDO_PDF)
     call_command("vetorizar_fontes_provisorias", seco=True)
-    assert "Artigos sem PDF, com resumo: 1" in capsys.readouterr().out
+    saida = capsys.readouterr().out
+    assert "Artigos sem PDF, com resumo: 1" in saida and "ja na fila" in saida
     call_command("vetorizar_fontes_provisorias")
     aprovado_sem_pdf.refresh_from_db()
     assert aprovado_sem_pdf.documento.chunks.exists()

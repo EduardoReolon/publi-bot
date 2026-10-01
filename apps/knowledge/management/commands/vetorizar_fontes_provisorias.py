@@ -62,11 +62,25 @@ class Command(BaseCommand):
             status=Document.Status.PENDING_CURATION, chunks__isnull=True
         ).distinct()
 
+        na_fila = fora_do_indice.exclude(indexacao_pedida={})
         self.stdout.write(
             f"Paginas sugeridas sem decisao: {paginas.count()}\n"
             f"Artigos sem PDF, com resumo: {artigos.count()}\n"
             f"Documentos esperando curadoria fora do indice: {fora_do_indice.count()}"
+            f" (ja na fila de vetorizacao: {na_fila.count()})"
         )
+        # Por que os da fila ainda nao foram vetorizados (o worker diz).
+        motivos: dict[str, int] = {}
+        for pedido in na_fila.values_list("indexacao_pedida", flat=True):
+            motivo = pedido.get("aguardando_worker") or "na fila, ainda nao tentado"
+            motivos[motivo] = motivos.get(motivo, 0) + 1
+        for motivo, total in motivos.items():
+            self.stdout.write(f"  {total}: {motivo}")
+        falhas = Document.objects.exclude(indexacao_erro="").filter(
+            status=Document.Status.PENDING_CURATION
+        )
+        for documento in falhas[:10]:
+            self.stdout.write(f"  falhou: {documento.title[:60]} — {documento.indexacao_erro}")
         if seco:
             return
 
