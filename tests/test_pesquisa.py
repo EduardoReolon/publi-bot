@@ -165,7 +165,7 @@ def test_tela_mostra_os_dois_fluxos_e_a_config_esconde(ambiente, openalex, model
 
     pesquisa.pesquisar(pauta)
     html = client.get(url).content.decode()
-    assert "B em outra IA" in html and "Contraponto" in html and "a amostra" in html
+    assert "Artigo com outra IA (B)" in html and "Contraponto" in html and "a amostra" in html
 
     config = ConfiguracaoDoRadar.carregar()
     config.fluxo_do_acervo = False

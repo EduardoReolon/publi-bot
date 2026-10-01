@@ -101,7 +101,7 @@
                         <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline">{% csrf_token %}
                           <button type="submit" class="botao discreto pequeno">{% translate "Buscar fontes na web" %}</button>
                         </form>
-                        <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "A em outra IA" %}</a>
+                        <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Artigo com outra IA (A)" %}</a>
                       {% else %}
                         <form method="post" action="{% url 'content:pesquisar_artigos' pauta.pk %}" style="display:inline">{% csrf_token %}
                           <button type="submit" class="botao discreto pequeno">{% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}{% translate "Pesquisar de novo" %}{% else %}{% translate "Pesquisar artigos" %}{% endif %}</button>
@@ -111,7 +111,7 @@
                           <button type="submit" class="botao secundario pequeno" title="{% translate 'Sem pesquisa ainda, pesquisa primeiro e gera sozinho ao terminar' %}">{% translate "Gerar so B" %}</button>
                         </form>
                         {% if pauta.busca_de_fontes.pesquisa.situacao == 'pronta' %}
-                          <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}?fluxo=pesquisa">{% translate "B em outra IA" %}</a>
+                          <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}?fluxo=pesquisa">{% translate "Artigo com outra IA (B)" %}</a>
                         {% endif %}
                       {% endif %}
                     {% endif %}
