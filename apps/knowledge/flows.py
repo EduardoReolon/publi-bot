@@ -175,6 +175,15 @@ def passo_converter(job: GenerationJob) -> dict:
             curar_automaticamente(document)
         except Exception:
             logger.exception("Curadoria automatica do documento %s falhou.", document.pk)
+    elif document.candidatos_pelo_completo.exists():
+        # PDF de artigo da pesquisa (fluxo B): so os trechos pedidos vao para o
+        # documento do resumo. O PDF fica aguardando curadoria, fora do indice.
+        from apps.knowledge.pesquisa import extrair_do_pdf
+
+        try:
+            extrair_do_pdf(document)
+        except Exception:
+            logger.exception("Extracao do que foi pedido no PDF %s falhou.", document.pk)
     else:
         # Com worker que vetoriza, a fonte entra no indice ja, como provisoria;
         # a curadoria e pedida quando uma pauta for usa-la.

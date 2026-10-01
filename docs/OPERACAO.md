@@ -663,21 +663,27 @@ python manage.py tenant_command vetorizar_fontes_provisorias --schema=<schema> -
 Rode de novo depois que as paginas terminarem de converter (o comando pula o
 que ja foi feito).
 
-### Dois jeitos de embasar o artigo
+### Dois fluxos de artigo: A e B
 
-Cada pauta mostra os dois; em Radar > Configuracao ("Fontes para os artigos")
-da para esconder um deles.
+Uma pauta pode ter um artigo de cada fluxo, para comparar; so um vai ao ar
+(aprovar um arquiva o outro, como rejeitado e com o motivo). Em Radar >
+Configuracao ("Fontes para os artigos") da para desligar um deles. Com os dois
+ligados, "Gerar A e B" dispara os dois.
 
-- **Pelo acervo** (o de sempre): o artigo usa o que foi curado. Falta fonte, a
-  busca sugere paginas e artigos, e a pessoa cura antes.
-- **Pela pesquisa de artigos** (`apps/knowledge/pesquisa.py`): o modelo escreve
-  3 paragrafos hipoteticos em ingles (mais 2 contrarios quando a ideia da pauta
-  pode ser refutada), cada um vira busca semantica no OpenAlex; os melhores
-  puxam os relacionados; tudo e ordenado por sentido, citacoes e idade e
-  agrupado em angulos (k-means), com o contraponto a parte. Cada angulo tem uma
-  sintese e os PEDIDOS do que precisaria do texto completo. Os escolhidos viram
-  fonte pelo resumo, curados automaticamente (dado do registro). Gerar usa so
-  eles; "Com a pesquisa, em outra IA" leva os resumos e pede o bloco PEDIDOS.
+- **A · Fontes curadas**: o artigo usa o acervo (paginas, videos, artigos,
+  documentos). Com o worker vetorizando, o que a busca acha entra no indice sem
+  curadoria e a geracao para pedindo a curadoria do que vai usar. Artigos do
+  OpenAlex vem pela busca semantica (por palavras, se ela falhar).
+- **B · Pesquisa cientifica** (`apps/knowledge/pesquisa.py`): 3 paragrafos
+  hipoteticos em ingles (mais 2 contrarios quando a ideia pode ser refutada)
+  viram busca semantica no OpenAlex; os melhores puxam os relacionados; tudo e
+  ordenado por sentido, citacoes e idade e agrupado em angulos (k-means), com o
+  contraponto a parte; cada angulo tem uma sintese e os pedidos do texto
+  completo. As fontes sao os resumos, curados automaticamente. Sem pesquisa,
+  gerar o B pesquisa primeiro e gera sozinho ao terminar.
+  O PDF pedido nao substitui o resumo: dele saem so os paragrafos mais perto
+  de cada pedido (por vetor), acrescentados ao resumo como "Do texto completo
+  (extraido automaticamente)". "Nao achei o PDF" segue com o resumo.
 
 A busca semantica do OpenAlex custa US$ 1 por mil chamadas, com US$ 1 gratis
 por dia: uma pesquisa usa 5 ou 6.

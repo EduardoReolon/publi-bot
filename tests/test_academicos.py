@@ -92,7 +92,8 @@ def test_pauta_ganha_artigos_sem_repetir(radar, bases_academicas):  # noqa: F811
     assert rfm.url == "https://doi.org/10.1000/rfm.2020" and rfm.citacoes == 120
     assert rfm.pdf_url and rfm.trecho == "RFM segmenta clientes" and rfm.pauta == pauta
     assert chamadas[0][1]["mailto"] == "eu@exemplo.com"
-    assert "language:pt|en" in chamadas[0][1]["filter"]
+    # Por sentido: a busca semantica, com a pauta inteira.
+    assert "search.semantic" in chamadas[0][1] and "is_retracted:false" in chamadas[0][1]["filter"]
 
     assert academicos.buscar_para_pauta(pauta, limite=5) == []  # ja conhecidos
 

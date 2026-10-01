@@ -71,17 +71,17 @@ def motivos_de_peso(pauta) -> list[str]:
     return motivos
 
 
-def artigo_em_espera(pauta):
-    """O artigo desta pauta esperando a resposta de outra IA, se houver."""
+def artigo_em_espera(pauta, fluxo: str = ""):
+    """O artigo desta pauta (neste fluxo) esperando a resposta de outra IA."""
     from apps.content.models import Article
 
-    for artigo in pauta.articles.filter(status=Article.Status.DRAFTING):
+    for artigo in pauta.articles.filter(status=Article.Status.DRAFTING, fluxo=fluxo):
         if (artigo.thesis_json or {}).get("origem") == ORIGEM:
             return artigo
     return None
 
 
-def preparar(pauta):
+def preparar(pauta, fluxo: str = ""):
     """Busca as fontes no acervo e cria o artigo que espera o texto de fora.
 
     Sem fonte que sustente a pauta, nao ha artigo: `fontes_da_pauta` levanta
@@ -91,12 +91,12 @@ def preparar(pauta):
 
     # A mesma regra do caminho de sempre: sem fonte que sustente a pauta, para.
     # Fora da transacao: a pauta marcada "aguardando fontes" tem de ficar.
-    trechos = fontes_da_pauta(pauta)
+    trechos = fontes_da_pauta(pauta, fluxo=fluxo)
     with transaction.atomic():
-        return _criar_artigo(pauta, trechos)
+        return _criar_artigo(pauta, trechos, fluxo)
 
 
-def _criar_artigo(pauta, trechos):
+def _criar_artigo(pauta, trechos, fluxo: str = ""):
     from apps.content.chamada import aplicar_decisao
     from apps.content.models import Article, Author, Topic
     from apps.content.services import registrar_citacoes
@@ -108,6 +108,7 @@ def _criar_artigo(pauta, trechos):
         slug=slugify(pauta.title)[:300],
         focus_keyword=pauta.target_keyword,
         content_type=pauta.content_type,
+        fluxo=fluxo,
         thesis_json={"origem": ORIGEM, "situacao_da_pauta": pauta.status},
         single_source=len(trechos) == 1,
         author=padrao,
@@ -180,7 +181,12 @@ def pedido(artigo) -> str:
         )
     else:
         chamada = "Este tema esta longe da oferta do site: nao convide para ela."
-    da_pesquisa = getattr(pauta, "fluxo", "") == "pesquisa"
+    da_pesquisa = artigo.fluxo == "pesquisa"
+    orientacao = (pauta.briefing if pauta else "") or ""
+    if da_pesquisa and pauta is not None:
+        from apps.knowledge.pesquisa import orientacao_dos_angulos
+
+        orientacao = "\n\n".join(p for p in (orientacao, orientacao_dos_angulos(pauta)) if p)
     regras_da_pesquisa = f"\n{REGRAS_DA_PESQUISA}\n" if da_pesquisa else ""
     bloco_de_pedidos = BLOCO_DE_PEDIDOS if da_pesquisa else ""
     return f"""\
@@ -198,7 +204,7 @@ A pauta:
 - Titulo de trabalho: {pauta.title if pauta else artigo.title}
 - Palavra-chave: {artigo.focus_keyword or artigo.title}
 - Publico: {artigo.audience or _publico_padrao(None)}
-- Orientacao: {(pauta.briefing if pauta else "") or "(sem orientacao)"}
+- Orientacao: {orientacao or "(sem orientacao)"}
 
 {guia}
 

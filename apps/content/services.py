@@ -140,7 +140,7 @@ class ResultadoDaTese:
     bruto: dict
 
 
-def fontes_da_pauta(topic) -> list:
+def fontes_da_pauta(topic, *, fluxo: str = "") -> list:
     """Os trechos do acervo que sustentam a pauta, ou a geracao para aqui.
 
     A mesma regra para o artigo do modelo local e para o de outra IA: sem
@@ -151,10 +151,10 @@ def fontes_da_pauta(topic) -> list:
     from apps.knowledge.referencias import trechos_da_pauta
     from apps.knowledge.tasks import pauta_sem_fontes
 
-    trechos = trechos_da_pauta(topic)
+    trechos = trechos_da_pauta(topic, fluxo=fluxo)
 
     if not trechos:
-        pauta_sem_fontes(topic)
+        pauta_sem_fontes(topic, fluxo=fluxo)
         raise SemFontesSuficientes(
             f"nenhum trecho do acervo ficou abaixo do limiar de distancia para "
             f"a pauta {topic.title!r}. Envie documentos sobre o tema (ou aprove "
@@ -162,7 +162,7 @@ def fontes_da_pauta(topic) -> list:
             f"a pauta para algo que o acervo sustente."
         )
     if not any(getattr(_chunk_de(t), "supports_central_idea", True) for t in trechos):
-        pauta_sem_fontes(topic)
+        pauta_sem_fontes(topic, fluxo=fluxo)
         raise SemEmbasamentoCentral(
             f"o acervo tem {len(trechos)} trecho(s) perto da pauta {topic.title!r}, "
             f"mas todos de categorias que so dao contexto (nenhum pode sustentar "
@@ -434,6 +434,10 @@ def aprovar_e_agendar(
     if not article.slug:
         article.slug = slugify(article.title)[:300]
     article.save()
+    # O artigo do outro fluxo (A ou B) da mesma pauta nao vai ao ar.
+    from apps.content.fluxos import arquivar_o_outro
+
+    arquivar_o_outro(article)
     return article
 
 

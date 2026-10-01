@@ -1011,6 +1011,22 @@ def voltar_a_sugestao(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
+def seguir_com_o_resumo(request: HttpRequest, pk) -> HttpResponse:
+    """Nao achei o PDF: o artigo da pesquisa segue com o resumo."""
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.pesquisa import seguir_com_o_resumo as seguir
+
+    candidato = get_object_or_404(CandidatoDeFonte, pk=pk)
+    seguir(candidato)
+    messages.success(request, _("Ok: o artigo segue com o resumo, sem o texto completo."))
+    voltar = request.POST.get("voltar", "")
+    if voltar.startswith("/") and not voltar.startswith("//"):
+        return redirect(voltar)
+    return redirect("knowledge:fontes_sugeridas")
+
+
+@login_required
+@require_POST
 def enviar_pdf(request: HttpRequest, pk) -> HttpResponse:
     """O PDF de um artigo cientifico que nao tinha acesso aberto."""
     from apps.knowledge.academicos import receber_pdf

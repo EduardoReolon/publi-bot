@@ -66,7 +66,7 @@ def buscar_fontes_da_pauta(topic_id: str, variar: bool = False) -> int:
         return 0
 
 
-def pauta_sem_fontes(topic, *, marcar: bool = True) -> None:
+def pauta_sem_fontes(topic, *, marcar: bool = True, fluxo: str = "") -> None:
     """Marca a pauta como aguardando fontes e, se ligado, busca candidatas.
 
     Chamado quando a geracao para por falta de embasamento. A busca vai para
@@ -78,7 +78,7 @@ def pauta_sem_fontes(topic, *, marcar: bool = True) -> None:
     """
     # No fluxo da pesquisa as fontes sao os artigos achados para a pauta: a
     # busca de fontes na web nao entra (a pessoa refaz a pesquisa, se faltar).
-    if getattr(topic, "fluxo", "") == "pesquisa":
+    if fluxo == "pesquisa":
         return
     from apps.content.models import Topic
     from apps.radar.models import ConfiguracaoDoRadar
@@ -254,10 +254,18 @@ def pesquisar_pauta(topic_id: str) -> int:
     if pauta is None:
         return 0
     try:
-        return len(pesquisar(pauta)["artigos"])
+        achados = len(pesquisar(pauta)["artigos"])
     except PesquisaIndisponivel as exc:
         registrar(pauta, "pesquisa", situacao="erro", erro=str(exc)[:300])
     except Exception as exc:
         logger.exception("Pesquisa da pauta %s falhou.", topic_id)
         registrar(pauta, "pesquisa", situacao="erro", erro=f"{type(exc).__name__}: {exc}"[:300])
+    else:
+        # Pedido de gerar o B antes da pesquisa terminar: gera agora.
+        pauta.refresh_from_db()
+        if achados and ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("gerar_depois"):
+            from apps.content.tasks import gerar_b_quando_pronta
+
+            transaction.on_commit(lambda: gerar_b_quando_pronta.delay(str(pauta.pk)))
+        return achados
     return 0

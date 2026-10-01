@@ -132,15 +132,15 @@ def test_pesquisa_completa(ambiente, openalex, modelo):  # noqa: F811
     assert all(d.status == Document.Status.CURATED for d in documentos)
 
     pauta.refresh_from_db()
-    assert pauta.briefing.startswith("Base.") and pesquisa.MARCA_NA_ORIENTACAO in pauta.briefing
+    # A orientacao da pauta nao muda (o fluxo A tambem a le); os angulos vao so ao B.
+    assert pauta.briefing == "Base."
+    assert "Contraponto" in pesquisa.orientacao_dos_angulos(pauta)
     assert pauta.busca_de_fontes["pesquisa"]["situacao"] == "pronta"
 
     # O fluxo da pesquisa usa so esses documentos.
     from apps.knowledge.referencias import trechos_da_pauta
 
-    pauta.fluxo = Topic.Fluxo.PESQUISA
-    pauta.save()
-    usados = {t.chunk.document_id for t in trechos_da_pauta(pauta)}
+    usados = {t.chunk.document_id for t in trechos_da_pauta(pauta, fluxo="pesquisa")}
     assert usados and usados <= set(documentos.values_list("pk", flat=True))
     assert pesquisa.pronta_para_gerar(pauta) == ""
 
@@ -160,23 +160,18 @@ def test_tela_mostra_os_dois_fluxos_e_a_config_esconde(ambiente, openalex, model
     pauta = Topic.objects.create(title="Recuperar o cliente")
     url = reverse("content:pautas", urlconf="core.urls_tenants")
     html = client.get(url).content.decode()
-    assert "Pelo acervo" in html and "Pela pesquisa de artigos" in html
-    assert "Gerar com a pesquisa" not in html
-
-    # Gerar pela pesquisa antes de pesquisar: avisa e nao gera.
-    gerar = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
-    resposta = client.post(gerar, {"fluxo": "pesquisa"}, follow=True)
-    assert "Ainda nao" in resposta.content.decode()
+    assert "A · Fontes curadas" in html and "B · Pesquisa cientifica" in html
+    assert "Gerar A e B" in html
 
     pesquisa.pesquisar(pauta)
     html = client.get(url).content.decode()
-    assert "Gerar com a pesquisa" in html and "Contraponto" in html and "a amostra" in html
+    assert "B em outra IA" in html and "Contraponto" in html and "a amostra" in html
 
     config = ConfiguracaoDoRadar.carregar()
     config.fluxo_do_acervo = False
     config.save()
     html = client.get(url).content.decode()
-    assert "Pelo acervo" not in html and "Pela pesquisa de artigos" in html
+    assert "A · Fontes curadas" not in html and "B · Pesquisa cientifica" in html
 
 
 def test_pedir_o_pdf_sem_pdf_aberto(ambiente, openalex, modelo):  # noqa: F811
@@ -198,9 +193,8 @@ def test_outra_ia_no_fluxo_da_pesquisa_pede_e_le_os_pedidos(ambiente, openalex, 
 
     pauta = Topic.objects.create(title="Recuperar o cliente")
     pesquisa.pesquisar(pauta)
-    pauta.fluxo = Topic.Fluxo.PESQUISA
-    pauta.save()
-    artigo = outra_ia.preparar(pauta)
+    artigo = outra_ia.preparar(pauta, "pesquisa")
+    assert artigo.fluxo == "pesquisa"
     texto = outra_ia.pedido(artigo)
     assert "RESUMOS de artigos cientificos" in texto and "PEDIDOS:" in texto
 
@@ -209,3 +203,142 @@ def test_outra_ia_no_fluxo_da_pesquisa_pede_e_le_os_pedidos(ambiente, openalex, 
         "CORPO DO ARTIGO:\nTexto.\nFIM DO ARTIGO"
     )
     assert lido["pedidos"] == ["fonte 2: a amostra do estudo"]
+
+
+@pytest.fixture
+def na_hora(monkeypatch):
+    """Fila e on_commit na hora, para seguir a cadeia inteira."""
+    from django.db import transaction
+
+    from apps.content import tasks as tarefas_de_conteudo
+    from apps.knowledge import tasks as tarefas_do_acervo
+
+    monkeypatch.setattr(transaction, "on_commit", lambda funcao: funcao())
+    monkeypatch.setattr(
+        tarefas_do_acervo.pesquisar_pauta, "delay", lambda pk: tarefas_do_acervo.pesquisar_pauta(pk)
+    )
+    monkeypatch.setattr(
+        tarefas_de_conteudo.gerar_b_quando_pronta,
+        "delay",
+        lambda pk: tarefas_de_conteudo.gerar_b_quando_pronta(pk),
+    )
+    monkeypatch.setattr(
+        "apps.content.tasks.advance_generation_job.delay", lambda pk: None, raising=False
+    )
+
+
+def test_gerar_a_e_b_e_b_gera_sozinho_depois(ambiente, openalex, modelo, na_hora, monkeypatch):  # noqa: F811
+    from apps.content import fluxos
+    from apps.ops.models import GenerationJob
+
+    monkeypatch.setattr("apps.knowledge.referencias.videos_antes_de_gerar", lambda p: 0)
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Recuperar o cliente depois de uma falha")
+    gerar = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
+
+    client.post(gerar, {"fluxo": "ligados"})
+    trabalhos = GenerationJob.objects.filter(target_object_id=str(pauta.pk))
+    assert sorted(t.step_payloads.get("fluxo") for t in trabalhos) == ["", "pesquisa"]
+    pauta.refresh_from_db()
+    assert pauta.busca_de_fontes["pesquisa"]["situacao"] == "pronta"
+
+    # Clicar de novo nao duplica nenhum dos dois.
+    client.post(gerar, {"fluxo": "ligados"})
+    assert trabalhos.count() == 2
+    assert fluxos.em_andamento(pauta, fluxos.A) and fluxos.em_andamento(pauta, fluxos.B)
+
+
+def test_aprovar_um_arquiva_o_outro(ambiente):  # noqa: F811
+    from apps.content.fluxos import arquivar_o_outro, irmaos
+    from apps.content.models import Article
+
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    a = Article.objects.create(topic=pauta, title="A", slug="a", status="pending_review")
+    b = Article.objects.create(
+        topic=pauta, title="B", slug="b", status="pending_review", fluxo="pesquisa"
+    )
+    assert irmaos(a) == [b]
+    assert arquivar_o_outro(a) == 1
+    b.refresh_from_db()
+    assert b.status == Article.Status.REJECTED and b.thesis_json["arquivado_por"] == str(a.pk)
+
+    _, _, client = ambiente
+    html = client.get(
+        reverse("content:revisar", args=[a.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "A · Fontes curadas" in html
+
+
+PDF = """# Service recovery study
+
+## Method
+
+We surveyed a sample of 612 retail bank customers in the United Kingdom who had
+experienced a service failure in the previous six months, using a structured
+questionnaire administered online by an independent research agency.
+
+## Results
+
+Customers who received an apology and a fast solution reported loyalty scores
+twenty percent higher than those who received only compensation, and the effect
+held after controlling for the severity of the failure in every bank studied.
+
+## References
+
+Smith J. (1999). Some other paper about service quality and loyalty measures.
+"""
+
+
+def test_pdf_da_pesquisa_mantem_o_resumo_e_le_so_o_pedido(ambiente, openalex, modelo):  # noqa: F811
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.knowledge import academicos
+    from apps.knowledge.models import DocumentCategory
+
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    resultado = pesquisa.pesquisar(pauta)
+    candidato = CandidatoDeFonte.objects.get(pk=resultado["candidatos"][0])
+    resumo = candidato.documento
+    assert pesquisa.em_pesquisa(candidato)
+
+    categoria = DocumentCategory.objects.first() or DocumentCategory.objects.create(
+        name="c", slug="c"
+    )
+    arquivo = SimpleUploadedFile("estudo.pdf", b"%PDF-1.4 x", content_type="application/pdf")
+    documento = academicos.receber_pdf(candidato, arquivo, categoria=categoria)
+    candidato.refresh_from_db()
+    # O resumo continua sendo a fonte; o PDF fica a parte.
+    assert candidato.documento == resumo and candidato.documento_completo == documento
+
+    # A conversao terminou: so os trechos pedidos entram no resumo.
+    documento.markdown_full = PDF
+    documento.save()
+    assert pesquisa.extrair_do_pdf(documento) >= 1
+    resumo.refresh_from_db()
+    assert "Do texto completo" in resumo.markdown_full and "612" in resumo.markdown_full
+    assert "Smith J." not in resumo.markdown_full  # referencias ficam de fora
+    pauta.refresh_from_db()
+    pedidos = [
+        p for a in pauta.busca_de_fontes["pesquisa"]["angulos"] for p in a.get("pedidos", [])
+    ]
+    assert all(p.get("atendido") == "pdf" for p in pedidos)
+
+
+def test_nao_achei_o_pdf_segue_com_o_resumo(ambiente, openalex, modelo):  # noqa: F811
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    resultado = pesquisa.pesquisar(pauta)
+    candidato = CandidatoDeFonte.objects.get(pk=resultado["candidatos"][0])
+    candidato.situacao = CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+    candidato.save()
+    client.post(
+        reverse("knowledge:seguir_com_o_resumo", args=[candidato.pk], urlconf="core.urls_tenants")
+    )
+    candidato.refresh_from_db()
+    assert candidato.situacao == CandidatoDeFonte.Situacao.APROVADO
+    assert candidato.documento.extraction_method == Document.ExtractionMethod.RESUMO
+    pauta.refresh_from_db()
+    pedidos = [
+        p for a in pauta.busca_de_fontes["pesquisa"]["angulos"] for p in a.get("pedidos", [])
+    ]
+    assert all(p.get("atendido") == "sem_pdf" for p in pedidos if p["artigo"] == 1)

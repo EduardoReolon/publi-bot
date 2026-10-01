@@ -314,14 +314,28 @@ def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
 
 
 def buscar_para_pauta(pauta, *, limite: int = 5, consulta: str = "") -> list:
-    """Artigos para a pauta sem fonte. Gratuito; o limite e so da fila."""
-    consulta = consulta or pauta.target_keyword or pauta.title
+    """Artigos para a pauta sem fonte (fluxo A). Por sentido: a busca semantica
+    do OpenAlex com a pauta inteira (titulo, palavra-chave e orientacao) — no
+    teste com pautas reais, acertou o tema onde a busca por palavras trouxe lixo
+    ou nada. A busca por palavras fica de reserva, se a semantica falhar."""
+    from apps.knowledge.pesquisa import PesquisaIndisponivel, busca_semantica
+    from apps.knowledge.referencias import consulta_da_pauta
+
+    texto = consulta or consulta_da_pauta(pauta)
+    try:
+        trabalhos = [ler_trabalho(d) for d in busca_semantica(texto, quantos=limite * 3)]
+        trabalhos = [t for t in trabalhos if t.titulo]
+    except PesquisaIndisponivel as exc:
+        logger.info("Pauta %s: busca semantica falhou (%s); vai por palavras.", pauta.pk, exc)
+        trabalhos = buscar_openalex(
+            consulta or pauta.target_keyword or pauta.title, quantos=limite * 2
+        )
     novos = []
-    for trabalho in buscar_openalex(consulta, quantos=limite * 2):
+    for trabalho in trabalhos:
         if len(novos) >= limite:
             break
         candidato = registrar(
-            trabalho, consulta=consulta, origem=CandidatoDeFonte.Origem.OPENALEX, pauta=pauta
+            trabalho, consulta=texto[:500], origem=CandidatoDeFonte.Origem.OPENALEX, pauta=pauta
         )
         if candidato is not None:
             novos.append(candidato)
@@ -552,16 +566,19 @@ def aprovar_artigo(candidato, *, categoria, por=None, automatico: bool = False):
             por=por,
             motivo=f"O endereco do PDF devolveu uma pagina. Abra {pdf} e envie o arquivo.",
         )
-    from apps.knowledge.provisorias import descartar_resumo
-
-    descartar_resumo(candidato)
+    da_pesquisa = _guardar_o_pdf(candidato, documento)
     if not resultado.ja_existia:
         _completar_documento(documento, candidato)
-        if automatico:
+        if automatico and not da_pesquisa:
             Document.objects.filter(pk=documento.pk).update(auto_curate=True)
         iniciar_ingestao(documento)
+    elif da_pesquisa and documento.markdown_full:
+        from apps.knowledge.pesquisa import extrair_do_pdf
+
+        extrair_do_pdf(documento)
     candidato.situacao = CandidatoDeFonte.Situacao.APROVADO
-    candidato.documento = documento
+    if not da_pesquisa:
+        candidato.documento = documento
     candidato.decidido_por = por
     candidato.decidido_em = timezone.now()
     candidato.motivo = ""
@@ -569,20 +586,41 @@ def aprovar_artigo(candidato, *, categoria, por=None, automatico: bool = False):
     return candidato
 
 
-def receber_pdf(candidato, arquivo, *, categoria, por=None) -> Document:
-    """O PDF que a pessoa baixou: vira documento e segue para a curadoria."""
+def _guardar_o_pdf(candidato, documento) -> bool:
+    """Onde o PDF fica. Artigo da pesquisa (fluxo B): o resumo continua sendo a
+    fonte e o PDF vai para `documento_completo` (dele saem so os trechos
+    pedidos). Fora da pesquisa: o PDF toma o lugar do resumo. Devolve se e da
+    pesquisa."""
+    from apps.knowledge.pesquisa import em_pesquisa
     from apps.knowledge.provisorias import descartar_resumo
+
+    if em_pesquisa(candidato):
+        candidato.documento_completo = documento
+        CandidatoDeFonte.objects.filter(pk=candidato.pk).update(documento_completo=documento)
+        return True
+    descartar_resumo(candidato)
+    return False
+
+
+def receber_pdf(candidato, arquivo, *, categoria, por=None) -> Document:
+    """O PDF que a pessoa baixou: vira documento e segue para a curadoria (ou,
+    no artigo da pesquisa, para a extracao do que foi pedido)."""
     from apps.knowledge.services import ingerir_documento
     from apps.knowledge.tasks import iniciar_ingestao
 
     resultado = ingerir_documento(arquivo=arquivo, category=categoria, uploaded_by=por)
     documento = resultado.document
-    descartar_resumo(candidato)
+    da_pesquisa = _guardar_o_pdf(candidato, documento)
     if not resultado.ja_existia:
         _completar_documento(documento, candidato)
         iniciar_ingestao(documento)
+    elif da_pesquisa and documento.markdown_full:
+        from apps.knowledge.pesquisa import extrair_do_pdf
+
+        extrair_do_pdf(documento)
     candidato.situacao = CandidatoDeFonte.Situacao.APROVADO
-    candidato.documento = documento
+    if not da_pesquisa:
+        candidato.documento = documento
     candidato.decidido_por = por
     candidato.decidido_em = timezone.now()
     candidato.save()

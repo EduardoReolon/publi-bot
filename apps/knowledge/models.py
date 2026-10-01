@@ -856,6 +856,16 @@ class CandidatoDeFonte(models.Model):
         related_name="candidatos",
         verbose_name=_("documento"),
     )
+    # Artigo da pesquisa (fluxo B): o PDF chega, mas o resumo continua sendo a
+    # fonte; do PDF saem so os trechos que a sintese pediu (`pesquisa.extrair_do_pdf`).
+    documento_completo = models.ForeignKey(
+        Document,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="candidatos_pelo_completo",
+        verbose_name=_("texto completo"),
+    )
     motivo = models.TextField(_("motivo"), blank=True)
     decidido_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
