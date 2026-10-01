@@ -582,6 +582,27 @@ numero, e um `FLUSHDB` de um projeto ainda levaria o outro junto.
 
 ---
 
+### Servico de vetores (memoria)
+
+O modelo de embedding ocupa cerca de 2 GB **por processo** que o abre. Antes,
+cada worker do Gunicorn e cada processo do Celery abria a sua copia: numa VM
+pequena isso esgota a memoria e a maquina inteira para (foi o que travou o
+servidor em 01/10). Agora um processo so segura o modelo,
+`vetores-publibot.service` (`manage.py servir_vetores`, em 127.0.0.1:8601), e
+os outros pedem os vetores a ele (`ServicoDeVetoresClient`, padrao em
+producao). Os vetores sao os mesmos de antes: o codigo que roda e o mesmo.
+
+    systemctl status vetores-publibot
+    curl -s http://127.0.0.1:8601/saude      # {"pronto": true, ...}
+
+Ao subir, ele leva cerca de meio minuto para abrir o modelo. Nesse tempo a
+busca responde "servico de vetores carregando" e a indexacao volta para a fila
+sozinha. O `release.sh` liga o servico e so o reinicia quando o codigo dele
+(`servico_de_vetores.py`, `embeddings.py`) muda.
+
+Se o `.env` tiver `EMBEDDING_CLIENT=...FastEmbedClient`, apague a linha: ela
+volta ao modelo aberto em cada processo.
+
 ## Parte 3 — A maquina da placa
 
 Ela roda o **worker-gpu**, que vive em **outro repositorio**. A placa e um

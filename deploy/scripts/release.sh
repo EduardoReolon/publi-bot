@@ -187,15 +187,20 @@ manage collectstatic --noinput
 manage compilemessages 2>/dev/null || true
 
 # O modelo de embedding (~2 GB) baixa agora, e nao dentro da primeira busca de
-# alguem. Nunca derruba a implantacao: sem ele a busca falha com mensagem
-# propria, e o resto do sistema segue.
+# alguem — mas so se ainda nao estiver no disco: abrir o modelo aqui, com o
+# servico de vetores ja segurando a copia dele, dobraria a memoria em uso.
+# Nunca derruba a implantacao: sem ele a busca falha com mensagem propria.
 echo "==> Modelo de embedding"
 manage shell -c "
-from apps.knowledge.embeddings import get_embedding_client
-cliente = get_embedding_client()
-getattr(cliente, '_carregar', lambda: None)()
-print('  pronto')
-" || echo "  AVISO: o modelo nao carregou; a primeira busca vai tentar de novo."
+from pathlib import Path
+from django.conf import settings
+if any(Path(settings.EMBEDDING_CACHE_DIR).glob('**/tokenizer.json')):
+    print('  ja esta no disco')
+else:
+    from apps.knowledge.embeddings import FastEmbedClient
+    FastEmbedClient()._carregar()
+    print('  baixado')
+" || echo "  AVISO: o modelo nao baixou; o servico de vetores tenta de novo ao subir."
 
 # ---------------------------------------------------------------------------
 # 5. Servicos
@@ -205,7 +210,7 @@ print('  pronto')
 echo "==> Units do systemd"
 PUBLIBOT_ROOT="$RAIZ" "$RAIZ/deploy/scripts/sincronizar-systemd.sh"
 sudo systemctl enable --quiet publibot.socket publibot.service \
-    celery-publibot.service celery-beat-publibot.service
+    celery-publibot.service celery-beat-publibot.service vetores-publibot.service
 
 echo "==> Nginx"
 DOMINIO="${ROOT_DOMAIN:?ROOT_DOMAIN vazio no .env}"
@@ -262,6 +267,18 @@ fi
 # reentregar, e uma implantacao publicaria o mesmo conteudo duas vezes.
 sudo systemctl restart celery-publibot.service
 sudo systemctl restart celery-beat-publibot.service
+
+# O servico de vetores leva meio minuto para abrir o modelo, e nesse tempo a
+# busca responde "servico carregando". So reinicia quando o codigo dele mudou.
+MARCA_VETORES="$RAIZ/.model_cache/.versao-do-servico"
+VERSAO_VETORES="$(cat "$RAIZ/apps/knowledge/servico_de_vetores.py" \
+    "$RAIZ/apps/knowledge/embeddings.py" | sha256sum | cut -d' ' -f1)"
+if ! systemctl is-active --quiet vetores-publibot.service; then
+    sudo systemctl start vetores-publibot.service
+elif [[ "$(cat "$MARCA_VETORES" 2>/dev/null)" != "$VERSAO_VETORES" ]]; then
+    sudo systemctl restart vetores-publibot.service
+fi
+mkdir -p "$RAIZ/.model_cache" && echo "$VERSAO_VETORES" > "$MARCA_VETORES"
 
 # Direto no socket do Gunicorn, e nao pelo Nginx: responde mesmo antes do
 # certificado existir, e nao confunde com o site de outro projeto.

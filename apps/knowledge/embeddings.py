@@ -96,17 +96,22 @@ class FastEmbedClient(EmbeddingClient):
         return self._modelo
 
     def embed_query(self, texto: str) -> list[float]:
-        modelo = self._carregar()
-        return _normalizar(next(iter(modelo.query_embed([texto]))))
+        # O `query_embed` do fastembed, para este modelo, e o mesmo `embed` sem
+        # prefixo nenhum — e o limiar `RAG_MAX_COSINE_DISTANCE` foi medido assim.
+        return self.vetorizar_preparados([texto])[0]
 
     def embed_passage(self, textos: list[str]) -> list[list[float]]:
         if not textos:
             return []
-        modelo = self._carregar()
         # `passage: ` e obrigatorio para este modelo; o metodo `embed` do
         # fastembed nao o adiciona sozinho.
-        prefixados = [f"passage: {t}" for t in textos]
-        return [_normalizar(v) for v in modelo.embed(prefixados)]
+        return self.vetorizar_preparados([f"passage: {t}" for t in textos])
+
+    def vetorizar_preparados(self, entradas: list[str]) -> list[list[float]]:
+        """Vetoriza textos que ja vem como o modelo deve recebe-los (com ou sem
+        prefixo). E o que o servico de vetores roda para os outros processos."""
+        modelo = self._carregar()
+        return [_normalizar(v) for v in modelo.embed(entradas)]
 
     def contar_tokens(self, texto: str) -> int:
         if self._tokenizer is None:
@@ -178,6 +183,65 @@ def _traduzir_falha_de_carregamento(erro: Exception) -> None:
         f"`HF_HUB_DISABLE_SYMLINKS` esta ligado no settings.\n\n"
         f"Mensagem original: {texto}"
     ) from erro
+
+
+class ServicoDeVetoresClient(FastEmbedClient):
+    """Pede os vetores ao servico de vetores da maquina (`manage.py
+    servir_vetores`), em vez de abrir o modelo no proprio processo.
+
+    O modelo ocupa cerca de 2 GB *por processo*. Cada worker do Gunicorn e cada
+    processo do Celery que vetorizasse abriria a sua copia: numa VM pequena,
+    tres ou quatro copias esgotam a memoria e a maquina inteira trava. Com o
+    servico, ha uma copia so, e os vetores saem identicos aos do
+    `FastEmbedClient` — o servico roda o mesmo codigo.
+
+    Servico fora do ar (subindo, reiniciando) e `VetorizacaoAdiada`: a
+    indexacao volta para a fila; a busca falha com a mensagem.
+    """
+
+    LOTE = 32
+
+    def embed_query(self, texto: str) -> list[float]:
+        return self._pedir([texto], prazo=60)[0]
+
+    def embed_passage(self, textos: list[str]) -> list[list[float]]:
+        vetores = []
+        for inicio in range(0, len(textos), self.LOTE):
+            lote = textos[inicio : inicio + self.LOTE]
+            vetores += self._pedir([f"passage: {t}" for t in lote], prazo=600)
+        return vetores
+
+    def _pedir(self, entradas: list[str], *, prazo: float) -> list[list[float]]:
+        import httpx
+
+        try:
+            resposta = httpx.post(
+                f"{settings.EMBEDDING_SERVICO_URL.rstrip('/')}/v1/embeddings",
+                json={"model": self.model_name, "input": entradas},
+                timeout=httpx.Timeout(prazo, connect=5.0),
+            )
+        except httpx.TransportError as exc:
+            raise VetorizacaoAdiada(
+                f"o servico de vetores nao respondeu ({type(exc).__name__}); "
+                "confira `systemctl status vetores-publibot`."
+            ) from exc
+        if resposta.status_code == 503:
+            from apps.inference.providers.openai_compatible import _retry_after
+
+            raise VetorizacaoAdiada(
+                "o servico de vetores ainda esta carregando o modelo.",
+                retry_after=_retry_after(resposta),
+            )
+        resposta.raise_for_status()
+        return _vetores_da_resposta(resposta.json(), len(entradas), origem="o servico de vetores")
+
+    def _carregar(self):
+        # So o tokenizador (17 MB) e lido aqui, para contar tokens. O modelo
+        # inteiro nunca: e exatamente o que este cliente existe para evitar.
+        raise RuntimeError(
+            "tokenizer.json nao esta no cache do modelo. Ele vem com o download "
+            "que o servico de vetores faz ao subir (`manage.py servir_vetores`)."
+        )
 
 
 class FakeEmbeddingClient(EmbeddingClient):
@@ -285,15 +349,19 @@ def _no_worker(conexao, textos: list[str], *, dono: str) -> list[list[float]]:
             "o worker nao tem a rota /v1/embeddings (docs/WORKER_VETORIZACAO.md)."
         )
     resposta.raise_for_status()
-    dados = resposta.json()
+    return _vetores_da_resposta(resposta.json(), len(textos), origem="o worker")
+
+
+def _vetores_da_resposta(dados: dict, quantos: int, *, origem: str) -> list[list[float]]:
+    """Le a resposta de `/v1/embeddings` (worker da placa ou servico local)."""
     if dados.get("model") and dados["model"] != settings.EMBEDDING_MODEL:
         # Vetor de outro modelo no mesmo indice estraga a busca sem aviso.
         raise RuntimeError(
-            f"o worker vetorizou com {dados['model']}, e o indice usa {settings.EMBEDDING_MODEL}."
+            f"{origem} vetorizou com {dados['model']}, e o indice usa {settings.EMBEDDING_MODEL}."
         )
     vetores = [item["embedding"] for item in sorted(dados["data"], key=lambda i: i["index"])]
-    if len(vetores) != len(textos) or any(len(v) != settings.EMBEDDING_DIM for v in vetores):
-        raise RuntimeError("o worker devolveu vetores em numero ou tamanho errado.")
+    if len(vetores) != quantos or any(len(v) != settings.EMBEDDING_DIM for v in vetores):
+        raise RuntimeError(f"{origem} devolveu vetores em numero ou tamanho errado.")
     return [_normalizar(v) for v in vetores]
 
 

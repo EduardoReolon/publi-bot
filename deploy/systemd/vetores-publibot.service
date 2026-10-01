@@ -1,0 +1,27 @@
+[Unit]
+Description=PubliBot — servico de vetores (uma copia do modelo de embedding)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/publi-bot
+EnvironmentFile=/home/ubuntu/publi-bot/.env
+Environment=DJANGO_SETTINGS_MODULE=core.settings.prod
+
+# O unico processo que abre o modelo (~2 GB). Gunicorn e Celery pedem os
+# vetores a ele em 127.0.0.1 (EMBEDDING_SERVICO_URL).
+ExecStart=/home/ubuntu/publi-bot/venv/bin/python manage.py servir_vetores
+
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/ubuntu/publi-bot/.model_cache
+
+[Install]
+WantedBy=multi-user.target
