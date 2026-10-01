@@ -415,7 +415,7 @@ mapa para saber qual bloco pedir depois.
 """
 entrada = ["README.md", "docs/ARCHITECTURE.md"]
 relacionados = ["decisoes", "geracao-texto", "publicacao"]
-padroes = ["README.md", "docs/ARCHITECTURE.md", "docs/ARMADILHAS.md"]
+padroes = ["README.md", "CLAUDE.md", "docs/ARCHITECTURE.md", "docs/ARMADILHAS.md"]
 
 [[bloco]]
 nome = "decisoes"

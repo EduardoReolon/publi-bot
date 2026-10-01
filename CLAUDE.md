@@ -15,3 +15,5 @@
 - O PubliBot e generico (clientes esperados: clinicas medicas): prompts sem vies do
   negocio do dono. Campos novos de formulario do radar sao opcionais.
 - Nunca repetir segredos de `.env` ou de logs.
+- Arquivo novo em area nova precisa de padrao em `scripts/blocos.toml` (o CI confere
+  com `tests/test_blocos_de_contexto.py`).
