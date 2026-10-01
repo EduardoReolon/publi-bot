@@ -76,6 +76,10 @@ def pauta_sem_fontes(topic, *, marcar: bool = True) -> None:
     planejamento): ali o caminho de volta e replanejar o artigo, e a pauta
     continua "usada".
     """
+    # No fluxo da pesquisa as fontes sao os artigos achados para a pauta: a
+    # busca de fontes na web nao entra (a pessoa refaz a pesquisa, se faltar).
+    if getattr(topic, "fluxo", "") == "pesquisa":
+        return
     from apps.content.models import Topic
     from apps.radar.models import ConfiguracaoDoRadar
 
@@ -236,3 +240,24 @@ def reenfileirar_vetorizacoes() -> int:
     from apps.accounts.varredura import para_cada_tenant
 
     return para_cada_tenant(reenfileirar_parados, "reenfileirar_vetorizacoes")
+
+
+@shared_task
+def pesquisar_pauta(topic_id: str) -> int:
+    """A pesquisa de artigos da pauta (`knowledge.pesquisa`). Despachada de
+    dentro do tenant."""
+    from apps.content.models import Topic
+    from apps.knowledge.pesquisa import PesquisaIndisponivel, pesquisar
+    from apps.knowledge.referencias import registrar
+
+    pauta = Topic.objects.filter(pk=topic_id).first()
+    if pauta is None:
+        return 0
+    try:
+        return len(pesquisar(pauta)["artigos"])
+    except PesquisaIndisponivel as exc:
+        registrar(pauta, "pesquisa", situacao="erro", erro=str(exc)[:300])
+    except Exception as exc:
+        logger.exception("Pesquisa da pauta %s falhou.", topic_id)
+        registrar(pauta, "pesquisa", situacao="erro", erro=f"{type(exc).__name__}: {exc}"[:300])
+    return 0

@@ -22,7 +22,27 @@ from core.resposta_ia import _chave, _como_rotulo, ler_blocos
 
 ORIGEM = "outra_ia"
 
-ROTULOS = ["TITULO SUGERIDO", "META DESCRIPTION", "RESUMO CURTO", "PERGUNTAS FREQUENTES"]
+ROTULOS = [
+    "TITULO SUGERIDO",
+    "META DESCRIPTION",
+    "RESUMO CURTO",
+    "PERGUNTAS FREQUENTES",
+    "PEDIDOS",
+]
+
+# No fluxo da pesquisa, as fontes sao resumos de artigos cientificos.
+REGRAS_DA_PESQUISA = """\
+As fontes sao RESUMOS de artigos cientificos achados para esta pauta, agrupados
+por angulo na orientacao. Afirme so o que o resumo diz; ao citar um estudo, diga
+o contexto que o resumo der (setor, pais, amostra). Nenhum numero que nao esteja
+escrito no resumo. Se o artigo ficaria melhor com algo que so o texto completo
+de um estudo traz (a amostra, o metodo, os numeros, as estrategias comparadas),
+escreva assim mesmo com o que os resumos sustentam e PECA no bloco PEDIDOS."""
+BLOCO_DE_PEDIDOS = """\
+PEDIDOS:
+- fonte N: o que precisaria ler no texto completo, e para que parte do artigo
+(no maximo 3; escreva "nenhum" se os resumos bastaram)
+"""
 ROTULO_DO_CORPO = "CORPO DO ARTIGO"
 FIM_DO_CORPO = "FIM DO ARTIGO"
 
@@ -160,6 +180,9 @@ def pedido(artigo) -> str:
         )
     else:
         chamada = "Este tema esta longe da oferta do site: nao convide para ela."
+    da_pesquisa = getattr(pauta, "fluxo", "") == "pesquisa"
+    regras_da_pesquisa = f"\n{REGRAS_DA_PESQUISA}\n" if da_pesquisa else ""
+    bloco_de_pedidos = BLOCO_DE_PEDIDOS if da_pesquisa else ""
     return f"""\
 Voce vai escrever um artigo de blog completo, SO com as fontes abaixo.
 
@@ -170,7 +193,7 @@ REGRAS FECHADAS — o texto que as quebrar sera recusado automaticamente:
 - {AVISO_DE_DELIMITADOR}
 
 {REGRA_DO_EMBASAMENTO}
-
+{regras_da_pesquisa}
 A pauta:
 - Titulo de trabalho: {pauta.title if pauta else artigo.title}
 - Palavra-chave: {artigo.focus_keyword or artigo.title}
@@ -203,7 +226,7 @@ PERGUNTAS FREQUENTES:
 P: pergunta que quem busca faria
 R: resposta curta, sem marcador de fonte
 (3 a 6 pares)
-CORPO DO ARTIGO:
+{bloco_de_pedidos}CORPO DO ARTIGO:
 (o artigo em Markdown)
 FIM DO ARTIGO
 """
@@ -259,8 +282,16 @@ def ler(resposta: str) -> dict:
         "meta": " ".join(blocos.get("META DESCRIPTION", "").split())[:160],
         "resumo": " ".join(blocos.get("RESUMO CURTO", "").split()),
         "perguntas": _perguntas(blocos.get("PERGUNTAS FREQUENTES", "")),
+        "pedidos": _pedidos(blocos.get("PEDIDOS", "")),
         "corpo": corpo,
     }
+
+
+def _pedidos(bloco: str) -> list[str]:
+    """As linhas do bloco PEDIDOS, sem "nenhum"."""
+    from core.resposta_ia import itens
+
+    return [item[:300] for item in itens(bloco) if item.strip().lower().rstrip(".") != "nenhum"][:5]
 
 
 def _secoes(corpo: str) -> tuple[str, list[tuple[int, str, str]]]:
@@ -323,6 +354,9 @@ def aplicar(artigo, resposta: str):
     tese["moldura"] = {"abertura": abertura, "fecho": ""}
     if dados["titulo"]:
         tese["titulos_sugeridos"] = [dados["titulo"]]
+    if dados["pedidos"]:
+        # O que a outra IA pediu do texto completo: aparece na revisao.
+        tese["pedidos"] = dados["pedidos"]
     artigo.thesis_json = tese
     artigo.meta_description = dados["meta"]
     artigo.excerpt = dados["resumo"]

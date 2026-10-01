@@ -256,6 +256,7 @@ def recuperar(
     top_k: int | None = None,
     distancia_maxima: float | None = None,
     deduplicar_por_documento: bool = True,
+    documentos: list | None = None,
 ) -> tuple[RetrievalQuery, list[TrechoRecuperado]]:
     """Busca trechos relevantes e registra a consulta.
 
@@ -310,6 +311,9 @@ def recuperar(
         .exclude(document__valid_until__lt=timezone.localdate())
         .annotate(distancia=CosineDistance("embedding", vetor))
     )
+    # So estes documentos (o fluxo da pesquisa: os artigos achados para a pauta).
+    if documentos is not None:
+        base = base.filter(document_id__in=documentos)
 
     por_vetor = list(
         base.filter(distancia__lte=distancia_maxima).order_by("distancia")[:limite_bruto]

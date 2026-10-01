@@ -135,6 +135,24 @@ class ConfiguracaoDoRadar(models.Model):
         help_text=_("O mesmo dado do Planejador de palavras-chave do Google Ads."),
     )
     usar_perguntas_do_site = models.BooleanField(_("perguntas dos visitantes"), default=True)
+    # Os dois jeitos de embasar o artigo aparecem nas pautas; aqui se esconde um.
+    fluxo_do_acervo = models.BooleanField(
+        _("gerar pelo acervo"),
+        default=True,
+        help_text=_(
+            "O caminho de sempre: o artigo usa o que voce curou no acervo. Bom para "
+            "quem gosta de escolher e curar as fontes antes."
+        ),
+    )
+    fluxo_da_pesquisa = models.BooleanField(
+        _("gerar pela pesquisa de artigos"),
+        default=True,
+        help_text=_(
+            "O sistema pesquisa artigos cientificos para a pauta (busca semantica no "
+            "OpenAlex), escreve a partir dos resumos e so pede o PDF do que o texto "
+            "precisar. Menos trabalho antes; a revisao vem no artigo."
+        ),
+    )
     usar_youtube = models.BooleanField(
         _("comentarios do YouTube"),
         default=False,

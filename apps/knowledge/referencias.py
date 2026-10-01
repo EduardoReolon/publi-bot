@@ -46,11 +46,23 @@ def consulta_da_pauta(pauta) -> str:
 
 
 def trechos_da_pauta(pauta, *, top_k: int | None = None) -> list:
+    """Os trechos que sustentam a pauta. No fluxo da pesquisa, so os dos artigos
+    achados para ela (`knowledge.pesquisa`), sem limiar: foram escolhidos para a
+    pauta, e o modelo os le todos."""
     from apps.knowledge.models import RetrievalQuery
     from apps.knowledge.services import recuperar
 
+    extra = {}
+    if getattr(pauta, "fluxo", "") == "pesquisa":
+        from apps.knowledge.pesquisa import TRECHOS_DA_PESQUISA, documentos_da_pesquisa
+
+        extra = {"documentos": documentos_da_pesquisa(pauta), "distancia_maxima": 2.0}
+        top_k = max(top_k or 0, TRECHOS_DA_PESQUISA)
     _, trechos = recuperar(
-        consulta=consulta_da_pauta(pauta), origem=RetrievalQuery.Origin.ARTICLE, top_k=top_k
+        consulta=consulta_da_pauta(pauta),
+        origem=RetrievalQuery.Origin.ARTICLE,
+        top_k=top_k,
+        **extra,
     )
     return trechos
 

@@ -1,0 +1,50 @@
+{% load i18n %}
+{% comment %}
+  A pesquisa de artigos da pauta (knowledge/pesquisa.py): hipoteses, angulos com
+  os artigos, a sintese de cada angulo e o que ela pede do texto completo.
+{% endcomment %}
+<div class="aviso" style="margin-top:.5rem">
+  <strong>{% translate "Pesquisa de artigos" %}</strong>
+  {% if p.situacao == 'na_fila' or p.situacao == 'pesquisando' %}
+    <span class="selo espera">{% translate "pesquisando" %}</span>
+    <span class="ajuda">{% translate "hipoteses, busca por sentido, relacionados e angulos; leva alguns minutos." %}</span>
+  {% elif p.situacao == 'erro' %}
+    <span class="selo ruim">{% translate "falhou" %}</span> <span class="ajuda">{{ p.erro }}</span>
+  {% elif p.situacao == 'pronta' %}
+    <span class="ajuda">
+      {% blocktranslate trimmed with n=p.artigos|length a=p.achados %}{{ n }} escolhidos entre {{ a }} achados{% endblocktranslate %}
+      {% if p.relacionados %}({% blocktranslate trimmed with r=p.relacionados %}{{ r }} pelos relacionados{% endblocktranslate %}){% endif %}
+      {% if not p.hipoteses.do_modelo %}· {% translate "sem modelo configurado: uma busca so, pelo titulo" %}{% endif %}
+    </span>
+    {% if p.hipoteses.do_modelo %}
+      <details><summary>{% translate "As hipoteses que viraram busca" %}</summary>
+        {% for h in p.hipoteses.angulos %}<p><strong>{{ h.angulo }}</strong>: <span class="pre-visualizacao">{{ h.paragrafo }}</span></p>{% endfor %}
+        {% for h in p.hipoteses.contrarias %}<p><span class="selo alerta">{% translate "contraria" %}</span> <strong>{{ h.angulo }}</strong>: <span class="pre-visualizacao">{{ h.paragrafo }}</span></p>{% endfor %}
+      </details>
+    {% endif %}
+    {% for angulo in p.angulos %}
+      <details {% if forloop.first %}open{% endif %} style="margin-top:.3rem">
+        <summary>{% if angulo.contraponto %}<span class="selo alerta">{% translate "contraponto" %}</span>{% endif %} <strong>{{ angulo.nome }}</strong> ({{ angulo.artigos|length }})</summary>
+        {% if angulo.sintese %}<p>{{ angulo.sintese }}</p>{% endif %}
+        <ol class="pre-visualizacao">
+          {% for artigo in p.artigos %}{% if forloop.counter0 in angulo.artigos %}
+            <li value="{{ artigo.numero }}">
+              {% if artigo.doi %}<a href="{{ artigo.doi }}" target="_blank" rel="noopener noreferrer">{{ artigo.titulo }}</a>{% else %}{{ artigo.titulo }}{% endif %}
+              <span class="ajuda">{{ artigo.ano|default:"?" }} · {{ artigo.citacoes }} {% translate "cit." %}{% if artigo.percentil is not None %} · {% widthratio artigo.percentil 1 100 %}% {% translate "na area" %}{% endif %}{% if artigo.hipotese == 'relacionado' %} · {% translate "relacionado" %}{% endif %}</span>
+            </li>
+          {% endif %}{% endfor %}
+        </ol>
+        {% for pedido in angulo.pedidos %}
+          <div class="ajuda">
+            <span class="selo espera">{% translate "pede o texto completo" %}</span> [{{ pedido.artigo }}] {{ pedido.o_que }}
+            {% for artigo in p.artigos %}{% if artigo.numero == pedido.artigo and artigo.candidato %}
+              <form method="post" action="{% url 'content:pdf_da_pesquisa' pauta.pk artigo.candidato %}" style="display:inline">{% csrf_token %}
+                <button type="submit" class="botao discreto pequeno">{% if pedido.pdf_aberto %}{% translate "Baixar o PDF aberto" %}{% else %}{% translate "Sem PDF aberto: pedir a voce" %}{% endif %}</button>
+              </form>
+            {% endif %}{% endfor %}
+          </div>
+        {% endfor %}
+      </details>
+    {% endfor %}
+  {% endif %}
+</div>
