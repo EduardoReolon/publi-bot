@@ -2,13 +2,7 @@
 {% for f in pauta.fluxos %}
   <div class="fluxo">
     <strong>{{ f.nome }}</strong>
-    {% if completo %}
-      {% if f.fluxo == '' %}
-        <span class="ajuda">{% translate "usa o acervo que voce cura (paginas, videos, artigos, documentos); falta fonte, a busca sugere e a geracao pede a curadoria." %}</span>
-      {% else %}
-        <span class="ajuda">{% translate "pesquisa artigos cientificos por sentido, escreve pelos resumos e so pede o PDF do que o texto precisar." %}</span>
-      {% endif %}
-    {% endif %}
+    {% if completo %}<span class="ajuda">{{ f.descricao }}</span>{% endif %}
     {% for artigo in f.artigos %}
       <div>
         {% if artigo.status == 'drafting' and artigo.thesis_json.origem == 'outra_ia' %}

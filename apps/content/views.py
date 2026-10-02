@@ -532,10 +532,49 @@ def revisar(request: HttpRequest, pk) -> HttpResponse:
     if request.method == "POST":
         return _processar_revisao(request, artigo)
 
-    return render(request, "content/revisar.html", _contexto_de_revisao(request, artigo))
+    import time
+
+    inicio = time.perf_counter()
+    contexto = _contexto_de_revisao(request, artigo)
+    meio = time.perf_counter()
+    resposta = render(request, "content/revisar.html", contexto)
+    fim = time.perf_counter()
+    if fim - inicio > 2:
+        logger.warning(
+            "Pagina do artigo %s: dados %.1fs, montar o HTML %.1fs.",
+            artigo.pk,
+            meio - inicio,
+            fim - meio,
+        )
+    return resposta
 
 
 def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
+    """Tudo o que a pagina do artigo mostra. As partes que consultam mais que o
+    proprio artigo sao medidas: se a pagina passar de 2 s, o log diz qual."""
+    import time
+
+    tempos: dict[str, float] = {}
+
+    def medir(nome, funcao, *args):
+        inicio = time.perf_counter()
+        resultado = funcao(*args)
+        tempos[nome] = time.perf_counter() - inicio
+        return resultado
+
+    contexto = _montar_contexto_de_revisao(artigo, form, agendamento, medir)
+    total = sum(tempos.values())
+    if total > 2:
+        logger.warning(
+            "Pagina do artigo %s lenta (%.1fs): %s",
+            artigo.pk,
+            total,
+            ", ".join(f"{n} {t:.1f}s" for n, t in sorted(tempos.items(), key=lambda i: -i[1])[:5]),
+        )
+    return contexto
+
+
+def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
     site = _site()
     return {
         "aba": "artigos",
@@ -555,21 +594,23 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "secoes": artigo.sections.all(),
         "titulos_sugeridos": (artigo.thesis_json or {}).get("titulos_sugeridos") or [],
         "moldura": (artigo.thesis_json or {}).get("moldura") or {},
-        "refazendo": _trabalho_em_curso(artigo),
+        "refazendo": medir("refazendo", _trabalho_em_curso, artigo),
         "site": site,
         "tem_autores": Author.objects.filter(is_active=True).exists(),
         "posicoes_de_link": Article.LinkPlacement.choices,
-        "lotes_de_capa": _lotes_de_capa(artigo),
-        "motivo_sem_capa": _motivo_sem_capa(artigo),
-        "capas_em_curso": _capas_em_curso(artigo),
+        "lotes_de_capa": medir("capas", _lotes_de_capa, artigo),
+        "motivo_sem_capa": medir("motivo_sem_capa", _motivo_sem_capa, artigo),
+        "capas_em_curso": medir("capas_em_curso", _capas_em_curso, artigo),
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "faq": artigo.faq.all(),
-        "conferencia": _conferencia_editorial(artigo),
-        "pendencias": _pendencias_com_aba(artigo),
-        "geracao": _geracao_do_artigo(artigo),
-        "links_quebrados": cobertura_do_artigo(artigo),
+        "conferencia": medir("conferencia_editorial", _conferencia_editorial, artigo),
+        "pendencias": medir("pendencias", _pendencias_com_aba, artigo),
+        "geracao": medir("geracao", _geracao_do_artigo, artigo),
+        "links_quebrados": medir("links_quebrados", cobertura_do_artigo, artigo),
         "nome_do_fluxo": _nome_do_fluxo(artigo.fluxo),
-        "irmaos": _irmaos(artigo),
+        "descricao_do_fluxo": _descricao_do_fluxo(artigo.fluxo),
+        "fontes_da_pauta": medir("fontes_da_pauta", _fontes_pendentes_da_pauta, artigo),
+        "irmaos": medir("irmaos", _irmaos, artigo),
         # O que a outra IA pediu do texto completo (fluxo da pesquisa).
         "pedidos_da_outra_ia": (artigo.thesis_json or {}).get("pedidos") or [],
         # O FAQ vai num campo proprio, e o site so o exibe se implementou.
@@ -577,9 +618,9 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "site_sem_faq": site is not None and not site.suporta("faq"),
         "chamada": (artigo.thesis_json or {}).get("chamada") or {},
         "modos_de_chamada": CHAMADAS,
-        "sem_oferta": not texto_da_oferta(),
+        "sem_oferta": not medir("oferta", texto_da_oferta),
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
-        "proximo_horario": _proximo_horario(),
+        "proximo_horario": medir("proximo_horario", _proximo_horario),
     }
 
 
@@ -604,6 +645,31 @@ def _geracao_do_artigo(artigo) -> dict:
         return {"em_curso": em_curso}
     falhou = fluxos.retomavel(artigo.topic, artigo.fluxo)
     return {"falhou": falhou} if falhou is not None else {}
+
+
+def _descricao_do_fluxo(fluxo: str) -> str:
+    from apps.content.fluxos import DESCRICOES
+
+    return DESCRICOES.get(fluxo, "")
+
+
+def _fontes_pendentes_da_pauta(artigo) -> dict:
+    """O que falta de fonte na pauta deste artigo: as mesmas pendencias que a
+    pagina da pauta mostra, para quem esta revisando nao precisar ir la ver."""
+    from apps.knowledge.pesquisa import pedidos_em_aberto
+
+    if not artigo.topic_id or artigo.status in (
+        Article.Status.PUBLISHED,
+        Article.Status.SUPERSEDED,
+        Article.Status.REJECTED,
+    ):
+        return {}
+    pauta = artigo.topic
+    por_curar = ((pauta.busca_de_fontes or {}).get("acervo") or {}).get("por_curar") or []
+    pdfs = pedidos_em_aberto(pauta) if artigo.fluxo == "pesquisa" else 0
+    if artigo.fluxo == "pesquisa":
+        por_curar = []  # o B usa os resumos da pesquisa, nao o acervo curado
+    return {"por_curar": len(por_curar), "pdfs": pdfs} if (por_curar or pdfs) else {}
 
 
 def _nome_do_fluxo(fluxo: str) -> str:
