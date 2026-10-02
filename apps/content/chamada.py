@@ -290,50 +290,94 @@ def escrever_texto(article, *, site=None, job=None) -> dict:
             return "-"
         return f"{secao.heading}\n{tirar_marcas(secao.body_markdown or '')[:900]}"
 
-    resultado = executar_prompt(
-        key="call_to_action_copy",
-        variaveis={
-            "titulo": article.title,
-            "oferta": oferta[:1500],
-            "publico": article.audience or _publico_padrao(site),
-            "trecho_do_meio": trecho(meio) if article.call_to_action == "inline" else "-",
-            "fecho": trecho(ultima),
-            "idioma": _idioma(site),
-        },
-        site=site,
-        job=job,
-        com_convite=False,
-        json_schema={
-            "type": "object",
-            "properties": {
-                parte: {
-                    "type": "object",
-                    "properties": {c: {"type": "string"} for c in LIMITES_DO_TEXTO},
-                    "required": list(LIMITES_DO_TEXTO),
-                }
-                for parte in ("meio", "fim")
-            },
-            "required": ["meio", "fim"],
-        },
-    )
-    dados = json.loads(resultado.texto)
-    texto = {"end": _limpar_texto(dados.get("fim"))}
+    variaveis = {
+        "titulo": article.title,
+        "oferta": oferta[:1500],
+        "publico": article.audience or _publico_padrao(site),
+        "trecho_do_meio": trecho(meio) if article.call_to_action == "inline" else "-",
+        "fecho": trecho(ultima),
+        "idioma": _idioma(site),
+        "ajuste": "",
+    }
+    partes_usadas = {"fim": "end"}
     if article.call_to_action == "inline":
-        texto["inline"] = _limpar_texto(dados.get("meio"))
+        partes_usadas["meio"] = "inline"
+
+    # O modelo nao conta caracteres bem. Passou do limite: pede de novo uma
+    # vez, dizendo o que passou; se ainda passar, _limpar_texto fica so com
+    # frases inteiras (ou descarta a parte), nunca corta no meio.
+    for tentativa in range(2):
+        resultado = executar_prompt(
+            key="call_to_action_copy",
+            variaveis=variaveis,
+            site=site,
+            job=job,
+            com_convite=False,
+            json_schema={
+                "type": "object",
+                "properties": {
+                    parte: {
+                        "type": "object",
+                        "properties": {c: {"type": "string"} for c in LIMITES_DO_TEXTO},
+                        "required": list(LIMITES_DO_TEXTO),
+                    }
+                    for parte in ("meio", "fim")
+                },
+                "required": ["meio", "fim"],
+            },
+        )
+        dados = json.loads(resultado.texto)
+        longos = [
+            f"{campo} {'do meio' if parte == 'meio' else 'do fim'} "
+            f"({len(_so_texto(valor))} caracteres; maximo {LIMITES_DO_TEXTO[campo]})"
+            for parte in partes_usadas
+            if isinstance(dados.get(parte), dict)
+            for campo, valor in dados[parte].items()
+            if campo in LIMITES_DO_TEXTO and len(_so_texto(valor)) > LIMITES_DO_TEXTO[campo]
+        ]
+        if not longos or tentativa:
+            break
+        variaveis["ajuste"] = (
+            "\n\nA resposta anterior passou do limite em: "
+            + "; ".join(longos)
+            + ". Escreva de novo, mais curto, com frases inteiras."
+        )
+
+    texto = {onde: _limpar_texto(dados.get(parte)) for parte, onde in partes_usadas.items()}
     texto = {onde: partes for onde, partes in texto.items() if partes}
     article.call_to_action_copy = texto
     article.save(update_fields=["call_to_action_copy"])
     return texto
 
 
-def _limpar_texto(partes) -> dict:
-    """So texto puro, dentro dos limites; sem titulo ou texto, nada."""
+def _so_texto(valor) -> str:
     from django.utils.html import strip_tags
 
+    return " ".join(strip_tags(str(valor or "")).split())
+
+
+def _frases_que_cabem(texto: str, limite: int) -> str:
+    """As frases inteiras do comeco que cabem no limite; "" se nem a primeira."""
+    if len(texto) <= limite:
+        return texto
+    cabe = ""
+    for fim in re.finditer(r"[.!?…](?=\s|$)", texto):
+        if fim.end() > limite:
+            break
+        cabe = texto[: fim.end()]
+    return cabe
+
+
+def _limpar_texto(partes) -> dict:
+    """So texto puro, dentro dos limites, sem cortar no meio: o texto longo
+    fica com as frases inteiras que cabem; botao longo sai (o site usa o
+    dele); titulo longo, ou sem titulo ou texto, descarta a parte."""
     if not isinstance(partes, dict):
         return {}
-    limpo = {
-        campo: " ".join(strip_tags(str(partes.get(campo) or "")).split())[:limite]
-        for campo, limite in LIMITES_DO_TEXTO.items()
-    }
+    limpo = {campo: _so_texto(partes.get(campo)) for campo in LIMITES_DO_TEXTO}
+    limpo["text"] = _frases_que_cabem(limpo["text"], LIMITES_DO_TEXTO["text"])
+    if len(limpo["button"]) > LIMITES_DO_TEXTO["button"]:
+        limpo["button"] = ""
+    if len(limpo["title"]) > LIMITES_DO_TEXTO["title"]:
+        return {}
     return limpo if limpo["title"] and limpo["text"] else {}

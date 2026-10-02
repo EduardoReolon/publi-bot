@@ -354,3 +354,41 @@ def test_editar_o_texto_da_chamada_na_revisao(ambiente):  # noqa: F811
     assert artigo.call_to_action_copy == {
         "end": {"title": "Fim", "text": "Texto do fim", "button": "Ir"}
     }
+
+
+@pytest.mark.django_db
+def test_texto_longo_pede_de_novo_e_nunca_corta_no_meio(site, monkeypatch):  # noqa: F811
+    import json
+
+    from apps.content import inference
+
+    _perfil()
+    longo = "Organize as vendas sem sobrecarregar a equipe. " + "x" * 200
+    respostas = [
+        {"meio": {}, "fim": {"title": "Fim", "text": longo, "button": "Ir"}},
+        {"meio": {}, "fim": {"title": "Fim", "text": longo, "button": "B" * 40}},
+    ]
+    pedidos = []
+
+    def executar(**kwargs):
+        pedidos.append(dict(kwargs["variaveis"]))
+        return type("R", (), {"texto": json.dumps(respostas[len(pedidos) - 1])})()
+
+    monkeypatch.setattr(inference, "executar_prompt", executar)
+    artigo = _artigo("Tema", [("Um", "A.")], call_to_action="end")
+
+    texto = chamada.escrever_texto(artigo, site=site)
+
+    assert len(pedidos) == 2 and pedidos[0]["ajuste"] == ""
+    assert "text do fim" in pedidos[1]["ajuste"] and "maximo 200" in pedidos[1]["ajuste"]
+    assert texto["end"]["text"] == "Organize as vendas sem sobrecarregar a equipe."
+    assert texto["end"]["button"] == ""
+
+
+def test_limpar_texto_descarta_o_que_nao_cabe_inteiro():
+    assert chamada._limpar_texto({"title": "T", "text": "y" * 250}) == {}
+    assert chamada._limpar_texto({"title": "T" * 80, "text": "Ok."}) == {}
+    assert (
+        chamada._limpar_texto({"title": "T", "text": "Curto sem ponto"})["text"]
+        == "Curto sem ponto"
+    )
