@@ -459,6 +459,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 86400.0,
         "options": {"expires": 80000},
     },
+    "conferir-indexacao": {
+        "task": "apps.radar.tasks.conferir_indexacao",
+        # O artigo no ar entrou no Google? URL Inspection, uma vez por dia.
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
     "coletar-metricas-dos-sites": {
         "task": "apps.integrations.tasks.coletar_metricas_dos_sites",
         # Leitura e conversoes por artigo, contadas pelo site. Uma vez por dia.

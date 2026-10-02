@@ -619,6 +619,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "chamada": (artigo.thesis_json or {}).get("chamada") or {},
         "modos_de_chamada": CHAMADAS,
         "partes_da_chamada": _partes_da_chamada(artigo),
+        "indexacao_ligada": _indexacao_ligada(artigo),
         "sem_oferta": not medir("oferta", texto_da_oferta),
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": medir("proximo_horario", _proximo_horario),
@@ -646,6 +647,14 @@ def _geracao_do_artigo(artigo) -> dict:
         return {"em_curso": em_curso}
     falhou = fluxos.retomavel(artigo.topic, artigo.fluxo)
     return {"falhou": falhou} if falhou is not None else {}
+
+
+def _indexacao_ligada(artigo) -> bool:
+    if artigo.status != Article.Status.PUBLISHED or not artigo.published_url:
+        return False
+    from apps.radar.indexacao import ligada
+
+    return ligada()
 
 
 def _partes_da_chamada(artigo) -> list[tuple]:
@@ -1044,6 +1053,26 @@ def texto_da_chamada(request: HttpRequest, pk) -> HttpResponse:
     artigo.save(update_fields=["call_to_action_copy"])
     messages.success(request, _("Texto da chamada salvo."))
     return _ao_artigo(artigo, "extras")
+
+
+@login_required
+@require_POST
+def conferir_indexacao(request: HttpRequest, pk) -> HttpResponse:
+    """Pergunta ao Google, agora, se o artigo publicado esta no indice."""
+    from apps.radar.indexacao import conferir
+    from apps.radar.provedores import ProvedorIndisponivel
+
+    artigo = get_object_or_404(Article, pk=pk)
+    try:
+        dados = conferir(artigo)
+    except ProvedorIndisponivel as exc:
+        messages.error(request, _("Nao foi possivel conferir: %(erro)s") % {"erro": exc})
+    else:
+        if dados["indexada"]:
+            messages.success(request, _("O artigo esta no Google."))
+        else:
+            messages.info(request, _("O artigo ainda nao esta no Google."))
+    return _ao_artigo(artigo, "revisar")
 
 
 @login_required

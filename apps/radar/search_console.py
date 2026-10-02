@@ -137,6 +137,45 @@ def _token_de_acesso() -> str:
         return _token["valor"]
 
 
+def inspecionar(propriedade: str, url: str) -> dict:
+    """O `inspectionResult` da URL Inspection API: se a URL esta no indice
+    do Google, e por que nao. So leitura (o escopo de sempre); cota de 2.000
+    por dia por propriedade."""
+    try:
+        resposta = httpx.post(
+            "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect",
+            json={"inspectionUrl": url, "siteUrl": propriedade},
+            headers={"Authorization": f"Bearer {_token_de_acesso()}"},
+            timeout=60.0,
+        )
+    except httpx.HTTPError as exc:
+        custos.registrar(
+            provedor=ChamadaExterna.Provedor.SEARCH_CONSOLE,
+            endpoint="urlInspection/index:inspect",
+            finalidade=ChamadaExterna.Finalidade.INDEXACAO,
+            consulta=url,
+            sucesso=False,
+            erro=str(exc),
+        )
+        raise ProvedorIndisponivel(f"Search Console nao respondeu: {exc}") from exc
+    custos.registrar(
+        provedor=ChamadaExterna.Provedor.SEARCH_CONSOLE,
+        endpoint="urlInspection/index:inspect",
+        finalidade=ChamadaExterna.Finalidade.INDEXACAO,
+        consulta=url,
+        sucesso=resposta.is_success,
+        erro="" if resposta.is_success else str(resposta.status_code),
+    )
+    if resposta.status_code == 403:
+        raise ProvedorIndisponivel(
+            f"sem acesso a {propriedade}. Adicione {email_da_conta()} como usuario "
+            f"da propriedade no Search Console (Configuracoes > Usuarios e permissoes)."
+        )
+    if not resposta.is_success:
+        raise ProvedorIndisponivel(f"Search Console respondeu HTTP {resposta.status_code}.")
+    return resposta.json().get("inspectionResult") or {}
+
+
 def consultar(propriedade: str, inicio: datetime.date, fim: datetime.date) -> list[dict]:
     """Linhas (consulta, pagina) do periodo, do Search Analytics."""
     corpo = {
