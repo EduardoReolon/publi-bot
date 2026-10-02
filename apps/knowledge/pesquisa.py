@@ -529,7 +529,43 @@ def pronta_para_gerar(pauta) -> str:
     sem_indice = Document.objects.filter(pk__in=documentos, chunks__isnull=True).count()
     if sem_indice == len(documentos):
         return "os resumos ainda estao sendo vetorizados; tente em instantes."
+    abertos = pedidos_em_aberto(pauta)
+    if abertos:
+        return (
+            f"esperando o PDF de {abertos} artigo(s) que o texto pediu: envie ou siga "
+            "com o resumo em 'Conferir os PDFs pedidos'. A geracao comeca sozinha "
+            "quando o ultimo for resolvido."
+        )
     return ""
+
+
+def pedidos_em_aberto(pauta) -> int:
+    """Quantos artigos da pesquisa tem pedido de texto completo sem resposta."""
+    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    return len(
+        {
+            pedido.get("artigo")
+            for angulo in pesquisa.get("angulos", [])
+            for pedido in angulo.get("pedidos", [])
+            if not pedido.get("atendido")
+        }
+    )
+
+
+def _depois_dos_pedidos(pautas) -> None:
+    """Resolvido o ultimo pedido de PDF, o artigo B entra na fila sozinho
+    (`disparar` nao duplica: retoma a falha, ou nada faz se ja ha artigo)."""
+    from django.db import transaction
+
+    from apps.content import fluxos
+
+    if fluxos.B not in fluxos.ligados():
+        return
+    for pauta in {p.pk: p for p in pautas}.values():
+        pauta.refresh_from_db()
+        if pauta.status == pauta.Status.REJECTED or pedidos_em_aberto(pauta):
+            continue
+        transaction.on_commit(lambda p=pauta: fluxos.disparar(p, fluxos.B))
 
 
 # -- PDF: so os trechos pedidos --------------------------------------------------
@@ -626,6 +662,7 @@ def extrair_do_pdf(documento_pdf) -> int:
     from apps.knowledge.tasks import pedir_indexacao
 
     atendidos = 0
+    tocadas = []
     for candidato in documento_pdf.candidatos_pelo_completo.select_related("documento"):
         resumo = candidato.documento
         if resumo is None:
@@ -634,6 +671,13 @@ def extrair_do_pdf(documento_pdf) -> int:
         pedidos = list(dict.fromkeys(p["o_que"] for _, _, p in ligados)) or [PEDIDO_PADRAO]
         achados = trechos_pedidos(documento_pdf, pedidos, titulo=candidato.titulo)
         if not achados:
+            # PDF sem texto aproveitavel: o pedido esta respondido (o texto segue
+            # com o resumo), senao a pauta ficaria esperando para sempre.
+            for pauta, _angulo, pedido in ligados:
+                pedido["atendido"] = "pdf"
+                pedido["trechos"] = 0
+                registrar(pauta, "pesquisa", angulos=pauta.busca_de_fontes["pesquisa"]["angulos"])
+            tocadas += [pauta for pauta, _a, _p in ligados]
             continue
         base = resumo.markdown_full.split(MARCA_DO_COMPLETO)[0].rstrip()
         partes = [base]
@@ -652,7 +696,9 @@ def extrair_do_pdf(documento_pdf) -> int:
             pedido["atendido"] = "pdf"
             pedido["trechos"] = len(achados.get(pedido["o_que"], []))
             registrar(pauta, "pesquisa", angulos=(pauta.busca_de_fontes["pesquisa"]["angulos"]))
+        tocadas += [pauta for pauta, _a, _p in ligados]
         atendidos += len(achados)
+    _depois_dos_pedidos(tocadas)
     return atendidos
 
 
@@ -710,6 +756,8 @@ def seguir_com_o_resumo(candidato) -> None:
     candidato.motivo = "Sem PDF: segue com o resumo."
     candidato.decidido_em = timezone.now()
     candidato.save(update_fields=["situacao", "motivo", "decidido_em"])
-    for pauta, _angulo, pedido in _pedidos_do_candidato(candidato):
+    ligados = _pedidos_do_candidato(candidato)
+    for pauta, _angulo, pedido in ligados:
         pedido["atendido"] = "sem_pdf"
         registrar(pauta, "pesquisa", angulos=pauta.busca_de_fontes["pesquisa"]["angulos"])
+    _depois_dos_pedidos([pauta for pauta, _a, _p in ligados])

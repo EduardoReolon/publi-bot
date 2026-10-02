@@ -62,16 +62,26 @@ def em_andamento(pauta, fluxo: str):
 def disparar(pauta, fluxo: str) -> tuple[str, str]:
     """Poe a geracao do fluxo na fila, se der. Devolve (nivel, mensagem) para a tela."""
     from apps.content.tasks import gerar_artigo
+    from apps.ops.orchestrator import devolver_a_fila
 
     nome = NOMES[fluxo]
-    if artigo_do_fluxo(pauta, fluxo) is not None:
-        return "info", _("%(f)s: esta pauta ja tem artigo neste fluxo.") % {"f": nome}
     trabalho = em_andamento(pauta, fluxo)
     if trabalho is not None:
         return "info", _("%(f)s: ja esta sendo gerado (trabalho %(id)s).") % {
             "f": nome,
             "id": str(trabalho.pk)[:8],
         }
+    # Uma geracao que falhou continua do passo em que parou, no MESMO artigo:
+    # pedir de novo nunca cria um segundo artigo nem um segundo trabalho.
+    falhou = retomavel(pauta, fluxo)
+    if falhou is not None:
+        devolver_a_fila(falhou)
+        return "success", _("%(f)s: geracao retomada do passo %(n)s.") % {
+            "f": nome,
+            "n": falhou.current_step,
+        }
+    if artigo_do_fluxo(pauta, fluxo) is not None:
+        return "info", _("%(f)s: esta pauta ja tem artigo neste fluxo.") % {"f": nome}
 
     if fluxo == B:
         return _disparar_b(pauta)
@@ -217,6 +227,26 @@ def trabalhos_em_curso(pautas) -> dict:
         fluxo = (trabalho.step_payloads or {}).get("fluxo", A)
         saida[(trabalho.target_object_id, fluxo)] = trabalho
     return saida
+
+
+def retomavel(pauta, fluxo: str):
+    """A ultima geracao do fluxo que falhou, se ela ainda e o caminho: sem
+    artigo pronto depois dela, e com o rascunho dela (se ja criou um) vivo."""
+    falhou = ultimas_falhas([pauta]).get((pauta.pk, fluxo))
+    if falhou is None:
+        return None
+    artigo_do_trabalho = ((falhou.step_payloads or {}).get("1") or {}).get("article_id")
+    for artigo in pauta.articles.filter(fluxo=fluxo).exclude(status=Article.Status.REJECTED):
+        if str(artigo.pk) != artigo_do_trabalho or artigo.status != Article.Status.DRAFTING:
+            return None  # ha outro artigo, ou este ja andou: nada a retomar
+    if (
+        artigo_do_trabalho
+        and not pauta.articles.filter(
+            pk=artigo_do_trabalho, status=Article.Status.DRAFTING
+        ).exists()
+    ):
+        return None  # o rascunho dela foi descartado: comeca de novo
+    return falhou
 
 
 def ultimas_falhas(pautas) -> dict:
