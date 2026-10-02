@@ -114,8 +114,8 @@
               artigo novo ou atualizado, sem repetir varias vezes.
             {% endblocktranslate %}
             {% if not ix.no_sitemap %}
-              <p><strong>{% translate "A URL nao aparece em nenhum sitemap enviado ao Search Console." %}</strong>
-              {% translate "Envie o sitemap do site em Search Console > Sitemaps (ex.: /sitemap.xml) e confira se ele inclui os artigos." %}</p>
+              <p><strong>{% translate "O Google nao viu esta URL em nenhum sitemap." %}</strong>
+              {% translate "Confira se o robots.txt do site tem a linha Sitemap: com o endereco completo (https://.../sitemap.xml), se o sitemap inclui os artigos, e envie-o uma vez em Search Console > Sitemaps (o endereco completo, para ver o status)." %}</p>
             {% endif %}
             {% if ix.canonical_do_google and ix.canonical_do_google != artigo.published_url %}
               <p>{% translate "O Google escolheu outra pagina como principal (canonical):" %} {{ ix.canonical_do_google }}</p>

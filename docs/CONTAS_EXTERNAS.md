@@ -180,8 +180,11 @@ está num sitemap enviado e o botão para a inspeção no Search Console.
 Pedir a indexação continua sendo um clique ali ("Solicitar indexação"): o
 Google não tem API para isso em artigo (a Indexing API é só para vaga de
 emprego e transmissão ao vivo, e o ping do sitemap foi desligado em 2023). O
-que acelera de verdade é o sitemap do site com `lastmod` real, enviado uma vez
-em **Search Console › Sitemaps**, e os links internos.
+que acelera de verdade é o sitemap do site com `lastmod` real, apontado no
+`robots.txt` (`Sitemap: https://.../sitemap.xml`; ver o `IMPLANTACAO.md` da
+biblioteca), e os links internos. Enviar o sitemap uma vez em **Search Console
+› Sitemaps** é recomendado para ver status e erros; em propriedade de domínio,
+digite o endereço completo, com `https://`.
 
 ---
 
