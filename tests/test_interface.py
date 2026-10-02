@@ -23,6 +23,7 @@ from apps.integrations.models import Site
 from apps.knowledge.models import Document, DocumentCategory, SuperChunk
 from apps.knowledge.services import salvar_super_chunk
 from apps.ops.models import GenerationJob
+from tests.conftest import TEXTO_APROVAVEL, pronto_para_aprovar
 
 ROTAS_DO_MENU = [
     "accounts:painel",
@@ -326,8 +327,8 @@ def _dados_de_aprovacao(**extra):
     dados = {
         "acao": "aprovar",
         "title": "Artigo em revisao",
-        "meta_description": "",
-        "body_markdown": "## Titulo\n\nTexto do artigo.",
+        "meta_description": "Descricao para o Google.",
+        "body_markdown": TEXTO_APROVAVEL,
         "quando": "",
     }
     dados.update(extra)
@@ -387,6 +388,7 @@ def test_divergencia_nao_confirmada_bloqueia_a_aprovacao(ambiente, artigo_para_r
 
 @pytest.mark.django_db
 def test_divergencia_confirmada_libera(ambiente, artigo_para_revisar):
+    pronto_para_aprovar(artigo_para_revisar)
     _, _, client = ambiente
     Article.objects.filter(pk=artigo_para_revisar.pk).update(consensus=Article.Consensus.CONFLICT)
 
@@ -440,6 +442,7 @@ def test_edicao_humana_vira_versao_e_e_medida(ambiente, artigo_para_revisar):
 
 @pytest.mark.django_db
 def test_aprovar_agenda_e_sai_da_fila_de_revisao(ambiente, artigo_para_revisar):
+    pronto_para_aprovar(artigo_para_revisar)
     _, _, client = ambiente
 
     client.post(
@@ -1554,3 +1557,22 @@ def test_um_trabalho_que_ja_terminou_nao_barra_uma_geracao_nova(ambiente, monkey
         ).count()
         == 1
     )
+
+
+@pytest.mark.django_db
+def test_sem_capa_nao_aprova_e_a_tela_diz_o_que_falta(ambiente, artigo_para_revisar):
+    from apps.content.services import pendencias_para_aprovar
+
+    _, _, client = ambiente
+    pronto_para_aprovar(artigo_para_revisar)
+    artigo_para_revisar.images.update(is_chosen=False)
+    assert pendencias_para_aprovar(artigo_para_revisar) == ["escolha a imagem de capa"]
+
+    url = reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert "Antes de aprovar" in html and "escolha a imagem de capa" in html
+    assert 'value="aprovar" disabled' in html
+
+    client.post(url, _dados_de_aprovacao())
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.status == Article.Status.PENDING_REVIEW

@@ -27,6 +27,7 @@ from apps.content.services import (
     RevisaoInsuficiente,
     aplicar_edicao_humana,
     aprovar_e_agendar,
+    pendencias_para_aprovar,
     aprovar_resposta_e_agendar,
 )
 from apps.content.tasks import responder_pergunta
@@ -563,6 +564,7 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "faq": artigo.faq.all(),
         "conferencia": _conferencia_editorial(artigo),
+        "pendencias": pendencias_para_aprovar(artigo),
         "links_quebrados": cobertura_do_artigo(artigo),
         "nome_do_fluxo": _nome_do_fluxo(artigo.fluxo),
         "irmaos": _irmaos(artigo),
