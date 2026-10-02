@@ -547,3 +547,54 @@ def test_o_negativo_viaja_so_quando_existe(monkeypatch):
 
     assert corpos[0]["negative_prompt"] == "blurry, watermark"
     assert "negative_prompt" not in corpos[1]
+
+
+# ---------------------------------------------------------------------------
+# Contexto do modelo (docs/WORKER_CONTEXTO.md)
+# ---------------------------------------------------------------------------
+def test_cada_chamada_de_texto_leva_o_contexto_necessario(monkeypatch, settings):
+    from apps.inference.providers.openai_compatible import OpenAICompatibleClient
+
+    settings.INFERENCIA_CONTEXTO_MINIMO = 16384
+    enviados = []
+
+    class ClienteFalso:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, **kwargs):
+            enviados.append(kwargs["headers"]["X-PubliBot-Contexto"])
+            return httpx.Response(
+                200, json=_exemplo("texto-resposta.json"), request=httpx.Request("POST", url)
+            )
+
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: ClienteFalso())
+    cliente = OpenAICompatibleClient(base_url="http://worker", api_key="x")
+    cliente.chat(model="m", system="s", user="curto")
+    cliente.chat(model="m", system="s", user="palavra " * 20000, max_tokens=2000)
+
+    assert enviados[0] == "16384"
+    # ~160 mil caracteres: bem mais que o minimo, em multiplos de 4096.
+    assert int(enviados[1]) > 16384 and int(enviados[1]) % 4096 == 0
+
+
+def test_contexto_estourado_explica_o_que_fazer():
+    from apps.inference.providers.base import ProviderPermanentError
+    from apps.inference.providers.openai_compatible import OpenAICompatibleClient
+
+    corpo = {
+        "error": {
+            "message": "request (4835 tokens) exceeds the available context size (4096 tokens)",
+            "type": "exceed_context_size_error",
+            "n_prompt_tokens": 4835,
+            "n_ctx": 4096,
+        }
+    }
+    resposta = httpx.Response(400, json=corpo, request=httpx.Request("POST", "http://w"))
+    with pytest.raises(ProviderPermanentError) as erro:
+        OpenAICompatibleClient._levantar_se_erro(resposta)
+    assert "4835" in str(erro.value) and "4096" in str(erro.value)
+    assert "WORKER_CONTEXTO" in str(erro.value)

@@ -69,6 +69,10 @@ class OpenAICompatibleClient(LLMClient):
                 "json_schema": {"name": "resposta", "schema": json_schema, "strict": True},
             }
 
+        cabecalhos = {
+            **self._headers(),
+            "X-PubliBot-Contexto": str(contexto_necessario(system, user, max_tokens)),
+        }
         inicio = time.perf_counter()
         try:
             # `verify=True` explicito: o contrato exige TLS, e desligar a
@@ -79,7 +83,7 @@ class OpenAICompatibleClient(LLMClient):
                 resposta = cliente.post(
                     f"{self.base_url}/v1/chat/completions",
                     json=corpo,
-                    headers=self._headers(),
+                    headers=cabecalhos,
                 )
         except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
             # A GPU local desligada cai aqui. O trabalho nao se perde: espera.
@@ -350,6 +354,18 @@ def _retry_after(resposta: httpx.Response) -> int | None:
     return segundos if segundos > 0 else None
 
 
+def contexto_necessario(system: str, user: str, max_tokens: int | None) -> int:
+    """Quanto contexto este pedido precisa: o minimo configurado, ou mais se o
+    pedido for maior (estimativa folgada: ~3 caracteres por token, mais a
+    resposta), arredondado para cima em blocos de 4096."""
+    from django.conf import settings
+
+    estimado = (len(system or "") + len(user or "")) // 3 + (max_tokens or 2048)
+    minimo = getattr(settings, "INFERENCIA_CONTEXTO_MINIMO", 16384)
+    preciso = max(minimo, estimado)
+    return -(-preciso // 4096) * 4096
+
+
 def _contexto_estourado(texto: str) -> str:
     """Mensagem clara para o pedido maior que o contexto com que o modelo foi
     carregado (llama.cpp: `exceed_context_size_error`). Repetir nao adianta:
@@ -367,7 +383,10 @@ def _contexto_estourado(texto: str) -> str:
             f"com {janela.group(1)}."
         )
     return (
-        "O pedido nao cabe no contexto do modelo." + numeros + " Suba o contexto no "
-        "servidor do modelo (llama-server: -c 16384; Ollama: num_ctx; LM Studio: "
-        "Context Length) e use 'Tentar de novo': a geracao continua deste passo."
+        "O pedido nao cabe no contexto do modelo." + numeros + " O worker deveria "
+        "ajustar o contexto sozinho pelo cabecalho X-PubliBot-Contexto "
+        "(docs/WORKER_CONTEXTO.md); confira com `manage.py conferir_worker`. Sem "
+        "isso, suba o contexto no servidor do modelo (Ollama: OLLAMA_CONTEXT_LENGTH "
+        "ou num_ctx; llama-server: -c 16384) e use 'Tentar de novo': a geracao "
+        "continua deste passo."
     )
