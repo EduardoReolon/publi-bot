@@ -26,10 +26,10 @@ def tick_publication_scheduler(limite: int = 50) -> int:
     """
     from apps.accounts.varredura import para_cada_tenant
 
-    return para_cada_tenant(lambda: _publicar_vencidos(limite), "tick_publication_scheduler")
+    return para_cada_tenant(lambda: publicar_vencidos(limite), "tick_publication_scheduler")
 
 
-def _publicar_vencidos(limite: int) -> int:
+def publicar_vencidos(limite: int) -> int:
     """O tique de UM tenant. Roda ja dentro do schema dele.
 
     O despacho do `publish_content` acontece aqui dentro de proposito: o

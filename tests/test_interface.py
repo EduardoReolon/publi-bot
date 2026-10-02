@@ -14,6 +14,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
+from django.utils import timezone
 from django_tenants.utils import schema_context
 
 from apps.accounts.models import TenantMembership, User
@@ -1576,3 +1577,53 @@ def test_sem_capa_nao_aprova_e_a_tela_diz_o_que_falta(ambiente, artigo_para_revi
     client.post(url, _dados_de_aprovacao())
     artigo_para_revisar.refresh_from_db()
     assert artigo_para_revisar.status == Article.Status.PENDING_REVIEW
+
+
+@pytest.mark.django_db
+def test_publicar_ja_aprova_com_horario_de_agora_e_dispara(
+    ambiente, artigo_para_revisar, monkeypatch, django_capture_on_commit_callbacks
+):
+    disparos = []
+    monkeypatch.setattr(
+        "apps.integrations.tasks.publicar_vencidos", lambda limite: disparos.append(limite)
+    )
+    _, _, client = ambiente
+    pronto_para_aprovar(artigo_para_revisar)
+    url = reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
+    with django_capture_on_commit_callbacks(execute=True):
+        client.post(url, _dados_de_aprovacao(acao="publicar_ja"))
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.status == Article.Status.APPROVED_SCHEDULED
+    assert artigo_para_revisar.scheduled_for <= timezone.now()
+    assert disparos == [50]
+
+
+@pytest.mark.django_db
+def test_pagina_do_artigo_tem_abas_e_tentar_de_novo(ambiente):
+    from apps.content.models import Topic
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Pauta", status="used")
+    rascunho = Article.objects.create(
+        topic=pauta, title="Rascunho", fluxo="pesquisa", status=Article.Status.DRAFTING
+    )
+    GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=pauta.pk,
+        status=GenerationJob.Status.FAILED,
+        step_payloads={"fluxo": "pesquisa", "1": {"article_id": str(rascunho.pk)}},
+        current_step=6,
+        last_error="passo 6 (montar): algo",
+    )
+    url = reverse("content:revisar", args=[rascunho.pk], urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert 'id="abas-do-artigo"' in html and 'id="aba-capa"' in html
+    assert "parou no passo" in html and "Tentar de novo" in html
+
+    resposta = client.post(
+        reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants"),
+        {"fluxo": "pesquisa", "artigo": str(rascunho.pk)},
+    )
+    assert resposta.url.endswith(f"/artigos/{rascunho.pk}/")
+    assert GenerationJob.objects.get(target_object_id=pauta.pk).status == "pending"
