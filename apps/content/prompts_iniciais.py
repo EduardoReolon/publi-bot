@@ -588,7 +588,15 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "O texto da chamada para a oferta do site, ligado ao assunto do artigo: "
             "um no meio (depois da secao que mais se aproxima da oferta) e um no fim."
         ),
-        "variaveis": ["titulo", "oferta", "publico", "trecho_do_meio", "fecho", "idioma"],
+        "variaveis": [
+            "titulo",
+            "oferta",
+            "publico",
+            "trecho_do_meio",
+            "fecho",
+            "idioma",
+            "ajuste",
+        ],
         "temperatura": 0.4,
         "sistema": (
             "Voce escreve a chamada que aparece dentro de um artigo de blog, convidando "
@@ -600,9 +608,12 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Responda SOMENTE com um objeto JSON:\n"
             '  "meio": {"title", "text", "button"} — liga o trecho do meio a oferta;\n'
             '  "fim": {"title", "text", "button"} — fecha o artigo inteiro.\n'
-            "title: ate 70 caracteres, falando do problema ou do resultado de quem le "
-            "(nao do nome da empresa). text: 1 ou 2 frases, ate 200 caracteres. "
-            "button: ate 30 caracteres, um verbo do que acontece ao clicar "
+            "Os limites sao do campo no site e NAO podem passar: o que passar e "
+            "descartado. Mire abaixo deles.\n"
+            "title: ate 70 caracteres (mire em 55), falando do problema ou do resultado "
+            "de quem le (nao do nome da empresa). text: 1 ou 2 frases curtas, ate 200 "
+            "caracteres (mire em 150). button: ate 30 caracteres (mire em 20), "
+            "um verbo do que acontece ao clicar "
             "(ex.: 'Quero conversar', 'Ver como funciona').\n\n"
             "Regras:\n"
             "- So prometa o que esta na oferta. Nenhum numero, prazo ou resultado que "
@@ -615,7 +626,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Idioma: {idioma}\nArtigo: {titulo}\nPublico: {publico}\n\n"
             "Oferta do site:\n<fonte>\n{oferta}\n</fonte>\n\n"
             "Trecho onde entra a chamada do meio:\n<fonte>\n{trecho_do_meio}\n</fonte>\n\n"
-            "Fecho do artigo:\n<fonte>\n{fecho}\n</fonte>"
+            "Fecho do artigo:\n<fonte>\n{fecho}\n</fonte>{ajuste}"
         ),
     },
     "research_synthesis": {
