@@ -22,6 +22,14 @@
         {% for h in p.hipoteses.contrarias %}<p><span class="selo alerta">{% translate "contraria" %}</span> <strong>{{ h.angulo }}</strong>: <span class="pre-visualizacao">{{ h.paragrafo }}</span></p>{% endfor %}
       </details>
     {% endif %}
+    {% with n=pauta.pdfs_esperando %}{% if n %}
+      <div class="acoes">
+        <a class="botao" href="{% url 'content:pdfs_da_pesquisa' pauta.pk %}">{% blocktranslate trimmed count n=n %}Conferir o PDF pedido ({{ n }} artigo){% plural %}Conferir os PDFs pedidos ({{ n }} artigos){% endblocktranslate %}</a>
+        <span class="ajuda">{% translate "detalhes de cada artigo; envie o PDF quando tiver o arquivo, ou siga com o resumo" %}</span>
+      </div>
+    {% elif p.angulos %}
+      <div class="ajuda"><a href="{% url 'content:pdfs_da_pesquisa' pauta.pk %}">{% translate "Ver os artigos de que o texto pediu mais que o resumo" %}</a></div>
+    {% endif %}{% endwith %}
     {% for angulo in p.angulos %}
       <details {% if forloop.first %}open{% endif %} style="margin-top:.3rem">
         <summary>{% if angulo.contraponto %}<span class="selo alerta">{% translate "contraponto" %}</span>{% endif %} <strong>{{ angulo.nome }}</strong> ({{ angulo.artigos|length }})</summary>
@@ -40,17 +48,6 @@
             {% elif pedido.atendido == 'sem_pdf' %}<span class="selo">{% translate "sem PDF: segue com o resumo" %}</span>
             {% else %}<span class="selo espera">{% translate "pede o texto completo" %}</span>{% endif %}
             [{{ pedido.artigo }}] {{ pedido.o_que }}
-            {% if not pedido.atendido %}
-              {% for artigo in p.artigos %}{% if artigo.numero == pedido.artigo and artigo.candidato %}
-                <form method="post" action="{% url 'content:pdf_da_pesquisa' pauta.pk artigo.candidato %}" style="display:inline">{% csrf_token %}
-                  <button type="submit" class="botao discreto pequeno">{% if pedido.pdf_aberto %}{% translate "Baixar o PDF aberto" %}{% else %}{% translate "Sem PDF aberto: vou enviar" %}{% endif %}</button>
-                </form>
-                <form method="post" action="{% url 'knowledge:seguir_com_o_resumo' artigo.candidato %}" style="display:inline">{% csrf_token %}
-                  <input type="hidden" name="voltar" value="{% url 'content:pautas' %}#pauta-{{ pauta.pk }}">
-                  <button type="submit" class="botao discreto pequeno">{% translate "Nao achei o PDF" %}</button>
-                </form>
-              {% endif %}{% endfor %}
-            {% endif %}
           </div>
         {% endfor %}
       </details>

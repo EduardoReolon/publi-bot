@@ -263,6 +263,15 @@ def test_contexto_das_fontes_usa_delimitadores():
 
 
 @pytest.mark.django_db
+def test_citacoes_de_trechos_sem_posicao_seguem_a_ordem(artigo_com_fontes):
+    """Na geracao, os trechos voltam do payload como SuperChunk, sem `posicao`:
+    todos caiam na posicao 1 e a segunda citacao quebrava a gravacao."""
+    trechos = [c.super_chunk for c in artigo_com_fontes.citations.order_by("rank")]
+    registrar_citacoes(artigo_com_fontes, list(reversed(trechos)))
+    ordem = list(artigo_com_fontes.citations.order_by("rank").values_list("rank", "super_chunk"))
+    assert ordem == [(1, trechos[1].pk), (2, trechos[0].pk)]
+
+
 def test_fonte_primaria_e_a_de_maior_autoridade(artigo_com_fontes):
     assert artigo_com_fontes.outbound_link_url == "https://pubmed.ncbi.nlm.nih.gov/1"
     assert artigo_com_fontes.anchor_text == "Silva et al., 2024"

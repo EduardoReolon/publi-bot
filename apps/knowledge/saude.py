@@ -377,16 +377,35 @@ def alertas_da_busca(resumo: ResumoDaBusca) -> list[str]:
             }
         )
 
-    if resumo.margem_esta_apertada:
+    margem = resumo.margem_ate_o_limiar
+    if margem is not None and margem < 0:
+        # A mediana das fontes usadas passou do corte: o corte foi baixado
+        # depois, ou as fontes entraram pela folga da busca textual.
         avisos.append(
             str(
                 _(
-                    "A fonte tipica aceita esta a %(margem).4f do corte. O filtro "
-                    "trabalha no limite: uma consulta redigida de outro jeito ja "
-                    "cai fora."
+                    "O corte (%(corte).3f) esta abaixo da distancia tipica das fontes "
+                    "que as buscas usaram (%(mediana).3f): com ele, a maioria dessas "
+                    "buscas ficaria sem fonte. Se os trechos perto de %(mediana).3f "
+                    "no teste acima sao bons, suba o corte para perto disso."
                 )
             )
-            % {"margem": resumo.margem_ate_o_limiar or 0.0}
+            % {
+                "corte": resumo.config.max_cosine_distance,
+                "mediana": resumo.atual.distancia_mediana,
+            }
+        )
+    elif resumo.margem_esta_apertada:
+        avisos.append(
+            str(
+                _(
+                    "A fonte tipica aceita esta so %(margem).3f abaixo do corte. O "
+                    "filtro trabalha no limite: uma consulta redigida de outro jeito "
+                    "ja cai fora. Se o teste acima mostra trechos bons logo depois do "
+                    "corte, suba um pouco."
+                )
+            )
+            % {"margem": margem or 0.0}
         )
 
     return avisos

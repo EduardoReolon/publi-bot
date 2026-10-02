@@ -219,6 +219,20 @@ def trabalhos_em_curso(pautas) -> dict:
     return saida
 
 
+def ultimas_falhas(pautas) -> dict:
+    """{(pauta_id, fluxo): trabalho} da geracao mais recente que falhou."""
+    saida = {}
+    falhas = GenerationJob.objects.filter(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id__in=[p.pk for p in pautas],
+        status=GenerationJob.Status.FAILED,
+    ).order_by("updated_at")
+    for trabalho in falhas:
+        fluxo = (trabalho.step_payloads or {}).get("fluxo", A)
+        saida[(trabalho.target_object_id, fluxo)] = trabalho
+    return saida
+
+
 def situacao_da_pesquisa(pauta) -> dict:
     """A pesquisa do B como a tela mostra: situacao, desde quando e se parou."""
     import datetime
@@ -254,7 +268,9 @@ def situacao_da_pesquisa(pauta) -> dict:
 PESQUISA_PARADA_MINUTOS = 30
 
 
-def para_a_tela(pauta, config, trabalhos: dict | None = None) -> list[dict]:
+def para_a_tela(
+    pauta, config, trabalhos: dict | None = None, falhas: dict | None = None
+) -> list[dict]:
     """Por fluxo ligado: o artigo (se houver), o trabalho em curso, a pesquisa
     (no B) e se ainda da para gerar."""
     saida = []
@@ -275,6 +291,12 @@ def para_a_tela(pauta, config, trabalhos: dict | None = None) -> list[dict]:
                 "artigos": artigos,
                 "falta": not vivos,
                 "trabalho": trabalho,
+                # A falha so importa enquanto nao ha artigo que andou depois dela.
+                "falhou": (falhas or {}).get((pauta.pk, fluxo))
+                if all(
+                    a.status in (Article.Status.DRAFTING, Article.Status.REJECTED) for a in artigos
+                )
+                else None,
                 "pesquisa": situacao_da_pesquisa(pauta) if fluxo == B else None,
             }
         )

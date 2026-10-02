@@ -656,6 +656,51 @@ def extrair_do_pdf(documento_pdf) -> int:
     return atendidos
 
 
+def pdfs_pedidos(pauta) -> list[dict]:
+    """Os artigos da pesquisa de que a sintese pediu o texto completo, um por
+    artigo, com os pedidos e em que pe esta cada um (para a pagina dos PDFs)."""
+    from apps.knowledge.models import CandidatoDeFonte
+
+    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    artigos = {a["numero"]: a for a in pesquisa.get("artigos", [])}
+    por_numero: dict[int, dict] = {}
+    for angulo in pesquisa.get("angulos", []):
+        for pedido in angulo.get("pedidos", []):
+            artigo = artigos.get(pedido.get("artigo"))
+            if artigo is None:
+                continue
+            item = por_numero.setdefault(
+                artigo["numero"],
+                {"artigo": artigo, "pedidos": [], "pdf_aberto": pedido.get("pdf_aberto") or ""},
+            )
+            item["pedidos"].append({"angulo": angulo.get("nome", ""), **pedido})
+
+    candidatos = CandidatoDeFonte.objects.select_related("documento", "documento_completo").in_bulk(
+        [i["artigo"]["candidato"] for i in por_numero.values() if i["artigo"].get("candidato")],
+        field_name="pk",
+    )
+    saida = []
+    for numero in sorted(por_numero):
+        item = por_numero[numero]
+        candidato = candidatos.get(_uuid(item["artigo"].get("candidato")))
+        atendidos = {p.get("atendido") for p in item["pedidos"]}
+        if None in atendidos or "" in atendidos:
+            estado = "lendo" if candidato and candidato.documento_completo_id else "pendente"
+        else:
+            estado = "pdf" if "pdf" in atendidos else "sem_pdf"
+        saida.append({**item, "candidato": candidato, "estado": estado})
+    return saida
+
+
+def _uuid(valor):
+    import uuid
+
+    try:
+        return uuid.UUID(str(valor))
+    except ValueError:
+        return None
+
+
 def seguir_com_o_resumo(candidato) -> None:
     """Sem PDF: o artigo segue com o resumo, e os pedidos sobre ele saem da lista."""
     from apps.knowledge.models import CandidatoDeFonte

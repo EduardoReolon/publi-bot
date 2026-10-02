@@ -35,6 +35,7 @@
                 <a href="{% url 'content:pauta' pauta.pk %}"><strong>{{ pauta.title }}</strong></a>
                 {% include "content/_selos_da_pauta.html" %}
                 {% if pauta.por_curar %}<div class="ajuda"><span class="selo alerta">{% translate "fontes para curar" %}</span></div>{% endif %}
+                {% include "content/_sobre_a_pauta.html" %}
               </td>
               <td class="pre-visualizacao">{{ pauta.target_keyword|default:"—" }}
                 {% with d=pauta.evidence.dificuldade %}{% if d %}<div><span class="selo {% if d.rotulo == 'brecha' %}ok{% elif d.rotulo == 'dificil' %}ruim{% else %}alerta{% endif %}" title="{% translate 'Links para a 1a pagina' %}: {{ d.links }}">{% if d.rotulo == 'brecha' %}{% translate "brecha" %}{% elif d.rotulo == 'dificil' %}{% translate "dificil" %}{% else %}{% translate "media" %}{% endif %} · {{ d.nota }}</span></div>{% endif %}{% endwith %}

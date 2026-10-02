@@ -713,3 +713,54 @@ def test_abstract_em_ingles_tambem_e_reconhecido():
     blocos = dividir_em_blocos(texto, e_markdown=True)
 
     assert [bloco.titulo for bloco in blocos] == ["A Study on Something", "Abstract"]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "<!-- image -->",
+        "<!-- image --> Article",
+        "DOI: 10.1177/1094670506293810 http://jsr.sagepub.com/content/9/2/139 "
+        "The online version of this article can be found at:",
+        "F I G U R E 4 Lorenz Curve for Customer Profit <!-- image --> F I G U R E 5 "
+        "Inverted Lorenz Curve for Physicians <!-- image -->",
+        "F r a n c i s J . M u l h e r n f",
+    ],
+)
+def test_ruido_fica_fora_do_indice(texto):
+    from apps.knowledge.blocos import e_ruido
+
+    assert e_ruido(texto)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Customer profitability is positively related to customer satisfaction. "
+        "Customer profitability is positively related to brand loyalty.",
+        "VOLUME 12, 2024 <!-- image --> FIGURE 1. An illustration of loyal customers and "
+        "churners. <!-- image --> effective retention campaigns. By comprehending this "
+        "mechanism, businesses can act before the customer leaves.",
+        "A fidelizacao depende de contato regular depois da primeira compra, e nao so de desconto.",
+    ],
+)
+def test_prosa_curta_continua_no_indice(texto):
+    from apps.knowledge.blocos import e_ruido, limpar_marcadores
+
+    assert not e_ruido(texto)
+    assert "<!--" not in limpar_marcadores(texto)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Texto do video sobre BDI.",
+        "O que e a dor e o que a causa nela.",
+        "Cimento CP II a R$ 38 o saco.",
+        "Tabela.",
+    ],
+)
+def test_texto_curto_sem_sinal_de_lixo_fica(texto):
+    from apps.knowledge.blocos import e_ruido
+
+    assert not e_ruido(texto)

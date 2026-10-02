@@ -13,6 +13,12 @@ urlpatterns = [
     path("pautas/nova/", views.nova_pauta, name="nova_pauta"),
     path("pautas/<uuid:pk>/", views.pauta, name="pauta"),
     path("pautas/<uuid:pk>/gerar/", views.gerar, name="gerar"),
+    path("pautas/<uuid:pk>/pdfs/", views.pdfs_da_pesquisa, name="pdfs_da_pesquisa"),
+    path(
+        "pautas/<uuid:pk>/pdfs/<uuid:candidato>/enviar/",
+        views.enviar_pdf_da_pesquisa,
+        name="enviar_pdf_da_pesquisa",
+    ),
     path(
         "pautas/<uuid:pk>/desistir/<uuid:trabalho>/",
         views.desistir_da_geracao,
@@ -42,6 +48,7 @@ urlpatterns = [
     path("artigos/", views.artigos, name="artigos"),
     path("artigos/desempenho/", views.desempenho, name="desempenho"),
     path("artigos/<uuid:pk>/", views.revisar, name="revisar"),
+    path("artigos/<uuid:pk>/descartar/", views.descartar_rascunho, name="descartar_rascunho"),
     path("artigos/<uuid:pk>/versao/", views.nova_versao, name="nova_versao"),
     path("artigos/<uuid:pk>/secoes/", views.salvar_secoes, name="salvar_secoes"),
     path("artigos/<uuid:pk>/refazer/", views.refazer_secoes, name="refazer_secoes"),

@@ -18,6 +18,11 @@
           <span class="ajuda">{{ artigo.title|truncatechars:70 }}</span>
           <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{{ artigo.get_status_display }}</span>
           {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
+          {% if completo and artigo.status == 'drafting' and f.falhou and not f.trabalho and not artigo.sections.exists %}
+            <form method="post" action="{% url 'content:descartar_rascunho' artigo.pk %}" style="display:inline">{% csrf_token %}
+              <button type="submit" class="botao discreto pequeno" title="{% translate 'A geracao falhou e deixou so a tese: descarta o rascunho para gerar de novo' %}">{% translate "Descartar e gerar de novo" %}</button>
+            </form>
+          {% endif %}
         {% endif %}
       </div>
     {% endfor %}
@@ -26,11 +31,21 @@
         <span class="selo espera">{% if t.status == 'waiting_capacity' %}{% translate "esperando a maquina do modelo" %}{% elif t.status == 'pending' %}{% translate "na fila para gerar" %}{% else %}{% translate "gerando" %}{% endif %}</span>
         <span class="ajuda">{% translate "passo" %} {{ t.current_step }}/{{ t.total_steps|default:"?" }} · {% translate "pedido ha" %} {{ t.created_at|timesince }}</span>
         {% if completo %}
-          {% if t.last_error %}<div class="ajuda">{% translate "Ultimo aviso" %}: {{ t.last_error|truncatechars:240 }}</div>{% endif %}
+          {% if t.last_error %}<details class="ajuda"><summary>{% translate "Ultimo aviso" %}: {{ t.last_error|truncatechars:160 }}</summary><div style="white-space:pre-wrap">{{ t.last_error }}</div></details>{% endif %}
           {% if t.status == 'waiting_capacity' %}<div class="ajuda">{% translate "A geracao espera a maquina que roda o modelo (ligada e livre). Ela continua sozinha quando a maquina voltar." %}</div>{% endif %}
           <form method="post" action="{% url 'content:desistir_da_geracao' pauta.pk t.pk %}" style="display:inline">{% csrf_token %}
             <button type="submit" class="botao discreto pequeno" title="{% translate 'Para poder gerar de novo ou ir pela outra IA' %}">{% translate "Desistir desta geracao" %}</button>
           </form>
+          <a class="botao discreto pequeno" href="{% url 'operacao:trabalho' t.pk %}">{% translate "Ver o trabalho" %}</a>
+        {% endif %}
+      </div>
+    {% endif %}{% endwith %}
+    {% with t=f.falhou %}{% if t and not f.trabalho %}
+      <div>
+        <span class="selo ruim">{% translate "a ultima geracao falhou" %}</span>
+        <span class="ajuda">{% translate "no passo" %} {{ t.current_step }} · {% translate "ha" %} {{ t.updated_at|timesince }}</span>
+        {% if completo %}
+          <details class="ajuda"><summary>{{ t.last_error|truncatechars:160 }}</summary><div style="white-space:pre-wrap">{{ t.last_error }}</div></details>
           <a class="botao discreto pequeno" href="{% url 'operacao:trabalho' t.pk %}">{% translate "Ver o trabalho" %}</a>
         {% endif %}
       </div>
