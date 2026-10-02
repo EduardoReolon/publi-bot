@@ -19,6 +19,16 @@
     {% endfor %}
   </p>
 
+  {% if fora_do_google %}
+    <div class="aviso">
+      {% blocktranslate trimmed %}
+        No ar ha mais de uma semana e o Google ainda nao indexou. Abra cada um: o
+        bloco "No Google" diz o motivo e leva a inspecao no Search Console, onde fica
+        o botao "Solicitar indexacao".
+      {% endblocktranslate %}
+      <a href="{% url 'content:artigos' %}">{% translate "ver todos" %}</a>
+    </div>
+  {% endif %}
   {% if artigos %}
     <div class="rolagem">
       <table>

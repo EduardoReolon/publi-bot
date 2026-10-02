@@ -167,3 +167,30 @@ def test_revisao_mostra_e_confere_agora(ambiente, conta, monkeypatch):  # noqa: 
     )
     html = client.get(pagina).content.decode()
     assert "indexado" in html and "inspect?x=2" not in html
+
+
+@pytest.mark.django_db
+def test_painel_avisa_quem_devia_estar_no_google(ambiente, conta, monkeypatch):  # noqa: F811
+    _, _, client = ambiente
+    config = ConfiguracaoDoRadar.carregar()
+    config.propriedade_search_console = "sc-domain:exemplo.com.br"
+    config.save()
+    fora = {"indexada": False, "situacao": "Crawled - currently not indexed"}
+    atrasado = _no_ar(dias=10, url="https://exemplo.com.br/x/", indexacao=fora)
+    recente = _no_ar(dias=2, url="https://exemplo.com.br/y/", indexacao=fora)
+    _no_ar(dias=10, url="https://exemplo.com.br/z/", indexacao={"indexada": True, "situacao": "ok"})
+
+    assert list(indexacao.fora_do_google()) == [atrasado]
+    painel = client.get("/").content.decode()
+    assert "Fora do Google" in painel and "?indexacao=fora" in painel
+
+    lista = client.get(
+        reverse("content:artigos", urlconf="core.urls_tenants") + "?indexacao=fora"
+    ).content.decode()
+    assert str(atrasado.pk) in lista and str(recente.pk) not in lista
+
+    recente.indexacao = {"erro": "sem acesso a sc-domain:exemplo.com.br."}
+    recente.indexacao_conferida_em = timezone.now()
+    recente.save()
+    painel = client.get("/").content.decode()
+    assert "Nao foi possivel conferir a indexacao" in painel

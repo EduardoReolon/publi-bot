@@ -485,6 +485,11 @@ def artigos(request: HttpRequest) -> HttpResponse:
     consulta = visiveis.select_related("topic").order_by("-updated_at")
     if situacao:
         consulta = consulta.filter(status=situacao)
+    fora_do_google = request.GET.get("indexacao") == "fora"
+    if fora_do_google:
+        from apps.radar.indexacao import fora_do_google as fora
+
+        consulta = consulta.filter(pk__in=fora().values("pk"))
 
     contagens = dict(visiveis.values_list("status").annotate(total=Count("status")).order_by())
 
@@ -495,6 +500,7 @@ def artigos(request: HttpRequest) -> HttpResponse:
             "aba": "artigos",
             "artigos": consulta[:200],
             "situacao": situacao,
+            "fora_do_google": fora_do_google,
             "situacoes": [
                 (valor, rotulo, contagens.get(valor, 0)) for valor, rotulo in Article.Status.choices
             ],
