@@ -465,6 +465,7 @@ def passo_montar(job: GenerationJob) -> dict:
 
     aplicar_rascunho(article, markdown)
     article.refresh_from_db()
+    _escrever_a_chamada(article, job)
 
     logger.info(
         "Artigo %s montado (%s palavras, %s secoes) e aguardando revisao.",
@@ -473,6 +474,17 @@ def passo_montar(job: GenerationJob) -> dict:
         article.sections.count(),
     )
     return {"article_id": str(article.pk), "palavras": article.word_count}
+
+
+def _escrever_a_chamada(article: Article, job: GenerationJob) -> None:
+    """O texto da chamada ligado ao artigo. Nao derruba a montagem: sem ele, o
+    site mostra o bloco padrao, e a revisao tem "Escrever de novo"."""
+    from apps.content.chamada import escrever_texto
+
+    try:
+        escrever_texto(article, site=_site_do_tenant(), job=job)
+    except Exception as exc:  # o artigo ja esta montado; a chamada e acessorio
+        logger.warning("Artigo %s sem texto de chamada: %s", article.pk, exc)
 
 
 def passo_perguntas_frequentes(job: GenerationJob) -> dict:

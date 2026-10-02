@@ -48,6 +48,14 @@ Tres lacunas apareceram:
 - Contrato: campo `call_to_action` e recurso `call_to_action`. Site que nao
   conhece a marca mostra um elemento vazio.
 - Tema longe da oferta (`none`): o fecho tambem nao recebe o convite.
+- **Atualizacao (texto por artigo):** um bloco com texto fixo no template
+  destoava do artigo. Na montagem, um prompt curto (`call_to_action_copy`)
+  escreve titulo, frase e botao para o meio (a partir da secao onde a chamada
+  entra) e para o fim (a partir do fecho), so com o que a oferta diz. Vai no
+  campo `call_to_action_copy`; o site usa com o texto dele como reserva, e o
+  link e a medicao continuam do site. A revisao edita ou pede de novo; mudar
+  o lugar da chamada reescreve. Falha do modelo nao derruba a montagem: o
+  site fica com o padrao.
 
 ### 3. Leitura e conversao, medidas pelo site, sem dado de pessoa
 

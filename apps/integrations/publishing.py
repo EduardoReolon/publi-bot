@@ -64,6 +64,11 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
         # "inline" (fim + o elemento <aside data-publibot="chamada"> no corpo).
         "call_to_action": article.call_to_action,
     }
+    texto_da_chamada = _texto_da_chamada(article)
+    if texto_da_chamada:
+        # O texto do bloco, ligado ao assunto deste artigo. O bloco (link,
+        # WhatsApp, medicao) continua do site; sem este campo, o texto padrao.
+        payload["call_to_action_copy"] = texto_da_chamada
 
     if article.outbound_link_url:
         payload["canonical_source"] = article.outbound_link_url
@@ -93,6 +98,17 @@ def montar_payload_de_artigo(article: Article, site: Site) -> dict:
         payload["related_articles"] = vizinhos
 
     return payload
+
+
+def _texto_da_chamada(article: Article) -> dict:
+    """So as partes que o modo usa: `end` no fim; `inline` tambem no meio."""
+    usadas = {"none": (), "end": ("end",), "inline": ("inline", "end")}
+    texto = article.call_to_action_copy or {}
+    return {
+        onde: texto[onde]
+        for onde in usadas.get(article.call_to_action, ())
+        if isinstance(texto.get(onde), dict) and texto[onde].get("title")
+    }
 
 
 def _capa_do_artigo(article: Article) -> dict | None:

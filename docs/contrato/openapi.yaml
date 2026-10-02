@@ -43,6 +43,13 @@ components:
         existente, sem criar outra.
 
   schemas:
+    TextoDaChamada:
+      type: object
+      required: [title, text]
+      properties:
+        title: { type: string, maxLength: 70, description: "Titulo do bloco." }
+        text: { type: string, maxLength: 200, description: "Uma ou duas frases." }
+        button: { type: string, maxLength: 30, description: "Rotulo do botao; vazio = o padrao do site." }
     Erro:
       type: object
       required: [error]
@@ -178,6 +185,17 @@ components:
             para a oferta dele: `none` em lugar nenhum, `end` no fim, `inline`
             no fim e no lugar do `<aside data-publibot="chamada"></aside>` que
             vem no `html_content`. O bloco e do site. Ver o README.
+        call_to_action_copy:
+          type: object
+          description: |
+            Opcional. O texto do bloco da chamada escrito para ESTE artigo,
+            ligado ao assunto dele. `inline` e o do meio (so com
+            call_to_action = inline); `end` e o do fim. Texto puro. O link, o
+            WhatsApp e a medicao continuam do site; sem o campo (ou sem a parte),
+            o site mostra o texto padrao dele.
+          properties:
+            inline: { $ref: "#/components/schemas/TextoDaChamada" }
+            end: { $ref: "#/components/schemas/TextoDaChamada" }
         status: { type: string, enum: [draft, published, scheduled] }
         publish_at:
           type: string

@@ -686,6 +686,35 @@
       </div>
       <div class="acoes"><button type="submit" class="botao secundario">{% translate "Aplicar" %}</button></div>
     </form>
+
+    {% if artigo.call_to_action != 'none' %}
+      <h3>{% translate "O texto da chamada" %}</h3>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Escrito para este artigo: o do meio continua a conversa da secao em que
+          aparece; o do fim fecha o texto. O botao, o link e o WhatsApp sao os do
+          site. Em branco, o site usa o texto padrao dele.
+        {% endblocktranslate %}
+      </p>
+      <form method="post" action="{% url 'content:texto_da_chamada' artigo.pk %}">
+        {% csrf_token %}
+        {% for onde, rotulo, t in partes_da_chamada %}
+            <fieldset class="cartao" style="margin-bottom:.8rem">
+              <legend><strong>{{ rotulo }}</strong></legend>
+              <div class="campo"><label>{% translate "Titulo" %}</label>
+                <input type="text" name="{{ onde }}_title" maxlength="70" value="{{ t.title|default:'' }}"></div>
+              <div class="campo"><label>{% translate "Texto" %}</label>
+                <textarea name="{{ onde }}_text" rows="2" maxlength="200" class="mini">{{ t.text|default:'' }}</textarea></div>
+              <div class="campo"><label>{% translate "Botao" %}</label>
+                <input type="text" name="{{ onde }}_button" maxlength="30" value="{{ t.button|default:'' }}"></div>
+            </fieldset>
+        {% endfor %}
+        <div class="acoes">
+          <button type="submit" class="botao secundario">{% translate "Salvar o texto" %}</button>
+          <button type="submit" name="acao" value="escrever" class="botao discreto">{% translate "Escrever de novo" %}</button>
+        </div>
+      </form>
+    {% endif %}
     <h2>{% translate "Perguntas frequentes" %}</h2>
     <p class="pre-visualizacao">
       {% blocktranslate trimmed %}

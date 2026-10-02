@@ -49,6 +49,7 @@ class PromptTemplate(models.Model):
         SOURCE_QUERIES = "source_queries", _("Outras palavras para buscar fontes")
         RESEARCH_HYPOTHESES = "research_hypotheses", _("Pesquisa: paragrafos hipoteticos")
         RESEARCH_SYNTHESIS = "research_synthesis", _("Pesquisa: sintese de um angulo")
+        CALL_TO_ACTION_COPY = "call_to_action_copy", _("Texto da chamada para a oferta")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     key = models.CharField(_("chave"), max_length=32, choices=Key.choices, unique=True)
@@ -478,6 +479,10 @@ class Article(models.Model):
     call_to_action_after = models.PositiveSmallIntegerField(
         _("chamada depois da secao"), null=True, blank=True
     )
+    # O texto da chamada DESTE artigo, ligado ao assunto dele:
+    # {"inline": {"title", "text", "button"}, "end": {...}}. O bloco (link,
+    # WhatsApp, medicao) continua do site; sem texto aqui, o site usa o padrao.
+    call_to_action_copy = models.JSONField(_("texto da chamada"), default=dict, blank=True)
 
     # Saida estruturada do filtro de consenso.
     thesis_json = models.JSONField(_("tese"), default=dict, blank=True)

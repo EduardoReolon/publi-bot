@@ -260,9 +260,25 @@ plano) e onde:
 "html_content": "<h2>Como conferir a nota</h2><p>...</p><aside data-publibot=\"chamada\"></aside><h2>...</h2>"
 ```
 
-**O bloco e seu, nao do PubliBot.** Texto, botao, cor, link do WhatsApp e
-rastreio ficam num componente do seu site. O artigo so diz se cabe e onde.
-Trocar a oferta muda um lugar, e nao duzentos artigos. Quem decide o modo e o
+**O bloco e seu; o texto pode vir do artigo.** Botao, cor, link do WhatsApp e
+rastreio ficam num componente do seu site. Junto com `call_to_action`, o artigo
+traz `call_to_action_copy`: o texto do bloco escrito para ELE, ligado ao assunto
+(a chamada do meio parte da secao em que aparece; a do fim, do fecho):
+
+```json
+"call_to_action_copy": {
+  "inline": {"title": "Seus clientes somem depois da primeira compra?",
+             "text": "A gente mapeia quem esta indo embora e o porque, com os seus dados.",
+             "button": "Quero entender"},
+  "end": {"title": "...", "text": "...", "button": "..."}
+}
+```
+
+Use o `title` e o `text` no lugar do texto fixo do componente, e o `button`
+como rotulo do botao (vazio: o seu). Sem o campo, ou sem a parte do lugar
+(`inline` no meio, `end` no fim), mostre o texto padrao. E texto puro: escape
+ao exibir. Chamada generica, igual em todo artigo, o leitor le como anuncio; a
+que continua a conversa do texto e a que converte. Quem decide o modo e o
 PubliBot, pela proximidade entre o tema e a oferta descrita no Guia editorial;
 a pessoa que revisa pode mudar.
 

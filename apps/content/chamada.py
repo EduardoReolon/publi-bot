@@ -256,3 +256,84 @@ def mudar(article, modo: str, secao: int | None, *, editor) -> None:
     article.call_to_action_after = secao if modo == "inline" else None
     article.save(update_fields=["call_to_action", "call_to_action_after"])
     aplicar_edicao_humana(article, markdown, editor=editor)
+
+
+# -- O texto da chamada deste artigo -------------------------------------------
+LIMITES_DO_TEXTO = {"title": 70, "text": 200, "button": 30}
+
+
+def escrever_texto(article, *, site=None, job=None) -> dict:
+    """Escreve o texto da chamada ligado ao artigo e grava em
+    `call_to_action_copy`: {"inline": {...}, "end": {...}}, so o que o modo usa.
+
+    Sem chamada (`none`) ou sem oferta, nao escreve nada: o site fica com o
+    bloco padrao dele. Levanta o que `executar_prompt` levantar; quem chama
+    decide se a falha derruba alguma coisa (na montagem do artigo, nao derruba).
+    """
+    import json
+
+    from apps.content.flows import _idioma, _publico_padrao
+    from apps.content.inference import executar_prompt
+
+    oferta = texto_da_oferta()
+    if article.call_to_action == "none" or not oferta:
+        article.call_to_action_copy = {}
+        article.save(update_fields=["call_to_action_copy"])
+        return {}
+
+    secoes = list(article.sections.order_by("order"))
+    meio = next((s for s in secoes if s.order == article.call_to_action_after), None)
+    ultima = secoes[-1] if secoes else None
+
+    def trecho(secao):
+        if secao is None:
+            return "-"
+        return f"{secao.heading}\n{tirar_marcas(secao.body_markdown or '')[:900]}"
+
+    resultado = executar_prompt(
+        key="call_to_action_copy",
+        variaveis={
+            "titulo": article.title,
+            "oferta": oferta[:1500],
+            "publico": article.audience or _publico_padrao(site),
+            "trecho_do_meio": trecho(meio) if article.call_to_action == "inline" else "-",
+            "fecho": trecho(ultima),
+            "idioma": _idioma(site),
+        },
+        site=site,
+        job=job,
+        com_convite=False,
+        json_schema={
+            "type": "object",
+            "properties": {
+                parte: {
+                    "type": "object",
+                    "properties": {c: {"type": "string"} for c in LIMITES_DO_TEXTO},
+                    "required": list(LIMITES_DO_TEXTO),
+                }
+                for parte in ("meio", "fim")
+            },
+            "required": ["meio", "fim"],
+        },
+    )
+    dados = json.loads(resultado.texto)
+    texto = {"end": _limpar_texto(dados.get("fim"))}
+    if article.call_to_action == "inline":
+        texto["inline"] = _limpar_texto(dados.get("meio"))
+    texto = {onde: partes for onde, partes in texto.items() if partes}
+    article.call_to_action_copy = texto
+    article.save(update_fields=["call_to_action_copy"])
+    return texto
+
+
+def _limpar_texto(partes) -> dict:
+    """So texto puro, dentro dos limites; sem titulo ou texto, nada."""
+    from django.utils.html import strip_tags
+
+    if not isinstance(partes, dict):
+        return {}
+    limpo = {
+        campo: " ".join(strip_tags(str(partes.get(campo) or "")).split())[:limite]
+        for campo, limite in LIMITES_DO_TEXTO.items()
+    }
+    return limpo if limpo["title"] and limpo["text"] else {}

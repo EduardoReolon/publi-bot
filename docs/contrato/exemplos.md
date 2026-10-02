@@ -307,12 +307,26 @@ lugar:
 }
 ```
 
-O template troca o `aside` pelo bloco do site, e mostra o bloco tambem no fim:
+Junto vem o texto do bloco escrito para este artigo (texto puro; so as partes
+que o modo usa, e pode faltar):
+
+```json
+{
+  "call_to_action_copy": {
+    "inline": {"title": "Nao sabe se a nota da obra veio cara?", "text": "Mande a nota e um engenheiro confere item por item.", "button": "Mandar a nota"},
+    "end": {"title": "Antes da proxima compra de material", "text": "Um engenheiro olha o seu orcamento e diz o que esta fora do preco.", "button": "Quero conferir"}
+  }
+}
+```
+
+O template troca o `aside` pelo bloco do site, e mostra o bloco tambem no fim,
+com o texto do artigo e o padrao do site como reserva:
 
 ```html
 <aside data-publibot-bloco class="chamada">
-  <p>Mande a nota da sua obra e um engenheiro diz se voce pagou caro.</p>
-  <a data-publibot-conversao="whatsapp" href="https://wa.me/55...">Falar no WhatsApp</a>
+  <h3>Nao sabe se a nota da obra veio cara?</h3>
+  <p>Mande a nota e um engenheiro confere item por item.</p>
+  <a data-publibot-conversao="whatsapp" href="https://wa.me/55...">Mandar a nota</a>
 </aside>
 ```
 
