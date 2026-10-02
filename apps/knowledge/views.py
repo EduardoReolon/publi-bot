@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
@@ -599,7 +600,7 @@ def qualidade_da_busca(request: HttpRequest) -> HttpResponse:
     recarregavel, e nenhuma medicao muda o estado do sistema.
     """
     from apps.knowledge.forms import ConfiguracaoDeBusca, TesteDeBusca
-    from apps.knowledge.models import RetrievalSettings
+    from apps.knowledge.models import RetrievalSettings, RotuloDeCalibracao
     from apps.knowledge.saude import alertas_da_busca, montar_resumo_da_busca
 
     config = RetrievalSettings.carregar()
@@ -609,10 +610,22 @@ def qualidade_da_busca(request: HttpRequest) -> HttpResponse:
 
     resumo = montar_resumo_da_busca()
 
+    from apps.knowledge import calibracao
+
     teste = TesteDeBusca(request.GET or None)
     medicao = None
     if teste.is_valid():
         medicao = _medir_consulta(request, teste.cleaned_data["consulta"], config)
+    if medicao:
+        medicao["texto_para_ia"] = calibracao.pedido(medicao["consulta"], medicao["trechos"])
+        medicao["ids"] = ",".join(str(linha["trecho_id"]) for linha in medicao["trechos"])
+        ja_rotulados = dict(
+            RotuloDeCalibracao.objects.filter(consulta=medicao["consulta"][:500]).values_list(
+                "trecho_id", "rotulo"
+            )
+        )
+        for linha in medicao["trechos"]:
+            linha["rotulo"] = ja_rotulados.get(linha["trecho_id"], "")
 
     return render(
         request,
@@ -626,6 +639,8 @@ def qualidade_da_busca(request: HttpRequest) -> HttpResponse:
             "medicao": medicao,
             "alertas": alertas_da_busca(resumo),
             "consultas_recentes": _consultas_recentes(),
+            "sugestao": calibracao.sugerir_corte(),
+            "lixo_marcado": calibracao.lixo_marcado().count(),
         },
     )
 
@@ -706,6 +721,7 @@ def _medir_consulta(request: HttpRequest, consulta: str, config):
                 "heading": t.heading,
                 "conteudo": t.content,
                 "documento_id": t.document_id,
+                "trecho_id": t.pk,
             }
             for t in trechos
         ],
@@ -713,6 +729,50 @@ def _medir_consulta(request: HttpRequest, consulta: str, config):
         "exibidos": len(trechos),
         "limiar": limiar,
     }
+
+
+@login_required
+@require_POST
+def rotular_busca(request: HttpRequest) -> HttpResponse:
+    """A resposta da outra IA para o teste de consulta: grava os rotulos."""
+    from pgvector.django import CosineDistance
+
+    from apps.knowledge import calibracao
+    from apps.knowledge.embeddings import get_embedding_client
+    from apps.knowledge.models import SuperChunk
+
+    consulta = (request.POST.get("consulta") or "").strip()
+    ids = [i for i in (request.POST.get("ids") or "").split(",") if i]
+    voltar = reverse("knowledge:busca") + "?" + urlencode({"consulta": consulta}) + "#testar"
+    rotulos = calibracao.ler(request.POST.get("resposta", ""), len(ids))
+    if not consulta or not rotulos:
+        messages.error(request, _("Nao achei rotulos (T1: R, T2: L...) na resposta colada."))
+        return redirect(voltar)
+    # A distancia e medida de novo aqui, e nao lida do formulario.
+    vetor = get_embedding_client().embed_query(consulta)
+    por_id = {
+        str(t.pk): t
+        for t in SuperChunk.objects.filter(pk__in=ids).annotate(
+            distancia=CosineDistance("embedding", vetor)
+        )
+    }
+    gravados = calibracao.gravar(consulta, [por_id.get(i) for i in ids], rotulos)
+    messages.success(
+        request,
+        _("%(n)s rotulo(s) gravado(s) de %(total)s trechos.") % {"n": gravados, "total": len(ids)},
+    )
+    return redirect(voltar)
+
+
+@login_required
+@require_POST
+def tirar_lixo_da_busca(request: HttpRequest) -> HttpResponse:
+    """Os trechos rotulados como lixo saem da busca (nao sao apagados)."""
+    from apps.knowledge import calibracao
+
+    tirados = calibracao.lixo_marcado().update(is_active=False)
+    messages.success(request, _("%(n)s trecho(s) de lixo fora da busca.") % {"n": tirados})
+    return redirect(reverse("knowledge:busca") + "#rotulos")
 
 
 def _consultas_recentes(limite: int = 15):
