@@ -27,8 +27,8 @@ from apps.content.services import (
     RevisaoInsuficiente,
     aplicar_edicao_humana,
     aprovar_e_agendar,
-    pendencias_para_aprovar,
     aprovar_resposta_e_agendar,
+    pendencias_para_aprovar,
 )
 from apps.content.tasks import responder_pergunta
 from apps.knowledge.referencias import painel as painel_de_referencias
@@ -329,7 +329,8 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
     for fluxo in escolhidos:
         nivel, mensagem = fluxos.disparar(pauta, fluxo)
         getattr(messages, nivel)(request, mensagem)
-    return _de_volta(pauta)
+    artigo = Article.objects.filter(pk=request.POST.get("artigo") or None, topic=pauta).first()
+    return _ao_artigo(artigo) if artigo else _de_volta(pauta)
 
 
 @login_required
@@ -564,7 +565,8 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "capa_escolhida": artigo.images.filter(is_chosen=True).first(),
         "faq": artigo.faq.all(),
         "conferencia": _conferencia_editorial(artigo),
-        "pendencias": pendencias_para_aprovar(artigo),
+        "pendencias": _pendencias_com_aba(artigo),
+        "geracao": _geracao_do_artigo(artigo),
         "links_quebrados": cobertura_do_artigo(artigo),
         "nome_do_fluxo": _nome_do_fluxo(artigo.fluxo),
         "irmaos": _irmaos(artigo),
@@ -579,6 +581,29 @@ def _contexto_de_revisao(request, artigo, form=None, agendamento=None) -> dict:
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": _proximo_horario(),
     }
+
+
+def _pendencias_com_aba(artigo) -> list[dict]:
+    """As pendencias da aprovacao, cada uma com a aba onde se resolve."""
+    abas = (("capa", "capa"), ("secoes", "secoes"))
+    return [
+        {"texto": texto, "aba": next((aba for chave, aba in abas if chave in texto), "")}
+        for texto in pendencias_para_aprovar(artigo)
+    ]
+
+
+def _geracao_do_artigo(artigo) -> dict:
+    """O trabalho que gera este rascunho: em curso, ou a falha que o "Tentar de
+    novo" retoma (do passo em que parou, no mesmo artigo)."""
+    from apps.content import fluxos
+
+    if artigo.status != Article.Status.DRAFTING or not artigo.topic_id:
+        return {}
+    em_curso = fluxos.em_andamento(artigo.topic, artigo.fluxo)
+    if em_curso is not None:
+        return {"em_curso": em_curso}
+    falhou = fluxos.retomavel(artigo.topic, artigo.fluxo)
+    return {"falhou": falhou} if falhou is not None else {}
 
 
 def _nome_do_fluxo(fluxo: str) -> str:
@@ -721,6 +746,11 @@ def _trabalho_em_curso(artigo):
     )
 
 
+def _ao_artigo(artigo, aba: str = "") -> HttpResponse:
+    """Volta para a pagina do artigo, na aba em que a pessoa estava."""
+    return redirect(reverse("content:revisar", args=[artigo.pk]) + (f"#{aba}" if aba else ""))
+
+
 def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
     acao = request.POST.get("acao", "salvar")
 
@@ -764,7 +794,7 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
         aplicar_edicao_humana(artigo, dados["body_markdown"], editor=request.user)
         artigo.refresh_from_db()
 
-    if acao != "aprovar":
+    if acao not in ("aprovar", "publicar_ja"):
         messages.success(request, _("Alteracoes salvas."))
         return redirect("content:revisar", pk=artigo.pk)
 
@@ -791,7 +821,10 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
             revisor=request.user,
             # Versao nova de artigo no ar nao entra na cadencia: e a mesma
             # pagina, e cada dia com o texto antigo e um dia perdido.
-            quando=agendamento.cleaned_data["quando"]
+            # "Publicar ja": agora, fora da cadencia, sem mexer na configuracao.
+            quando=timezone.now()
+            if acao == "publicar_ja"
+            else agendamento.cleaned_data["quando"]
             or (timezone.now() if artigo.e_atualizacao else _proximo_horario()),
             exige_revisor_tecnico=bool(site and site.is_sensitive),
             termos_confirmados=agendamento.cleaned_data["confirmar_termos"],
@@ -800,6 +833,16 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
         # Nao e validacao de formulario: e uma condicao do produto, e a
         # mensagem dela e a explicacao.
         messages.error(request, str(exc))
+        return redirect("content:revisar", pk=artigo.pk)
+
+    if acao == "publicar_ja":
+        from apps.integrations.tasks import publicar_vencidos
+
+        # O mesmo caminho do agendador (que roda a cada minuto), so que ja.
+        transaction.on_commit(lambda: publicar_vencidos(limite=50))
+        messages.success(
+            request, _("Artigo aprovado e enviado ao site agora. Confira em instantes.")
+        )
         return redirect("content:revisar", pk=artigo.pk)
 
     messages.success(request, _("Artigo aprovado e agendado."))
@@ -866,7 +909,7 @@ def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
     else:
         messages.info(request, _("Nada mudou."))
 
-    return redirect("content:revisar", pk=artigo.pk)
+    return _ao_artigo(artigo, "secoes")
 
 
 def _conferencia_editorial(artigo):
@@ -888,11 +931,11 @@ def mudar_chamada(request: HttpRequest, pk) -> HttpResponse:
     modo = request.POST.get("modo")
     if modo not in {valor for valor, _rotulo in CHAMADAS}:
         messages.error(request, _("Escolha onde vai a chamada."))
-        return redirect("content:revisar", pk=artigo.pk)
+        return _ao_artigo(artigo, "extras")
     secao = request.POST.get("secao")
     mudar(artigo, modo, int(secao) if (secao or "").isdigit() else None, editor=request.user)
     messages.success(request, _("Chamada atualizada no texto."))
-    return redirect("content:revisar", pk=artigo.pk)
+    return _ao_artigo(artigo, "extras")
 
 
 @login_required
@@ -906,7 +949,7 @@ def salvar_faq(request: HttpRequest, pk) -> HttpResponse:
         messages.success(request, _("Perguntas frequentes salvas."))
     else:
         messages.info(request, _("Nada mudou."))
-    return redirect("content:revisar", pk=artigo.pk)
+    return _ao_artigo(artigo, "extras")
 
 
 @login_required
@@ -921,7 +964,7 @@ def refazer_secoes(request: HttpRequest, pk) -> HttpResponse:
 
     if _trabalho_em_curso(artigo):
         messages.error(request, _("Ja ha um trabalho refazendo este artigo. Aguarde."))
-        return redirect("content:revisar", pk=artigo.pk)
+        return _ao_artigo(artigo, "secoes")
 
     # Os parametros sao guardados ANTES da conferencia das secoes. Quem ajusta
     # a palavra-chave e esquece de marcar uma secao nao pode perder o ajuste
@@ -933,7 +976,7 @@ def refazer_secoes(request: HttpRequest, pk) -> HttpResponse:
         messages.error(
             request, _("Parametros salvos. Marque ao menos uma secao para refazer o texto.")
         )
-        return redirect("content:revisar", pk=artigo.pk)
+        return _ao_artigo(artigo, "secoes")
 
     total = marcar_secoes_para_refazer(artigo, ordens)
 
@@ -944,7 +987,7 @@ def refazer_secoes(request: HttpRequest, pk) -> HttpResponse:
         request,
         _("Refazendo %(total)s secao(oes). O resto do artigo fica como esta.") % {"total": total},
     )
-    return redirect("content:revisar", pk=artigo.pk)
+    return _ao_artigo(artigo, "secoes")
 
 
 @login_required
@@ -1056,11 +1099,11 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
                 "em Configuracao > Inferencia, do tipo 'image'."
             ),
         )
-        return redirect("content:revisar", pk=artigo.pk)
+        return _ao_artigo(artigo, "capa")
 
     if _capas_em_curso(artigo):
         messages.error(request, _("Ja ha um lote de capas sendo gerado. Aguarde."))
-        return redirect("content:revisar", pk=artigo.pk)
+        return _ao_artigo(artigo, "capa")
 
     # O teto e conferido aqui e tambem dentro de `gerar_opcoes`. Aqui para a
     # pessoa saber na hora do clique; la porque o fluxo do artigo tambem chama.
@@ -1071,7 +1114,7 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
             _("Este artigo ja tem %(total)s lotes de imagem. Escolha uma das opcoes existentes.")
             % {"total": MAXIMO_DE_LOTES},
         )
-        return redirect("content:revisar", pk=artigo.pk)
+        return _ao_artigo(artigo, "capa")
 
     job = criar_job(kind=GenerationJob.Kind.ARTICLE_COVER, target_object_id=str(artigo.pk))
     transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
@@ -1083,7 +1126,7 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
             "dividida com a geracao de texto. Atualize a pagina para ver."
         ),
     )
-    return redirect("content:revisar", pk=artigo.pk)
+    return _ao_artigo(artigo, "capa")
 
 
 @login_required
@@ -1098,7 +1141,7 @@ def escolher_capa(request: HttpRequest, pk) -> HttpResponse:
 
     marcar(artigo, imagem)
     messages.success(request, _("Capa escolhida."))
-    return redirect("content:revisar", pk=artigo.pk)
+    return _ao_artigo(artigo, "capa")
 
 
 def capa_publica(request: HttpRequest, pk) -> HttpResponse:
