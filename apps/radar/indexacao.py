@@ -57,6 +57,7 @@ def resumir(resultado: dict) -> dict:
         "rastreada_em": status.get("lastCrawlTime") or "",
         "canonical_do_google": status.get("googleCanonical") or "",
         "canonical_do_site": status.get("userCanonical") or "",
+        # Sitemaps em que o Google viu a URL: enviados ou achados pelo robots.txt.
         "no_sitemap": bool(status.get("sitemap")),
         "link": resultado.get("inspectionResultLink") or "",
     }
