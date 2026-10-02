@@ -170,6 +170,19 @@ convida o e-mail dela.
 **Testar:** Radar › "Coletar agora" no bloco do Search Console. Sem o convite,
 a mensagem diz qual e-mail adicionar.
 
+**Indexação dos artigos.** Com a mesma conta (permissão Restrita basta), o
+PubliBot pergunta ao Google, pela URL Inspection API, se cada artigo no ar
+entrou no índice: 1 dia depois de publicar, todo dia no primeiro mês enquanto
+não entrar, depois por semana; o que já entrou, uma vez por mês. A página do
+artigo mostra o estado, o motivo ("Detectada, mas não indexada"...), se a URL
+está num sitemap enviado e o botão para a inspeção no Search Console.
+
+Pedir a indexação continua sendo um clique ali ("Solicitar indexação"): o
+Google não tem API para isso em artigo (a Indexing API é só para vaga de
+emprego e transmissão ao vivo, e o ping do sitemap foi desligado em 2023). O
+que acelera de verdade é o sitemap do site com `lastmod` real, enviado uma vez
+em **Search Console › Sitemaps**, e os links internos.
+
 ---
 
 ## 5. Legendas do YouTube (sem conta)

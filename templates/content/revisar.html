@@ -92,6 +92,47 @@
       {% endwith %}
     </div>
   {% endif %}
+  {% if indexacao_ligada %}
+    {% with ix=artigo.indexacao %}
+      <div class="aviso{% if ix.indexada %} ok{% elif ix.situacao %} espera{% endif %}">
+        <strong>{% translate "No Google:" %}</strong>
+        {% if ix.indexada %}
+          {% translate "indexado" %}{% if ix.rastreada_em %} ({% translate "lido pelo Google em" %} {{ ix.rastreada_em|slice:":10" }}){% endif %}.
+        {% elif ix.situacao %}
+          {% translate "ainda nao indexado" %} — <em>{{ ix.situacao }}</em>.
+        {% elif artigo.indexacao_conferida_em %}
+          {% translate "sem resposta do Google." %}
+        {% else %}
+          {% translate "ainda nao conferido (o PubliBot confere 1 dia depois de publicar, e depois todo dia ate entrar)." %}
+        {% endif %}
+        {% if ix.situacao and not ix.indexada %}
+          <details class="ajuda"><summary>{% translate "O que fazer" %}</summary><div>
+            {% blocktranslate trimmed %}
+              Artigo novo costuma levar de alguns dias a algumas semanas. O Google nao
+              tem API para pedir a indexacao de artigo; o pedido e um clique no Search
+              Console: abra a inspecao, clique em "Solicitar indexacao". Vale para
+              artigo novo ou atualizado, sem repetir varias vezes.
+            {% endblocktranslate %}
+            {% if not ix.no_sitemap %}
+              <p><strong>{% translate "A URL nao aparece em nenhum sitemap enviado ao Search Console." %}</strong>
+              {% translate "Envie o sitemap do site em Search Console > Sitemaps (ex.: /sitemap.xml) e confira se ele inclui os artigos." %}</p>
+            {% endif %}
+            {% if ix.canonical_do_google and ix.canonical_do_google != artigo.published_url %}
+              <p>{% translate "O Google escolheu outra pagina como principal (canonical):" %} {{ ix.canonical_do_google }}</p>
+            {% endif %}
+          </div></details>
+        {% endif %}
+        {% if ix.erro %}<div class="pre-visualizacao">{% translate "Ultima conferencia falhou:" %} {{ ix.erro }}</div>{% endif %}
+        <div class="acoes" style="margin-top:.4rem">
+          {% if ix.link and not ix.indexada %}<a class="botao pequeno" href="{{ ix.link }}" target="_blank" rel="noopener noreferrer">{% translate "Solicitar indexacao no Search Console" %}</a>{% endif %}
+          <form method="post" action="{% url 'content:conferir_indexacao' artigo.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="pequeno discreto">{% translate "Conferir agora" %}</button>
+          </form>
+          {% if artigo.indexacao_conferida_em %}<span class="pre-visualizacao">{% translate "conferido em" %} {{ artigo.indexacao_conferida_em|date:"d/m H:i" }}</span>{% endif %}
+        </div>
+      </div>
+    {% endwith %}
+  {% endif %}
   {% if artigo.exige_confirmacao_de_divergencia %}
     {% comment %}
       Sem este aviso o revisor leria um texto aparentemente pacifico sobre algo

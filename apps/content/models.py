@@ -557,6 +557,14 @@ class Article(models.Model):
     published_at = models.DateTimeField(_("publicado em"), null=True, blank=True)
     published_url = models.URLField(_("URL publicada"), max_length=500, blank=True)
 
+    # O que o Google diz da URL publicada (URL Inspection do Search Console):
+    # {"indexada", "situacao", "rastreada_em", "canonical_do_google",
+    # "no_sitemap", "link", "erro"}. Ver apps/radar/indexacao.py.
+    indexacao = models.JSONField(_("indexacao no Google"), default=dict, blank=True)
+    indexacao_conferida_em = models.DateTimeField(
+        _("indexacao conferida em"), null=True, blank=True, db_index=True
+    )
+
     # Chave estavel do lado do site. A URL muda se o cliente editar o slug;
     # sem um identificador estavel seria impossivel corrigir ou despublicar.
     remote_id = models.CharField(_("id remoto"), max_length=120, blank=True, db_index=True)

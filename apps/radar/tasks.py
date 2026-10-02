@@ -162,3 +162,12 @@ def depois_de_publicar(pk: str) -> None:
     artigo = Article.objects.filter(pk=pk).first()
     if artigo is not None:
         rever(artigo)
+
+
+@shared_task
+def conferir_indexacao() -> int:
+    """Uma vez por dia: os artigos no ar estao no Google?"""
+    from apps.accounts.varredura import para_cada_tenant
+    from apps.radar.indexacao import conferir_pendentes
+
+    return para_cada_tenant(conferir_pendentes, "conferir_indexacao")
