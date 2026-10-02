@@ -138,6 +138,7 @@ class Command(BaseCommand):
                 f"ollama {'de pe' if ollama.get('de_pe') else 'FORA DO AR'}"
                 + (f", carregado: {', '.join(carregados)}" if carregados else ", nada carregado")
             )
+            self._conferir_contexto(ollama, resultado)
             for baixando in ollama.get("baixando") or []:
                 resultado.detalhes.append(
                     f"baixando {baixando.get('modelo')} ({baixando.get('porcento')}%)"
@@ -159,6 +160,32 @@ class Command(BaseCommand):
 
         resultado.ok = not resultado.erro
         return resultado
+
+    def _conferir_contexto(self, ollama: dict, resultado: Resultado) -> None:
+        """O worker declara o contexto que usa e se segue `X-PubliBot-Contexto`
+        (docs/WORKER_CONTEXTO.md). Sem isso, o planejamento de um artigo pode
+        estourar os 4096 tokens padrao do Ollama."""
+        from django.conf import settings
+
+        minimo = settings.INFERENCIA_CONTEXTO_MINIMO
+        contexto = ollama.get("contexto") or {}
+        if not contexto:
+            resultado.detalhes.append(
+                "contexto: o worker NAO declara (docs/WORKER_CONTEXTO.md); "
+                f"o PubliBot precisa de {minimo} tokens"
+            )
+            return
+        padrao = contexto.get("padrao") or 0
+        segue = contexto.get("segue_cabecalho")
+        resultado.detalhes.append(
+            f"contexto: padrao {padrao}, "
+            + ("ajusta pelo cabecalho" if segue else "NAO ajusta pelo cabecalho")
+        )
+        if not segue and padrao < minimo:
+            resultado.erro = (
+                f"o modelo usa {padrao} tokens de contexto e o PubliBot precisa de {minimo}; "
+                "implemente docs/WORKER_CONTEXTO.md no worker ou suba OLLAMA_CONTEXT_LENGTH."
+            )
 
     def _bloco(self, dados: dict, nome: str, resultado: Resultado) -> dict | None:
         """Um bloco do `/health/`, ou `None` com o motivo anotado.

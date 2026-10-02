@@ -668,6 +668,12 @@ IMAGEM_NEGATIVO = env.get("IMAGEM_NEGATIVO", "")
 # `../worker-gpu` acertaria na maquina de quem escreveu e erraria nas demais.
 WORKER_GPU_DIR = env.get("WORKER_GPU_DIR", "")
 
+# Contexto (tokens) que o modelo de texto precisa ter. Vai em cada chamada no
+# cabecalho `X-PubliBot-Contexto` (o maior entre este minimo e o tamanho do
+# pedido); o worker repassa ao Ollama como `num_ctx` (docs/WORKER_CONTEXTO.md).
+# O Ollama carrega com 4096 por padrao, pouco para planejar um artigo.
+INFERENCIA_CONTEXTO_MINIMO = env.integer("INFERENCIA_CONTEXTO_MINIMO", 16384)
+
 EMBEDDING_MODEL = env.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 EMBEDDING_DIM = env.integer("EMBEDDING_DIM", 1024)
 
