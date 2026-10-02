@@ -326,13 +326,27 @@ def fontes_para_substituicao(article: Article) -> dict[int, Fonte]:
 def aplicar_rascunho(
     article: Article, markdown_bruto: str, *, prompt_run: PromptRun | None = None
 ) -> Article:
-    """Valida a saida do modelo, insere os links e converte para HTML."""
-    validar_saida_do_modelo(markdown_bruto, max_marcadores=MAXIMO_DE_FONTES_NO_ARTIGO)
+    """Valida a saida do modelo, insere os links e converte para HTML.
 
+    O texto pode citar quantas fontes precisar (um contraponto pede a fonte
+    dele); link no corpo, so `MAXIMO_DE_FONTES_NO_ARTIGO`. As outras ficam
+    citadas pelo nome, e todas saem na lista de referencias do fim — aberta no
+    fluxo B (pesquisa cientifica), recolhida no A.
+    """
+    from apps.content.rendering import fontes_com_link
+
+    validar_saida_do_modelo(markdown_bruto, max_marcadores=None)
+
+    fontes = fontes_para_substituicao(article)
+    primaria = article.citations.filter(used_as_primary=True).values_list("rank", flat=True).first()
     markdown_final = substituir_marcadores(
         markdown_bruto,
-        fontes_para_substituicao(article),
+        fontes,
         ao_final=article.link_placement == Article.LinkPlacement.END,
+        com_link=fontes_com_link(
+            markdown_bruto, fontes, maximo=MAXIMO_DE_FONTES_NO_ARTIGO, primaria=primaria
+        ),
+        referencias="aberta" if article.fluxo == "pesquisa" else "fechada",
     )
 
     dominios = _dominios_das_citacoes(article)
@@ -695,9 +709,10 @@ MAXIMO_DE_SECOES = 8
 # compete consigo mesmo.
 MAXIMO_DE_TEMAS = 2
 
-# Poucas referencias, so as mais importantes. O formato imitado aqui e o de um
-# artigo de divulgacao bem apurado, nao o de uma tese: uma pagina cheia de
-# links de saida descaracteriza a curadoria e dilui o valor de cada um deles.
+# Links de saida no CORPO do artigo: os das fontes principais. O formato e o de
+# um artigo de divulgacao bem apurado, nao o de uma tese: link no meio de cada
+# frase distrai. O texto pode citar mais fontes (um contraponto pede a dele);
+# essas ficam citadas pelo nome, e todas vao para a lista de referencias.
 MAXIMO_DE_FONTES_NO_ARTIGO = 2
 
 # Numa resposta, uma. Ela e curta: quem pergunta quer a resposta, nao uma

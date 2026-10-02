@@ -475,3 +475,41 @@ def test_contagem_de_palavras():
 def test_proporcao_editada_nos_extremos():
     assert proporcao_editada("abc", "abc") == 0.0
     assert proporcao_editada("", "novo texto") == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Links no corpo e lista de referencias
+# ---------------------------------------------------------------------------
+def test_so_duas_fontes_viram_link_e_todas_vao_para_as_referencias():
+    from apps.content.rendering import Fonte, fontes_com_link, markdown_para_html
+
+    fontes = {
+        n: Fonte(url=f"https://doi.org/10.1/{n}", anchor=f"Autor {n}, 2020", modo="link")
+        for n in range(1, 5)
+    }
+    texto = (
+        "O efeito aparece [[FONTE_3]]. Outro estudo confirma [[FONTE_2]] e [[FONTE_2]]. "
+        "Ha quem discorde [[FONTE_4]], e uma revisao resume [[FONTE_1]]."
+    )
+    links = fontes_com_link(texto, fontes, maximo=2, primaria=1)
+    assert links == {1, 2}  # a primaria, depois a mais citada
+
+    md = substituir_marcadores(texto, fontes, com_link=links, referencias="aberta")
+    html = markdown_para_html(md)
+    corpo, referencias = html.split('<details class="publibot-referencias" open')
+    assert corpo.count("<a ") == 3  # FONTE_2 duas vezes e FONTE_1
+    assert "Autor 4, 2020" in corpo and "doi.org/10.1/4" not in corpo
+    assert referencias.count("<li>") == 4 and "doi.org/10.1/4" in referencias
+    fechada = substituir_marcadores(texto, fontes, com_link=links, referencias="fechada")
+    assert '<details class="publibot-referencias">' in fechada
+    assert "Ver todas as referências (4)" in fechada
+
+
+def test_artigo_pode_citar_mais_fontes_que_links(artigo_com_fontes):
+    """Antes, quatro fontes num artigo derrubavam a montagem no fim."""
+    from apps.content.services import aplicar_rascunho
+
+    artigo = aplicar_rascunho(
+        artigo_com_fontes, "Um dado [[FONTE_1]]. Um contraponto [[FONTE_2]]. De novo [[FONTE_1]]."
+    )
+    assert "publibot-referencias" in artigo.body_html
