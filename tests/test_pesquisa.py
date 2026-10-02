@@ -417,3 +417,83 @@ def test_geracao_esperando_a_maquina_aparece_e_pode_ser_encerrada(ambiente):  # 
     trabalho.refresh_from_db()
     assert trabalho.status == GenerationJob.Status.FAILED
     assert "Gerar so B" in client.get(url).content.decode()
+
+
+def test_pagina_dos_pdfs_mostra_o_pedido_e_recebe_o_arquivo(ambiente, openalex, modelo):  # noqa: F811
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    resultado = pesquisa.pesquisar(pauta)
+    itens = pesquisa.pdfs_pedidos(pauta)
+    assert itens and itens[0]["estado"] == "pendente" and itens[0]["pedidos"]
+
+    pagina_da_pauta = client.get(
+        reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Conferir o" in pagina_da_pauta and "Nao achei o PDF" not in pagina_da_pauta
+
+    url = reverse("content:pdfs_da_pesquisa", args=[pauta.pk], urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert "Enviar o PDF" in html and itens[0]["pedidos"][0]["o_que"] in html
+
+    candidato = itens[0]["candidato"]
+    resposta = client.post(
+        reverse(
+            "content:enviar_pdf_da_pesquisa",
+            args=[pauta.pk, candidato.pk],
+            urlconf="core.urls_tenants",
+        ),
+        {"pdf": SimpleUploadedFile("estudo.pdf", b"%PDF-1.4 x", content_type="application/pdf")},
+    )
+    assert resposta.status_code == 302 and resposta.url.endswith("/pdfs/")
+    candidato.refresh_from_db()
+    assert candidato.documento_completo is not None
+    assert pesquisa.pdfs_pedidos(pauta)[0]["estado"] == "lendo"
+    assert str(candidato.pk) in resultado["candidatos"]
+
+
+def test_fontes_sugeridas_da_pauta_avisa_e_deixa_de_fora_a_pesquisa(ambiente, openalex, modelo):  # noqa: F811
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    resultado = pesquisa.pesquisar(pauta)
+    da_pesquisa = CandidatoDeFonte.objects.get(pk=resultado["candidatos"][0])
+    da_pesquisa.situacao = CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+    da_pesquisa.save()
+
+    url = reverse("knowledge:fontes_sugeridas", urlconf="core.urls_tenants")
+    html = client.get(f"{url}?pauta={pauta.pk}").content.decode()
+    assert "Mostrando so as fontes da pauta" in html and "Voltar para a pauta" in html
+    assert da_pesquisa.titulo not in html
+    assert da_pesquisa.titulo in client.get(url).content.decode()
+
+
+def test_rascunho_que_a_geracao_largou_pode_ser_descartado(ambiente):  # noqa: F811
+    from apps.content import fluxos
+    from apps.content.models import Article
+    from apps.ops.models import GenerationJob
+
+    pauta = Topic.objects.create(title="Falhou no consenso", status="used")
+    GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=pauta.pk,
+        status=GenerationJob.Status.FAILED,
+        step_payloads={"fluxo": fluxos.B},
+        current_step=1,
+        last_error="passo 1 (filtrar consenso): " + "detalhe " * 40,
+    )
+    rascunho = Article.objects.create(
+        topic=pauta, title="x", fluxo=fluxos.B, status=Article.Status.DRAFTING
+    )
+    _, _, client = ambiente
+    url = reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    html = client.get(url).content.decode()
+    assert "a ultima geracao falhou" in html and "Descartar e gerar de novo" in html
+    assert "Gerar so B" not in html
+
+    client.post(
+        reverse("content:descartar_rascunho", args=[rascunho.pk], urlconf="core.urls_tenants")
+    )
+    rascunho.refresh_from_db()
+    assert rascunho.status == Article.Status.REJECTED
+    assert "Gerar so B" in client.get(url).content.decode()

@@ -34,23 +34,7 @@
 
   <section class="cartao">
     <h2>{% translate "Sobre a pauta" %}</h2>
-    {% if pauta.evidence.sinais %}
-      <details>
-        <summary>{% translate "Por que esta pauta" %}</summary>
-        <ul>
-          {% for sinal in pauta.evidence.sinais %}
-            <li>{{ sinal.texto }} <span class="selo">{{ sinal.fonte }}</span>{% if sinal.volume is not None %} {{ sinal.volume }}/{% translate "mes" %}{% endif %}</li>
-          {% endfor %}
-        </ul>
-        <div>{% for nome, valor in pauta.evidence.parcelas.items %}{{ nome|rotulo_da_parcela }} {{ valor }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
-      </details>
-    {% endif %}
-    {% if pauta.briefing %}
-      <details>
-        <summary>{% translate "Orientacao" %}</summary>
-        <div class="pre-visualizacao" style="white-space:pre-wrap">{{ pauta.briefing }}</div>
-      </details>
-    {% endif %}
+    {% include "content/_sobre_a_pauta.html" %}
     {% if pauta.de_peso %}<div class="ajuda"><span class="selo ok">{% translate "vale o modelo grande" %}</span> {{ pauta.de_peso|join:", " }}</div>{% endif %}
     {% if pauta.imprensa.tem_angulo %}<div class="ajuda"><span class="selo ok">{% translate "angulo de imprensa" %}</span>
       {% if pauta.imprensa.na_busca %}{% blocktranslate trimmed count n=pauta.imprensa.na_busca|length %}{{ n }} veiculo nesta busca{% plural %}{{ n }} veiculos nesta busca{% endblocktranslate %}{% endif %}

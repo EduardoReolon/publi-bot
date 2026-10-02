@@ -14,6 +14,16 @@
     <a href="{% url 'radar:configuracao' %}#artigos-cientificos">{% translate "Artigos cientificos: sementes e busca agora" %}</a>
   </p>
 
+  {% if pauta %}
+    <div class="aviso espera">
+      <strong>{% translate "Mostrando so as fontes da pauta" %}:</strong> {{ pauta.title }}
+      <div class="acoes">
+        <a class="botao pequeno" href="{% url 'content:pauta' pauta.pk %}">← {% translate "Voltar para a pauta" %}</a>
+        <a class="botao discreto pequeno" href="{% url 'knowledge:fontes_sugeridas' %}">{% translate "Ver as de todas as pautas" %}</a>
+      </div>
+    </div>
+  {% endif %}
+
   {% if aguardando_audio %}
     <h2 id="aguardando-audio">{% translate "Videos aguardando o audio" %}</h2>
     {% for candidato in aguardando_audio %}
@@ -22,12 +32,12 @@
         <span class="selo">{{ candidato.canal_nome }}</span>
         <div class="pre-visualizacao">{{ candidato.motivo }}</div>
         <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_audio' candidato.pk %}" class="acoes">
-          {% csrf_token %}
+          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
           <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
           <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
         </form>
         <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}" class="acoes">
-          {% csrf_token %}
+          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
           <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
           <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
         </form>
@@ -50,18 +60,18 @@
         {% if candidato.autores %}<span class="ajuda">{{ candidato.autores|truncatechars:80 }}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}</span>{% endif %}
         <div class="pre-visualizacao">{{ candidato.motivo }}</div>
         <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_pdf' candidato.pk %}" class="acoes">
-          {% csrf_token %}
+          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
           <input type="file" name="pdf" accept="application/pdf,.pdf" required>
           <button type="submit">{% translate "Enviar o PDF" %}</button>
         </form>
         {% if candidato.documento and candidato.documento.extraction_method == 'resumo' %}
           <form method="post" action="{% url 'knowledge:seguir_com_o_resumo' candidato.pk %}" class="acoes">
-            {% csrf_token %}
+            {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
             <button type="submit" class="botao secundario pequeno" title="{% translate 'O artigo usa o resumo, sem o texto completo' %}">{% translate "Nao achei o PDF: seguir com o resumo" %}</button>
           </form>
         {% endif %}
         <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}" class="acoes">
-          {% csrf_token %}
+          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
           <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
           <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
         </form>
@@ -105,14 +115,14 @@
           </details>
         {% else %}
           <form method="post" action="{% url 'knowledge:capturar_texto_do_candidato' candidato.pk %}">
-            {% csrf_token %}<button type="submit" class="botao discreto pequeno">{% translate "Ver o texto que seria capturado" %}</button>
+            {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}"><button type="submit" class="botao discreto pequeno">{% translate "Ver o texto que seria capturado" %}</button>
           </form>
         {% endif %}
       {% endif %}
       {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
 
       <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
-        {% csrf_token %}
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
         {% if candidato.tipo == 'artigo' and not candidato.pdf_url %}
           <label class="ajuda" style="width:100%">{% translate "Ja baixou o PDF? Envie junto (opcional). Sem ele, o artigo aprovado vai para 'Artigos aguardando o PDF', no topo desta pagina." %}
             <input type="file" name="pdf" accept="application/pdf,.pdf">
@@ -134,8 +144,7 @@
       <details>
         <summary>{% if candidato.tipo == 'video' %}{% translate "Confiar neste canal" %}{% else %}{% translate "Confiar neste caminho" %}{% endif %}</summary>
         <form method="post" action="{% url 'knowledge:caminhos' %}">
-          {% csrf_token %}
-          <input type="hidden" name="voltar" value="{% url 'knowledge:fontes_sugeridas' %}">
+          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
           <div class="campo">
             <label>{% translate "Caminho" %}</label>
             <input type="text" name="prefixo" value="{{ candidato.dominio }}">
@@ -187,7 +196,7 @@
             <td>
               {% if candidato.documento %}<a href="{% url 'knowledge:curar' candidato.documento.pk %}">{% translate "curadoria" %}</a>{% endif %}
               {% if candidato.situacao == 'recusado' or candidato.situacao == 'falhou' %}
-                <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}">{% csrf_token %}
+                <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}">{% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
                   <button type="submit" class="botao discreto pequeno">{% translate "Voltar para as sugestoes" %}</button>
                 </form>
               {% endif %}

@@ -18,6 +18,10 @@
     {% endif %}
     {% if artigo.version_number > 1 %}<span class="selo espera">{% translate "versao" %} {{ artigo.version_number }}</span>{% endif %}
   </p>
+  {% if artigo.topic_id %}
+    <p class="ajuda"><a href="{% url 'content:pauta' artigo.topic_id %}">← {% translate "Pauta" %}: {{ artigo.topic.title }}</a>
+      — {% translate "referencias, pesquisa e o que falta para cada versao" %}</p>
+  {% endif %}
   {% if nome_do_fluxo %}
     <div class="aviso">
       <strong>{{ nome_do_fluxo }}</strong>

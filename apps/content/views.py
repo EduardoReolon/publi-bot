@@ -119,10 +119,11 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
 def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
     """O que a lista e a pagina da pauta mostram de cada uma. A lista fica sem
     os paineis pesados (referencias, imprensa)."""
-    from apps.content.fluxos import para_a_tela, trabalhos_em_curso
+    from apps.content.fluxos import para_a_tela, trabalhos_em_curso, ultimas_falhas
     from apps.content.outra_ia import motivos_de_peso
 
     trabalhos = trabalhos_em_curso(lista)
+    falhas = ultimas_falhas(lista)
     if completo:
         from apps.content.imprensa import dados_de_imprensa, veiculos
 
@@ -131,11 +132,12 @@ def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
         item.grupo_avaliado = next(
             (g for g in item.grupos_de_demanda.all() if g.avaliacao_ia), None
         )
-        item.fluxos = para_a_tela(item, config, trabalhos)
+        item.fluxos = para_a_tela(item, config, trabalhos, falhas)
         item.faltam_os_dois = len(item.fluxos) == 2 and all(f["falta"] for f in item.fluxos)
         item.por_curar = ((item.busca_de_fontes or {}).get("acervo") or {}).get("por_curar")
         if not completo:
             continue
+        item.pdfs_esperando = _pdfs_esperando(item)
         item.de_peso = motivos_de_peso(item)
         item.imprensa = veiculos(item, dados)
         # As referencias: so onde ja houve busca ou a pauta espera fontes.
@@ -143,8 +145,39 @@ def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
             item.referencias = painel_de_referencias(item)
 
 
+def _pdfs_esperando(pauta) -> int:
+    """Quantos artigos da pesquisa (B) tem pedido de texto completo em aberto."""
+    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    return len(
+        {
+            pedido.get("artigo")
+            for angulo in pesquisa.get("angulos", [])
+            for pedido in angulo.get("pedidos", [])
+            if not pedido.get("atendido")
+        }
+    )
+
+
 def _de_volta(pauta) -> HttpResponse:
     return redirect("content:pauta", pauta.pk)
+
+
+@login_required
+@require_POST
+def descartar_rascunho(request: HttpRequest, pk) -> HttpResponse:
+    """Rascunho que a geracao deixou pela metade (so a tese): vira rejeitado,
+    e o fluxo dele pode ser gerado de novo."""
+    artigo = get_object_or_404(Article, pk=pk, status=Article.Status.DRAFTING)
+    if artigo.sections.exists():
+        messages.error(request, _("Este rascunho ja tem secoes; revise-o em vez de descartar."))
+        return redirect("content:revisar", artigo.pk)
+    tese = dict(artigo.thesis_json or {})
+    tese["descartado"] = "geracao incompleta"
+    artigo.thesis_json = tese
+    artigo.status = Article.Status.REJECTED
+    artigo.save(update_fields=["status", "thesis_json"])
+    messages.success(request, _("Rascunho descartado. Pode gerar este fluxo de novo."))
+    return _de_volta(artigo.topic)
 
 
 @login_required
@@ -379,14 +412,51 @@ def pdf_da_pesquisa(request: HttpRequest, pk, candidato) -> HttpResponse:
     if alvo.situacao == CandidatoDeFonte.Situacao.AGUARDANDO_PDF:
         messages.warning(
             request,
-            _("Sem PDF aberto: o artigo esta em Fontes sugeridas, esperando voce enviar o PDF."),
+            _("O PDF aberto nao baixou. Quando tiver o arquivo, envie aqui mesmo."),
         )
     else:
         messages.success(
             request,
-            _("PDF enviado ao acervo. Depois da curadoria, ele substitui o resumo na pauta."),
+            _("PDF baixado: os trechos pedidos entram no texto quando a leitura terminar."),
         )
-    return _de_volta(pauta)
+    return redirect("content:pdfs_da_pesquisa", pauta.pk)
+
+
+@login_required
+def pdfs_da_pesquisa(request: HttpRequest, pk) -> HttpResponse:
+    """Os artigos da pesquisa (B) de que o texto pede mais que o resumo: os
+    detalhes, e enviar o PDF quando a pessoa o tiver em maos."""
+    from apps.knowledge.pesquisa import pdfs_pedidos
+
+    alvo = get_object_or_404(Topic, pk=pk)
+    return render(
+        request,
+        "content/pdfs_da_pesquisa.html",
+        {"aba": "pautas", "pauta": alvo, "itens": pdfs_pedidos(alvo)},
+    )
+
+
+@login_required
+@require_POST
+def enviar_pdf_da_pesquisa(request: HttpRequest, pk, candidato) -> HttpResponse:
+    from apps.knowledge.academicos import receber_pdf
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.perfis import categoria_da_natureza
+
+    alvo = get_object_or_404(Topic, pk=pk)
+    artigo = get_object_or_404(CandidatoDeFonte, pk=candidato)
+    arquivo = request.FILES.get("pdf")
+    if arquivo is None or not (arquivo.name or "").lower().endswith(".pdf"):
+        messages.error(request, _("Envie o arquivo PDF do artigo."))
+    else:
+        receber_pdf(
+            artigo, arquivo, categoria=categoria_da_natureza("cientifico"), por=request.user
+        )
+        messages.success(
+            request,
+            _("PDF recebido: os trechos pedidos entram no texto quando a leitura terminar."),
+        )
+    return redirect("content:pdfs_da_pesquisa", alvo.pk)
 
 
 @login_required

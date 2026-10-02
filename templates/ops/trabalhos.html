@@ -46,7 +46,7 @@
                   {{ trabalho.get_status_display }}
                 </span>
               </td>
-              <td class="pre-visualizacao">{{ trabalho.last_error|truncatechars:120|default:"—" }}</td>
+              <td class="pre-visualizacao">{% if trabalho.last_error|length > 120 %}<details><summary>{{ trabalho.last_error|truncatechars:120 }}</summary><div style="white-space:pre-wrap">{{ trabalho.last_error }}</div></details>{% else %}{{ trabalho.last_error|default:"—" }}{% endif %}</td>
               <td class="pre-visualizacao">{{ trabalho.updated_at|date:"d/m H:i" }}</td>
               <td>
                 {% if trabalho.status == 'failed' or trabalho.status == 'waiting_capacity' %}

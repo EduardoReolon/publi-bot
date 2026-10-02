@@ -152,6 +152,53 @@ MINIMO_DE_CARACTERES = 120
 PADRAO_DE_FRASE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\u00c0-\u00dc])")
 
 
+# Marcadores que o Docling deixa no lugar de figuras e tabelas sem texto.
+PADRAO_DE_MARCADOR = re.compile(r"<!--\s*image\s*-->", re.IGNORECASE)
+PADRAO_DE_ENDERECO = re.compile(r"(https?://\S+|www\.\S+|\bdoi:?\s*10\.\S+|\b10\.\d{4,}/\S+)", re.I)
+PADRAO_DE_PALAVRA = re.compile(r"[A-Za-z\u00c0-\u00ff]{3,}")
+# Cinco ou mais letras soltas seguidas: "F I G U R E", "F r a n c i s". Em
+# portugues "e", "o" e "a" sao palavras, mas nunca cinco em sequencia.
+PADRAO_DE_LETRAS_ESPACADAS = re.compile(
+    r"(?<!\S)(?:[A-Za-z\u00c0-\u00ff]\s+){4,}[A-Za-z\u00c0-\u00ff](?!\S)"
+)
+
+# Um paragrafo com sinal de lixo (marcador de figura, DOI, letras espacadas) e
+# menos palavras que isto e legenda, cabecalho de pagina ou linha de autores.
+# No indice, um trecho assim vira quase so o prefixo de contexto (o titulo do
+# documento) e por isso fica perto de QUALQUER consulta sobre o tema.
+MINIMO_DE_PALAVRAS_DO_TRECHO = 8
+# Sem sinal de lixo, so o que nao tem palavra nenhuma (numeros soltos). Texto
+# curto e legitimo: nota do especialista, linha de tabela de precos.
+MINIMO_DE_PALAVRAS_SEM_SINAL = 1
+# Letras espacadas sao extracao quebrada: legenda ("F I G U R E 4 ...") ou
+# cabecalho. So passa se o resto for um paragrafo de verdade.
+MINIMO_DE_PALAVRAS_COM_LETRAS_ESPACADAS = 15
+
+
+def limpar_marcadores(texto: str) -> str:
+    """Tira os marcadores de figura, mantendo o resto do paragrafo."""
+    return re.sub(r"[ \t]{2,}", " ", PADRAO_DE_MARCADOR.sub("", texto or "")).strip()
+
+
+def e_ruido(texto: str) -> bool:
+    """Trecho que nao deve ir para o indice: o que sobra dele, tirados
+    marcadores, enderecos, DOIs e letras espacadas, nao e prosa."""
+    texto = texto or ""
+    sinais = (PADRAO_DE_MARCADOR, PADRAO_DE_ENDERECO, PADRAO_DE_LETRAS_ESPACADAS)
+    suspeito = any(p.search(texto) for p in sinais)
+    limpo = texto
+    for padrao in sinais:
+        limpo = padrao.sub(" ", limpo)
+    palavras = len(PADRAO_DE_PALAVRA.findall(limpo))
+    if PADRAO_DE_LETRAS_ESPACADAS.search(texto):
+        minimo = MINIMO_DE_PALAVRAS_COM_LETRAS_ESPACADAS
+    elif suspeito:
+        minimo = MINIMO_DE_PALAVRAS_DO_TRECHO
+    else:
+        minimo = MINIMO_DE_PALAVRAS_SEM_SINAL
+    return palavras < minimo
+
+
 @dataclass
 class Paragrafo:
     texto: str
@@ -169,6 +216,8 @@ class Bloco:
     titulo: str
     conteudo: str
     paragrafos: list[Paragrafo] = field(default_factory=list)
+    # Paragrafos que ficaram fora do indice por serem ruido (`e_ruido`).
+    descartados: int = 0
 
     @property
     def caracteres(self) -> int:
@@ -661,7 +710,10 @@ def preparar_blocos(document) -> list[Bloco]:
     blocos = dividir_em_blocos(document.markdown_full or "", e_markdown=document.texto_e_markdown)
     for bloco in blocos:
         prefixo = prefixo_de_contexto(document.title or "", bloco.titulo)
-        for texto in dividir_em_paragrafos(bloco.conteudo):
+        for texto in dividir_em_paragrafos(limpar_marcadores(bloco.conteudo)):
+            if e_ruido(texto):
+                bloco.descartados += 1
+                continue
             completo = f"{prefixo}\n\n{texto}" if prefixo else texto
             tokens = cliente.contar_tokens(completo)
 

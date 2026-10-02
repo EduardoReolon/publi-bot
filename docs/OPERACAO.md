@@ -603,6 +603,16 @@ sozinha. O `release.sh` liga o servico e so o reinicia quando o codigo dele
 Se o `.env` tiver `EMBEDDING_CLIENT=...FastEmbedClient`, apague a linha: ela
 volta ao modelo aberto em cada processo.
 
+### Trechos-ruido no indice
+
+Legenda de figura (`<!-- image -->`), linha de DOI, letras soltas ("F I G U R E")
+nao entram mais no indice (`blocos.e_ruido`). Num trecho assim sobra quase so o
+titulo do documento, e por isso ele aparecia no topo de qualquer busca do tema.
+Para tirar os que entraram antes (marca como inativos, nao apaga):
+
+    manage.py tenant_command desligar_trechos_ruidosos --schema=ekron --seco
+    manage.py tenant_command desligar_trechos_ruidosos --schema=ekron
+
 ## Parte 3 — A maquina da placa
 
 Ela roda o **worker-gpu**, que vive em **outro repositorio**. A placa e um

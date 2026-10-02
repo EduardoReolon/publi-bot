@@ -83,6 +83,6 @@
         <button class="botao discreto pequeno">{% translate "Seguir sem videos" %}</button>
       </form>
     {% endif %}
-    <a class="botao discreto pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Conferir as fontes sugeridas" %}</a>
+    <a class="botao" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Conferir as fontes sugeridas" %}</a>
   </div>
 </div>

@@ -260,12 +260,15 @@ def registrar_citacoes(article: Article, trechos) -> None:
 
     chunk_primario = escolher_primaria([_chunk_de(t) for t in trechos])
 
-    for t in trechos:
+    # A posicao e a ordem da lista: e o numero do marcador `[[FONTE_n]]` que o
+    # modelo recebeu. Trecho recarregado do payload (SuperChunk) nao traz
+    # `posicao`, e um padrao fixo repetiria o numero e quebraria a gravacao.
+    for posicao, t in enumerate(trechos, start=1):
         chunk = _chunk_de(t)
         ArticleCitation.objects.create(
             article=article,
             super_chunk=chunk,
-            rank=getattr(t, "posicao", 1),
+            rank=posicao,
             distance=getattr(t, "distancia", 0.0),
             used_as_primary=chunk_primario is not None and chunk.pk == chunk_primario.pk,
             source_title=chunk.source_title,
@@ -604,12 +607,12 @@ def aplicar_rascunho_de_resposta(question, markdown_bruto: str, *, trechos, site
     answer.citations.all().delete()
     chunk_primario = escolher_primaria([_chunk_de(t) for t in trechos])
 
-    for t in trechos:
+    for posicao, t in enumerate(trechos, start=1):
         chunk = _chunk_de(t)
         AnswerCitation.objects.create(
             answer=answer,
             super_chunk=chunk,
-            rank=getattr(t, "posicao", 1),
+            rank=posicao,
             distance=getattr(t, "distancia", 0.0),
             used_as_primary=chunk_primario is not None and chunk.pk == chunk_primario.pk,
             source_title=chunk.source_title,

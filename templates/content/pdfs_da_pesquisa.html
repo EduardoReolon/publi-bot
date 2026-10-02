@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "PDFs da pesquisa" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <p class="ajuda"><a href="{% url 'content:pauta' pauta.pk %}">← {% translate "Voltar para a pauta" %}: {{ pauta.title }}</a></p>
+  <h1>{% translate "PDFs pedidos pela pesquisa (B)" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      O artigo B e escrito pelos resumos. Aqui estao os artigos de que o texto
+      pede um detalhe que o resumo nao traz. Envie o PDF so quando tiver o
+      arquivo: o sistema le apenas os trechos pedidos. Sem PDF, o texto segue
+      com o resumo.
+    {% endblocktranslate %}
+  </p>
+  {% for item in itens %}
+    {% with a=item.artigo c=item.candidato %}
+    <section class="cartao" id="artigo-{{ a.numero }}">
+      <h2 style="margin-top:0">[{{ a.numero }}] {% if a.doi %}<a href="{{ a.doi }}" target="_blank" rel="noopener noreferrer">{{ a.titulo }}</a>{% else %}{{ a.titulo }}{% endif %}</h2>
+      <div class="ajuda">
+        {% if c.autores %}{{ c.autores }} · {% endif %}{{ a.ano|default:"?" }}{% if c.revista %} · {{ c.revista }}{% endif %} · {{ a.citacoes }} {% translate "cit." %}{% if a.contraria %} · <span class="selo alerta">{% translate "contraponto" %}</span>{% endif %}
+      </div>
+      <p>
+        {% if item.estado == 'pdf' %}<span class="selo ok">{% translate "lido do PDF" %}</span>
+        {% elif item.estado == 'sem_pdf' %}<span class="selo">{% translate "segue com o resumo" %}</span>
+        {% elif item.estado == 'lendo' %}<span class="selo espera">{% translate "PDF recebido, lendo" %}</span>
+        {% else %}<span class="selo espera">{% translate "esperando o PDF" %}</span>{% endif %}
+      </p>
+      <div><strong>{% translate "O que o texto quer deste artigo" %}:</strong>
+        <ul>{% for p in item.pedidos %}<li>{{ p.o_que }} <span class="ajuda">({{ p.angulo }})</span></li>{% endfor %}</ul>
+      </div>
+      {% if c.trecho %}
+        <details><summary>{% translate "Resumo" %}</summary><div class="pre-visualizacao" style="white-space:pre-wrap">{{ c.trecho }}</div></details>
+      {% endif %}
+      {% if item.estado == 'pendente' and c %}
+        <div class="acoes">
+          {% if item.pdf_aberto %}
+            <form method="post" action="{% url 'content:pdf_da_pesquisa' pauta.pk c.pk %}" style="display:inline">{% csrf_token %}
+              <button type="submit" class="botao pequeno" title="{{ item.pdf_aberto }}">{% translate "Baixar o PDF aberto" %}</button>
+            </form>
+          {% endif %}
+          <form method="post" enctype="multipart/form-data" action="{% url 'content:enviar_pdf_da_pesquisa' pauta.pk c.pk %}" style="display:inline">{% csrf_token %}
+            <input type="file" name="pdf" accept="application/pdf" required>
+            <button type="submit" class="botao secundario pequeno">{% translate "Enviar o PDF" %}</button>
+          </form>
+          <form method="post" action="{% url 'knowledge:seguir_com_o_resumo' c.pk %}" style="display:inline">{% csrf_token %}
+            <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+            <button type="submit" class="botao discreto pequeno">{% translate "Nao achei o PDF: seguir com o resumo" %}</button>
+          </form>
+        </div>
+      {% endif %}
+    </section>
+    {% endwith %}
+  {% empty %}
+    <p class="vazio">{% translate "A sintese nao pediu o texto completo de nenhum artigo." %}</p>
+  {% endfor %}
+{% endblock %}

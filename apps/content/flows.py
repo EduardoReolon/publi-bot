@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 
+from django.db import transaction
 from django.utils.text import slugify
 
 from apps.content.inference import executar_prompt
@@ -132,9 +133,23 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
 
     tese = interpretar_tese(resultado.texto)
 
+    padrao = Author.do_site()
+    # Artigo, citacoes e pauta juntos: se as citacoes falham, nao fica um
+    # rascunho so com a tese segurando o fluxo ("ja tem artigo").
+    with transaction.atomic():
+        article = _criar_artigo_do_consenso(job, topic, tese, trechos, padrao)
+
+    return {
+        "article_id": str(article.pk),
+        "concordancia": tese.concordancia,
+        "tese": tese.tese,
+        "fonte_unica": article.single_source,
+    }
+
+
+def _criar_artigo_do_consenso(job, topic, tese, trechos, padrao):
     from apps.content.services import MAPA_DE_CONCORDANCIA
 
-    padrao = Author.do_site()
     article = Article.objects.create(
         topic=topic,
         title=topic.title,
@@ -157,13 +172,7 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
     # mesmo tema competindo entre si.
     topic.status = Topic.Status.USED
     topic.save(update_fields=["status"])
-
-    return {
-        "article_id": str(article.pk),
-        "concordancia": tese.concordancia,
-        "tese": tese.tese,
-        "fonte_unica": article.single_source,
-    }
+    return article
 
 
 def _artigo_do_job(job: GenerationJob) -> Article:

@@ -738,17 +738,27 @@ AVISO_DE_CONFIANCA = gettext_lazy(
 @login_required
 def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     """Candidatos a fonte achados na web, esperando curadoria."""
+    from apps.content.models import Topic
     from apps.knowledge.fontes_web import caminho_de, natureza_sugerida
     from apps.knowledge.models import CaminhoConfiavel, CandidatoDeFonte
 
-    consulta = CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE)
-    # Vindo do painel de referencias de uma pauta: so as dela.
-    pauta_id = request.GET.get("pauta", "")
-    if pauta_id:
-        try:
-            consulta = consulta.filter(pauta_id=uuid.UUID(pauta_id))
-        except ValueError:
-            pauta_id = ""
+    # Vindo do painel de referencias de uma pauta: so as dela, e sem os artigos
+    # da pesquisa do B (esses tem a pagina propria, `content:pdfs_da_pesquisa`).
+    pauta = None
+    try:
+        pauta = Topic.objects.filter(pk=uuid.UUID(request.GET.get("pauta", ""))).first()
+    except ValueError:
+        pass
+
+    def da_pauta(qs):
+        if pauta is None:
+            return qs
+        da_pesquisa = ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("candidatos") or []
+        return qs.filter(pauta=pauta).exclude(pk__in=da_pesquisa)
+
+    consulta = da_pauta(
+        CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE)
+    )
     pendentes = list(consulta.select_related("pauta")[:100])
     for candidato in pendentes:
         candidato.natureza_padrao = natureza_sugerida(candidato)
@@ -763,6 +773,7 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     )
     if so_recusados:
         decididas = decididas.filter(situacao=CandidatoDeFonte.Situacao.RECUSADO)
+    decididas = da_pauta(decididas)
     recentes = list(
         decididas.select_related("documento").order_by(
             F("decidido_em").desc(nulls_last=True), "-encontrado_em"
@@ -779,12 +790,13 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
         {
             "aba": "documentos",
             "pendentes": pendentes,
-            "aguardando_audio": CandidatoDeFonte.objects.filter(
-                situacao=CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO
+            "aguardando_audio": da_pauta(
+                CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO)
             ),
-            "aguardando_pdf": CandidatoDeFonte.objects.filter(
-                situacao=CandidatoDeFonte.Situacao.AGUARDANDO_PDF
+            "aguardando_pdf": da_pauta(
+                CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.AGUARDANDO_PDF)
             ),
+            "pauta": pauta,
             "recentes": recentes,
             "so_recusados": so_recusados,
             "categorias": DocumentCategory.objects.order_by("name"),
@@ -792,6 +804,15 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
             "aviso": AVISO_DE_CONFIANCA,
         },
     )
+
+
+def _voltar_as_fontes(request: HttpRequest, ancora: str = "") -> HttpResponse:
+    """Volta para onde a pessoa estava (Fontes sugeridas filtrada pela pauta, a
+    pagina da pesquisa...), ou para Fontes sugeridas."""
+    voltar = request.POST.get("voltar", "")
+    if not (voltar.startswith("/") and not voltar.startswith("//")):
+        voltar = reverse("knowledge:fontes_sugeridas")
+    return redirect(voltar.split("#")[0] + ancora)
 
 
 @login_required
@@ -820,28 +841,27 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
             )
         else:
             messages.success(request, _("Recusado. Esta pagina nao sera sugerida de novo."))
-        return redirect("knowledge:fontes_sugeridas")
+        return _voltar_as_fontes(request)
 
     categoria = DocumentCategory.objects.filter(pk=request.POST.get("categoria")).first()
     if categoria is None:
         messages.error(request, _("Escolha a categoria da fonte."))
-        return redirect("knowledge:fontes_sugeridas")
+        return _voltar_as_fontes(request)
 
     arquivo = request.FILES.get("pdf")
     if arquivo is not None and candidato.tipo == CandidatoDeFonte.Tipo.ARTIGO:
         if not (arquivo.name or "").lower().endswith(".pdf"):
             messages.error(request, _("Envie o arquivo PDF do artigo."))
-            return redirect("knowledge:fontes_sugeridas")
+            return _voltar_as_fontes(request)
         from apps.knowledge.academicos import receber_pdf
 
         receber_pdf(candidato, arquivo, categoria=categoria, por=request.user)
         messages.success(
             request, _("PDF recebido. Confira na curadoria quando a leitura terminar.")
         )
-        return redirect("knowledge:fontes_sugeridas")
+        return _voltar_as_fontes(request)
 
     candidato = aprovar(candidato, categoria=categoria, por=request.user)
-    voltar = reverse("knowledge:fontes_sugeridas")
     if candidato.situacao == CandidatoDeFonte.Situacao.FALHOU:
         messages.error(
             request, _("Nao foi possivel buscar a pagina: %(m)s") % {"m": candidato.motivo}
@@ -856,7 +876,7 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
                 "baixe o PDF pelo link e envie ali."
             ),
         )
-        return redirect(voltar + "#aguardando-pdf")
+        return _voltar_as_fontes(request, "#aguardando-pdf")
     elif candidato.situacao == CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO:
         messages.warning(
             request,
@@ -865,13 +885,13 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
                 "aguardando o audio', no topo desta pagina."
             ),
         )
-        return redirect(voltar + "#aguardando-audio")
+        return _voltar_as_fontes(request, "#aguardando-audio")
     else:
         messages.success(
             request,
             _("Enviado para o acervo. Confira na curadoria quando a leitura terminar."),
         )
-    return redirect(voltar)
+    return _voltar_as_fontes(request)
 
 
 @login_required
@@ -893,7 +913,7 @@ def capturar_texto_do_candidato(request: HttpRequest, pk) -> HttpResponse:
         messages.error(request, _("Nao foi possivel ler a pagina: %(m)s") % {"m": exc})
     else:
         candidato.save(update_fields=["texto_extraido"])
-    return redirect(reverse("knowledge:fontes_sugeridas") + f"#candidato-{candidato.pk}")
+    return _voltar_as_fontes(request, f"#candidato-{candidato.pk}")
 
 
 @login_required
@@ -967,14 +987,14 @@ def enviar_audio(request: HttpRequest, pk) -> HttpResponse:
             request,
             _("Envie um arquivo de audio (%(lista)s).") % {"lista": ", ".join(EXTENSOES_DE_AUDIO)},
         )
-        return redirect("knowledge:fontes_sugeridas")
+        return _voltar_as_fontes(request)
 
     receber_audio(candidato, arquivo, por=request.user)
     messages.success(
         request,
         _("Audio recebido. A transcricao roda no worker quando a placa estiver livre."),
     )
-    return redirect("knowledge:fontes_sugeridas")
+    return _voltar_as_fontes(request)
 
 
 @login_required
@@ -1004,9 +1024,9 @@ def voltar_a_sugestao(request: HttpRequest, pk) -> HttpResponse:
     if esperava_arquivo and request.POST.get("recusar") == "1":
         recusar(candidato, por=request.user, motivo=_("Sem arquivo para ler."))
         messages.success(request, _("Recusado. Nao sera sugerido de novo."))
-        return redirect("knowledge:fontes_sugeridas")
+        return _voltar_as_fontes(request)
     messages.success(request, _("Voltou para as sugestoes, com todas as opcoes."))
-    return redirect(reverse("knowledge:fontes_sugeridas") + f"#candidato-{candidato.pk}")
+    return _voltar_as_fontes(request, f"#candidato-{candidato.pk}")
 
 
 @login_required
@@ -1019,10 +1039,7 @@ def seguir_com_o_resumo(request: HttpRequest, pk) -> HttpResponse:
     candidato = get_object_or_404(CandidatoDeFonte, pk=pk)
     seguir(candidato)
     messages.success(request, _("Ok: o artigo segue com o resumo, sem o texto completo."))
-    voltar = request.POST.get("voltar", "")
-    if voltar.startswith("/") and not voltar.startswith("//"):
-        return redirect(voltar)
-    return redirect("knowledge:fontes_sugeridas")
+    return _voltar_as_fontes(request)
 
 
 @login_required
@@ -1039,10 +1056,10 @@ def enviar_pdf(request: HttpRequest, pk) -> HttpResponse:
     arquivo = request.FILES.get("pdf")
     if arquivo is None or not (arquivo.name or "").lower().endswith(".pdf"):
         messages.error(request, _("Envie o arquivo PDF do artigo."))
-        return redirect("knowledge:fontes_sugeridas")
+        return _voltar_as_fontes(request)
     categoria = DocumentCategory.objects.filter(
         pk=request.POST.get("categoria")
     ).first() or categoria_da_natureza("cientifico")
     receber_pdf(candidato, arquivo, categoria=categoria, por=request.user)
     messages.success(request, _("PDF recebido. Confira na curadoria quando a leitura terminar."))
-    return redirect("knowledge:fontes_sugeridas")
+    return _voltar_as_fontes(request)
