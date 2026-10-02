@@ -583,6 +583,41 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Orientacao:\n<fonte>\n{orientacao}\n</fonte>"
         ),
     },
+    "call_to_action_copy": {
+        "descricao": (
+            "O texto da chamada para a oferta do site, ligado ao assunto do artigo: "
+            "um no meio (depois da secao que mais se aproxima da oferta) e um no fim."
+        ),
+        "variaveis": ["titulo", "oferta", "publico", "trecho_do_meio", "fecho", "idioma"],
+        "temperatura": 0.4,
+        "sistema": (
+            "Voce escreve a chamada que aparece dentro de um artigo de blog, convidando "
+            "quem le a conhecer a oferta do site. A chamada so funciona se continuar a "
+            "conversa do texto: ela parte do problema que o leitor acabou de ler e "
+            "mostra que a oferta resolve ESSE problema. Chamada generica parece anuncio "
+            "e faz o leitor desconfiar do resto.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON:\n"
+            '  "meio": {"title", "text", "button"} — liga o trecho do meio a oferta;\n'
+            '  "fim": {"title", "text", "button"} — fecha o artigo inteiro.\n'
+            "title: ate 70 caracteres, falando do problema ou do resultado de quem le "
+            "(nao do nome da empresa). text: 1 ou 2 frases, ate 200 caracteres. "
+            "button: ate 30 caracteres, um verbo do que acontece ao clicar "
+            "(ex.: 'Quero conversar', 'Ver como funciona').\n\n"
+            "Regras:\n"
+            "- So prometa o que esta na oferta. Nenhum numero, prazo ou resultado que "
+            "ela nao diga.\n"
+            "- Sem urgencia falsa, sem 'clique aqui', sem exclamacao em excesso.\n"
+            "- Em saude: sem promessa de cura ou de resultado de tratamento.\n"
+            "- No idioma pedido, no tom do artigo, falando com o publico dele."
+        ),
+        "usuario": (
+            "Idioma: {idioma}\nArtigo: {titulo}\nPublico: {publico}\n\n"
+            "Oferta do site:\n<fonte>\n{oferta}\n</fonte>\n\n"
+            "Trecho onde entra a chamada do meio:\n<fonte>\n{trecho_do_meio}\n</fonte>\n\n"
+            "Fecho do artigo:\n<fonte>\n{fecho}\n</fonte>"
+        ),
+    },
     "research_synthesis": {
         "descricao": "Pesquisa da pauta: o que os resumos de um angulo dizem, e o que falta.",
         "variaveis": ["pauta", "angulo", "resumos", "idioma"],

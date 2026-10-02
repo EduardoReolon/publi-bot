@@ -618,6 +618,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "site_sem_faq": site is not None and not site.suporta("faq"),
         "chamada": (artigo.thesis_json or {}).get("chamada") or {},
         "modos_de_chamada": CHAMADAS,
+        "partes_da_chamada": _partes_da_chamada(artigo),
         "sem_oferta": not medir("oferta", texto_da_oferta),
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": medir("proximo_horario", _proximo_horario),
@@ -645,6 +646,15 @@ def _geracao_do_artigo(artigo) -> dict:
         return {"em_curso": em_curso}
     falhou = fluxos.retomavel(artigo.topic, artigo.fluxo)
     return {"falhou": falhou} if falhou is not None else {}
+
+
+def _partes_da_chamada(artigo) -> list[tuple]:
+    """(onde, rotulo, texto) de cada chamada que o modo usa, para editar."""
+    texto = artigo.call_to_action_copy or {}
+    partes = [("end", _("No fim do artigo"))]
+    if artigo.call_to_action == "inline":
+        partes.insert(0, ("inline", _("No meio do artigo")))
+    return [(onde, rotulo, texto.get(onde) or {}) for onde, rotulo in partes]
 
 
 def _descricao_do_fluxo(fluxo: str) -> str:
@@ -1000,7 +1010,39 @@ def mudar_chamada(request: HttpRequest, pk) -> HttpResponse:
         return _ao_artigo(artigo, "extras")
     secao = request.POST.get("secao")
     mudar(artigo, modo, int(secao) if (secao or "").isdigit() else None, editor=request.user)
+    if modo != "none":
+        # O texto da chamada fala da secao onde ela entra: mudou o lugar, reescreve.
+        from apps.content.tasks import escrever_chamada
+
+        transaction.on_commit(lambda: escrever_chamada.delay(str(artigo.pk)))
     messages.success(request, _("Chamada atualizada no texto."))
+    return _ao_artigo(artigo, "extras")
+
+
+@login_required
+@require_POST
+def texto_da_chamada(request: HttpRequest, pk) -> HttpResponse:
+    """Grava o texto da chamada editado a mao, ou pede para escrever de novo."""
+    from apps.content.chamada import _limpar_texto
+    from apps.content.tasks import escrever_chamada
+
+    artigo = get_object_or_404(Article, pk=pk)
+    if request.POST.get("acao") == "escrever":
+        transaction.on_commit(lambda: escrever_chamada.delay(str(artigo.pk)))
+        messages.success(
+            request, _("Escrevendo o texto da chamada. Atualize a pagina em instantes.")
+        )
+        return _ao_artigo(artigo, "extras")
+    texto = {}
+    for onde in ("inline", "end"):
+        partes = _limpar_texto(
+            {c: request.POST.get(f"{onde}_{c}", "") for c in ("title", "text", "button")}
+        )
+        if partes:
+            texto[onde] = partes
+    artigo.call_to_action_copy = texto
+    artigo.save(update_fields=["call_to_action_copy"])
+    messages.success(request, _("Texto da chamada salvo."))
     return _ao_artigo(artigo, "extras")
 
 

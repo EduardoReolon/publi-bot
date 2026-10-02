@@ -96,3 +96,22 @@ def gerar_b_quando_pronta(self, topic_id: str) -> bool:
     gerar_artigo(pauta, fluxo=fluxos.B)
     registrar(pauta, "pesquisa", gerar_depois=False)
     return True
+
+
+@shared_task(bind=True, max_retries=10)
+def escrever_chamada(self, article_id: str) -> bool:
+    """Reescreve o texto da chamada do artigo (botao na revisao). Despachada de
+    dentro do tenant. Maquina do modelo ocupada: tenta de novo mais tarde."""
+    from apps.content.chamada import escrever_texto
+    from apps.content.models import Article
+    from apps.integrations.models import Site
+    from apps.ops.orchestrator import PassoAdiado
+
+    artigo = Article.objects.filter(pk=article_id).first()
+    if artigo is None:
+        return False
+    try:
+        escrever_texto(artigo, site=Site.objects.first())
+    except PassoAdiado as exc:
+        raise self.retry(countdown=120) from exc
+    return True

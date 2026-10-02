@@ -248,3 +248,109 @@ def test_marca_segue_o_titulo_mesmo_com_secao_vazia(ambiente):  # noqa: F811
     artigo.refresh_from_db()
     assert artigo.body_markdown.rstrip().endswith("[[CHAMADA]]")
     assert artigo.call_to_action_after == 3
+
+
+def _modelo_da_chamada(monkeypatch, pedidos):
+    import json
+
+    from apps.content import inference
+
+    def executar(**kwargs):
+        pedidos.append(kwargs)
+        texto = {
+            "meio": {
+                "title": "Pagou caro <b>na obra</b>?",
+                "text": "Mande a nota.",
+                "button": "Quero",
+            },
+            "fim": {
+                "title": "Confira sua nota",
+                "text": "  Um engenheiro\n confere. ",
+                "button": "",
+            },
+        }
+        return type("R", (), {"texto": json.dumps(texto)})()
+
+    monkeypatch.setattr(inference, "executar_prompt", executar)
+
+
+@pytest.mark.django_db
+def test_texto_da_chamada_parte_do_trecho_e_so_o_que_o_modo_usa(site, monkeypatch):  # noqa: F811
+    _perfil()
+    pedidos = []
+    _modelo_da_chamada(monkeypatch, pedidos)
+    artigo = _artigo(
+        "Tema",
+        [("Um", "A."), ("Conferir o preco", "Compare a nota."), ("Fim", "Fecho.")],
+        call_to_action="inline",
+        call_to_action_after=2,
+    )
+
+    texto = chamada.escrever_texto(artigo, site=site)
+
+    variaveis = pedidos[0]["variaveis"]
+    assert "Compare a nota." in variaveis["trecho_do_meio"]
+    assert "Fecho." in variaveis["fecho"]
+    assert texto["inline"] == {
+        "title": "Pagou caro na obra?",
+        "text": "Mande a nota.",
+        "button": "Quero",
+    }
+    assert texto["end"]["text"] == "Um engenheiro confere."
+    artigo.refresh_from_db()
+    assert artigo.call_to_action_copy == texto
+
+    artigo.call_to_action = "end"
+    assert set(chamada.escrever_texto(artigo, site=site)) == {"end"}
+
+    artigo.call_to_action = "none"
+    assert chamada.escrever_texto(artigo, site=site) == {}
+    assert len(pedidos) == 2
+
+
+@pytest.mark.django_db
+def test_payload_leva_o_texto_da_chamada_do_modo(site):  # noqa: F811
+    from apps.integrations.publishing import montar_payload_de_artigo
+
+    meio = {"title": "M", "text": "m", "button": "b"}
+    fim = {"title": "F", "text": "f", "button": "b"}
+    artigo = Article.objects.create(
+        title="Tema", call_to_action="end", call_to_action_copy={"inline": meio, "end": fim}
+    )
+    assert montar_payload_de_artigo(artigo, site)["call_to_action_copy"] == {"end": fim}
+
+    artigo.call_to_action = "inline"
+    assert montar_payload_de_artigo(artigo, site)["call_to_action_copy"] == {
+        "inline": meio,
+        "end": fim,
+    }
+
+    artigo.call_to_action = "none"
+    assert "call_to_action_copy" not in montar_payload_de_artigo(artigo, site)
+
+
+@pytest.mark.django_db
+def test_editar_o_texto_da_chamada_na_revisao(ambiente):  # noqa: F811
+    _, _, client = ambiente
+    artigo = _artigo("Tema", [("Um", "A."), ("Dois", "B.")], call_to_action="inline")
+    artigo.call_to_action_after = 2
+    artigo.save()
+    pagina = client.get(
+        reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert 'name="inline_title"' in pagina and 'name="end_title"' in pagina
+
+    url = reverse("content:texto_da_chamada", args=[artigo.pk], urlconf="core.urls_tenants")
+    client.post(
+        url,
+        {
+            "end_title": "Fim",
+            "end_text": "Texto do fim",
+            "end_button": "Ir",
+            "inline_title": "So titulo",
+        },
+    )
+    artigo.refresh_from_db()
+    assert artigo.call_to_action_copy == {
+        "end": {"title": "Fim", "text": "Texto do fim", "button": "Ir"}
+    }
