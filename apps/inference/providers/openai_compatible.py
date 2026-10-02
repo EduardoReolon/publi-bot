@@ -118,6 +118,10 @@ class OpenAICompatibleClient(LLMClient):
         detalhe = resposta.text[:500]
         codigo = _codigo_do_erro(resposta)
 
+        contexto = _contexto_estourado(resposta.text)
+        if contexto:
+            raise ProviderPermanentError(contexto, code="exceed_context_size")
+
         if resposta.status_code in STATUS_TERMINAIS:
             raise ProviderPermanentError(f"HTTP {resposta.status_code}: {detalhe}", code=codigo)
 
@@ -344,3 +348,26 @@ def _retry_after(resposta: httpx.Response) -> int | None:
     except ValueError:
         return None
     return segundos if segundos > 0 else None
+
+
+def _contexto_estourado(texto: str) -> str:
+    """Mensagem clara para o pedido maior que o contexto com que o modelo foi
+    carregado (llama.cpp: `exceed_context_size_error`). Repetir nao adianta:
+    quem resolve e subir o contexto no servidor do modelo."""
+    import re
+
+    if "exceed_context_size" not in texto and "exceeds the available context" not in texto:
+        return ""
+    pedido = re.search(r"n_prompt_tokens\\?\"?\s*:\s*(\d+)", texto)
+    janela = re.search(r"n_ctx\\?\"?\s*:\s*(\d+)", texto)
+    numeros = ""
+    if pedido and janela:
+        numeros = (
+            f" Este passo mandou {pedido.group(1)} tokens e o modelo foi carregado "
+            f"com {janela.group(1)}."
+        )
+    return (
+        "O pedido nao cabe no contexto do modelo." + numeros + " Suba o contexto no "
+        "servidor do modelo (llama-server: -c 16384; Ollama: num_ctx; LM Studio: "
+        "Context Length) e use 'Tentar de novo': a geracao continua deste passo."
+    )

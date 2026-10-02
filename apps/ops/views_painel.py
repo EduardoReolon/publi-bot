@@ -51,7 +51,7 @@ def redespachar(request: HttpRequest, pk) -> HttpResponse:
     Nao reinicia do zero: `step_payloads` guarda o que ja foi feito, e refazer
     um passo concluido pagaria a inferencia duas vezes.
     """
-    from apps.ops.tasks import advance_generation_job
+    from apps.ops.orchestrator import devolver_a_fila
 
     job = get_object_or_404(GenerationJob, pk=pk)
 
@@ -61,15 +61,7 @@ def redespachar(request: HttpRequest, pk) -> HttpResponse:
         )
         return redirect("operacao:trabalhos")
 
-    GenerationJob.objects.filter(pk=job.pk).update(
-        status=GenerationJob.Status.PENDING,
-        last_error="",
-        next_attempt_at=None,
-        lease_token=None,
-        lease_expires_at=None,
-        finished_at=None,
-    )
-    advance_generation_job.delay(str(job.pk))
+    devolver_a_fila(job)
     messages.success(
         request, _("Trabalho devolvido a fila, do passo %(n)s.") % {"n": job.current_step}
     )

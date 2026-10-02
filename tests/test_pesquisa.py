@@ -142,6 +142,10 @@ def test_pesquisa_completa(ambiente, openalex, modelo):  # noqa: F811
 
     usados = {t.chunk.document_id for t in trechos_da_pauta(pauta, fluxo="pesquisa")}
     assert usados and usados <= set(documentos.values_list("pk", flat=True))
+    # A sintese pediu o texto completo do artigo 1: o B espera essa resposta.
+    assert "esperando o PDF de 1 artigo" in pesquisa.pronta_para_gerar(pauta)
+    pesquisa.seguir_com_o_resumo(CandidatoDeFonte.objects.get(pk=resultado["candidatos"][0]))
+    pauta.refresh_from_db()
     assert pesquisa.pronta_para_gerar(pauta) == ""
 
 
@@ -227,7 +231,14 @@ def na_hora(monkeypatch):
     )
 
 
-def test_gerar_a_e_b_e_b_gera_sozinho_depois(ambiente, openalex, modelo, na_hora, monkeypatch):  # noqa: F811
+def test_gerar_a_e_b_e_b_gera_sozinho_depois(
+    ambiente,  # noqa: F811
+    openalex,
+    modelo,
+    na_hora,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
     from apps.content import fluxos
     from apps.ops.models import GenerationJob
 
@@ -238,13 +249,18 @@ def test_gerar_a_e_b_e_b_gera_sozinho_depois(ambiente, openalex, modelo, na_hora
 
     client.post(gerar, {"fluxo": "ligados"})
     trabalhos = GenerationJob.objects.filter(target_object_id=str(pauta.pk))
-    assert sorted(t.step_payloads.get("fluxo") for t in trabalhos) == ["", "pesquisa"]
+    # A pesquisa terminou, mas pediu um PDF: o B espera essa resposta.
+    assert sorted(t.step_payloads.get("fluxo") for t in trabalhos) == [""]
     pauta.refresh_from_db()
     assert pauta.busca_de_fontes["pesquisa"]["situacao"] == "pronta"
+    with django_capture_on_commit_callbacks(execute=True):
+        for item in pesquisa.pdfs_pedidos(pauta):
+            pesquisa.seguir_com_o_resumo(item["candidato"])
+    assert sorted(t.step_payloads.get("fluxo") for t in trabalhos.all()) == ["", "pesquisa"]
 
     # Clicar de novo nao duplica nenhum dos dois.
     client.post(gerar, {"fluxo": "ligados"})
-    assert trabalhos.count() == 2
+    assert trabalhos.all().count() == 2
     assert fluxos.em_andamento(pauta, fluxos.A) and fluxos.em_andamento(pauta, fluxos.B)
 
 
@@ -468,32 +484,57 @@ def test_fontes_sugeridas_da_pauta_avisa_e_deixa_de_fora_a_pesquisa(ambiente, op
     assert da_pesquisa.titulo in client.get(url).content.decode()
 
 
-def test_rascunho_que_a_geracao_largou_pode_ser_descartado(ambiente):  # noqa: F811
+def test_tentar_de_novo_retoma_a_falha_no_mesmo_artigo(ambiente):  # noqa: F811
     from apps.content import fluxos
     from apps.content.models import Article
     from apps.ops.models import GenerationJob
 
-    pauta = Topic.objects.create(title="Falhou no consenso", status="used")
-    GenerationJob.objects.create(
+    pauta = Topic.objects.create(title="Falhou no planejamento", status="used")
+    rascunho = Article.objects.create(
+        topic=pauta, title="x", fluxo=fluxos.B, status=Article.Status.DRAFTING
+    )
+    falhou = GenerationJob.objects.create(
         kind=GenerationJob.Kind.PILLAR_ARTICLE,
         target_object_id=pauta.pk,
         status=GenerationJob.Status.FAILED,
-        step_payloads={"fluxo": fluxos.B},
-        current_step=1,
-        last_error="passo 1 (filtrar consenso): " + "detalhe " * 40,
-    )
-    rascunho = Article.objects.create(
-        topic=pauta, title="x", fluxo=fluxos.B, status=Article.Status.DRAFTING
+        step_payloads={"fluxo": fluxos.B, "1": {"article_id": str(rascunho.pk)}},
+        current_step=2,
+        last_error="passo 2 (planejar): " + "detalhe " * 40,
     )
     _, _, client = ambiente
     url = reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
     html = client.get(url).content.decode()
-    assert "a ultima geracao falhou" in html and "Descartar e gerar de novo" in html
-    assert "Gerar so B" not in html
+    assert "a ultima geracao falhou" in html and "Tentar de novo" in html
 
-    client.post(
-        reverse("content:descartar_rascunho", args=[rascunho.pk], urlconf="core.urls_tenants")
-    )
-    rascunho.refresh_from_db()
-    assert rascunho.status == Article.Status.REJECTED
-    assert "Gerar so B" in client.get(url).content.decode()
+    gerar = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
+    client.post(gerar, {"fluxo": "pesquisa"})
+    client.post(gerar, {"fluxo": "pesquisa"})  # duas vezes: nada em dobro
+    falhou.refresh_from_db()
+    assert falhou.status == GenerationJob.Status.PENDING and falhou.current_step == 2
+    assert GenerationJob.objects.filter(target_object_id=pauta.pk).count() == 1
+    assert pauta.articles.count() == 1
+
+
+def test_ultimo_pdf_resolvido_poe_o_b_na_fila(
+    ambiente,  # noqa: F811
+    openalex,
+    modelo,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.content import fluxos
+
+    disparados = []
+    monkeypatch.setattr(fluxos, "disparar", lambda p, f: disparados.append((p.pk, f)))
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    pesquisa.pesquisar(pauta)
+    pauta.refresh_from_db()
+    assert pesquisa.pedidos_em_aberto(pauta)
+    assert "esperando o PDF" in pesquisa.pronta_para_gerar(pauta)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        for item in pesquisa.pdfs_pedidos(pauta):
+            pesquisa.seguir_com_o_resumo(item["candidato"])
+    pauta.refresh_from_db()
+    assert pesquisa.pedidos_em_aberto(pauta) == 0
+    assert (pauta.pk, fluxos.B) in disparados

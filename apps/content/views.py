@@ -121,6 +121,7 @@ def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
     os paineis pesados (referencias, imprensa)."""
     from apps.content.fluxos import para_a_tela, trabalhos_em_curso, ultimas_falhas
     from apps.content.outra_ia import motivos_de_peso
+    from apps.knowledge.pesquisa import pedidos_em_aberto
 
     trabalhos = trabalhos_em_curso(lista)
     falhas = ultimas_falhas(lista)
@@ -135,9 +136,9 @@ def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
         item.fluxos = para_a_tela(item, config, trabalhos, falhas)
         item.faltam_os_dois = len(item.fluxos) == 2 and all(f["falta"] for f in item.fluxos)
         item.por_curar = ((item.busca_de_fontes or {}).get("acervo") or {}).get("por_curar")
+        item.pdfs_esperando = pedidos_em_aberto(item)
         if not completo:
             continue
-        item.pdfs_esperando = _pdfs_esperando(item)
         item.de_peso = motivos_de_peso(item)
         item.imprensa = veiculos(item, dados)
         # As referencias: so onde ja houve busca ou a pauta espera fontes.
@@ -145,39 +146,8 @@ def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
             item.referencias = painel_de_referencias(item)
 
 
-def _pdfs_esperando(pauta) -> int:
-    """Quantos artigos da pesquisa (B) tem pedido de texto completo em aberto."""
-    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
-    return len(
-        {
-            pedido.get("artigo")
-            for angulo in pesquisa.get("angulos", [])
-            for pedido in angulo.get("pedidos", [])
-            if not pedido.get("atendido")
-        }
-    )
-
-
 def _de_volta(pauta) -> HttpResponse:
     return redirect("content:pauta", pauta.pk)
-
-
-@login_required
-@require_POST
-def descartar_rascunho(request: HttpRequest, pk) -> HttpResponse:
-    """Rascunho que a geracao deixou pela metade (so a tese): vira rejeitado,
-    e o fluxo dele pode ser gerado de novo."""
-    artigo = get_object_or_404(Article, pk=pk, status=Article.Status.DRAFTING)
-    if artigo.sections.exists():
-        messages.error(request, _("Este rascunho ja tem secoes; revise-o em vez de descartar."))
-        return redirect("content:revisar", artigo.pk)
-    tese = dict(artigo.thesis_json or {})
-    tese["descartado"] = "geracao incompleta"
-    artigo.thesis_json = tese
-    artigo.status = Article.Status.REJECTED
-    artigo.save(update_fields=["status", "thesis_json"])
-    messages.success(request, _("Rascunho descartado. Pode gerar este fluxo de novo."))
-    return _de_volta(artigo.topic)
 
 
 @login_required
@@ -507,13 +477,14 @@ def rejeitar_pauta(request: HttpRequest, pk) -> HttpResponse:
 @login_required
 def artigos(request: HttpRequest) -> HttpResponse:
     situacao = request.GET.get("situacao", "")
-    consulta = Article.objects.select_related("topic").order_by("-updated_at")
+    # Rascunho descartado (a geracao largou pela metade) nao e um artigo: fica
+    # fora da lista, para a pauta nao aparecer em dobro.
+    visiveis = Article.objects.exclude(thesis_json__has_key="descartado")
+    consulta = visiveis.select_related("topic").order_by("-updated_at")
     if situacao:
         consulta = consulta.filter(status=situacao)
 
-    contagens = dict(
-        Article.objects.values_list("status").annotate(total=Count("status")).order_by()
-    )
+    contagens = dict(visiveis.values_list("status").annotate(total=Count("status")).order_by())
 
     return render(
         request,

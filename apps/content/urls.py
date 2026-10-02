@@ -48,7 +48,6 @@ urlpatterns = [
     path("artigos/", views.artigos, name="artigos"),
     path("artigos/desempenho/", views.desempenho, name="desempenho"),
     path("artigos/<uuid:pk>/", views.revisar, name="revisar"),
-    path("artigos/<uuid:pk>/descartar/", views.descartar_rascunho, name="descartar_rascunho"),
     path("artigos/<uuid:pk>/versao/", views.nova_versao, name="nova_versao"),
     path("artigos/<uuid:pk>/secoes/", views.salvar_secoes, name="salvar_secoes"),
     path("artigos/<uuid:pk>/refazer/", views.refazer_secoes, name="refazer_secoes"),

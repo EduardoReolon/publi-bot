@@ -34,7 +34,9 @@
         <tbody>
           {% for artigo in artigos %}
             <tr>
-              <td><a href="{% url 'content:revisar' artigo.pk %}">{{ artigo.title }}</a></td>
+              <td><a href="{% url 'content:revisar' artigo.pk %}">{{ artigo.title }}</a>
+                <span class="selo" title="{{ artigo.get_fluxo_display }}">{% if artigo.fluxo %}B{% else %}A{% endif %}</span>
+                {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(a outra versao foi a escolhida)" %}</span>{% endif %}</td>
               <td>
                 <span class="selo
                   {% if artigo.status == 'published' %}ok

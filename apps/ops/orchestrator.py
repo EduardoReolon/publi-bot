@@ -273,6 +273,23 @@ def _falhar(job: GenerationJob, mensagem: str) -> str:
     return GenerationJob.Status.FAILED
 
 
+def devolver_a_fila(job: GenerationJob) -> None:
+    """Um trabalho falhado (ou esperando capacidade) volta a fila do passo em
+    que parou. Nao reinicia do zero: `step_payloads` guarda o que ja foi feito,
+    e refazer um passo concluido pagaria a inferencia duas vezes."""
+    from apps.ops.tasks import advance_generation_job
+
+    GenerationJob.objects.filter(pk=job.pk).update(
+        status=GenerationJob.Status.PENDING,
+        last_error="",
+        next_attempt_at=None,
+        lease_token=None,
+        lease_expires_at=None,
+        finished_at=None,
+    )
+    transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
+
+
 def jobs_para_retomar(limite: int = 50) -> list[GenerationJob]:
     """Trabalhos prontos para avancar.
 

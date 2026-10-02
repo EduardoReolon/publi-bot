@@ -18,11 +18,6 @@
           <span class="ajuda">{{ artigo.title|truncatechars:70 }}</span>
           <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{{ artigo.get_status_display }}</span>
           {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
-          {% if completo and artigo.status == 'drafting' and f.falhou and not f.trabalho and not artigo.sections.exists %}
-            <form method="post" action="{% url 'content:descartar_rascunho' artigo.pk %}" style="display:inline">{% csrf_token %}
-              <button type="submit" class="botao discreto pequeno" title="{% translate 'A geracao falhou e deixou so a tese: descarta o rascunho para gerar de novo' %}">{% translate "Descartar e gerar de novo" %}</button>
-            </form>
-          {% endif %}
         {% endif %}
       </div>
     {% endfor %}
@@ -46,10 +41,21 @@
         <span class="ajuda">{% translate "no passo" %} {{ t.current_step }} · {% translate "ha" %} {{ t.updated_at|timesince }}</span>
         {% if completo %}
           <details class="ajuda"><summary>{{ t.last_error|truncatechars:160 }}</summary><div style="white-space:pre-wrap">{{ t.last_error }}</div></details>
+          {% if pauta.status != 'rejected' %}
+            <form method="post" action="{% url 'content:gerar' pauta.pk %}" style="display:inline">{% csrf_token %}
+              <input type="hidden" name="fluxo" value="{{ f.fluxo }}">
+              <button type="submit" class="botao pequeno" title="{% translate 'Continua do passo em que parou, no mesmo artigo. Clicar duas vezes nao cria outra geracao.' %}">{% translate "Tentar de novo" %}</button>
+            </form>
+          {% endif %}
           <a class="botao discreto pequeno" href="{% url 'operacao:trabalho' t.pk %}">{% translate "Ver o trabalho" %}</a>
         {% endif %}
       </div>
     {% endif %}{% endwith %}
+    {% if f.fluxo and f.falta and not f.trabalho and pauta.pdfs_esperando and not f.pesquisa.rodando %}
+      <div><span class="selo espera">{% blocktranslate trimmed count n=pauta.pdfs_esperando %}esperando o PDF de {{ n }} artigo{% plural %}esperando o PDF de {{ n }} artigos{% endblocktranslate %}</span>
+        <a href="{% url 'content:pdfs_da_pesquisa' pauta.pk %}">{% translate "Conferir os PDFs pedidos" %}</a>
+        <span class="ajuda">{% translate "o B entra na fila sozinho quando o ultimo for resolvido" %}</span></div>
+    {% endif %}
     {% with p=f.pesquisa %}{% if p and p.rodando %}
       <div>
         <span class="selo {% if p.parada %}ruim{% else %}espera{% endif %}">{% if p.parada %}{% translate "pesquisa parada" %}{% else %}{% translate "pesquisando artigos" %}{% endif %}</span>
