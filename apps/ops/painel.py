@@ -138,6 +138,7 @@ def montar_resumo() -> ResumoDoPainel:
             url=reverse("knowledge:documentos") + "?situacao=failed",
             atencao=True,
         ),
+        *_indexacao(),
         Pendencia(
             rotulo=_("Aguardando capacidade"),
             total=GenerationJob.objects.filter(
@@ -182,6 +183,38 @@ def montar_resumo() -> ResumoDoPainel:
     )
 
     return resumo
+
+
+def _indexacao() -> list[Pendencia]:
+    """Artigo no ar que o Google ainda nao indexou: so com o Search Console ligado."""
+    from apps.radar import indexacao
+
+    if not indexacao.ligada():
+        return []
+    dias = indexacao.ATRASO.days
+    return [
+        Pendencia(
+            rotulo=_("Fora do Google"),
+            total=indexacao.fora_do_google().count(),
+            url=reverse("content:artigos") + "?indexacao=fora",
+            atencao=True,
+            detalhe=str(
+                _("No ar ha mais de %(dias)s dias e ainda nao indexados. Peca a indexacao.")
+            )
+            % {"dias": dias},
+        )
+    ]
+
+
+def alertas_da_indexacao() -> list[str]:
+    from apps.radar import indexacao
+
+    if not indexacao.ligada():
+        return []
+    erro = indexacao.ultimo_erro()
+    if not erro:
+        return []
+    return [str(_("Nao foi possivel conferir a indexacao no Google: %(erro)s")) % {"erro": erro}]
 
 
 def _pautas_sem_artigo() -> int:

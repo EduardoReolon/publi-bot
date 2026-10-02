@@ -30,6 +30,8 @@ DE_NOVO_FORA = datetime.timedelta(days=1)
 DE_NOVO_FORA_DEPOIS = datetime.timedelta(days=7)
 DE_NOVO_DENTRO = datetime.timedelta(days=30)
 POR_RODADA = 30
+# Depois disto fora do indice, o painel avisa: o normal e entrar em dias.
+ATRASO = datetime.timedelta(days=7)
 
 
 def _propriedade() -> str:
@@ -122,3 +124,31 @@ def conferir_pendentes(limite: int = POR_RODADA) -> int:
             break
         total += 1
     return total
+
+
+def fora_do_google(agora=None):
+    """No ar ha mais de ATRASO e o Google respondeu que nao esta no indice."""
+    from apps.content.models import Article
+
+    agora = agora or timezone.now()
+    return (
+        Article.objects.filter(
+            status=Article.Status.PUBLISHED,
+            published_at__lte=agora - ATRASO,
+            indexacao__has_key="situacao",
+        )
+        .exclude(indexacao__indexada=True)
+        .exclude(published_url="")
+    )
+
+
+def ultimo_erro() -> str:
+    """O erro da conferencia mais recente que falhou (acesso, Google fora), ou ""."""
+    from apps.content.models import Article
+
+    artigo = (
+        Article.objects.filter(status=Article.Status.PUBLISHED, indexacao__has_key="erro")
+        .order_by("-indexacao_conferida_em")
+        .first()
+    )
+    return artigo.indexacao["erro"] if artigo else ""
