@@ -885,3 +885,38 @@ class CandidatoDeFonte(models.Model):
 
     def __str__(self) -> str:
         return self.titulo or self.url
+
+
+class RotuloDeCalibracao(models.Model):
+    """O julgamento de um trecho para uma consulta de teste: relevante,
+    irrelevante ou lixo. Vem de outra IA (ou da pessoa) pela tela Qualidade da
+    busca, e se acumula entre consultas: o corte sugerido sai de todos.
+
+    Guarda a distancia e o modelo do momento: com outro modelo de embedding as
+    distancias mudam, e os rotulos antigos deixam de valer para o corte.
+    """
+
+    class Rotulo(models.TextChoices):
+        RELEVANTE = "R", _("relevante")
+        IRRELEVANTE = "I", _("irrelevante")
+        LIXO = "L", _("lixo")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    consulta = models.CharField(_("consulta"), max_length=500)
+    trecho = models.ForeignKey(
+        SuperChunk, on_delete=models.CASCADE, related_name="rotulos", verbose_name=_("trecho")
+    )
+    distancia = models.FloatField(_("distancia"))
+    rotulo = models.CharField(_("rotulo"), max_length=1, choices=Rotulo.choices)
+    modelo = models.CharField(_("modelo"), max_length=120)
+    criado_em = models.DateTimeField(_("criado em"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("rotulo de calibracao")
+        verbose_name_plural = _("rotulos de calibracao")
+        constraints = [
+            models.UniqueConstraint(fields=["consulta", "trecho"], name="uniq_rotulo_por_consulta")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.consulta[:40]} — {self.rotulo}"

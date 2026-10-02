@@ -156,12 +156,40 @@
         como uma fonte so. Modelo: {{ modelo }}.
       {% endblocktranslate %}
     </p>
+    <div class="aviso">
+      <strong>{% translate "Deixar outra IA julgar os trechos" %}</strong>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Copie o pedido e cole num modelo grande. Ele so rotula cada trecho
+          (relevante, irrelevante ou lixo), sem ver a distancia; o corte sai da
+          conta, mais abaixo, somando os rotulos de todas as consultas que voce
+          testar. Lixo nao entra na conta: aparece em qualquer distancia.
+          Teste algumas consultas diferentes do seu tema para o corte ficar firme.
+        {% endblocktranslate %}
+      </p>
+      <div class="acoes">
+        <button type="button" class="botao" data-copiar="pedido-de-rotulos">{% translate "Copiar para outra IA" %}</button>
+      </div>
+      <details><summary>{% translate "Ver o texto" %}</summary>
+        <textarea id="pedido-de-rotulos" readonly rows="12" style="width:100%">{{ medicao.texto_para_ia }}</textarea>
+      </details>
+      <form method="post" action="{% url 'knowledge:rotular_busca' %}" style="margin-top:.6rem">
+        {% csrf_token %}
+        <input type="hidden" name="consulta" value="{{ medicao.consulta }}">
+        <input type="hidden" name="ids" value="{{ medicao.ids }}">
+        <label for="resposta-rotulos">{% translate "Cole aqui a resposta (T1: R, T2: L...)" %}</label>
+        <textarea id="resposta-rotulos" name="resposta" rows="4" style="width:100%" required></textarea>
+        <div class="acoes"><button type="submit" class="botao secundario">{% translate "Gravar os rotulos" %}</button></div>
+      </form>
+    </div>
     <div class="rolagem">
       <table>
         <thead>
           <tr>
+            <th class="numero">#</th>
             <th class="numero">{% translate "Distancia" %}</th>
             <th>{% translate "Entra?" %}</th>
+            <th>{% translate "Rotulo" %}</th>
             <th>{% translate "Fonte" %}</th>
             <th>{% translate "Trecho" %}</th>
             <th></th>
@@ -170,6 +198,7 @@
         <tbody>
           {% for linha in medicao.trechos %}
             <tr class="{% if not linha.aceito %}fora{% endif %}">
+              <td class="numero pre-visualizacao">T{{ forloop.counter }}</td>
               <td class="numero">{{ linha.distancia|floatformat:4 }}</td>
               <td>
                 {% if linha.aceito %}
@@ -177,6 +206,12 @@
                 {% else %}
                   <span class="selo">{% translate "fora" %}</span>
                 {% endif %}
+              </td>
+              <td>
+                {% if linha.rotulo == 'R' %}<span class="selo ok">{% translate "relevante" %}</span>
+                {% elif linha.rotulo == 'I' %}<span class="selo alerta">{% translate "irrelevante" %}</span>
+                {% elif linha.rotulo == 'L' %}<span class="selo ruim">{% translate "lixo" %}</span>
+                {% else %}—{% endif %}
               </td>
               <td>
                 <a href="{% url 'knowledge:curar' linha.documento_id %}">{{ linha.titulo|truncatechars:60 }}</a>
@@ -211,6 +246,36 @@
         nao filtra nada.
       {% endblocktranslate %}
     </p>
+  {% endif %}
+
+  <h2 id="rotulos">{% translate "Corte pelos rotulos" %}</h2>
+  {% if sugestao %}
+    <div class="aviso ok">
+      {% widthratio sugestao.precisao 1 100 as p %}{% widthratio sugestao.cobertura 1 100 as c %}
+      {% blocktranslate trimmed with corte=sugestao.corte|floatformat:4 r=sugestao.relevantes i=sugestao.irrelevantes n=sugestao.consultas %}
+        Corte sugerido: <strong>{{ corte }}</strong>. Com ele, {{ p }}% dos
+        trechos que entram sao relevantes (precisao), e entram {{ c }}% dos
+        relevantes rotulados (cobertura). Base: {{ r }} relevantes e {{ i }} irrelevantes, em
+        {{ n }} consulta(s).
+      {% endblocktranslate %}
+      <form method="post" class="acoes">
+        {% csrf_token %}
+        <input type="hidden" name="max_cosine_distance" value="{{ sugestao.corte|stringformat:'.4f' }}">
+        <input type="hidden" name="top_k" value="{{ config.top_k }}">
+        <input type="hidden" name="consulta" value="{% translate 'corte pelos rotulos de outra IA' %}">
+        <button type="submit" class="botao">{% translate "Usar este corte" %}</button>
+      </form>
+      {% if sugestao.consultas < 3 %}<div class="ajuda">{% translate "Poucas consultas ainda: teste mais duas ou tres, de assuntos diferentes do seu tema, antes de confiar." %}</div>{% endif %}
+    </div>
+  {% else %}
+    <p class="pre-visualizacao">{% translate "Sem rotulos suficientes ainda: e preciso ao menos um trecho relevante e um irrelevante. Teste uma consulta e cole a resposta da outra IA." %}</p>
+  {% endif %}
+  {% if lixo_marcado %}
+    <form method="post" action="{% url 'knowledge:tirar_lixo_da_busca' %}" class="acoes">
+      {% csrf_token %}
+      <span>{% blocktranslate trimmed count n=lixo_marcado %}{{ n }} trecho rotulado como lixo ainda esta na busca.{% plural %}{{ n }} trechos rotulados como lixo ainda estao na busca.{% endblocktranslate %}</span>
+      <button type="submit" class="botao secundario pequeno">{% translate "Tirar da busca" %}</button>
+    </form>
   {% endif %}
 
   <h2>{% translate "Limiar deste ambiente" %}</h2>
