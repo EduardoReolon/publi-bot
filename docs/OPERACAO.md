@@ -505,6 +505,10 @@ vem pronto no pacote
 pip install "publi-bot-core-django @ git+https://github.com/EduardoReolon/publi-bot-core-django@main"
 ```
 
+Para o site acompanhar as versoes novas do pacote, o deploy do site deve
+reinstala-lo de `@main` a cada vez (e rodar `migrate` e `collectstatic`); ver
+"Atualizar" no `docs/IMPLANTACAO.md` de la.
+
 O passo a passo de la (`docs/IMPLANTACAO.md`) cobre settings, rotas, HTTPS e
 midia; o `docs/PARA_IA.md` diz as tabelas e tags que o template usa. A chave e
 o segredo saem do cadastro em **Site e cadencia**. Para conferir as duas
