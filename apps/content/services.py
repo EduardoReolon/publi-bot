@@ -444,6 +444,10 @@ def aprovar_e_agendar(
     if not termos_confirmados:
         _exigir_vocabulario(article)
 
+    faltam = pendencias_para_aprovar(article)
+    if faltam:
+        raise RevisaoInsuficiente("falta resolver: " + "; ".join(faltam) + ".")
+
     article.status = Article.Status.APPROVED_SCHEDULED
     article.reviewed_by = revisor
     article.reviewed_at = timezone.now()
@@ -456,6 +460,62 @@ def aprovar_e_agendar(
 
     arquivar_o_outro(article)
     return article
+
+
+def pendencias_para_aprovar(article: Article) -> list[str]:
+    """O que impede de aprovar, numa frase cada. A tela mostra a lista e
+    desliga o botao; `aprovar_e_agendar` recusa com a mesma lista.
+
+    So o que e objetivo e sai errado no site se passar: o resto (termos do
+    guia, divergencia entre fontes) tem a confirmacao propria.
+    """
+    from apps.content.fluxos import irmaos
+    from apps.content.rendering import PADRAO_MARCADOR
+    from apps.ops.models import GenerationJob
+
+    faltam = []
+    if article.status not in (
+        Article.Status.PENDING_REVIEW,
+        Article.Status.PUSH_FAILED,
+        Article.Status.APPROVED_SCHEDULED,  # aprovar de novo so muda o horario
+    ):
+        faltam.append(
+            "a geracao do texto ainda nao terminou"
+            if article.status == Article.Status.DRAFTING
+            else f"o artigo esta como '{article.get_status_display()}'"
+        )
+    if not (article.title or "").strip():
+        faltam.append("o titulo esta vazio")
+    if not (article.meta_description or "").strip():
+        faltam.append("a descricao para o Google (meta description) esta vazia")
+    corpo = article.body_markdown or ""
+    if len(corpo.split()) < 150:
+        faltam.append("o texto esta vazio ou curto demais")
+    if PADRAO_MARCADOR.search(corpo):
+        faltam.append("o texto tem marcador de fonte [[FONTE_N]] sem trocar pelo link")
+    if not article.images.filter(is_chosen=True).exists():
+        faltam.append("escolha a imagem de capa")
+    if GenerationJob.objects.filter(
+        kind__in=[GenerationJob.Kind.ARTICLE_REDRAFT, GenerationJob.Kind.ARTICLE_REPLAN],
+        target_object_id=article.pk,
+        status__in=[
+            GenerationJob.Status.PENDING,
+            GenerationJob.Status.RUNNING,
+            GenerationJob.Status.WAITING_CAPACITY,
+        ],
+    ).exists():
+        faltam.append("as secoes estao sendo refeitas: espere terminar")
+    no_ar = [
+        o
+        for o in irmaos(article)
+        if o.status in (Article.Status.APPROVED_SCHEDULED, Article.Status.PUBLISHED)
+    ]
+    if no_ar:
+        faltam.append(
+            "a outra versao desta pauta ja foi aprovada; so uma vai ao ar "
+            "(rejeite ou volte aquela antes)"
+        )
+    return faltam
 
 
 def _exigir_vocabulario(article: Article) -> None:

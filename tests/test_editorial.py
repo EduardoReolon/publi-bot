@@ -18,6 +18,7 @@ from apps.editorial.models import EditorialProfile
 from apps.editorial.services import aplicar_modo, conferir_texto, texto_do_guia
 from apps.ops.models import GenerationJob
 from apps.ops.orchestrator import criar_job
+from tests.conftest import pronto_para_aprovar
 from tests.test_flows import ROTEIRO_DO_ARTIGO, ModeloFalso, _rodar_ate_o_fim
 from tests.test_interface import ambiente, artigo_para_revisar, autora  # noqa: F401
 
@@ -136,7 +137,7 @@ def test_termo_proibido_bloqueia_ate_o_revisor_confirmar(ambiente, artigo_para_r
     perfil.termos = [{"termo": "trata", "troca": "auxilia no manejo"}]
     perfil.save()
     artigo_para_revisar.body_markdown = "A quiropraxia trata hernia de disco."
-    artigo_para_revisar.save()
+    pronto_para_aprovar(artigo_para_revisar)
 
     with pytest.raises(RevisaoInsuficiente, match="trata"):
         aprovar_e_agendar(artigo_para_revisar, revisor=usuario, quando=None)

@@ -350,3 +350,23 @@ def imagem_falsa(monkeypatch):
         lambda *a, **k: GeradorDeImagemFalso(),
     )
     monkeypatch.setattr("apps.inference.leases.reserva", lambda *a, **k: contextlib.nullcontext())
+
+
+# Texto com tamanho de artigo de verdade: a aprovacao recusa texto curto demais.
+TEXTO_APROVAVEL = "## Titulo\n\n" + " ".join(["Texto do artigo com conteudo."] * 40)
+
+
+def pronto_para_aprovar(artigo):
+    """Completa o artigo de teste com o que a aprovacao exige
+    (`services.pendencias_para_aprovar`): capa escolhida, descricao e texto."""
+    from django.core.files.base import ContentFile
+
+    if len((artigo.body_markdown or "").split()) < 150:
+        artigo.body_markdown = (artigo.body_markdown or "") + "\n\n" + TEXTO_APROVAVEL
+    artigo.meta_description = artigo.meta_description or "Descricao para o Google."
+    if artigo.status == artigo.Status.DRAFTING:
+        artigo.status = artigo.Status.PENDING_REVIEW
+    artigo.save()
+    if not artigo.images.filter(is_chosen=True).exists():
+        artigo.images.create(order=1, is_chosen=True, image=ContentFile(b"webp", name="capa.webp"))
+    return artigo

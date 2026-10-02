@@ -322,7 +322,7 @@
         <div class="cartoes">
           {% for opcao in lote.opcoes %}
             <div class="{% if opcao.is_chosen %}escolhida{% endif %}">
-              <img src="{{ opcao.image.url }}" alt="{{ opcao.alt_text }}"
+              <img src="{{ opcao.image.url }}" alt="{{ opcao.alt_text }}" loading="lazy" decoding="async"
                    style="width:100%; border-radius:6px">
               {% if opcao.is_chosen %}
                 <p><span class="selo ok">{% translate "esta e a capa" %}</span></p>
@@ -639,6 +639,12 @@
         {% endif %}
 
         <h2>{% translate "Aprovar" %}</h2>
+        {% if pendencias %}
+          <div class="aviso ruim">
+            <strong>{% translate "Antes de aprovar:" %}</strong>
+            <ul>{% for item in pendencias %}<li>{{ item }}</li>{% endfor %}</ul>
+          </div>
+        {% endif %}
         {% if site and site.is_sensitive %}
           <div class="aviso">
             {% translate "Este site trata de tema sensivel: so um revisor com credencial tecnica registrada pode aprovar." %}
@@ -696,7 +702,7 @@
           <button type="submit" name="acao" value="salvar" class="botao secundario">
             {% translate "Salvar" %}
           </button>
-          <button type="submit" name="acao" value="aprovar">
+          <button type="submit" name="acao" value="aprovar"{% if pendencias %} disabled title="{% translate 'Resolva a lista acima antes de aprovar' %}"{% endif %}>
             {% translate "Aprovar e agendar" %}
           </button>
           <button type="submit" name="acao" value="rejeitar" class="botao perigo">

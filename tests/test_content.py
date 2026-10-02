@@ -38,6 +38,7 @@ from apps.content.services import (
     registrar_citacoes,
 )
 from apps.knowledge.models import Document, DocumentCategory, SuperChunk
+from tests.conftest import pronto_para_aprovar
 
 
 @pytest.fixture(autouse=True)
@@ -345,6 +346,7 @@ def test_divergencia_entre_fontes_bloqueia_aprovacao(artigo_com_fontes, user):
 
 @pytest.mark.django_db
 def test_divergencia_confirmada_libera_aprovacao(artigo_com_fontes, user):
+    pronto_para_aprovar(artigo_com_fontes)
     artigo_com_fontes.consensus = Article.Consensus.CONFLICT
     artigo_com_fontes.thesis_json = {"pontos_divergentes": ["dose"], "divergencia_confirmada": True}
     artigo_com_fontes.save()
@@ -367,6 +369,7 @@ def test_artigo_sem_autor_nao_e_aprovado(artigo_com_fontes, user):
 
 @pytest.mark.django_db
 def test_site_sensivel_exige_revisor_com_credencial(artigo_com_fontes, user):
+    pronto_para_aprovar(artigo_com_fontes)
     assert user.is_technical_reviewer is False
 
     with pytest.raises(RevisaoInsuficiente, match="credencial"):
@@ -386,6 +389,7 @@ def test_site_sensivel_exige_revisor_com_credencial(artigo_com_fontes, user):
 
 @pytest.mark.django_db
 def test_aprovacao_gera_slug(artigo_com_fontes, user):
+    pronto_para_aprovar(artigo_com_fontes)
     aprovar_e_agendar(artigo_com_fontes, revisor=user, quando=timezone.now())
     artigo_com_fontes.refresh_from_db()
     assert artigo_com_fontes.slug == "monitoramento-na-gestacao"
