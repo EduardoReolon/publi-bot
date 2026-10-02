@@ -26,9 +26,10 @@ AVISO_DE_DELIMITADOR = (
 
 REGRA_DOS_LINKS = (
     "NUNCA escreva um endereco da web. Para atribuir uma afirmacao a uma fonte, "
-    "escreva o marcador [[FONTE_N]], onde N e o numero da fonte. Use no maximo "
-    "2 marcadores no texto inteiro. Qualquer endereco escrito por voce sera "
-    "recusado e o texto descartado."
+    "escreva o marcador [[FONTE_N]], onde N e o numero da fonte. Use o marcador "
+    "so onde a afirmacao depende daquela fonte, e no maximo 2 fontes diferentes "
+    "por secao. Qualquer endereco escrito por voce sera recusado e o texto "
+    "descartado."
 )
 
 # A regra que separa este produto de um gerador de texto qualquer.

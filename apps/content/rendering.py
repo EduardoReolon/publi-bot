@@ -67,10 +67,13 @@ TAGS_PERMITIDAS = {
     "figcaption",
     "span",
     "div",
+    "details",
+    "summary",
 }
 
 ATRIBUTOS_PERMITIDOS = {
     "a": {"href", "title", "rel", "target"},
+    "details": {"class", "open"},
     "img": {"src", "alt", "title", "width", "height", "loading"},
     "th": {"scope", "colspan", "rowspan"},
     "td": {"colspan", "rowspan"},
@@ -120,10 +123,12 @@ class Fonte:
         return self.modo
 
 
-def validar_saida_do_modelo(texto: str, *, max_marcadores: int = 2) -> list[int]:
+def validar_saida_do_modelo(texto: str, *, max_marcadores: int | None = 2) -> list[int]:
     """Confere que o modelo respeitou o contrato de marcadores.
 
-    Devolve os indices usados. Levanta se houver URL solta ou marcadores demais.
+    Devolve os indices usados. Levanta se houver URL solta ou marcadores demais
+    (`max_marcadores=None`: sem limite; o artigo inteiro e limitado nos LINKS,
+    em `fontes_com_link`, e nao no numero de fontes citadas).
     """
     soltas = PADRAO_URL_SOLTA.findall(texto)
     if soltas:
@@ -134,7 +139,7 @@ def validar_saida_do_modelo(texto: str, *, max_marcadores: int = 2) -> list[int]
 
     indices = [int(n) for n in PADRAO_MARCADOR.findall(texto)]
     distintos = sorted(set(indices))
-    if len(distintos) > max_marcadores:
+    if max_marcadores is not None and len(distintos) > max_marcadores:
         raise LinkAlucinado(
             f"o texto usa {len(distintos)} fontes distintas e o limite e "
             f"{max_marcadores}. Excesso de links de saida descaracteriza a "
@@ -144,7 +149,7 @@ def validar_saida_do_modelo(texto: str, *, max_marcadores: int = 2) -> list[int]
 
 
 # Titulo da lista de referencias, quando os links vao para o fim do texto.
-TITULO_DAS_REFERENCIAS = "Referencias"
+TITULO_DAS_REFERENCIAS = "Referências"
 
 
 # O que costuma anteceder o marcador numa atribuicao ("segundo [[FONTE_1]]").
@@ -179,7 +184,51 @@ def _remover_marcador(texto: str, indice: int) -> str:
     )
 
 
-def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: bool = False) -> str:
+# Classe do bloco de referencias no HTML publicado: o site muda a aparencia
+# (ou esconde) por CSS, sem mexer no contrato.
+CLASSE_DAS_REFERENCIAS = "publibot-referencias"
+
+
+def fontes_com_link(texto: str, fontes: dict[int, Fonte], *, maximo: int, primaria=None) -> set:
+    """Quais fontes viram link no corpo: no maximo `maximo`, das que tem URL.
+
+    A primaria (a que sustenta a ideia central) primeiro; depois a mais citada
+    no texto; empate, a que aparece antes. As outras continuam citadas, sem
+    link, e todas vao para a lista de referencias.
+    """
+    marcadores = [int(n) for n in PADRAO_MARCADOR.findall(texto)]
+    candidatas = [
+        i for i in dict.fromkeys(marcadores) if i in fontes and fontes[i].modo_efetivo == "link"
+    ]
+    candidatas.sort(key=lambda i: (i != primaria, -marcadores.count(i), marcadores.index(i)))
+    return set(candidatas[:maximo])
+
+
+def _bloco_de_referencias(itens: list, *, aberta: bool) -> str:
+    import html
+
+    linhas = []
+    for fonte in itens:
+        nome = html.escape(fonte.anchor)
+        if fonte.modo_efetivo == "link":
+            linhas.append(f'<li><a href="{html.escape(fonte.url, quote=True)}">{nome}</a></li>')
+        else:
+            linhas.append(f"<li>{nome}</li>")
+    rotulo = TITULO_DAS_REFERENCIAS if aberta else f"Ver todas as referências ({len(itens)})"
+    return (
+        f'<details class="{CLASSE_DAS_REFERENCIAS}"{" open" if aberta else ""}>'
+        f"<summary>{rotulo}</summary><ol>{''.join(linhas)}</ol></details>"
+    )
+
+
+def substituir_marcadores(
+    texto: str,
+    fontes: dict[int, Fonte],
+    *,
+    ao_final: bool = False,
+    com_link: set | None = None,
+    referencias: str = "",
+) -> str:
     """Troca `[[FONTE_N]]` pela forma de citacao de cada fonte.
 
     Esta e a unica funcao do sistema que insere uma URL num texto gerado. A URL
@@ -192,6 +241,10 @@ def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: boo
     frase e preservado — apagar o marcador deixaria buracos do tipo "conforme
     , o efeito". A excecao e a fonte interna, que some junto com a preposicao
     que a anunciava.
+
+    `com_link`: so estas viram link no corpo (as outras ficam citadas pelo
+    nome). `referencias` ("aberta" ou "fechada"): todas as fontes usadas saem
+    numa lista no fim, num bloco que abre e fecha.
     """
     usadas: list[int] = []
 
@@ -212,7 +265,8 @@ def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: boo
         fonte = fontes[indice]
         if indice not in usadas:
             usadas.append(indice)
-        if ao_final or fonte.modo_efetivo == "atribuicao":
+        sem_link = com_link is not None and indice not in com_link
+        if ao_final or sem_link or fonte.modo_efetivo == "atribuicao":
             return fonte.anchor
         # Sem `rel="nofollow"`: a ausencia do atributo E o comportamento
         # desejado. Nao existe `rel="dofollow"` em HTML — e um engano comum.
@@ -222,6 +276,13 @@ def substituir_marcadores(texto: str, fontes: dict[int, Fonte], *, ao_final: boo
     # Espaco que sobrou antes de pontuacao, onde uma fonte interna saiu.
     corpo = re.sub(r"[ \t]+([.,;:!?)])", r"\1", corpo)
     corpo = re.sub(r"[ \t]{2,}", " ", corpo)
+
+    if referencias and usadas:
+        listadas = [fontes[i] for i in usadas if fontes[i].modo_efetivo != "interna"]
+        if listadas:
+            bloco = _bloco_de_referencias(listadas, aberta=referencias == "aberta")
+            return f"{corpo}\n\n{bloco}\n"
+        return corpo
 
     if not ao_final or not usadas:
         return corpo

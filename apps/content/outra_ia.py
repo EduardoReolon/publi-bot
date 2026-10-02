@@ -321,7 +321,7 @@ def aplicar(artigo, resposta: str):
     from apps.content.faq import MARCADAS
     from apps.content.models import ArticleFaq, ArticleSection
     from apps.content.rendering import validar_saida_do_modelo
-    from apps.content.services import MAXIMO_DE_FONTES_NO_ARTIGO, aplicar_rascunho
+    from apps.content.services import aplicar_rascunho
 
     dados = ler(resposta)
     corpo = re.sub(r"^#\s+.+\n+", "", dados["corpo"])  # titulo de nivel 1 sai
@@ -330,7 +330,7 @@ def aplicar(artigo, resposta: str):
             "nao achei o CORPO DO ARTIGO na resposta (ou ele tem menos de 150 palavras)."
         )
     # A mesma trava do caminho local, antes de gravar qualquer coisa.
-    validar_saida_do_modelo(corpo, max_marcadores=MAXIMO_DE_FONTES_NO_ARTIGO)
+    validar_saida_do_modelo(corpo, max_marcadores=None)
     marcadores = {int(n) for n in re.findall(r"\[\[FONTE_(\d+)\]\]", corpo)}
     fontes = set(artigo.citations.values_list("rank", flat=True))
     if marcadores - fontes:

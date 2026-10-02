@@ -464,7 +464,10 @@ def test_abertura_e_fecho_veem_o_esqueleto_pronto(tenant_com_acervo, conexao, mo
 
     artigo = Article.objects.get(topic=topic)
     assert artigo.body_markdown.startswith("Quem acompanha o tema")
-    assert artigo.body_markdown.rstrip().endswith("nao conclusao.")
+    corpo = artigo.body_markdown.split('<details class="publibot-referencias"')[0]
+    assert corpo.rstrip().endswith("nao conclusao.")
+    # As referencias vem depois do fecho; no fluxo A, recolhidas.
+    assert "Ver todas as referências" in artigo.body_markdown
 
 
 @pytest.mark.django_db

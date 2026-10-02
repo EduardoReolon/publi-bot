@@ -504,6 +504,28 @@ Toda resposta de erro segue o mesmo formato:
 
 **Normativo:** 5xx, 408 e 429 sao retentaveis. Os demais 4xx sao terminais.
 
+## Referencias
+
+O `html_content` termina com a lista de todas as fontes que o texto cita:
+
+```html
+<details class="publibot-referencias" open>
+  <summary>Referências</summary>
+  <ol><li><a href="https://doi.org/...">Gupta et al., 2006</a></li>...</ol>
+</details>
+```
+
+No corpo, so as fontes principais (ate duas) viram link; as outras aparecem
+citadas pelo nome e todas estao na lista. O bloco vem **aberto** (`open`) nos
+artigos de pesquisa cientifica e **recolhido** nos demais ("Ver todas as
+referências (N)"). Abrir e fechar e do proprio navegador: nao precisa de
+JavaScript.
+
+- Para mudar a aparencia, use a classe `publibot-referencias` no CSS do site.
+- Site que nao aceita `details`/`summary` no sanitizador remove as tags e a
+  lista aparece sempre aberta, como texto comum. Nada quebra, mas o recolher
+  some: inclua as duas tags na lista abaixo.
+
 ## Sanitizacao do HTML recebido
 
 **Sanitize o `html_content` antes de gravar.** O PubliBot ja sanitiza antes de
@@ -511,8 +533,9 @@ enviar, mas a defesa precisa existir dos dois lados: quem grava e o responsavel
 final pelo que sai na propria pagina.
 
 Tags aceitas: `p br hr h2 h3 h4 ul ol li strong em b i u s blockquote code pre
-a img table thead tbody tr th td figure figcaption span div`, e `aside` so
-com `data-publibot="chamada"` (ver [Chamada](#chamada-para-a-oferta-do-site)).
+a img table thead tbody tr th td figure figcaption span div details summary`, e
+`aside` so com `data-publibot="chamada"` (ver [Chamada](#chamada-para-a-oferta-do-site)).
+Em `details`, aceite os atributos `class` e `open` (ver [Referencias](#referencias)).
 
 - Atributos `on*` (`onclick`, `onerror`, ...): **sempre removidos**.
 - `href` e `src`: apenas `http`, `https` e `mailto`.
