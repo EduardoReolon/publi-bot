@@ -736,6 +736,43 @@ def o_que_a_pagina_cobria(link) -> str:
     return " ".join(p for p in (link.arquivo_titulo, link.arquivo_trecho, link.contexto) if p)
 
 
+def _proximidades_guardadas(artigo, texto_do_artigo: str, links) -> dict:
+    """{link_id: proximidade} entre o artigo e o que cada pagina cobria.
+
+    Vetorizar o artigo e cada link custa segundos numa CPU so, e a pagina do
+    artigo mostra isto a cada abertura: guarda o resultado, refeito so quando o
+    texto ou os links mudam.
+    """
+    import hashlib
+
+    from django.core.cache import cache
+
+    from apps.radar.agrupamento import _distancia, _vetor
+
+    cobrias = {str(link.pk): o_que_a_pagina_cobria(link) for link in links}
+    impressao = hashlib.sha256(
+        (texto_do_artigo + "".join(f"{k}{v}" for k, v in sorted(cobrias.items()))).encode()
+    ).hexdigest()[:20]
+    chave = f"cobertura:{artigo.pk}:{impressao}"
+    guardadas = cache.get(chave)
+    if guardadas is not None:
+        return guardadas
+    try:
+        vetor_do_artigo = _vetor(texto_do_artigo)
+    except Exception:  # sem embedding, fica so o lembrete do titulo
+        return {}
+    saida = {}
+    for pk, cobria in cobrias.items():
+        if not cobria:
+            continue
+        try:
+            saida[pk] = round(1.0 - _distancia(vetor_do_artigo, _vetor(cobria)), 2)
+        except Exception:  # sem vetor para este link: fica so o lembrete do titulo
+            logger.warning("Cobertura do link %s nao calculada.", pk, exc_info=True)
+    cache.set(chave, saida, 60 * 60 * 24 * 30)
+    return saida
+
+
 def cobertura_do_artigo(artigo) -> list[dict]:
     """Para cada link quebrado da pauta: o artigo responde o que a pagina que
     sumiu respondia? Aviso, nao trava — quem decide e a pessoa.
@@ -751,23 +788,12 @@ def cobertura_do_artigo(artigo) -> list[dict]:
         return []
     from django.utils.html import strip_tags
 
-    from apps.radar.agrupamento import _distancia, _vetor
-
     corpo = artigo.body_markdown or strip_tags(artigo.body_html or "")
     texto_do_artigo = f"{artigo.title}\n{corpo[:3000]}"
-    try:
-        vetor_do_artigo = _vetor(texto_do_artigo)
-    except Exception:  # sem embedding, fica so o lembrete do titulo
-        vetor_do_artigo = None
+    proximidades = _proximidades_guardadas(artigo, texto_do_artigo, links)
     saida = []
     for link in links:
-        cobria = o_que_a_pagina_cobria(link)
-        proximidade = None
-        if vetor_do_artigo is not None and cobria:
-            try:
-                proximidade = round(1.0 - _distancia(vetor_do_artigo, _vetor(cobria)), 2)
-            except Exception:
-                proximidade = None
+        proximidade = proximidades.get(str(link.pk))
         titulo_antigo = link.arquivo_titulo or link.texto
         saida.append(
             {

@@ -21,6 +21,19 @@ from apps.ops.models import GenerationJob
 A = Fluxo.CURADAS.value
 B = Fluxo.PESQUISA.value
 NOMES = {A: _("A · Fontes curadas"), B: _("B · Pesquisa cientifica")}
+# O que cada fluxo e, para quem nao acompanhou a construcao. Um lugar so: a
+# pauta e a pagina do artigo mostram o mesmo texto.
+DESCRICOES = {
+    A: _(
+        "Escrito com o acervo que voce cura (paginas, videos, artigos e documentos). "
+        "Falta fonte, a busca sugere e a geracao pede a curadoria."
+    ),
+    B: _(
+        "Escrito a partir de artigos cientificos achados por sentido para a pauta, "
+        "pelos resumos; o PDF so e pedido quando o texto precisa de um detalhe. "
+        "Traz contrapontos quando a literatura diverge."
+    ),
+}
 EM_CURSO = [
     GenerationJob.Status.PENDING,
     GenerationJob.Status.RUNNING,
@@ -318,6 +331,7 @@ def para_a_tela(
             {
                 "fluxo": fluxo,
                 "nome": NOMES[fluxo],
+                "descricao": DESCRICOES[fluxo],
                 "artigos": artigos,
                 "falta": not vivos,
                 "trabalho": trabalho,

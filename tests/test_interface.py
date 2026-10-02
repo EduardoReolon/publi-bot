@@ -478,7 +478,7 @@ def test_cada_titulo_sugerido_tem_botao_que_o_leva_ao_campo(ambiente, artigo_par
         reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants")
     ).content.decode()
 
-    assert corpo.count('class="botao secundario usar-titulo"') == 2
+    assert corpo.count('pequeno usar-titulo"') == 2
     assert 'data-titulo="Monitoramento na gestacao: o que muda"' in corpo
     # O titulo com aspas sai escapado: e o motivo de ele ir num `data-`, e nao
     # dentro de um `onclick`, onde quebraria a pagina.
