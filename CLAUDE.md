@@ -17,3 +17,6 @@
 - Nunca repetir segredos de `.env` ou de logs.
 - Arquivo novo em area nova precisa de padrao em `scripts/blocos.toml` (o CI confere
   com `tests/test_blocos_de_contexto.py`).
+- Mudanca no contrato do site (`docs/contrato/`: rota, campo, tag aceita no HTML) vale
+  tambem para EduardoReolon/publi-bot-core-django (o lado do site): ajuste la no mesmo
+  dia, com versao e CHANGELOG, e merge na `main` dela (os sites instalam `@main`).
