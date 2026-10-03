@@ -978,6 +978,9 @@ class Question(models.Model):
         blank=True,
         help_text=_("Menor distancia encontrada no acervo. Sustenta a regra do limiar."),
     )
+    # A pesquisa cientifica feita para responder (OpenAlex, como o fluxo B):
+    # {"em", "candidatos", "documentos", "contraponto"} ou {"erro"}.
+    pesquisa = models.JSONField(_("pesquisa"), default=dict, blank=True)
 
     retention_until = models.DateTimeField(
         _("reter ate"),

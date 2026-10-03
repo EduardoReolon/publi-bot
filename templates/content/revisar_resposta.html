@@ -46,13 +46,28 @@
       </div>
       <div>
         <h2>{% translate "Fontes citadas" %}</h2>
+        {% if pesquisa.erro %}
+          <p class="aviso">{% translate "A pesquisa de artigos nao rodou; a resposta usou so o acervo." %} <span class="pre-visualizacao">{{ pesquisa.erro }}</span></p>
+        {% elif pesquisa.candidatos %}
+          <p class="pre-visualizacao">
+            {% blocktranslate trimmed count n=pesquisa.candidatos|length %}Alem do acervo, {{ n }} artigo cientifico foi achado para esta pergunta (OpenAlex).{% plural %}Alem do acervo, {{ n }} artigos cientificos foram achados para esta pergunta (OpenAlex).{% endblocktranslate %}
+            {% if pesquisa.contraponto %}{% translate "Inclui um contraponto." %}{% endif %}
+          </p>
+        {% endif %}
         <ul class="lista">
           {% for citacao in citacoes %}
             <li>
-              <strong>[[FONTE_{{ citacao.rank }}]]</strong>
+              <b>{{ forloop.counter }}.</b>
+              {% if citacao.source_url %}<a href="{{ citacao.source_url }}" target="_blank" rel="noopener noreferrer">{{ citacao.source_title|default:citacao.source_url }}</a>{% else %}{{ citacao.source_title }}{% endif %}
               {% if citacao.used_as_primary %}<span class="selo ok">{% translate "primaria" %}</span>{% endif %}
-              <span class="selo">{{ citacao.distance|floatformat:4 }}</span>
-              <div>{{ citacao.source_title }}</div>
+              {% if citacao.documento %}<div class="pre-visualizacao">{{ citacao.documento.authors|truncatechars:80 }}{% if citacao.documento.year %} · {{ citacao.documento.year }}{% endif %}</div>{% endif %}
+              {% if citacao.so_resumo %}
+                <div><span class="selo alerta">{% translate "lido so o resumo" %}</span>
+                  {% if citacao.pdf %}<a href="{{ citacao.pdf }}" target="_blank" rel="noopener noreferrer">{% translate "PDF aberto" %}</a>
+                  {% elif citacao.doi %}<a href="https://doi.org/{{ citacao.doi }}" target="_blank" rel="noopener noreferrer">{% translate "procurar o PDF (DOI)" %}</a>{% endif %}
+                </div>
+              {% endif %}
+              {% if citacao.trecho %}<details class="ajuda"><summary>{% translate "o trecho que a resposta usou" %}</summary><div style="white-space:pre-wrap">{{ citacao.trecho }}</div></details>{% endif %}
             </li>
           {% empty %}
             <li class="vazio">

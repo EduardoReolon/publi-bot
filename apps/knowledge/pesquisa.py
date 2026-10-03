@@ -299,9 +299,10 @@ def angulos(escolhidos: list[dict], vetores: np.ndarray) -> list[dict]:
 
 
 # -- Fontes ------------------------------------------------------------------
-def registrar_fontes(pauta, escolhidos: list[dict]) -> list[str]:
+def registrar_fontes(pauta, escolhidos: list[dict], *, consulta: str = "") -> list[str]:
     """Cada escolhido vira candidato aprovado com o documento do resumo, curado
-    automaticamente. Devolve os ids dos candidatos (na ordem)."""
+    automaticamente. Devolve os ids dos candidatos (na ordem). `pauta` pode ser
+    so o alvo da pesquisa (uma pergunta): sem pauta de verdade, nao liga."""
     from apps.knowledge.academicos import ler_trabalho, registrar
     from apps.knowledge.models import CandidatoDeFonte
     from apps.knowledge.provisorias import documento_do_resumo
@@ -311,7 +312,10 @@ def registrar_fontes(pauta, escolhidos: list[dict]) -> list[str]:
     for dados in escolhidos:
         trabalho = ler_trabalho(dados)
         candidato = registrar(
-            trabalho, consulta=f"pesquisa: {pauta.title}"[:500], origem="openalex", pauta=pauta
+            trabalho,
+            consulta=(consulta or f"pesquisa: {pauta.title}")[:500],
+            origem="openalex",
+            pauta=pauta if hasattr(pauta, "_meta") else None,
         )
         if candidato is None:  # ja conhecido: reaproveita
             candidato = (
@@ -324,7 +328,11 @@ def registrar_fontes(pauta, escolhidos: list[dict]) -> list[str]:
             continue
         if candidato.situacao == CandidatoDeFonte.Situacao.PENDENTE:
             candidato.situacao = CandidatoDeFonte.Situacao.APROVADO
-            candidato.motivo = "Escolhido pela pesquisa da pauta."
+            candidato.motivo = (
+                "Escolhido pela pesquisa da pauta."
+                if hasattr(pauta, "_meta")
+                else "Escolhido pela pesquisa da pergunta."
+            )
             candidato.decidido_em = timezone.now()
             candidato.save(update_fields=["situacao", "motivo", "decidido_em"])
         if documento.status == documento.Status.PENDING_CURATION and not documento.chunks.exists():
@@ -437,24 +445,68 @@ def orientacao_dos_angulos(pauta) -> str:
 
 
 # -- A pesquisa inteira --------------------------------------------------------
-def pesquisar(pauta) -> dict:
-    """Roda a pesquisa e grava em `busca_de_fontes["pesquisa"]`."""
-    from apps.knowledge.referencias import registrar
-
-    registrar(pauta, "pesquisa", situacao="pesquisando", em=timezone.now().isoformat(), erro="")
-    hip = hipoteses(pauta)
+def _achados(hip: dict, *, quantos: int = POR_HIPOTESE) -> dict[str, dict]:
+    """Uma busca semantica por hipotese (as contrarias marcadas), sem repetir."""
     achados: dict[str, dict] = {}
     consultas = [(h, False) for h in hip["angulos"]] + [(h, True) for h in hip["contrarias"]]
     for n, (hipotese, contraria) in enumerate(consultas):
         if n:
             time.sleep(PAUSA_DA_SEMANTICA)
-        for dados in busca_semantica(hipotese["paragrafo"]):
+        for dados in busca_semantica(hipotese["paragrafo"], quantos=quantos):
             chave = _chave(dados)
             if not chave or chave in achados:
                 continue
             dados["_contraria"] = contraria
             dados["_hipotese"] = hipotese["angulo"]
             achados[chave] = dados
+    return achados
+
+
+# Uma pergunta pede poucos artigos: a resposta e curta.
+POR_PERGUNTA = 6
+POR_HIPOTESE_DA_PERGUNTA = 10
+
+
+def pesquisar_para_pergunta(texto: str, chave: str) -> dict:
+    """A mesma pesquisa da pauta, enxuta, para responder uma pergunta: as
+    hipoteses (com o contraponto, se a pergunta for refutavel), a busca
+    semantica, a ordem (sentido, citacoes, idade) e os melhores viram fonte pelo
+    resumo. Sem bola de neve nem sintese. Levanta PesquisaIndisponivel."""
+    from types import SimpleNamespace
+
+    alvo = SimpleNamespace(pk=f"pergunta:{chave}", title=texto, target_keyword="", briefing="")
+    hip = hipoteses(alvo)
+    ordenados, _vetores = ordenar(
+        alvo, list(_achados(hip, quantos=POR_HIPOTESE_DA_PERGUNTA).values())
+    )
+    contrarios = [i for i, d in enumerate(ordenados) if d.get("_contraria")][:1]
+    resto = [i for i in range(len(ordenados)) if i not in contrarios]
+    escolhidos = [
+        ordenados[i] for i in sorted(contrarios + resto[: POR_PERGUNTA - len(contrarios)])
+    ]
+    candidatos = registrar_fontes(alvo, escolhidos, consulta=f"pergunta: {texto}")
+    from apps.knowledge.models import CandidatoDeFonte
+
+    documentos = list(
+        CandidatoDeFonte.objects.filter(pk__in=candidatos, documento__isnull=False).values_list(
+            "documento_id", flat=True
+        )
+    )
+    return {
+        "em": timezone.now().isoformat(),
+        "candidatos": candidatos,
+        "documentos": [str(d) for d in documentos],
+        "contraponto": bool(contrarios),
+    }
+
+
+def pesquisar(pauta) -> dict:
+    """Roda a pesquisa e grava em `busca_de_fontes["pesquisa"]`."""
+    from apps.knowledge.referencias import registrar
+
+    registrar(pauta, "pesquisa", situacao="pesquisando", em=timezone.now().isoformat(), erro="")
+    hip = hipoteses(pauta)
+    achados = _achados(hip)
 
     ordenados, vetores = ordenar(pauta, list(achados.values()))
     # Bola de neve: os relacionados dos melhores, um nivel so.
