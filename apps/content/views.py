@@ -114,7 +114,37 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
         pk=pk,
     )
     _preparar_pautas([alvo], config, completo=True)
-    return render(request, "content/pauta.html", {"aba": "pautas", "pauta": alvo, "config": config})
+    from apps.content.dados_da_pauta import escolhidos, sugestoes
+
+    return render(
+        request,
+        "content/pauta.html",
+        {
+            "aba": "pautas",
+            "pauta": alvo,
+            "config": config,
+            "dados_escolhidos": escolhidos(alvo),
+            "dados_sugeridos": sugestoes(alvo),
+        },
+    )
+
+
+@login_required
+@require_POST
+def dados_da_pauta(request: HttpRequest, pk) -> HttpResponse:
+    """Usa ou tira um dado publico da pauta."""
+    from apps.content.models import DadoDaPauta
+    from apps.dados.models import Serie
+
+    alvo = get_object_or_404(Topic, pk=pk)
+    if request.POST.get("acao") == "tirar":
+        DadoDaPauta.objects.filter(topic=alvo, pk=request.POST.get("dado")).delete()
+    else:
+        serie = get_object_or_404(Serie, pk=request.POST.get("serie"))
+        DadoDaPauta.objects.get_or_create(
+            topic=alvo, serie=serie, local=request.POST.get("local", "").strip() or "Brasil"
+        )
+    return redirect(reverse("content:pauta", args=[alvo.pk]) + "#dados")
 
 
 def _preparar_pautas(lista: list, config, *, completo: bool) -> None:
@@ -634,7 +664,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
 
 def _pendencias_com_aba(artigo) -> list[dict]:
     """As pendencias da aprovacao, cada uma com a aba onde se resolve."""
-    abas = (("capa", "capa"), ("secoes", "secoes"))
+    abas = (("capa", "capa"), ("secoes", "secoes"), ("o dado ", "fontes"))
     return [
         {"texto": texto, "aba": next((aba for chave, aba in abas if chave in texto), "")}
         for texto in pendencias_para_aprovar(artigo)

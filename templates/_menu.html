@@ -32,6 +32,9 @@
       {% translate "Documentos" %}
       {% if pendencias.curadoria %}<span class="contagem">{{ pendencias.curadoria }}</span>{% endif %}
     </a>
+    <a href="{% url 'dados:catalogo' %}" class="{% if aba == 'dados' %}ativo{% endif %}">
+      {% translate "Dados" %}
+    </a>
     <a href="{% url 'content:pautas' %}" class="{% if aba == 'pautas' %}ativo{% endif %}">
       {% translate "Pautas" %}
     </a>

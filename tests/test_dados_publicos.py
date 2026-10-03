@@ -1,0 +1,149 @@
+"""Dados publicos: catalogo no public, escolha na pauta, fato no artigo.
+
+* a semente cria as instituicoes uma vez (rodar de novo nao duplica);
+* o link e reconhecido por dominio e por dominio/caminho;
+* a varredura do acervo vira pedido de adaptador (lugar de dados sem adaptador);
+* serie cadastrada a mao (so superusuario) entra aprovada, com valor;
+* a pauta sugere por embedding, usa, e a geracao recebe [[DADO_N]];
+* na montagem o marcador vira "(IBGE, 2019)" e o dado entra nas referencias;
+* numero diferente do buscado bloqueia a aprovacao.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+from django.core.management import call_command
+from django.urls import reverse
+
+from apps.content.models import Article, DadoDaPauta, Topic
+from apps.dados import catalogo
+from apps.dados.models import Instituicao, PedidoDeAdaptador, Serie, Valor
+from tests.test_interface import ambiente  # noqa: F401
+
+U = "core.urls_tenants"
+
+
+def _serie(titulo="Prevalencia de obesidade em adultos", valor="25.9", **campos):
+    ibge, _ = Instituicao.objects.get_or_create(
+        sigla="IBGE", defaults={"nome": "IBGE", "dominios": ["ibge.gov.br"], "adaptador": "ibge"}
+    )
+    serie = Serie.objects.create(
+        instituicao=ibge,
+        codigo=titulo[:20],
+        titulo=titulo,
+        unidade="%",
+        url="https://sidra.ibge.gov.br/tabela/1",
+        origem=Serie.Origem.MANUAL,
+        situacao=Serie.Situacao.APROVADA,
+        **campos,
+    )
+    Valor.objects.create(serie=serie, periodo="2019", valor=Decimal(valor))
+    return serie
+
+
+class _MesmoVetor:
+    def embed_query(self, texto):
+        return [1.0] + [0.0] * 1023
+
+    def embed_passage(self, textos):
+        return [self.embed_query(t) for t in textos]
+
+
+def test_numero_no_jeito_brasileiro():
+    assert catalogo.formatar(Decimal("25.900000")) == "25,9"
+    assert catalogo.formatar(Decimal("1234567")) == "1.234.567"
+    assert catalogo.formas_do_numero(Decimal("1234.5")) == {"1.234,5", "1234,5", "1234.5"}
+
+
+@pytest.mark.django_db
+def test_semente_e_link_por_dominio_e_caminho(ambiente):  # noqa: F811
+    call_command("semear_dados")
+    call_command("semear_dados")
+    assert Instituicao.objects.filter(sigla="IBGE").count() == 1
+    assert {"saude", "ia", "obras"} <= {n for i in Instituicao.objects.all() for n in i.nichos}
+
+    assert catalogo.instituicao_do_link("https://sidra.ibge.gov.br/tabela/4752").sigla == "IBGE"
+    assert catalogo.instituicao_do_link("https://www.gov.br/saude/vigitel").sigla == "MS"
+    assert catalogo.instituicao_do_link("https://www.gov.br/fazenda/x") is None
+
+
+@pytest.mark.django_db
+def test_acervo_vira_pedido_de_adaptador(ambiente):  # noqa: F811
+    from apps.dados.acervo import classificar, gravar, texto_do_pedido
+
+    call_command("semear_dados")
+    acumulado = {}
+    classificar(
+        {
+            "https://opendatasus.saude.gov.br/dataset/sim": {"d1", "d2"},
+            "https://dados.prefeitura.sp.gov.br/x.csv": {"d3"},
+            "https://sidra.ibge.gov.br/tabela/4752": {"d1"},  # IBGE: adaptador ainda nao le o link
+            "https://blog.qualquer.com/post": {"d4"},
+        },
+        acumulado,
+    )
+    gravar(acumulado)
+
+    pedidos = {p.dominio: p for p in PedidoDeAdaptador.objects.all()}
+    assert set(pedidos) == {"datasus.saude.gov.br", "dados.prefeitura.sp.gov.br"}
+    assert pedidos["datasus.saude.gov.br"].citacoes == 2
+    assert "opendatasus" in texto_do_pedido(pedidos["datasus.saude.gov.br"])
+
+
+@pytest.mark.django_db
+def test_cadastro_a_mao_so_superusuario_e_tela(ambiente):  # noqa: F811
+    _, usuario, client = ambiente
+    call_command("semear_dados")
+    ibge = Instituicao.objects.get(sigla="IBGE")
+    dados = {"instituicao": ibge.pk, "titulo": "Obesidade", "valor": "25,9", "periodo": "2019"}
+
+    assert client.post(reverse("dados:nova_serie", urlconf=U), dados).status_code == 403
+    pagina = client.get(reverse("dados:catalogo", urlconf=U) + "?aba=instituicoes").content.decode()
+    assert "a fazer" in pagina and "Cadastrar um dado" not in pagina
+
+    usuario.is_superuser = True
+    usuario.save()
+    client.post(reverse("dados:nova_serie", urlconf=U), dados)
+    serie = Serie.objects.get(titulo="Obesidade")
+    assert serie.situacao == Serie.Situacao.APROVADA
+    assert serie.valores.get().valor == Decimal("25.9")
+    pagina = client.get(reverse("dados:catalogo", urlconf=U)).content.decode()
+    assert "Obesidade" in pagina and "Cadastrar um dado" in pagina
+
+
+@pytest.mark.django_db
+def test_da_pauta_ao_artigo(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.dados_da_pauta import (
+        bloco_para_o_prompt,
+        fatos_do_artigo,
+        pendencias,
+    )
+    from apps.content.services import aplicar_rascunho
+    from apps.knowledge import embeddings
+
+    _, _, client = ambiente
+    monkeypatch.setattr(embeddings, "get_embedding_client", lambda: _MesmoVetor())
+    serie = _serie()
+    pauta = Topic.objects.create(title="Obesidade em adultos", status=Topic.Status.APPROVED)
+
+    pagina = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert "Sugeridos para esta pauta" in pagina and serie.titulo in pagina
+
+    client.post(reverse("content:dados_da_pauta", args=[pauta.pk], urlconf=U), {"serie": serie.pk})
+    assert DadoDaPauta.objects.filter(topic=pauta, serie=serie).exists()
+
+    artigo = Article.objects.create(title="Obesidade", topic=pauta)
+    fatos = fatos_do_artigo(artigo)
+    assert fatos[0]["valor"] == "25,9" and "[[DADO_1]]" in bloco_para_o_prompt(fatos)
+
+    aplicar_rascunho(artigo, "## Quanto\n\nUm em cada quatro adultos: 25,9% [[DADO_1]].")
+    artigo.refresh_from_db()
+    assert "(IBGE, 2019)" in artigo.body_markdown and "[[DADO_" not in artigo.body_markdown
+    assert "sidra.ibge.gov.br/tabela/1" in artigo.body_html
+    assert artigo.dados_usados[0]["citado"] is True
+    assert pendencias(artigo) == []
+
+    artigo.body_markdown = artigo.body_markdown.replace("25,9", "26")
+    assert "25,9" in pendencias(artigo)[0]

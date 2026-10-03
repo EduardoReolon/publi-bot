@@ -585,6 +585,18 @@
   {% endif %}
 
   <section class="aba-do-artigo" id="aba-fontes">
+  {% if artigo.dados_usados %}
+    <h2>{% translate "Dados publicos" %}</h2>
+    <ul class="lista">
+      {% for d in artigo.dados_usados %}
+        <li>
+          <b>{{ d.instituicao }}</b> — {{ d.titulo }}: <b>{{ d.valor }}{% if d.unidade %} {{ d.unidade }}{% endif %}</b>
+          <span class="pre-visualizacao">({{ d.local }}, {{ d.periodo }}{% if d.url %} · <a href="{{ d.url }}" target="_blank" rel="noopener noreferrer">{% translate "fonte" %}</a>{% endif %})</span>
+          {% if d.citado %}<span class="selo ok">{% translate "citado no texto" %}</span>{% else %}<span class="selo">{% translate "nao usado" %}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
   {% if artigo.single_source %}
     <div class="aviso">
       {% translate "O texto se apoia num unico documento. Uma fonte nao confirma a si mesma." %}

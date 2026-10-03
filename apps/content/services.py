@@ -333,8 +333,10 @@ def aplicar_rascunho(
     citadas pelo nome, e todas saem na lista de referencias do fim — aberta no
     fluxo B (pesquisa cientifica), recolhida no A.
     """
+    from apps.content.dados_da_pauta import trocar_marcadores
     from apps.content.rendering import fontes_com_link
 
+    markdown_bruto, referencias_de_dados = trocar_marcadores(markdown_bruto, article)
     validar_saida_do_modelo(markdown_bruto, max_marcadores=None)
 
     fontes = fontes_para_substituicao(article)
@@ -347,6 +349,7 @@ def aplicar_rascunho(
             markdown_bruto, fontes, maximo=MAXIMO_DE_FONTES_NO_ARTIGO, primaria=primaria
         ),
         referencias="aberta" if article.fluxo == "pesquisa" else "fechada",
+        extras=referencias_de_dados,
     )
 
     dominios = _dominios_das_citacoes(article)
@@ -515,6 +518,9 @@ def pendencias_para_aprovar(article: Article) -> list[str]:
             "a outra versao desta pauta ja foi aprovada; so uma vai ao ar "
             "(rejeite ou volte aquela antes)"
         )
+    from apps.content.dados_da_pauta import pendencias as pendencias_dos_dados
+
+    faltam += pendencias_dos_dados(article)
     return faltam
 
 

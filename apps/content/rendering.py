@@ -228,6 +228,7 @@ def substituir_marcadores(
     ao_final: bool = False,
     com_link: set | None = None,
     referencias: str = "",
+    extras: list | None = None,
 ) -> str:
     """Troca `[[FONTE_N]]` pela forma de citacao de cada fonte.
 
@@ -244,8 +245,10 @@ def substituir_marcadores(
 
     `com_link`: so estas viram link no corpo (as outras ficam citadas pelo
     nome). `referencias` ("aberta" ou "fechada"): todas as fontes usadas saem
-    numa lista no fim, num bloco que abre e fecha.
+    numa lista no fim, num bloco que abre e fecha. `extras`: mais itens da
+    lista (os dados publicos citados), depois das fontes.
     """
+    extras = extras or []
     usadas: list[int] = []
 
     for indice in {int(n) for n in PADRAO_MARCADOR.findall(texto)}:
@@ -277,19 +280,18 @@ def substituir_marcadores(
     corpo = re.sub(r"[ \t]+([.,;:!?)])", r"\1", corpo)
     corpo = re.sub(r"[ \t]{2,}", " ", corpo)
 
-    if referencias and usadas:
-        listadas = [fontes[i] for i in usadas if fontes[i].modo_efetivo != "interna"]
+    if referencias and (usadas or extras):
+        listadas = [fontes[i] for i in usadas if fontes[i].modo_efetivo != "interna"] + extras
         if listadas:
             bloco = _bloco_de_referencias(listadas, aberta=referencias == "aberta")
             return f"{corpo}\n\n{bloco}\n"
         return corpo
 
-    if not ao_final or not usadas:
+    if not ao_final or not (usadas or extras):
         return corpo
 
     itens = []
-    for i in usadas:
-        fonte = fontes[i]
+    for fonte in [fontes[i] for i in usadas] + extras:
         if fonte.modo_efetivo == "link":
             itens.append(f"- [{fonte.anchor}]({fonte.url})")
         else:

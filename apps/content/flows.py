@@ -26,6 +26,7 @@ import logging
 from django.db import transaction
 from django.utils.text import slugify
 
+from apps.content.dados_da_pauta import com_dados
 from apps.content.inference import executar_prompt
 from apps.content.models import Article, ArticleSection, Author, Question, Topic
 from apps.content.rendering import validar_saida_do_modelo
@@ -300,7 +301,7 @@ def passo_redigir_secoes(job: GenerationJob):
             "objetivo": secao.intent,
             "palavras_chave": ", ".join(secao.keywords) or article.focus_keyword,
             "esqueleto": esqueleto_do_artigo(article, exceto=secao),
-            "fontes": montar_contexto_das_fontes(trechos),
+            "fontes": com_dados(montar_contexto_das_fontes(trechos), article),
             "idioma": _idioma(site),
             "aviso_da_ideia_central": _aviso_da_ideia_central(article, secao),
         },
@@ -690,7 +691,7 @@ def passo_redigir(job: GenerationJob) -> dict:
         variaveis={
             "titulo": article.title,
             "tese": payload.get("tese", ""),
-            "fontes": montar_contexto_das_fontes(trechos),
+            "fontes": com_dados(montar_contexto_das_fontes(trechos), article),
             "palavra_chave": article.focus_keyword or article.title,
             "idioma": getattr(site, "content_language", "pt-BR") or "pt-BR",
         },

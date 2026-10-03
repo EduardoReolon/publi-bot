@@ -242,6 +242,29 @@ padroes = [
 
 
 # ---------------------------------------------------------------------------
+# apps/dados — catalogo de dados publicos (schema public)
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "dados"
+titulo = "Dados publicos: catalogo de series, adaptadores e fatos no artigo"
+resumo = """
+Catalogo compartilhado (schema public) de series oficiais: instituicoes,
+series, valores e pedidos de adaptador. Um adaptador por instituicao traduz o
+formato dela; a pauta recebe sugestoes por embedding, a geracao recebe o
+valor como fato citavel ([[DADO_N]]) e a revisao confere o numero.
+"""
+entrada = ["apps/dados/catalogo.py", "apps/dados/adaptadores.py", "apps/dados/models.py"]
+relacionados = ["conteudo-modelos", "acervo-busca"]
+padroes = [
+  "apps/dados/**",
+  "templates/dados/**",
+  "docs/DADOS_PUBLICOS.md",
+  "apps/content/dados_da_pauta.py",
+  "tests/test_dados_publicos.py",
+]
+
+
+# ---------------------------------------------------------------------------
 # apps/radar — descoberta de pautas
 # ---------------------------------------------------------------------------
 [[bloco]]
