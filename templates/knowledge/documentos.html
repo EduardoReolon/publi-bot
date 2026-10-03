@@ -114,6 +114,9 @@
                 {% if not documento.extracao_e_confiavel %}
                   <span class="selo ruim">{% translate "sem analise de layout" %}</span>
                 {% endif %}
+                {% if documento.status == 'pending_curation' and documento.candidatos_pelo_completo.exists %}
+                  <div class="pre-visualizacao">{% translate "PDF de artigo da pesquisa: os trechos pedidos ja foram para o resumo dele, que e a fonte do texto. Curar este PDF e opcional (so para usa-lo inteiro)." %}</div>
+                {% endif %}
                 {% if documento.failure_reason %}
                   <div class="pre-visualizacao">{{ documento.failure_reason|truncatechars:120 }}</div>
                 {% endif %}
