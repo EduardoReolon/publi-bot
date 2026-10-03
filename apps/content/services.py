@@ -336,8 +336,9 @@ def aplicar_rascunho(
     fluxo B (pesquisa cientifica), recolhida no A.
     """
     from apps.content.dados_da_pauta import trocar_marcadores
-    from apps.content.rendering import fontes_com_link
+    from apps.content.rendering import fontes_com_link, normalizar_marcadores
 
+    markdown_bruto = normalizar_marcadores(markdown_bruto)
     markdown_bruto, referencias_de_dados = trocar_marcadores(markdown_bruto, article)
     validar_saida_do_modelo(markdown_bruto, max_marcadores=None)
 
@@ -1022,6 +1023,68 @@ def esqueleto_do_artigo(article: Article, *, exceto=None) -> str:
         objetivo = f" — {secao.intent}" if secao.intent else ""
         linhas.append(f"{secao.order}. {secao.heading}{marca}{objetivo}")
     return "\n".join(linhas)
+
+
+# Quantas frases das secoes anteriores a secao recebe para nao repetir.
+FRASES_JA_ESCRITAS = 6
+
+
+def ja_escrito(article: Article, secao) -> str:
+    """O que as secoes anteriores ja disseram, para a secao nao reafirmar.
+
+    Escrever por secoes deixa cada uma reapresentar o tema ("O crescimento X,
+    embora comum, ...") com as mesmas formulas. Vai a primeira frase de cada
+    secao anterior (e ali que a reapresentacao acontece) e as frases delas mais
+    proximas do objetivo desta (embedding), no maximo FRASES_JA_ESCRITAS, e as
+    expressoes que ja se repetem. Sem nada escrito antes, vazio.
+    """
+    import re
+
+    import numpy as np
+
+    from apps.content.chamada import tirar_marcas
+    from apps.editorial.services import expressoes_repetidas
+
+    anteriores = [
+        s
+        for s in article.sections.all()
+        if s.order < secao.order and (s.body_markdown or "").strip()
+    ]
+    if not anteriores:
+        return ""
+    frases_por_secao = []
+    for anterior in anteriores:
+        limpo = re.sub(
+            r"\[\[[^\]]*\]\]|\[([^\]]*)\]\([^)]*\)", r"\1", tirar_marcas(anterior.body_markdown)
+        )
+        frases = [f.strip() for f in re.split(r"(?<=[.!?])\s+", limpo) if len(f.split()) >= 6]
+        frases_por_secao.append(frases)
+    escolhidas = [frases[0] for frases in frases_por_secao if frases]
+    resto = [f for frases in frases_por_secao for f in frases[1:]]
+    vagas = FRASES_JA_ESCRITAS - len(escolhidas)
+    if resto and vagas > 0:
+        try:
+            from apps.knowledge.embeddings import get_embedding_client
+
+            cliente = get_embedding_client()
+            alvo = np.asarray(cliente.embed_query(f"{secao.heading}. {secao.intent}"))
+            vetores = np.asarray(cliente.embed_passage(resto))
+            proximidade = vetores @ alvo
+            escolhidas += [resto[i] for i in np.argsort(-proximidade)[:vagas]]
+        except Exception as exc:  # sem vetores, so as aberturas
+            logger.info("Ja escrito sem vetores (%s): so as aberturas.", exc)
+    linhas = [f"- {f[:220]}" for f in escolhidas[:FRASES_JA_ESCRITAS]]
+    repetidas = expressoes_repetidas("\n".join(s.body_markdown for s in anteriores))
+    aviso = ""
+    if repetidas:
+        aviso = "\nExpressoes que ja se repetem (nao use de novo): " + "; ".join(
+            f'"{frase}"' for frase, _vezes in repetidas
+        )
+    return (
+        "\n\nJa escrito nas secoes anteriores. NAO repita estas ideias nem estas "
+        "formulas, e NAO comece a secao reapresentando o tema: entre direto no que "
+        "so esta secao traz.\n" + "\n".join(linhas) + aviso
+    )
 
 
 def montar_markdown_das_secoes(article: Article) -> str:

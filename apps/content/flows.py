@@ -30,7 +30,7 @@ from django.utils.text import slugify
 from apps.content.dados_da_pauta import com_dados
 from apps.content.inference import executar_prompt
 from apps.content.models import Article, ArticleSection, Author, Question, Topic
-from apps.content.rendering import validar_saida_do_modelo
+from apps.content.rendering import normalizar_marcadores, validar_saida_do_modelo
 from apps.content.services import (
     SemEmbasamentoCentral,
     SemFontesSuficientes,
@@ -40,6 +40,7 @@ from apps.content.services import (
     fontes_da_pauta,
     interpretar_plano,
     interpretar_tese,
+    ja_escrito,
     montar_contexto_das_fontes,
     montar_markdown_das_secoes,
     registrar_citacoes,
@@ -301,7 +302,7 @@ def passo_redigir_secoes(job: GenerationJob):
             "titulo_da_secao": secao.heading,
             "objetivo": secao.intent,
             "palavras_chave": ", ".join(secao.keywords) or article.focus_keyword,
-            "esqueleto": esqueleto_do_artigo(article, exceto=secao),
+            "esqueleto": esqueleto_do_artigo(article, exceto=secao) + ja_escrito(article, secao),
             "fontes": com_dados(
                 montar_contexto_das_fontes(trechos), article, f"{secao.heading}. {secao.intent}"
             ),
@@ -315,10 +316,11 @@ def passo_redigir_secoes(job: GenerationJob):
     # A validacao de link roda por secao, e nao so na montagem: uma URL escrita
     # pelo modelo precisa derrubar a secao que a produziu, e nao um artigo
     # inteiro que ja custou cinco outras chamadas.
-    usadas = validar_saida_do_modelo(resultado.texto)
+    texto = normalizar_marcadores(resultado.texto)
+    usadas = validar_saida_do_modelo(texto)
     _exigir_fonte_na_secao_central(secao, usadas)
 
-    secao.body_markdown = resultado.texto.strip()
+    secao.body_markdown = texto.strip()
     secao.status = ArticleSection.Status.WRITTEN
     secao.prompt_run = resultado.prompt_run
     secao.save(update_fields=["body_markdown", "status", "prompt_run", "updated_at"])
