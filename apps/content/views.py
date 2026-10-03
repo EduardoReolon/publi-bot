@@ -706,9 +706,23 @@ def _gerando_de_novo(artigo) -> dict | None:
     if artigo.versao_em_aberto is not None:
         return None  # a versao nova ja existe: o aviso de versao em aberto cobre
     pesquisa = fluxos.situacao_da_pesquisa(artigo.topic)
-    versao_de = ((artigo.topic.busca_de_fontes or {}).get("pesquisa") or {}).get("versao_de")
+    dados = (artigo.topic.busca_de_fontes or {}).get("pesquisa") or {}
+    versao_de = dados.get("versao_de")
     if versao_de == str(artigo.pk) and pesquisa["rodando"]:
         return {"etapa": "pesquisa", "desde": pesquisa["desde"], "parada": pesquisa["parada"]}
+    if versao_de == str(artigo.pk) and fluxos.em_andamento(artigo.topic, fluxos.B) is None:
+        # A pesquisa terminou e a geracao nao comecou: o motivo (PDFs pedidos,
+        # pesquisa sem resultado, erro) fica visivel aqui, e nao so na pauta.
+        from apps.knowledge.pesquisa import pedidos_em_aberto, pronta_para_gerar
+
+        return {
+            "etapa": "esperando",
+            "motivo": dados.get("erro")
+            or pronta_para_gerar(artigo.topic)
+            or dados.get("erro_ao_gerar", ""),
+            "pdfs": pedidos_em_aberto(artigo.topic),
+            "pauta": artigo.topic,
+        }
     trabalho = fluxos.em_andamento(artigo.topic, artigo.fluxo or fluxos.A)
     if trabalho is not None and (trabalho.step_payloads or {}).get("versao_de") == str(artigo.pk):
         return {"etapa": "texto", "desde": trabalho.created_at, "passo": trabalho.current_step}

@@ -135,6 +135,16 @@ def gerar_de_novo(artigo) -> tuple[str, str]:
         from apps.knowledge.referencias import registrar
 
         pesquisa = situacao_da_pesquisa(pauta)
+        dados = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+        if dados.get("versao_de") == str(artigo.pk) and dados.get("situacao") == "pronta":
+            from apps.knowledge.pesquisa import pedidos_em_aberto
+
+            if pedidos_em_aberto(pauta):
+                return "info", _(
+                    "A pesquisa ja terminou e a versao nova espera os PDFs que o texto "
+                    "pediu: abra a pauta, em 'Conferir os PDFs pedidos', e envie ou siga "
+                    "com o resumo. Ela e gerada sozinha quando o ultimo for resolvido."
+                )
         if pesquisa["rodando"] and not pesquisa["parada"]:
             # Segundo clique: a pesquisa ja esta na fila; nada novo e disparado.
             return "info", _(

@@ -232,3 +232,44 @@ def test_frase_central_e_a_que_mais_se_repete():
     vetores = np.array([[1, 0], [0.9, 0.1], [0.95, 0.05], [0, 1]])
     nota = _centralidade(vetores)
     assert nota.argmin() == 3  # a frase que destoa das outras e a menos central
+
+
+@pytest.mark.django_db
+def test_gerar_de_novo_esperando_pdfs_mostra_o_motivo(ambiente, monkeypatch):  # noqa: F811
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.content.tasks import gerar_b_quando_pronta
+    from apps.knowledge import pesquisa
+
+    _, _, client = ambiente
+    monkeypatch.setattr(pesquisa, "pedidos_em_aberto", lambda pauta: 2)
+    monkeypatch.setattr(
+        pesquisa, "pronta_para_gerar", lambda pauta: "esperando o PDF de 2 artigo(s)"
+    )
+    pauta = Topic.objects.create(title="Crescimento linear")
+    publicado = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PUBLISHED,
+        remote_id="r1",
+    )
+    pauta.busca_de_fontes = {"pesquisa": {"situacao": "pronta", "versao_de": str(publicado.pk)}}
+    pauta.save()
+
+    nivel, mensagem = fluxos.gerar_de_novo(publicado)
+    assert nivel == "info" and "PDFs" in mensagem
+    pagina = client.get(
+        reverse("content:revisar", args=[publicado.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "esperando o PDF de 2" in pagina and "Conferir os PDFs pedidos" in pagina
+
+    # Resolvido o ultimo pedido: a versao nova vai para a fila.
+    disparos = []
+    monkeypatch.setattr(pesquisa, "pedidos_em_aberto", lambda pauta: 0)
+    monkeypatch.setattr(gerar_b_quando_pronta, "delay", lambda pk: disparos.append(pk))
+    from django.db import transaction
+
+    monkeypatch.setattr(transaction, "on_commit", lambda f: f())
+    pesquisa._depois_dos_pedidos([pauta])
+    assert disparos == [str(pauta.pk)]

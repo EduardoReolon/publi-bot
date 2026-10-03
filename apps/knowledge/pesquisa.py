@@ -654,6 +654,13 @@ def _depois_dos_pedidos(pautas) -> None:
         pauta.refresh_from_db()
         if pauta.status == pauta.Status.REJECTED or pedidos_em_aberto(pauta):
             continue
+        if ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("versao_de"):
+            # "Gerar de novo do zero" esperando os PDFs: ja ha artigo, entao
+            # `disparar` nada faria; quem sabe gerar a versao nova e esta tarefa.
+            from apps.content.tasks import gerar_b_quando_pronta
+
+            transaction.on_commit(lambda p=pauta: gerar_b_quando_pronta.delay(str(p.pk)))
+            continue
         transaction.on_commit(lambda p=pauta: fluxos.disparar(p, fluxos.B))
 
 
