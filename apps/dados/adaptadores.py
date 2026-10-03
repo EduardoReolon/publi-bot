@@ -12,6 +12,7 @@ registre em ADAPTADORES. Teste com respostas gravadas, sem rede.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -47,6 +48,8 @@ class Adaptador:
         raise AdaptadorPendente(f"o adaptador {self.nome} ainda nao foi escrito.")
 
     def valores(self, serie, *, local: str = "Brasil", ultimos: int = 1) -> list[ValorObservado]:
+        """`local`: "Brasil" ou o nome do estado (apps/dados/locais.py); traduza
+        para o codigo da instituicao. Sem esse recorte, devolva []."""
         raise AdaptadorPendente(f"o adaptador {self.nome} ainda nao foi escrito.")
 
     def codigo_do_link(self, url: str) -> str:
@@ -66,6 +69,35 @@ class BancoCentral(Adaptador):
     """SGS: api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados. A FAZER."""
 
     nome = "Banco Central"
+
+
+@contextmanager
+def arquivo_temporario(url: str, *, limite_mb: int = 2048):
+    """Baixa um arquivo grande (DATASUS, planilhas) para um temporario e APAGA
+    ao sair, deu certo ou nao. O adaptador le, resume (por ano e estado) e
+    grava so o resumo em `Valor`: o servidor nao guarda a base inteira.
+    Passou de `limite_mb`: para e apaga."""
+    import os
+    import tempfile
+
+    import httpx
+
+    caminho = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, prefix="publibot-dados-") as destino:
+            caminho = destino.name
+            baixado = 0
+            with httpx.stream("GET", url, timeout=120.0, follow_redirects=True) as resposta:
+                resposta.raise_for_status()
+                for pedaco in resposta.iter_bytes(1 << 20):
+                    baixado += len(pedaco)
+                    if baixado > limite_mb * (1 << 20):
+                        raise ValueError(f"{url} passou de {limite_mb} MB.")
+                    destino.write(pedaco)
+        yield caminho
+    finally:
+        if caminho and os.path.exists(caminho):
+            os.remove(caminho)
 
 
 ADAPTADORES: dict[str, Adaptador] = {"ibge": IBGE(), "bcb": BancoCentral()}
