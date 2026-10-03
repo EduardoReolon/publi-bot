@@ -1031,6 +1031,24 @@ def esqueleto_do_artigo(article: Article, *, exceto=None) -> str:
 FRASES_JA_ESCRITAS = 6
 
 
+def _centralidade(vetores, *, amortecimento: float = 0.85, voltas: int = 30):
+    """TextRank sobre os vetores das frases: PageRank no grafo de semelhanca.
+    A frase central e a que mais se parece com as outras."""
+    import numpy as np
+
+    v = np.asarray(vetores, dtype=float)
+    v /= np.linalg.norm(v, axis=1, keepdims=True) + 1e-9
+    semelhanca = np.clip(v @ v.T, 0, None)
+    np.fill_diagonal(semelhanca, 0)
+    linhas = semelhanca.sum(axis=1, keepdims=True)
+    transicao = np.divide(semelhanca, linhas, out=np.zeros_like(semelhanca), where=linhas > 0)
+    n = len(v)
+    nota = np.full(n, 1 / n)
+    for _ in range(voltas):
+        nota = (1 - amortecimento) / n + amortecimento * transicao.T @ nota
+    return nota
+
+
 def ja_escrito(article: Article, secao) -> str:
     """O que as secoes anteriores ja disseram, para a secao nao reafirmar.
 
@@ -1071,8 +1089,17 @@ def ja_escrito(article: Article, secao) -> str:
             cliente = get_embedding_client()
             alvo = np.asarray(cliente.embed_query(f"{secao.heading}. {secao.intent}"))
             vetores = np.asarray(cliente.embed_passage(resto))
-            proximidade = vetores @ alvo
-            escolhidas += [resto[i] for i in np.argsort(-proximidade)[:vagas]]
+            # Metade: as frases CENTRAIS do que ja foi escrito (TextRank: as que
+            # mais se parecem com as outras sao as ideias que o texto ja
+            # repete); metade: as mais proximas do assunto desta secao.
+            centrais = list(np.argsort(-_centralidade(vetores)))
+            proximas = list(np.argsort(-(vetores @ alvo)))
+            ordem = []
+            for par in zip(centrais, proximas, strict=True):
+                for i in par:
+                    if i not in ordem:
+                        ordem.append(int(i))
+            escolhidas += [resto[i] for i in ordem[:vagas]]
         except Exception as exc:  # sem vetores, so as aberturas
             logger.info("Ja escrito sem vetores (%s): so as aberturas.", exc)
     linhas = [f"- {f[:220]}" for f in escolhidas[:FRASES_JA_ESCRITAS]]

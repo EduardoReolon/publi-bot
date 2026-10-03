@@ -75,6 +75,23 @@
       {% endblocktranslate %}
     </div>
   {% endif %}
+  {% if gerando_de_novo %}
+    <div class="aviso espera">
+      <strong>{% translate "Gerando de novo do zero." %}</strong>
+      {% if gerando_de_novo.etapa == 'pesquisa' %}
+        {% blocktranslate trimmed with h=gerando_de_novo.desde|time:"H:i" %}
+          Etapa 1 de 2: pesquisando artigos cientificos (desde {{ h }}). Leva alguns minutos;
+          depois o texto comeca a ser escrito e aparece em Operacao.
+        {% endblocktranslate %}
+        {% if gerando_de_novo.parada %}<div>{% translate "A pesquisa parece parada; ela e recomecada sozinha na proxima varredura." %}</div>{% endif %}
+      {% else %}
+        {% blocktranslate trimmed with p=gerando_de_novo.passo %}
+          Etapa 2 de 2: escrevendo o texto (passo {{ p }}). A versao nova aparece aqui quando o artigo for criado.
+        {% endblocktranslate %}
+      {% endif %}
+      {% translate "Atualize a pagina para acompanhar." %}
+    </div>
+  {% endif %}
   {% if artigo.status == 'published' or artigo.status == 'superseded' %}
     <div class="aviso">
       {% with aberta=artigo.versao_em_aberto %}
@@ -896,16 +913,20 @@
     </div>
   {% endif %}
         {% if revisoes %}
-          <h2>{% translate "Versoes" %}</h2>
+          <h2>{% translate "Historico do texto" %}</h2>
+          <p class="pre-visualizacao">
+            {% blocktranslate trimmed %}
+              Cada vez que o texto deste artigo mudou: gerado pelo modelo, ou editado por
+              alguem (salvar a revisao, editar uma secao, trocar a chamada de lugar). Nao
+              confundir com a versao do artigo no site, que so muda ao criar uma versao nova.
+            {% endblocktranslate %}
+          </p>
           <ul class="lista">
             {% for revisao in revisoes %}
               <li>
-                <strong>v{{ revisao.version }}</strong>
-                <span class="selo">{{ revisao.get_source_display }}</span>
-                <div class="pre-visualizacao">
-                  {{ revisao.created_at|date:"d/m H:i" }}
-                  {% if revisao.editor %}&middot; {{ revisao.editor.email }}{% endif %}
-                </div>
+                <b>{{ revisao.version }}.</b>
+                {% if revisao.source == 'llm' %}{% translate "Escrito pelo modelo" %}{% else %}{% translate "Editado por" %} {{ revisao.editor.email|default:_("alguem") }}{% endif %}
+                <span class="pre-visualizacao">&middot; {{ revisao.created_at|date:"d/m H:i" }}</span>
               </li>
             {% endfor %}
           </ul>
