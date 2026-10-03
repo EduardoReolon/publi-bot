@@ -127,6 +127,21 @@ def test_sem_fonte_bloqueia_ate_aceitar(
     assert not any("afirmacao sem fonte" in p for p in pendencias_para_aprovar(artigo))
 
 
+@pytest.mark.django_db
+def test_frase_que_perdeu_a_citacao_pelo_limite_vira_aviso(ambiente):  # noqa: F811
+    from apps.content.citacoes import anotar, registrar_limite
+
+    artigo = Article.objects.create(title="Limite")
+    secao = SimpleNamespace(order=2)
+    original = "Tudo bem aqui [[FONTE_1]]. O custo subiu muito no ultimo ano [[FONTE_3]]."
+    registrar_limite(artigo, secao, original, [3])
+    artigo.refresh_from_db()
+    assert [r["acao"] for r in artigo.conferencia_citacoes] == ["limite"]
+    assert artigo.conferencia_citacoes[0]["frase"].startswith("O custo subiu")
+    _, notas = anotar("<p>O custo subiu muito no ultimo ano.</p>", artigo.conferencia_citacoes)
+    assert notas[0]["nivel"] == "atencao" and notas[0]["marcada"]
+
+
 def test_pesquisa_tira_artigo_de_outra_area():
     import numpy as np
 
