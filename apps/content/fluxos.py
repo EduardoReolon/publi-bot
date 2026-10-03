@@ -116,6 +116,33 @@ def disparar(pauta, fluxo: str) -> tuple[str, str]:
     }
 
 
+def gerar_de_novo(artigo) -> tuple[str, str]:
+    """Gera o artigo de novo, do zero, como versao nova do publicado: mesmas
+    regras de uma geracao nova (e as atuais: conferencia de citacoes, filtro de
+    area). No B, com uma pesquisa de artigos nova."""
+    from apps.content.tasks import gerar_artigo
+
+    pauta = artigo.topic
+    fluxo = artigo.fluxo or A
+    if pauta is None or artigo.status != Article.Status.PUBLISHED or not artigo.remote_id:
+        return "error", _("So artigo publicado, ligado a uma pauta, pode ser gerado de novo.")
+    if artigo.versao_em_aberto is not None:
+        return "info", _("Ja ha uma versao nova deste artigo em andamento.")
+    if em_andamento(pauta, fluxo) is not None:
+        return "info", _("Ja ha uma geracao desta pauta em andamento.")
+    if fluxo == B:
+        from apps.knowledge.referencias import registrar
+
+        registrar(pauta, "pesquisa", versao_de=str(artigo.pk))
+        iniciar_pesquisa(pauta, gerar_depois=True)
+        return "success", _(
+            "Pesquisando artigos de novo; a versao nova e gerada sozinha quando a "
+            "pesquisa terminar (alguns minutos)."
+        )
+    trabalho = gerar_artigo(pauta, fluxo=fluxo, versao_de=str(artigo.pk))
+    return "success", _("Gerando a versao nova (trabalho %(id)s).") % {"id": str(trabalho.pk)[:8]}
+
+
 def _disparar_b(pauta) -> tuple[str, str]:
     from apps.content.tasks import gerar_artigo, gerar_b_quando_pronta
     from apps.knowledge.pesquisa import pronta_para_gerar

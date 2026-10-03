@@ -153,10 +153,26 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
 def _criar_artigo_do_consenso(job, topic, tese, trechos, padrao):
     from apps.content.services import MAPA_DE_CONCORDANCIA
 
+    # Gerado de novo do zero: e a versao seguinte do artigo publicado (mesmo
+    # endereco no site; aprovada, substitui a pagina).
+    anterior = None
+    versao_de = (job.step_payloads or {}).get("versao_de")
+    if versao_de:
+        anterior = Article.objects.filter(pk=versao_de).first()
+    de_versao = {}
+    if anterior is not None:
+        de_versao = {
+            "previous_version": anterior,
+            "version_number": anterior.version_number + 1,
+            "remote_id": anterior.remote_id,
+            "published_url": anterior.published_url,
+            "update_notes": "Gerado de novo, do zero, com as fontes e regras atuais.",
+        }
     article = Article.objects.create(
+        **de_versao,
         topic=topic,
         title=topic.title,
-        slug=slugify(topic.title)[:300],
+        slug=(anterior.slug if anterior else slugify(topic.title))[:300],
         focus_keyword=topic.target_keyword,
         content_type=topic.content_type,
         fluxo=fluxo_do_job(job),

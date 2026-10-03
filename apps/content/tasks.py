@@ -36,12 +36,16 @@ def iniciar_geracao(*, kind: str, target_object_id, payload: dict | None = None)
     return job
 
 
-def gerar_artigo(topic, *, fluxo: str = "") -> GenerationJob:
-    """`fluxo`: "" (A, fontes curadas) ou "pesquisa" (B). Vai no trabalho."""
+def gerar_artigo(topic, *, fluxo: str = "", versao_de: str = "") -> GenerationJob:
+    """`fluxo`: "" (A, fontes curadas) ou "pesquisa" (B). Vai no trabalho.
+    `versao_de`: o artigo publicado que este, gerado do zero, vai substituir."""
+    payload = {"fluxo": fluxo}
+    if versao_de:
+        payload["versao_de"] = str(versao_de)
     return iniciar_geracao(
         kind=GenerationJob.Kind.PILLAR_ARTICLE,
         target_object_id=str(topic.pk),
-        payload={"fluxo": fluxo},
+        payload=payload,
     )
 
 
@@ -85,7 +89,11 @@ def gerar_b_quando_pronta(self, topic_id: str) -> bool:
     pauta = Topic.objects.filter(pk=topic_id).first()
     if pauta is None or fluxos.B not in fluxos.ligados():
         return False
-    if fluxos.artigo_do_fluxo(pauta, fluxos.B) or fluxos.em_andamento(pauta, fluxos.B):
+    # Gerar de novo do zero: ja ha artigo, e e ele que a versao nova substitui.
+    versao_de = ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("versao_de", "")
+    if fluxos.em_andamento(pauta, fluxos.B):
+        return False
+    if not versao_de and fluxos.artigo_do_fluxo(pauta, fluxos.B):
         return False
     motivo = pronta_para_gerar(pauta)
     if motivo:
@@ -93,8 +101,8 @@ def gerar_b_quando_pronta(self, topic_id: str) -> bool:
             raise self.retry(countdown=120)
         registrar(pauta, "pesquisa", gerar_depois=False, erro_ao_gerar=motivo)
         return False
-    gerar_artigo(pauta, fluxo=fluxos.B)
-    registrar(pauta, "pesquisa", gerar_depois=False)
+    gerar_artigo(pauta, fluxo=fluxos.B, versao_de=versao_de)
+    registrar(pauta, "pesquisa", gerar_depois=False, versao_de="")
     return True
 
 

@@ -871,3 +871,22 @@ def test_secao_recebe_o_que_ja_foi_escrito(tenant_com_acervo):
     contexto = ja_escrito(artigo, segunda)
     assert "NAO comece a secao reapresentando o tema" in contexto
     assert "O crescimento linear, embora comum" in contexto
+
+
+@pytest.mark.django_db
+def test_gerado_de_novo_nasce_como_versao_do_publicado(tenant_com_acervo, conexao, monkeypatch):
+    from apps.content.tasks import gerar_artigo
+
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    publicado = Article.objects.create(
+        title="Efeito", topic=topic, status=Article.Status.PUBLISHED, remote_id="r9", slug="efeito"
+    )
+
+    job = gerar_artigo(topic, versao_de=str(publicado.pk))
+    _rodar_ate_o_fim(str(job.pk))
+
+    nova = Article.objects.exclude(pk=publicado.pk).get(topic=topic)
+    assert nova.previous_version == publicado and nova.version_number == 2
+    assert nova.remote_id == "r9" and nova.slug == "efeito" and nova.e_atualizacao
