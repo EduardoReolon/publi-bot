@@ -18,6 +18,7 @@ from django.utils.translation import gettext_lazy as _l
 from django.views.decorators.http import require_POST
 
 from apps.dados.adaptadores import situacao_do_adaptador
+from apps.dados.locais import normalizar
 from apps.dados.models import Instituicao, PedidoDeAdaptador, Serie, Valor
 
 NICHOS = [
@@ -160,7 +161,7 @@ def nova_serie(request: HttpRequest) -> HttpResponse:
     )
     Valor.objects.update_or_create(
         serie=serie,
-        local=request.POST.get("local", "").strip() or "Brasil",
+        local=normalizar(request.POST.get("local", "")),
         periodo=periodo,
         defaults={"valor": numero},
     )

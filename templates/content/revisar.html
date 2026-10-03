@@ -160,6 +160,13 @@
   </nav>
 
   <section class="aba-do-artigo" id="aba-revisar">
+    {% if dados_citados %}
+      <div class="aviso">
+        <strong>{% translate "Dados oficiais no texto:" %}</strong>
+        {% for d in dados_citados %}{{ d.instituicao }} — {{ d.titulo }} ({{ d.local }}, {{ d.periodo }}): <b>{{ d.valor }}{% if d.unidade %} {{ d.unidade }}{% endif %}</b>{% if not forloop.last %}; {% endif %}{% endfor %}.
+        <a href="#fontes">{% translate "ver" %}</a>
+      </div>
+    {% endif %}
     <form method="post">
       {% csrf_token %}
       {% if pendencias %}
@@ -593,6 +600,7 @@
           <b>{{ d.instituicao }}</b> — {{ d.titulo }}: <b>{{ d.valor }}{% if d.unidade %} {{ d.unidade }}{% endif %}</b>
           <span class="pre-visualizacao">({{ d.local }}, {{ d.periodo }}{% if d.url %} · <a href="{{ d.url }}" target="_blank" rel="noopener noreferrer">{% translate "fonte" %}</a>{% endif %})</span>
           {% if d.citado %}<span class="selo ok">{% translate "citado no texto" %}</span>{% else %}<span class="selo">{% translate "nao usado" %}</span>{% endif %}
+          {% if d.automatico %}<span class="selo" title="{% translate 'entrou sozinho, por ser muito proximo da pauta' %}">{% translate "automatico" %}</span>{% endif %}
         </li>
       {% endfor %}
     </ul>

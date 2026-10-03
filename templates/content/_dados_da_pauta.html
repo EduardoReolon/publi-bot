@@ -1,8 +1,9 @@
 {% load i18n %}
 <p class="pre-visualizacao">
   {% blocktranslate trimmed %}
-    Numeros oficiais que o artigo pode citar. O escolhido entra na geracao com o valor
-    e o link da instituicao; a revisao confere se o numero saiu igual.
+    Numeros oficiais que o artigo pode citar, no estado do site (pelas regioes do Radar)
+    e no Brasil. Os muito proximos da pauta entram sozinhos; o modelo so usa se encaixar
+    com naturalidade, e a revisao confere se o numero saiu igual.
   {% endblocktranslate %}
   <a href="{% url 'dados:catalogo' %}">{% translate "ver o catalogo" %}</a>
 </p>
@@ -10,19 +11,19 @@
   <ul class="lista">
     {% for item in dados_escolhidos %}
       <li>
+        {% if item.dado.automatico %}<span class="selo ok" title="{% translate 'muito proximo da pauta: entrou sem precisar escolher' %}">{% translate "entrou sozinho" %}</span>{% else %}<span class="selo">{% translate "escolhido" %}</span>{% endif %}
         <b>{{ item.dado.serie.instituicao.sigla }}</b> — {{ item.dado.serie.titulo }}
-        {% if item.fato %}: <b>{{ item.fato.valor }}{% if item.fato.unidade %} {{ item.fato.unidade }}{% endif %}</b> <span class="pre-visualizacao">({{ item.fato.local }}, {{ item.fato.periodo }})</span>
-        {% else %}<span class="selo alerta">{% translate "sem valor ainda" %}</span>{% endif %}
+        {% for v in item.valores %}<span class="pre-visualizacao">·</span> <b>{{ v.valor }}{% if v.unidade %} {{ v.unidade }}{% endif %}</b> <span class="pre-visualizacao">({{ v.local }}, {{ v.periodo }})</span>{% empty %}<span class="selo alerta">{% translate "sem valor ainda" %}</span>{% endfor %}
         <form method="post" action="{% url 'content:dados_da_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
           <input type="hidden" name="acao" value="tirar"><input type="hidden" name="dado" value="{{ item.dado.pk }}">
-          <button type="submit" class="pequeno discreto">{% translate "tirar" %}</button>
+          <button type="submit" class="pequeno discreto" title="{% translate 'nao entra neste artigo e nao volta sozinho' %}">{% translate "tirar" %}</button>
         </form>
       </li>
     {% endfor %}
   </ul>
 {% endif %}
 {% if dados_sugeridos %}
-  <p class="pre-visualizacao" style="margin-bottom:.2rem">{% translate "Sugeridos para esta pauta" %}</p>
+  <p class="pre-visualizacao" style="margin-bottom:.2rem">{% translate "Tambem combinam (nao entram sem voce escolher)" %}</p>
   <ul class="lista">
     {% for serie in dados_sugeridos %}
       <li>

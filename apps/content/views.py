@@ -138,11 +138,12 @@ def dados_da_pauta(request: HttpRequest, pk) -> HttpResponse:
 
     alvo = get_object_or_404(Topic, pk=pk)
     if request.POST.get("acao") == "tirar":
-        DadoDaPauta.objects.filter(topic=alvo, pk=request.POST.get("dado")).delete()
+        # Fica gravado como tirado: o automatico nao o poe de volta.
+        DadoDaPauta.objects.filter(topic=alvo, pk=request.POST.get("dado")).update(tirado=True)
     else:
         serie = get_object_or_404(Serie, pk=request.POST.get("serie"))
-        DadoDaPauta.objects.get_or_create(
-            topic=alvo, serie=serie, local=request.POST.get("local", "").strip() or "Brasil"
+        DadoDaPauta.objects.update_or_create(
+            topic=alvo, serie=serie, defaults={"tirado": False, "automatico": False}
         )
     return redirect(reverse("content:pauta", args=[alvo.pk]) + "#dados")
 
@@ -656,6 +657,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "modos_de_chamada": CHAMADAS,
         "partes_da_chamada": _partes_da_chamada(artigo),
         "indexacao_ligada": _indexacao_ligada(artigo),
+        "dados_citados": [d for d in artigo.dados_usados or [] if d.get("citado")],
         "sem_oferta": not medir("oferta", texto_da_oferta),
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": medir("proximo_horario", _proximo_horario),

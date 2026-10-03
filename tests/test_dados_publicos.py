@@ -113,6 +113,14 @@ def test_cadastro_a_mao_so_superusuario_e_tela(ambiente):  # noqa: F811
     assert "Obesidade" in pagina and "Cadastrar um dado" in pagina
 
 
+def test_locais_e_estado_do_site():
+    from apps.dados.locais import normalizar, sigla
+
+    assert normalizar("pr") == normalizar("Parana") == normalizar("Paraná") == "Paraná"
+    assert normalizar("") == normalizar("brasil") == "Brasil"
+    assert sigla("Sao Paulo") == "SP"
+
+
 @pytest.mark.django_db
 def test_da_pauta_ao_artigo(ambiente, monkeypatch):  # noqa: F811
     from apps.content.dados_da_pauta import (
@@ -122,28 +130,78 @@ def test_da_pauta_ao_artigo(ambiente, monkeypatch):  # noqa: F811
     )
     from apps.content.services import aplicar_rascunho
     from apps.knowledge import embeddings
+    from apps.radar.models import ConfiguracaoDoRadar
 
     _, _, client = ambiente
     monkeypatch.setattr(embeddings, "get_embedding_client", lambda: _MesmoVetor())
+    config = ConfiguracaoDoRadar.carregar()
+    config.regioes = [
+        {"codigo": 1, "nome": "Curitiba,Parana,Brazil"},
+        {"codigo": 2, "nome": "Londrina,Parana,Brazil"},
+    ]
+    config.save()
     serie = _serie()
+    Valor.objects.create(serie=serie, local="Paraná", periodo="2019", valor=Decimal("24.1"))
     pauta = Topic.objects.create(title="Obesidade em adultos", status=Topic.Status.APPROVED)
+    url_da_pauta = reverse("content:pauta", args=[pauta.pk], urlconf=U)
 
-    pagina = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
-    assert "Sugeridos para esta pauta" in pagina and serie.titulo in pagina
+    # Muito proximo: entra sozinho, em destaque, com o Parana e o Brasil.
+    pagina = client.get(url_da_pauta).content.decode()
+    assert "entrou sozinho" in pagina and "24,1" in pagina and "25,9" in pagina
+    dado = DadoDaPauta.objects.get(topic=pauta, serie=serie)
+    assert dado.automatico
 
-    client.post(reverse("content:dados_da_pauta", args=[pauta.pk], urlconf=U), {"serie": serie.pk})
-    assert DadoDaPauta.objects.filter(topic=pauta, serie=serie).exists()
+    # Tirado nao volta sozinho; "Usar" traz de volta.
+    acao = reverse("content:dados_da_pauta", args=[pauta.pk], urlconf=U)
+    client.post(acao, {"acao": "tirar", "dado": dado.pk})
+    assert "entrou sozinho" not in client.get(url_da_pauta).content.decode()
+    client.post(acao, {"serie": serie.pk})
+    dado.refresh_from_db()
+    assert not dado.tirado and not dado.automatico
 
     artigo = Article.objects.create(title="Obesidade", topic=pauta)
     fatos = fatos_do_artigo(artigo)
-    assert fatos[0]["valor"] == "25,9" and "[[DADO_1]]" in bloco_para_o_prompt(fatos)
+    assert [(f["local"], f["valor"]) for f in fatos] == [("Paraná", "24,1"), ("Brasil", "25,9")]
+    bloco = bloco_para_o_prompt(fatos)
+    assert "OPCIONAIS" in bloco and "[[DADO_2]]" in bloco
 
-    aplicar_rascunho(artigo, "## Quanto\n\nUm em cada quatro adultos: 25,9% [[DADO_1]].")
+    aplicar_rascunho(artigo, "## Quanto\n\nNo Paraná, 24,1% dos adultos [[DADO_1]].")
     artigo.refresh_from_db()
     assert "(IBGE, 2019)" in artigo.body_markdown and "[[DADO_" not in artigo.body_markdown
     assert "sidra.ibge.gov.br/tabela/1" in artigo.body_html
-    assert artigo.dados_usados[0]["citado"] is True
+    assert [f["citado"] for f in artigo.dados_usados] == [True, False]
     assert pendencias(artigo) == []
 
-    artigo.body_markdown = artigo.body_markdown.replace("25,9", "26")
-    assert "25,9" in pendencias(artigo)[0]
+    artigo.body_markdown = artigo.body_markdown.replace("24,1", "24")
+    assert "24,1" in pendencias(artigo)[0]
+
+
+@pytest.mark.django_db
+def test_cada_trecho_recebe_poucos_dados(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.dados_da_pauta import MAXIMO_POR_TRECHO, fatos_para_o_trecho
+    from apps.knowledge import embeddings
+
+    monkeypatch.setattr(embeddings, "get_embedding_client", lambda: _MesmoVetor())
+    fatos = [{"n": i, "serie_id": str(_serie(f"Serie {i}").pk)} for i in range(1, 10)]
+    assert len(fatos_para_o_trecho(fatos, "qualquer secao")) == MAXIMO_POR_TRECHO
+
+
+def test_arquivo_grande_e_apagado(monkeypatch):
+    import contextlib
+    import os
+
+    import httpx
+
+    from apps.dados.adaptadores import arquivo_temporario
+
+    class Resposta:
+        def raise_for_status(self):
+            pass
+
+        def iter_bytes(self, _tamanho):
+            yield b"x" * 10
+
+    monkeypatch.setattr(httpx, "stream", lambda *a, **k: contextlib.nullcontext(Resposta()))
+    with arquivo_temporario("https://exemplo.gov.br/base.csv") as caminho:
+        assert os.path.getsize(caminho) == 10
+    assert not os.path.exists(caminho)

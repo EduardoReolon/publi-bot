@@ -46,12 +46,22 @@ Semente: `manage.py semear_dados` (o deploy roda) cria as instituições de
 onde estão os dados. Códigos de tabela não entram de memória: saem do
 catálogo de cada instituição, conferidos.
 
+## Regras que valem para todo adaptador
+
+- `valores(serie, local=...)` recebe "Brasil" ou o nome do estado
+  (`apps/dados/locais.py`) e traduz para o código da instituição. Sem o
+  recorte, devolve `[]` e o artigo fica só com o Brasil.
+- Contexto do modelo: no máximo 8 fatos por artigo e 4 por seção (os mais
+  próximos dela), sempre marcados como opcionais.
+
 ## Pronto (estrutura)
 
 - Modelos, migração, semente com 20 instituições (geral, saúde, IA, obras).
 - Tela do catálogo (séries, instituições, pedidos), cadastro à mão, aprovar e
   recusar, confiável.
-- Pauta: sugerir, usar, tirar. Geração: fatos no prompt. Montagem: citação e
+- Pauta: entrada automática (muito próximos, até 3), sugerir, usar, tirar (não volta).
+  Recorte: estado do site (regiões do Radar) e Brasil. Geração: cada seção recebe
+  até 4 fatos, os mais próximos dela, como OPÇÃO. Montagem: citação e
   referência. Revisão: conferência do número.
 - Varredura diária do acervo e pedidos de adaptador.
 
@@ -68,8 +78,10 @@ respostas gravadas (sem rede), marcar `pronto = True`.
 2. **Banco Central (SGS)** — `valores` por código; uma lista curada de
    códigos (IPCA, Selic, INCC) na semente, conferida na API.
 3. **OMS (GHO)** — API OData por indicador e país.
-4. **DATASUS** — o mais trabalhoso: arquivos grandes; provavelmente um
-   adaptador que pré-agrega (por ano e UF) e grava, em vez de consultar ao vivo.
+4. **DATASUS** — o mais trabalhoso: arquivos grandes. O adaptador baixa com
+   `arquivo_temporario` (apaga ao terminar, com teto de tamanho), resume por
+   ano e estado e grava só o resumo em `Valor`: a base inteira nunca fica no
+   servidor.
 5. **Cetic.br, CBIC/CUB, SINAPI (Caixa)** — planilhas: adaptador de planilha
    com mapeamento de colunas por publicação.
 6. **Atualização** — tarefa que pede o período mais novo das séries em uso e,

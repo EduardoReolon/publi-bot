@@ -1137,6 +1137,10 @@ class DadoDaPauta(models.Model):
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name="dados")
     serie = models.ForeignKey("dados.Serie", on_delete=models.CASCADE, related_name="+")
     local = models.CharField(_("local"), max_length=120, default="Brasil")
+    # "auto": entrou sozinho (muito proximo da pauta); "escolhido": clique em Usar.
+    automatico = models.BooleanField(_("entrou sozinho"), default=False)
+    # Tirado pela pessoa: fica gravado para nao voltar sozinho.
+    tirado = models.BooleanField(_("tirado"), default=False)
     criado_em = models.DateTimeField(default=timezone.now)
 
     class Meta:

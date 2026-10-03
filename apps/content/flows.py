@@ -301,7 +301,9 @@ def passo_redigir_secoes(job: GenerationJob):
             "objetivo": secao.intent,
             "palavras_chave": ", ".join(secao.keywords) or article.focus_keyword,
             "esqueleto": esqueleto_do_artigo(article, exceto=secao),
-            "fontes": com_dados(montar_contexto_das_fontes(trechos), article),
+            "fontes": com_dados(
+                montar_contexto_das_fontes(trechos), article, f"{secao.heading}. {secao.intent}"
+            ),
             "idioma": _idioma(site),
             "aviso_da_ideia_central": _aviso_da_ideia_central(article, secao),
         },

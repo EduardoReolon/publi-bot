@@ -22,6 +22,9 @@ logger = logging.getLogger("publibot.dados")
 
 # Distancia do cosseno acima da qual a serie nao e sugerida (0 = igual).
 DISTANCIA_MAXIMA = 0.35
+# Mais exigente: abaixo disto a serie entra sozinha na pauta (ate MAXIMO_AUTOMATICOS).
+DISTANCIA_AUTOMATICA = 0.2
+MAXIMO_AUTOMATICOS = 3
 
 
 def vetorizar_pendentes(limite: int = 200) -> int:
@@ -68,7 +71,11 @@ def sugerir(texto: str, *, limite: int = 5, excluir=()) -> list[Serie]:
 
 
 def valor_atual(serie: Serie, local: str = "Brasil") -> Valor | None:
-    """O valor mais recente: do adaptador (e grava), ou o ja gravado."""
+    """O valor mais recente: do adaptador (e grava), ou o ja gravado.
+    Instituicao sem o recorte pedido (estado) devolve None: quem chama usa o Brasil."""
+    from apps.dados.locais import normalizar
+
+    local = normalizar(local)
     adaptador = adaptador_de(serie.instituicao)
     if adaptador is not None and adaptador.pronto:
         try:
@@ -107,7 +114,7 @@ def formas_do_numero(valor: Decimal) -> set[str]:
 
 
 def fato(serie: Serie, local: str = "Brasil") -> dict | None:
-    """O dado pronto para o artigo, ou None (sem valor ainda)."""
+    """O dado pronto para o artigo, ou None (sem valor nesse recorte)."""
     valor = valor_atual(serie, local)
     if valor is None:
         return None
