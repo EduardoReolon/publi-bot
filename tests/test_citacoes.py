@@ -274,6 +274,13 @@ def test_gerar_de_novo_esperando_pdfs_mostra_o_motivo(ambiente, monkeypatch):  #
     pesquisa._depois_dos_pedidos([pauta])
     assert disparos == [str(pauta.pk)]
 
+    # Rascunho gerado de novo ("substitui"): idem, e nao `disparar`, que veria
+    # o rascunho e nada faria.
+    pauta.busca_de_fontes = {"pesquisa": {"situacao": "pronta", "substitui": str(publicado.pk)}}
+    pauta.save()
+    pesquisa._depois_dos_pedidos([pauta])
+    assert disparos == [str(pauta.pk)] * 2
+
 
 @pytest.mark.django_db
 def test_rascunho_do_b_pode_ser_gerado_de_novo_e_pesquisar_pela_pauta_e_barrado(
