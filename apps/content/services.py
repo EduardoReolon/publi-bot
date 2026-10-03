@@ -299,7 +299,9 @@ def escolher_primaria(chunks):
 def _texto_ancora(chunk) -> str:
     if getattr(chunk, "source_label", ""):
         return chunk.source_label
-    autores = chunk.source_authors or chunk.source_title
+    from apps.knowledge.services import autores_para_citacao
+
+    autores = autores_para_citacao(chunk.source_authors) or chunk.source_title
     ano = chunk.source_year
     return f"{autores}, {ano}" if ano else autores
 

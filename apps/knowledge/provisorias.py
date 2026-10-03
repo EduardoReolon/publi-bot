@@ -21,6 +21,7 @@ from django.core.files.base import ContentFile
 from django.utils import timezone
 
 from apps.knowledge.models import CandidatoDeFonte, Document
+from apps.knowledge.services import autores_para_citacao
 
 logger = logging.getLogger("publibot.knowledge")
 
@@ -83,7 +84,7 @@ def documento_do_resumo(candidato: CandidatoDeFonte) -> Document | None:
         file_sha256=sha,
         file_size_bytes=len(bruto),
         title=candidato.titulo[:500],
-        authors=candidato.autores[:300],
+        authors=autores_para_citacao(candidato.autores)[:300],
         year=candidato.ano,
         source_url=candidato.url[:500],
         authority_score=autoridade(candidato.citacoes or 0),
