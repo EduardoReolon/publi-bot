@@ -103,6 +103,9 @@
         {% translate "Etapa 1 de 2 concluida (pesquisa). O texto ainda nao comecou:" %}
         <strong>{{ gerando_de_novo.motivo|default:_("motivo desconhecido; clique em Gerar de novo do zero para tentar outra vez.") }}</strong>
         {% if gerando_de_novo.pdfs %}<a class="botao pequeno" href="{% url 'content:pdfs_da_pesquisa' gerando_de_novo.pauta.pk %}">{% translate "Conferir os PDFs pedidos" %}</a>
+          <form method="post" action="{% url 'content:comecar_texto_novo' artigo.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="botao pequeno secundario">{% translate "Ja resolvi todos: conferir e comecar" %}</button>
+          </form>
           <div class="pre-visualizacao">{% translate "Resolvido o ultimo (enviado ou seguir com o resumo), o texto comeca sozinho e aparece em Operacao." %}</div>
         {% else %}
           <form method="post" action="{% url 'content:comecar_texto_novo' artigo.pk %}" style="display:inline">{% csrf_token %}

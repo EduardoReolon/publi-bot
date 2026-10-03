@@ -734,6 +734,88 @@ def _pedidos_do_candidato(candidato) -> list[tuple]:
     return saida
 
 
+SEM_PDF = "Sem PDF: segue com o resumo."
+
+
+def _marcar_pedidos(candidato, atendido: str, achados: dict | None = None) -> list:
+    """Marca como resolvidos os pedidos sobre o artigo, em cada pauta. Le e
+    grava a pauta travada: dois PDFs lidos ao mesmo tempo (ou um PDF e um
+    'seguir com o resumo') gravavam a lista de pedidos inteira, e o ultimo
+    apagava o 'resolvido' do outro, deixando a pauta esperando para sempre."""
+    from django.db import transaction
+
+    from apps.content.models import Topic
+    from apps.knowledge.referencias import registrar
+
+    tocadas = []
+    for pk in [p.pk for p in pautas_do_candidato(candidato)]:
+        with transaction.atomic():
+            pauta = Topic.objects.select_for_update().get(pk=pk)
+            pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+            numeros = {
+                a["numero"]
+                for a in pesquisa.get("artigos", [])
+                if a.get("candidato") == str(candidato.pk)
+            }
+            for angulo in pesquisa.get("angulos", []):
+                for pedido in angulo.get("pedidos", []):
+                    if pedido.get("artigo") in numeros:
+                        pedido["atendido"] = atendido
+                        if achados is not None:
+                            pedido["trechos"] = len(achados.get(pedido["o_que"], []))
+            registrar(pauta, "pesquisa", angulos=pesquisa.get("angulos", []))
+        tocadas.append(pauta)
+    return tocadas
+
+
+def reconciliar_pedidos(pauta) -> bool:
+    """Pedido ainda aberto cujo artigo ja foi resolvido (os trechos do PDF ja
+    estao no resumo, ou a pessoa seguiu com o resumo): marca agora. Conserta
+    pautas que ficaram presas antes da trava acima. Devolve se mudou algo."""
+    from apps.knowledge.models import CandidatoDeFonte, Document
+
+    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    abertos = {
+        p.get("artigo")
+        for a in pesquisa.get("angulos", [])
+        for p in a.get("pedidos", [])
+        if not p.get("atendido")
+    }
+    ids = [
+        a["candidato"]
+        for a in pesquisa.get("artigos", [])
+        if a.get("numero") in abertos and a.get("candidato")
+    ]
+    convertido = {
+        Document.Status.PENDING_CURATION,
+        Document.Status.CURATED,
+        Document.Status.EMBEDDED,
+    }
+    mudou = False
+    for candidato in CandidatoDeFonte.objects.select_related(
+        "documento", "documento_completo"
+    ).filter(pk__in=ids):
+        completo = candidato.documento_completo
+        if candidato.documento and MARCA_DO_COMPLETO in (candidato.documento.markdown_full or ""):
+            _marcar_pedidos(candidato, "pdf")
+        elif candidato.motivo == SEM_PDF:
+            _marcar_pedidos(candidato, "sem_pdf")
+        elif completo is not None and completo.status in convertido:
+            # PDF convertido, mas a extracao dos trechos nao rodou ou caiu:
+            # roda de novo; caindo outra vez, o texto segue com o resumo.
+            try:
+                extrair_do_pdf(completo)
+            except Exception:
+                logger.exception("Extracao do PDF %s falhou de novo.", completo.pk)
+                _marcar_pedidos(candidato, "pdf", {})
+        else:
+            continue
+        mudou = True
+    if mudou:
+        pauta.refresh_from_db()
+    return mudou
+
+
 def _paragrafos_do_pdf(documento) -> list[str]:
     from apps.knowledge.blocos import preparar_blocos
     from apps.knowledge.provisorias import BLOCOS_DE_FORA
@@ -779,7 +861,6 @@ def extrair_do_pdf(documento_pdf) -> int:
 
     Devolve quantos pedidos foram atendidos.
     """
-    from apps.knowledge.referencias import registrar
     from apps.knowledge.tasks import pedir_indexacao
 
     atendidos = 0
@@ -794,11 +875,7 @@ def extrair_do_pdf(documento_pdf) -> int:
         if not achados:
             # PDF sem texto aproveitavel: o pedido esta respondido (o texto segue
             # com o resumo), senao a pauta ficaria esperando para sempre.
-            for pauta, _angulo, pedido in ligados:
-                pedido["atendido"] = "pdf"
-                pedido["trechos"] = 0
-                registrar(pauta, "pesquisa", angulos=pauta.busca_de_fontes["pesquisa"]["angulos"])
-            tocadas += [pauta for pauta, _a, _p in ligados]
+            tocadas += _marcar_pedidos(candidato, "pdf", achados)
             continue
         base = resumo.markdown_full.split(MARCA_DO_COMPLETO)[0].rstrip()
         partes = [base]
@@ -813,11 +890,7 @@ def extrair_do_pdf(documento_pdf) -> int:
 
         blocos = {b.ordem for b in preparar_blocos(resumo) if b.paragrafos}
         pedir_indexacao(resumo, blocos=blocos, concluir=True, por=None, local=True)
-        for pauta, _angulo, pedido in ligados:
-            pedido["atendido"] = "pdf"
-            pedido["trechos"] = len(achados.get(pedido["o_que"], []))
-            registrar(pauta, "pesquisa", angulos=(pauta.busca_de_fontes["pesquisa"]["angulos"]))
-        tocadas += [pauta for pauta, _a, _p in ligados]
+        tocadas += _marcar_pedidos(candidato, "pdf", achados)
         atendidos += len(achados)
     _depois_dos_pedidos(tocadas)
     return atendidos
@@ -871,14 +944,9 @@ def _uuid(valor):
 def seguir_com_o_resumo(candidato) -> None:
     """Sem PDF: o artigo segue com o resumo, e os pedidos sobre ele saem da lista."""
     from apps.knowledge.models import CandidatoDeFonte
-    from apps.knowledge.referencias import registrar
 
     candidato.situacao = CandidatoDeFonte.Situacao.APROVADO
-    candidato.motivo = "Sem PDF: segue com o resumo."
+    candidato.motivo = SEM_PDF
     candidato.decidido_em = timezone.now()
     candidato.save(update_fields=["situacao", "motivo", "decidido_em"])
-    ligados = _pedidos_do_candidato(candidato)
-    for pauta, _angulo, pedido in ligados:
-        pedido["atendido"] = "sem_pdf"
-        registrar(pauta, "pesquisa", angulos=pauta.busca_de_fontes["pesquisa"]["angulos"])
-    _depois_dos_pedidos([pauta for pauta, _a, _p in ligados])
+    _depois_dos_pedidos(_marcar_pedidos(candidato, "sem_pdf"))

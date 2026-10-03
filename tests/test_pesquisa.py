@@ -540,6 +540,38 @@ def test_ultimo_pdf_resolvido_poe_o_b_na_fila(
     assert (pauta.pk, fluxos.B) in disparados
 
 
+def test_pedido_resolvido_apagado_por_gravacao_velha_e_reconciliado(
+    ambiente,  # noqa: F811
+    openalex,
+    modelo,
+):
+    """Dois PDFs resolvidos ao mesmo tempo: a gravacao de um apagava o
+    'resolvido' do outro. A marcacao rele a pauta travada, e a reconciliacao
+    destrava a que ja ficou presa."""
+    from apps.knowledge.referencias import registrar
+
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    pesquisa.pesquisar(pauta)
+    pauta.refresh_from_db()
+    candidatos = [i["candidato"] for i in pesquisa.pdfs_pedidos(pauta)]
+    assert candidatos
+    velha = Topic.objects.get(pk=pauta.pk)  # lida antes de alguem resolver
+
+    for candidato in candidatos:
+        pesquisa.seguir_com_o_resumo(candidato)
+    pauta.refresh_from_db()
+    assert pesquisa.pedidos_em_aberto(pauta) == 0
+
+    # O jeito antigo: grava a lista de pedidos inteira, lida antes.
+    registrar(velha, "pesquisa", angulos=velha.busca_de_fontes["pesquisa"]["angulos"])
+    pauta.refresh_from_db()
+    assert pesquisa.pedidos_em_aberto(pauta)
+
+    assert pesquisa.reconciliar_pedidos(pauta)
+    assert pesquisa.pedidos_em_aberto(pauta) == 0
+    assert not pesquisa.reconciliar_pedidos(pauta)
+
+
 @pytest.mark.django_db
 def test_pergunta_e_respondida_tambem_com_a_pesquisa(ambiente, openalex, modelo):  # noqa: F811
     """Com o fluxo B ligado, a pergunta ganha a pesquisa do OpenAlex (enxuta,

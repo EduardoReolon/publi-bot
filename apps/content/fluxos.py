@@ -297,11 +297,14 @@ def geracoes_esperando() -> int:
     se perdeu (worker reiniciado, tarefa caida) nao deixa o texto parado."""
     from apps.content.models import Topic
     from apps.content.tasks import gerar_b_quando_pronta
+    from apps.knowledge.pesquisa import pedidos_em_aberto, reconciliar_pedidos
 
     if B not in ligados():
         return 0
     retomadas = 0
     for pauta in Topic.objects.filter(busca_de_fontes__pesquisa__situacao="pronta"):
+        if pedidos_em_aberto(pauta):
+            reconciliar_pedidos(pauta)
         if geracao_do_b_pendente(pauta):
             gerar_b_quando_pronta.delay(str(pauta.pk))
             retomadas += 1

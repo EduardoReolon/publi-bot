@@ -1095,12 +1095,13 @@ def comecar_texto_novo(request: HttpRequest, pk) -> HttpResponse:
     comeca agora (ou diz por que nao)."""
     from apps.content import fluxos
     from apps.content.tasks import gerar_b_quando_pronta
-    from apps.knowledge.pesquisa import pronta_para_gerar
+    from apps.knowledge.pesquisa import pronta_para_gerar, reconciliar_pedidos
 
     artigo = get_object_or_404(Article, pk=pk)
     pauta = artigo.topic
     if pauta is None:
         return redirect("content:revisar", pk=artigo.pk)
+    reconciliar_pedidos(pauta)
     motivo = pronta_para_gerar(pauta)
     if motivo:
         messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
