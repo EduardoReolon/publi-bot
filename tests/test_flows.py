@@ -827,3 +827,47 @@ def _so_o_acervo() -> None:
     config = ConfiguracaoDoRadar.carregar()
     config.fluxo_da_pesquisa = False
     config.save()
+
+
+def test_marcador_torto_vira_marcador_de_fonte():
+    from apps.content.rendering import normalizar_marcadores
+
+    assert normalizar_marcadores("Tencent [[1]] e [[ Fonte 2 ]].") == (
+        "Tencent [[FONTE_1]] e [[FONTE_2]]."
+    )
+    assert normalizar_marcadores("[[CHAMADA]] [[DADO_1]]") == "[[CHAMADA]] [[DADO_1]]"
+
+
+def test_expressoes_repetidas_viram_aviso():
+    from apps.editorial.services import conferir_texto
+
+    texto = (
+        "Ignora as interações complexas entre pessoas e processos. "
+        "De novo, as interações complexas entre pessoas. "
+        "E mais uma vez as interações complexas entre pessoas. O crescimento linear cresce."
+    )
+    repetidas = [a.expressao for a in conferir_texto(texto, None).repeticoes]
+    assert repetidas == ["interacoes complexas entre pessoas"]
+
+
+@pytest.mark.django_db
+def test_secao_recebe_o_que_ja_foi_escrito(tenant_com_acervo):
+    from apps.content.models import ArticleSection
+    from apps.content.services import ja_escrito
+
+    artigo = Article.objects.create(title="Tema")
+    primeira = ArticleSection.objects.create(
+        article=artigo,
+        order=1,
+        heading="Um",
+        body_markdown=(
+            "O crescimento linear, embora comum, nao escala o lucro da empresa. "
+            "Outra frase longa o bastante aqui."
+        ),
+    )
+    segunda = ArticleSection.objects.create(article=artigo, order=2, heading="Dois")
+
+    assert ja_escrito(artigo, primeira) == ""
+    contexto = ja_escrito(artigo, segunda)
+    assert "NAO comece a secao reapresentando o tema" in contexto
+    assert "O crescimento linear, embora comum" in contexto

@@ -157,6 +157,7 @@ class Conferencia:
     proibidos: list[Achado] = field(default_factory=list)
     marcas: list[Achado] = field(default_factory=list)
     travessoes: int = 0
+    repeticoes: list[Achado] = field(default_factory=list)
 
     @property
     def bloqueia(self) -> bool:
@@ -164,7 +165,7 @@ class Conferencia:
 
     @property
     def vazia(self) -> bool:
-        return not (self.proibidos or self.marcas or self.travessoes)
+        return not (self.proibidos or self.marcas or self.travessoes or self.repeticoes)
 
 
 # Acima disto, o travessao deixa de ser pontuacao e vira tique.
@@ -203,4 +204,54 @@ def conferir_texto(texto: str, perfil) -> Conferencia:
     if travessoes > TRAVESSOES_TOLERADOS:
         resultado.travessoes = travessoes
 
+    resultado.repeticoes = [
+        Achado(expressao=frase, sugestao="", vezes=vezes)
+        for frase, vezes in expressoes_repetidas(texto or "")
+    ]
     return resultado
+
+
+# Expressao de 3 palavras ou mais que volta 3 vezes ou mais: o texto escrito
+# por secoes tende a reafirmar a mesma formula em cada uma.
+TAMANHO_DA_EXPRESSAO = 3
+VEZES_PARA_AVISAR = 3
+_VAZIAS = set(
+    """a o as os um uma uns umas de do da dos das em no na nos nas por para com
+    sem que e ou se ao aos como mais menos muito ja nao sim seu sua seus suas
+    isso esse essa este esta ele ela eles elas e foi ser sao tem ter pode""".split()
+)
+
+
+def expressoes_repetidas(texto: str, limite: int = 6) -> list[tuple[str, int]]:
+    """As expressoes que se repetem pelo texto, sem modelo: sequencias de
+    palavras (sem as de ligacao nas pontas) contadas, e as que se sobrepoem
+    juntadas na maior. Links, marcadores e titulos ficam de fora."""
+    from collections import Counter
+
+    limpo = re.sub(r"\]\([^)]*\)|\[\[[^\]]*\]\]|https?://\S+|^#+ .*$", " ", texto, flags=re.M)
+    palavras = re.findall(r"\w+", _normalizar(limpo))
+    n = TAMANHO_DA_EXPRESSAO
+    contagem = Counter(tuple(palavras[i : i + n]) for i in range(len(palavras) - n + 1))
+    repetidas = {g: v for g, v in contagem.items() if v >= VEZES_PARA_AVISAR}
+    # Junta as que se encaixam ("interacoes complexas entre pessoas" +
+    # "complexas entre pessoas processos" -> uma expressao so).
+    frases: list[tuple[list[str], int]] = []
+    for grama, vezes in sorted(repetidas.items(), key=lambda kv: -kv[1]):
+        for frase in frases:
+            if list(grama[:-1]) == frase[0][-(n - 1) :]:
+                frase[0].append(grama[-1])
+                break
+            if list(grama[1:]) == frase[0][: n - 1]:
+                frase[0].insert(0, grama[0])
+                break
+        else:
+            frases.append((list(grama), vezes))
+    saida = []
+    for palavras_da_frase, vezes in frases:
+        while palavras_da_frase and palavras_da_frase[0] in _VAZIAS:
+            palavras_da_frase.pop(0)
+        while palavras_da_frase and palavras_da_frase[-1] in _VAZIAS:
+            palavras_da_frase.pop()
+        if len([p for p in palavras_da_frase if p not in _VAZIAS]) >= 2:
+            saida.append((" ".join(palavras_da_frase), vezes))
+    return saida[:limite]

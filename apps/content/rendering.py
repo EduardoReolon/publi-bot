@@ -123,6 +123,15 @@ class Fonte:
         return self.modo
 
 
+# O modelo as vezes escreve [[1]] ou [[Fonte 1]] em vez de [[FONTE_1]]. Sem a
+# troca, o marcador passava cru para o artigo publicado (e a fonte, sem link).
+_MARCADOR_TORTO = re.compile(r"\[\[\s*(?:fonte[\s_]*)?(\d+)\s*\]\]", re.IGNORECASE)
+
+
+def normalizar_marcadores(texto: str) -> str:
+    return _MARCADOR_TORTO.sub(r"[[FONTE_\1]]", texto)
+
+
 def validar_saida_do_modelo(texto: str, *, max_marcadores: int | None = 2) -> list[int]:
     """Confere que o modelo respeitou o contrato de marcadores.
 
