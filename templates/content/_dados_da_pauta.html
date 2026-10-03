@@ -1,0 +1,39 @@
+{% load i18n %}
+<p class="pre-visualizacao">
+  {% blocktranslate trimmed %}
+    Numeros oficiais que o artigo pode citar. O escolhido entra na geracao com o valor
+    e o link da instituicao; a revisao confere se o numero saiu igual.
+  {% endblocktranslate %}
+  <a href="{% url 'dados:catalogo' %}">{% translate "ver o catalogo" %}</a>
+</p>
+{% if dados_escolhidos %}
+  <ul class="lista">
+    {% for item in dados_escolhidos %}
+      <li>
+        <b>{{ item.dado.serie.instituicao.sigla }}</b> — {{ item.dado.serie.titulo }}
+        {% if item.fato %}: <b>{{ item.fato.valor }}{% if item.fato.unidade %} {{ item.fato.unidade }}{% endif %}</b> <span class="pre-visualizacao">({{ item.fato.local }}, {{ item.fato.periodo }})</span>
+        {% else %}<span class="selo alerta">{% translate "sem valor ainda" %}</span>{% endif %}
+        <form method="post" action="{% url 'content:dados_da_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
+          <input type="hidden" name="acao" value="tirar"><input type="hidden" name="dado" value="{{ item.dado.pk }}">
+          <button type="submit" class="pequeno discreto">{% translate "tirar" %}</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+{% if dados_sugeridos %}
+  <p class="pre-visualizacao" style="margin-bottom:.2rem">{% translate "Sugeridos para esta pauta" %}</p>
+  <ul class="lista">
+    {% for serie in dados_sugeridos %}
+      <li>
+        <b>{{ serie.instituicao.sigla }}</b> — {{ serie.titulo }}{% if serie.unidade %} <span class="pre-visualizacao">({{ serie.unidade }})</span>{% endif %}
+        <form method="post" action="{% url 'content:dados_da_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
+          <input type="hidden" name="serie" value="{{ serie.pk }}">
+          <button type="submit" class="pequeno">{% translate "Usar" %}</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% elif not dados_escolhidos %}
+  <p class="pre-visualizacao">{% translate "Nenhum dado do catalogo combina com esta pauta ainda." %}</p>
+{% endif %}

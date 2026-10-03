@@ -181,6 +181,7 @@ manage configurar_imagem --opcional
 
 echo "==> Prompts iniciais"
 manage semear_prompts --todos
+manage semear_dados
 
 echo "==> Estaticos e traducoes"
 manage collectstatic --noinput

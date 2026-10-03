@@ -23,6 +23,7 @@ urlpatterns = [
     path("site/", include("apps.integrations.urls", namespace="integrations")),
     path("editorial/", include("apps.editorial.urls", namespace="editorial")),
     path("radar/", include("apps.radar.urls", namespace="radar")),
+    path("dados/", include("apps.dados.urls", namespace="dados")),
     path("operacao/", include("apps.ops.urls_painel", namespace="operacao")),
 ]
 

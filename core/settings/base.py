@@ -75,6 +75,9 @@ SHARED_APPS = [
     "django_celery_results",
     # Conexoes de inferencia: compartilhadas entre tenants, logo no public.
     "apps.inference",
+    # Catalogo de dados publicos (IBGE, Banco Central...): fatos iguais para
+    # todos os clientes, buscados e vetorizados uma vez so.
+    "apps.dados",
 ]
 
 TENANT_APPS = [
@@ -456,6 +459,12 @@ CELERY_BEAT_SCHEDULE = {
     "conferir-fontes-vencidas": {
         "task": "apps.radar.tasks.conferir_fontes_vencidas",
         # Artigo que cita tabela de preco vencida vira sugestao de atualizacao.
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
+    "varrer-dados-do-acervo": {
+        "task": "apps.dados.tasks.varrer_dados_do_acervo",
+        # Que dados as fontes citam: series sugeridas e pedidos de adaptador.
         "schedule": 86400.0,
         "options": {"expires": 80000},
     },

@@ -483,6 +483,10 @@ class Article(models.Model):
     # {"inline": {"title", "text", "button"}, "end": {...}}. O bloco (link,
     # WhatsApp, medicao) continua do site; sem texto aqui, o site usa o padrao.
     call_to_action_copy = models.JSONField(_("texto da chamada"), default=dict, blank=True)
+    # Os dados publicos que a geracao recebeu, congelados (numero, periodo,
+    # link): [{"n", "instituicao", "titulo", "valor", "unidade", "periodo",
+    # "local", "url", "citado"}]. Ver apps/content/dados_da_pauta.py.
+    dados_usados = models.JSONField(_("dados publicos usados"), default=list, blank=True)
 
     # Saida estruturada do filtro de consenso.
     thesis_json = models.JSONField(_("tese"), default=dict, blank=True)
@@ -1125,3 +1129,21 @@ class AnswerCitation(models.Model):
 
     def __str__(self) -> str:
         return f"#{self.rank} {self.source_title[:40]}"
+
+
+class DadoDaPauta(models.Model):
+    """Um dado publico escolhido para a pauta (o catalogo mora no public)."""
+
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name="dados")
+    serie = models.ForeignKey("dados.Serie", on_delete=models.CASCADE, related_name="+")
+    local = models.CharField(_("local"), max_length=120, default="Brasil")
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["criado_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["topic", "serie", "local"], name="uniq_dado_da_pauta")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.serie_id} ({self.local})"

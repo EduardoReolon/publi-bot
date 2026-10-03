@@ -1,0 +1,141 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Dados publicos" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Dados publicos" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Numeros oficiais (IBGE, Banco Central, DATASUS...) que os artigos podem citar.
+      Na pauta, o PubliBot sugere os que combinam; na geracao, o valor entra como um
+      fato com o link da instituicao, e a revisao confere se o numero saiu igual.
+    {% endblocktranslate %}
+  </p>
+
+  <nav class="abas">
+    <a href="?aba=series" class="{% if aba_do_catalogo == 'series' %}ativo{% endif %}">{% translate "Series" %} <span class="selo">{{ contagens.series }}</span>{% if contagens.por_aprovar %} <span class="selo alerta" title="{% translate 'sugeridas, a aprovar' %}">{{ contagens.por_aprovar }}</span>{% endif %}</a>
+    <a href="?aba=instituicoes" class="{% if aba_do_catalogo == 'instituicoes' %}ativo{% endif %}">{% translate "Instituicoes" %} <span class="selo">{{ contagens.instituicoes }}</span></a>
+    <a href="?aba=pedidos" class="{% if aba_do_catalogo == 'pedidos' %}ativo{% endif %}">{% translate "Pedidos de adaptador" %}{% if contagens.pedidos %} <span class="selo alerta">{{ contagens.pedidos }}</span>{% endif %}</a>
+  </nav>
+
+  <form method="get" class="acoes" style="margin-bottom:1rem">
+    <input type="hidden" name="aba" value="{{ aba_do_catalogo }}">
+    <select name="nicho" onchange="this.form.submit()" style="width:auto">
+      <option value="">{% translate "Todos os nichos" %}</option>
+      {% for valor, rotulo in nichos %}<option value="{{ valor }}" {% if nicho == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+    </select>
+    {% if aba_do_catalogo == 'series' %}
+      <select name="situacao" onchange="this.form.submit()" style="width:auto">
+        <option value="">{% translate "Todas" %}</option>
+        {% for valor, rotulo in situacoes %}<option value="{{ valor }}" {% if situacao == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+      <input type="search" name="q" value="{{ busca }}" placeholder="{% translate 'procurar' %}" style="width:auto">
+      <button type="submit" class="pequeno">{% translate "Filtrar" %}</button>
+    {% endif %}
+  </form>
+
+  {% if aba_do_catalogo == 'series' %}
+    {% if series %}
+      <div class="rolagem"><table>
+        <thead><tr>
+          <th>{% translate "Serie" %}</th><th>{% translate "Ultimo valor" %}</th>
+          <th class="numero" title="{% translate 'fontes do acervo que citam' %}">{% translate "Citada" %}</th>
+          <th>{% translate "Situacao" %}</th>{% if curador %}<th></th>{% endif %}
+        </tr></thead>
+        <tbody>
+          {% for s in series %}
+            <tr>
+              <td><strong>{{ s.instituicao.sigla }}</strong> — {{ s.titulo }}
+                {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">↗</a>{% endif %}
+                {% if s.descricao %}<div class="pre-visualizacao">{{ s.descricao|truncatechars:140 }}</div>{% endif %}</td>
+              <td>{% if s.ultimo %}{{ s.ultimo.texto }} {{ s.unidade }} <span class="pre-visualizacao">· {{ s.ultimo.local }}, {{ s.ultimo.periodo }}</span>{% else %}<span class="pre-visualizacao">—</span>{% endif %}</td>
+              <td class="numero">{{ s.citacoes|default:"" }}</td>
+              <td><span class="selo {% if s.situacao == 'aprovada' %}ok{% elif s.situacao == 'recusada' %}ruim{% else %}alerta{% endif %}">{{ s.get_situacao_display }}</span></td>
+              {% if curador %}<td>
+                <form method="post" action="{% url 'dados:situacao_da_serie' s.pk %}" style="display:inline">{% csrf_token %}
+                  <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+                  {% if s.situacao != 'aprovada' %}<button name="situacao" value="aprovada" class="pequeno">{% translate "Aprovar" %}</button>{% endif %}
+                  {% if s.situacao != 'recusada' %}<button name="situacao" value="recusada" class="pequeno discreto">{% translate "Recusar" %}</button>{% endif %}
+                </form>
+              </td>{% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      <p class="aviso">
+        {% blocktranslate trimmed %}
+          Nenhuma serie ainda. Elas chegam pelos adaptadores (o catalogo de cada
+          instituicao), pelas fontes do acervo que citam dados, ou cadastradas a mao abaixo.
+        {% endblocktranslate %}
+      </p>
+    {% endif %}
+
+    {% if curador %}
+      <details style="margin-top:1rem">
+        <summary><strong>{% translate "Cadastrar um dado a mao" %}</strong> — {% translate "para o que ainda nao tem adaptador" %}</summary>
+        <form method="post" action="{% url 'dados:nova_serie' %}">{% csrf_token %}
+          <div class="campo"><label>{% translate "Instituicao" %}</label>
+            <select name="instituicao" required>{% for i in todas_as_instituicoes %}<option value="{{ i.pk }}">{{ i.sigla }} — {{ i.nome }}</option>{% endfor %}</select></div>
+          <div class="campo"><label>{% translate "O que e" %}</label><input type="text" name="titulo" required placeholder="{% translate 'Prevalencia de obesidade em adultos' %}"></div>
+          <div class="campo"><label>{% translate "Valor" %}</label><input type="text" name="valor" required placeholder="25,9"></div>
+          <div class="campo"><label>{% translate "Unidade" %}</label><input type="text" name="unidade" placeholder="%"></div>
+          <div class="campo"><label>{% translate "Periodo" %}</label><input type="text" name="periodo" required placeholder="2019"></div>
+          <div class="campo"><label>{% translate "Local" %}</label><input type="text" name="local" placeholder="Brasil"></div>
+          <div class="campo"><label>{% translate "Link da tabela ou publicacao" %}</label><input type="url" name="url"></div>
+          <div class="campo"><label>{% translate "Descricao (ajuda a sugerir na pauta certa)" %}</label><textarea name="descricao" rows="2" class="mini"></textarea></div>
+          <div class="acoes"><button type="submit" class="botao">{% translate "Cadastrar" %}</button></div>
+        </form>
+      </details>
+    {% endif %}
+
+  {% elif aba_do_catalogo == 'instituicoes' %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Um adaptador por instituicao traduz o formato dela e cobre todas as series.
+        <strong>A fazer</strong>: previsto, ainda sem codigo — os valores vem do
+        cadastro a mao. <strong>Confiavel</strong>: link dessa instituicao dispensa curadoria.
+      {% endblocktranslate %}
+    </p>
+    <div class="rolagem"><table>
+      <thead><tr><th>{% translate "Instituicao" %}</th><th>{% translate "Nichos" %}</th><th>{% translate "Adaptador" %}</th><th class="numero">{% translate "Series" %}</th><th>{% translate "Confiavel" %}</th></tr></thead>
+      <tbody>
+        {% for i in instituicoes %}
+          <tr>
+            <td><strong>{{ i.sigla }}</strong> — {% if i.site %}<a href="{{ i.site }}" target="_blank" rel="noopener noreferrer">{{ i.nome }}</a>{% else %}{{ i.nome }}{% endif %}
+              {% if i.notas %}<details class="ajuda"><summary>{% translate "o que tem" %}</summary><div>{{ i.notas }}</div></details>{% endif %}</td>
+            <td class="pre-visualizacao">{{ i.nichos|join:", " }}</td>
+            <td>{% if i.estado == 'pronto' %}<span class="selo ok">{% translate "pronto" %}</span>{% elif i.estado == 'a_fazer' %}<span class="selo alerta">{% translate "a fazer" %}</span>{% else %}<span class="selo">{% translate "sem adaptador" %}</span>{% endif %}</td>
+            <td class="numero">{{ i.n_series }}</td>
+            <td>{% if curador %}<form method="post" action="{% url 'dados:confiavel' i.pk %}">{% csrf_token %}<button type="submit" class="pequeno {% if not i.confiavel %}discreto{% endif %}">{% if i.confiavel %}{% translate "sim" %}{% else %}{% translate "nao" %}{% endif %}</button></form>{% else %}{{ i.confiavel|yesno:_("sim,nao") }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+
+  {% else %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Lugares de dados que as fontes do acervo citam e que ainda nao tem adaptador
+        (conferido uma vez por dia). Copie o pedido e mande ao desenvolvedor: ele
+        escreve o adaptador e o lugar passa a alimentar o catalogo.
+      {% endblocktranslate %}
+    </p>
+    {% for p in pedidos %}
+      <div class="cartao">
+        <strong>{{ p.dominio }}</strong> · {% blocktranslate trimmed count n=p.citacoes %}{{ n }} fonte cita{% plural %}{{ n }} fontes citam{% endblocktranslate %}
+        <ul>{% for url in p.exemplos %}<li><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ url|truncatechars:90 }}</a></li>{% endfor %}</ul>
+        <textarea id="pedido-{{ p.pk }}" rows="3" class="mini" readonly style="display:none">{{ p.texto }}</textarea>
+        <div class="acoes">
+          <button type="button" class="botao secundario" data-copiar="pedido-{{ p.pk }}">{% translate "Copiar para o desenvolvedor" %}</button>
+          {% if curador %}<form method="post" action="{% url 'dados:situacao_do_pedido' p.pk %}" style="display:inline">{% csrf_token %}
+            <button name="situacao" value="feito" class="pequeno">{% translate "Feito" %}</button>
+            <button name="situacao" value="descartado" class="pequeno discreto">{% translate "Descartar" %}</button>
+          </form>{% endif %}
+        </div>
+      </div>
+    {% empty %}
+      <p class="aviso ok">{% translate "Nenhum pedido aberto." %}</p>
+    {% endfor %}
+  {% endif %}
+{% endblock %}
