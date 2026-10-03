@@ -591,3 +591,39 @@ def test_autores_viram_et_al_na_citacao():
     assert autores_para_citacao("Ana Silva, Joao Souza, Rui Lima, Bia Reis") == "Ana Silva et al."
     assert autores_para_citacao("Silva, A.") == "Silva, A."
     assert autores_para_citacao("Silva et al.") == "Silva et al."
+
+
+@pytest.mark.django_db
+def test_openalex_fora_tenta_de_novo_e_uma_hipotese_ruim_nao_derruba(ambiente, monkeypatch):  # noqa: F811
+    chamadas = []
+
+    def get(url, params, timeout):
+        chamadas.append(params)
+        if len(chamadas) <= 2:  # duas 504 seguidas, depois responde
+            return httpx.Response(504, request=httpx.Request("GET", url))
+        return httpx.Response(
+            200,
+            json={"results": [_trabalho(len(chamadas), titulo="Service recovery")]},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", get)
+    monkeypatch.setattr(pesquisa.time, "sleep", lambda s: None)
+    assert len(pesquisa._get({"search.semantic": "texto"}, consulta="texto", endpoint="t")) == 1
+    assert len(chamadas) == 3
+
+    # Uma hipotese que nao responde nunca: as outras seguem.
+    def sempre_fora(texto, **kw):
+        if "ruim" in texto:
+            raise pesquisa.PesquisaIndisponivel("504")
+        return [_trabalho(7, titulo="Bom")]
+
+    monkeypatch.setattr(pesquisa, "busca_semantica", sempre_fora)
+    hip = {
+        "angulos": [{"angulo": "a", "paragrafo": "ruim"}, {"angulo": "b", "paragrafo": "bom"}],
+        "contrarias": [],
+    }
+    assert len(pesquisa._achados(hip)) == 1
+    hip_ruim = {"angulos": [{"angulo": "a", "paragrafo": "ruim"}], "contrarias": []}
+    with pytest.raises(pesquisa.PesquisaIndisponivel):
+        pesquisa._achados(hip_ruim)

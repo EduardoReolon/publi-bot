@@ -76,24 +76,35 @@
     </div>
   {% endif %}
   {% if gerando_de_novo %}
-    <div class="aviso espera">
-      <strong>{% translate "Gerando de novo do zero." %}</strong>
+    <div class="aviso {% if gerando_de_novo.etapa == 'erro' %}ruim{% else %}espera{% endif %}">
+      <strong>{% translate "Uma versao nova deste artigo esta sendo preparada." %}</strong>
+      {% translate "Esta pagina e a versao que esta no ar: ela continua publicada e nao muda. Quando o texto novo ficar pronto, ele aparece como versao seguinte, para voce revisar; so ao aprovar ele substitui esta no site." %}
+      <div style="margin-top:.4rem">
       {% if gerando_de_novo.etapa == 'pesquisa' %}
         {% blocktranslate trimmed with h=gerando_de_novo.desde|time:"H:i" %}
-          Etapa 1 de 2: pesquisando artigos cientificos (desde {{ h }}). Leva alguns minutos;
-          depois o texto comeca a ser escrito e aparece em Operacao.
+          Etapa 1 de 2: pesquisando artigos cientificos (desde {{ h }}).
         {% endblocktranslate %}
+        {% if gerando_de_novo.aviso %}<div class="pre-visualizacao">{{ gerando_de_novo.aviso|truncatechars:200 }}</div>{% endif %}
         {% if gerando_de_novo.parada %}<div>{% translate "A pesquisa parece parada; ela e recomecada sozinha na proxima varredura." %}</div>{% endif %}
+      {% elif gerando_de_novo.etapa == 'erro' %}
+        <strong>{% translate "A pesquisa de artigos falhou." %}</strong>
+        <span class="pre-visualizacao">{{ gerando_de_novo.motivo|truncatechars:200 }}</span>
+        <div>{% translate "Costuma ser o OpenAlex fora do ar por um tempo. Tente de novo mais tarde:" %}
+          <form method="post" action="{% url 'content:gerar_de_novo' artigo.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="pequeno">{% translate "Tentar a pesquisa de novo" %}</button>
+          </form>
+        </div>
       {% elif gerando_de_novo.etapa == 'esperando' %}
-        {% translate "A pesquisa de artigos terminou, mas o texto ainda nao comecou:" %}
+        {% translate "Etapa 1 de 2 concluida (pesquisa). O texto ainda nao comecou:" %}
         <strong>{{ gerando_de_novo.motivo|default:_("motivo desconhecido; clique em Gerar de novo do zero para tentar outra vez.") }}</strong>
-        {% if gerando_de_novo.pdfs %}<a class="botao pequeno" href="{% url 'content:pdfs_da_pesquisa' gerando_de_novo.pauta.pk %}">{% translate "Conferir os PDFs pedidos" %}</a>{% endif %}
+        {% if gerando_de_novo.pdfs %}<a class="botao pequeno" href="{% url 'content:pdfs_da_pesquisa' gerando_de_novo.pauta.pk %}">{% translate "Conferir os PDFs pedidos" %}</a>
+          <div class="pre-visualizacao">{% translate "Resolvido o ultimo (enviado ou seguir com o resumo), o texto comeca sozinho e aparece em Operacao." %}</div>{% endif %}
       {% else %}
         {% blocktranslate trimmed with p=gerando_de_novo.passo %}
-          Etapa 2 de 2: escrevendo o texto (passo {{ p }}). A versao nova aparece aqui quando o artigo for criado.
+          Etapa 2 de 2: escrevendo o texto (passo {{ p }}). Aparece em Operacao.
         {% endblocktranslate %}
       {% endif %}
-      {% translate "Atualize a pagina para acompanhar." %}
+      </div>
     </div>
   {% endif %}
   {% if artigo.status == 'published' or artigo.status == 'superseded' %}
