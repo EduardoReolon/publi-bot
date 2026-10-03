@@ -142,3 +142,53 @@ def test_pesquisa_tira_artigo_de_outra_area():
     assert 8 not in ids  # outra area, longe da pauta: sai
     assert 9 in ids  # outra area, mas entre os mais proximos: fica
     assert len(vetores) == len(ficam)
+
+
+def test_anotar_marca_a_frase_e_ordena_por_urgencia():
+    corpo = (
+        "<p>Primeira frase comum aqui. Nenhum estudo diz que toda empresa quebra ao crescer. "
+        "Projetos de desenvolvimento escalam inovacoes "
+        '<a href="https://x">Silva et al., 2024</a>.</p>'
+    )
+    registro = [
+        {
+            "secao": 1,
+            "acao": "reescrita",
+            "frase": "Antes",
+            "nova": "Projetos de desenvolvimento escalam inovacoes",
+        },
+        {
+            "secao": 1,
+            "acao": "sem_fonte",
+            "frase": "Nenhum estudo diz que toda empresa quebra ao crescer.",
+        },
+    ]
+    html, notas = citacoes.anotar(corpo, registro)
+    assert [n["nivel"] for n in notas] == ["urgente", "atencao"]
+    assert all(n["marcada"] for n in notas)
+    assert '<mark class="nota-no-texto urgente" id="nota-2">Nenhum estudo' in html
+    assert html.count("</a>") == 1 and html.count("<mark") == 2
+
+
+@pytest.mark.django_db
+def test_gerar_de_novo_vira_versao_do_publicado(ambiente, monkeypatch):  # noqa: F811
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.knowledge.tasks import pesquisar_pauta
+
+    pedidos = []
+    monkeypatch.setattr(pesquisar_pauta, "delay", lambda pk: pedidos.append(pk))
+    pauta = Topic.objects.create(title="Crescimento linear")
+    publicado = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PUBLISHED,
+        remote_id="r1",
+    )
+    nivel, _msg = fluxos.gerar_de_novo(publicado)
+
+    pauta.refresh_from_db()
+    assert nivel == "success"
+    pesquisa = pauta.busca_de_fontes["pesquisa"]
+    assert pesquisa["versao_de"] == str(publicado.pk) and pesquisa["gerar_depois"]

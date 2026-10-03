@@ -697,9 +697,14 @@ def _indexacao_ligada(artigo) -> bool:
 
 
 def _resumo_da_conferencia(artigo) -> dict:
+    from apps.content.citacoes import anotar
+
     registro = artigo.conferencia_citacoes or []
+    corpo, notas = anotar(artigo.body_html or "", registro)
     return {
         "itens": registro,
+        "corpo_anotado": corpo,
+        "notas": notas,
         "trocadas": sum(1 for r in registro if r.get("acao") == "trocada"),
         "reescritas": sum(1 for r in registro if r.get("acao") == "reescrita"),
         "sem_fonte": sum(
@@ -1016,6 +1021,17 @@ def nova_versao(request: HttpRequest, pk) -> HttpResponse:
         % {"n": nova.version_number},
     )
     return redirect("content:revisar", pk=nova.pk)
+
+
+@login_required
+@require_POST
+def gerar_de_novo(request: HttpRequest, pk) -> HttpResponse:
+    from apps.content import fluxos
+
+    artigo = get_object_or_404(Article, pk=pk)
+    nivel, mensagem = fluxos.gerar_de_novo(artigo)
+    getattr(messages, nivel)(request, mensagem)
+    return redirect("content:revisar", pk=artigo.pk)
 
 
 @login_required

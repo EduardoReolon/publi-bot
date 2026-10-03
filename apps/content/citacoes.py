@@ -221,3 +221,61 @@ def pendencias(article) -> list[str]:
                 "edite, apague ou aceite como opiniao do texto"
             )
     return faltam
+
+
+# -- Revisao visual ------------------------------------------------------------
+NOTAS = {
+    "trocada": (
+        "info",
+        "Esta frase citava o estudo errado. O PubliBot trocou pela fonte que realmente diz isso.",
+    ),
+    "reescrita": (
+        "atencao",
+        "A frase original dizia algo que o estudo nao sustenta. Foi reescrita para dizer so "
+        "o que ele diz. Confira se o sentido continua bom.",
+    ),
+    "sem_fonte": (
+        "urgente",
+        "Nenhuma das fontes sustenta esta frase, e ela trava a publicacao. Edite, apague "
+        "ou aceite como opiniao do texto.",
+    ),
+}
+_FIM = re.compile(r"[.!?](?=\s|<|$)")
+
+
+def anotar(corpo_html: str, registro: list[dict]) -> tuple[str, list[dict]]:
+    """Marca no HTML da previa as frases que a conferencia mexeu, numeradas,
+    e devolve as notas para a coluna ao lado (como a revisao do Word).
+    Frase que nao se acha no HTML continua nas notas, sem marca."""
+    import html as html_mod
+
+    notas = []
+    for n, r in enumerate(registro or [], start=1):
+        acao = r.get("acao", "")
+        nivel, texto = NOTAS.get(acao, ("info", ""))
+        if acao == "sem_fonte" and r.get("aceita"):
+            nivel, texto = "info", "Aceita como opiniao do texto (sem fonte)."
+        nota = {"n": n, "nivel": nivel, "texto": texto, "marcada": False}
+        if acao == "reescrita":
+            nota["antes"] = r.get("frase", "")
+        alvo = (r.get("nova") or r.get("frase") or "").strip()
+        inicio = html_mod.escape(alvo[:45], quote=False)
+        pos = corpo_html.find(inicio) if len(inicio) >= 20 else -1
+        if pos >= 0:
+            fim = _FIM.search(corpo_html, pos + len(inicio))
+            final = fim.end() if fim else -1
+            trecho = corpo_html[pos:final] if final > 0 else ""
+            equilibrado = trecho.count("<a ") == trecho.count("</a>") and not re.search(
+                r"</?(p|h\d|li|ul|ol|details|summary|aside)\b", trecho
+            )
+            if trecho and equilibrado:
+                marca = (
+                    f'<mark class="nota-no-texto {nivel}" id="nota-{n}">{trecho}'
+                    f'<sup class="nota-numero">{n}</sup></mark>'
+                )
+                corpo_html = corpo_html[:pos] + marca + corpo_html[final:]
+                nota["marcada"] = True
+        notas.append(nota)
+    ordem = {"urgente": 0, "atencao": 1, "info": 2}
+    notas.sort(key=lambda x: (ordem.get(x["nivel"], 3), x["n"]))
+    return corpo_html, notas

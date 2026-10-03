@@ -84,7 +84,10 @@
         {% elif artigo.status == 'published' %}
           {% translate "Artigo no ar. Para melhorar, crie uma versao nova: ela passa pela revisao e substitui esta pagina no site." %}
           <form method="post" action="{% url 'content:nova_versao' artigo.pk %}" style="display:inline">
-            {% csrf_token %}<button type="submit" class="pequeno">{% translate "Criar versao nova" %}</button>
+            {% csrf_token %}<button type="submit" class="pequeno" title="{% translate 'Copia o texto atual para voce editar' %}">{% translate "Criar versao nova (editar)" %}</button>
+          </form>
+          <form method="post" action="{% url 'content:gerar_de_novo' artigo.pk %}" style="display:inline">
+            {% csrf_token %}<button type="submit" class="pequeno discreto" title="{% if artigo.fluxo == 'pesquisa' %}{% translate 'Nova pesquisa de artigos e texto escrito do zero, com as regras atuais' %}{% else %}{% translate 'Texto escrito do zero, com as fontes e as regras atuais' %}{% endif %}">{% translate "Gerar de novo do zero" %}</button>
           </form>
         {% else %}
           {% translate "Esta versao foi substituida por uma mais nova." %}
@@ -162,23 +165,14 @@
   <section class="aba-do-artigo" id="aba-revisar">
     {% if citacoes_conferidas.itens %}
       <div class="aviso {% if citacoes_conferidas.sem_fonte %}ruim{% else %}ok{% endif %}">
-        <strong>{% translate "Conferencia das citacoes:" %}</strong>
-        {% blocktranslate trimmed with t=citacoes_conferidas.trocadas r=citacoes_conferidas.reescritas s=citacoes_conferidas.sem_fonte %}
-          {{ t }} trocada(s) para a fonte certa, {{ r }} frase(s) reescrita(s), {{ s }} sem fonte.
-        {% endblocktranslate %}
-        <details class="ajuda"><summary>{% translate "ver o que mudou" %}</summary>
-          <ul>
-            {% for c in citacoes_conferidas.itens %}
-              <li>
-                {% if c.acao == 'trocada' %}<span class="selo">{% translate "fonte trocada" %}</span>
-                {% elif c.acao == 'reescrita' %}<span class="selo alerta">{% translate "reescrita" %}</span>
-                {% else %}<span class="selo ruim">{% translate "sem fonte" %}</span>{% if c.aceita %} <span class="selo">{% translate "aceita" %}</span>{% endif %}{% endif %}
-                {% translate "secao" %} {{ c.secao }}: "{{ c.frase|truncatechars:200 }}"
-                {% if c.nova %}<div class="pre-visualizacao">→ "{{ c.nova|truncatechars:200 }}"</div>{% endif %}
-              </li>
-            {% endfor %}
-          </ul>
-        </details>
+        <strong>{% translate "O PubliBot conferiu cada frase que cita um estudo." %}</strong>
+        <ul style="margin:.3rem 0">
+          {% if citacoes_conferidas.trocadas %}<li>{% blocktranslate trimmed count n=citacoes_conferidas.trocadas %}{{ n }} frase citava o estudo errado e foi corrigida sozinha.{% plural %}{{ n }} frases citavam o estudo errado e foram corrigidas sozinhas.{% endblocktranslate %}</li>{% endif %}
+          {% if citacoes_conferidas.reescritas %}<li>{% blocktranslate trimmed count n=citacoes_conferidas.reescritas %}{{ n }} frase foi reescrita para dizer so o que o estudo diz: vale conferir.{% plural %}{{ n }} frases foram reescritas para dizer so o que o estudo diz: vale conferir.{% endblocktranslate %}</li>{% endif %}
+          {% if citacoes_conferidas.sem_fonte %}<li><strong>{% blocktranslate trimmed count n=citacoes_conferidas.sem_fonte %}{{ n }} frase nao tem estudo que a sustente e precisa de voce.{% plural %}{{ n }} frases nao tem estudo que as sustente e precisam de voce.{% endblocktranslate %}</strong></li>{% endif %}
+        </ul>
+        {% translate "Elas estao marcadas no texto abaixo, em Como vai ficar no site, com a explicacao ao lado." %}
+        <a href="#notas-da-revisao">{% translate "ver" %}</a>
         {% if citacoes_conferidas.sem_fonte %}
           <form method="post" action="{% url 'content:aceitar_sem_fonte' artigo.pk %}" style="display:inline">{% csrf_token %}
             <button type="submit" class="pequeno discreto" title="{% translate 'A frase fica, sem citacao, como opiniao do texto' %}">{% translate "Aceitar como opiniao do texto" %}</button>
@@ -335,14 +329,29 @@
           Salve para atualizar esta previa.
         {% endblocktranslate %}
       </p>
+      <div class="{% if citacoes_conferidas.notas %}revisao-com-notas{% endif %}" id="notas-da-revisao">
       <article class="previa-do-artigo">
         {% if capa_escolhida %}
           <img src="{{ capa_escolhida.image.url }}" alt="{{ capa_escolhida.alt_text }}" loading="lazy" decoding="async" style="width:100%; border-radius:8px; margin-bottom:1rem">
         {% else %}
           <div class="aviso ruim">{% translate "Sem capa ainda." %} <a href="#capa">{% translate "Escolher a capa" %}</a></div>
         {% endif %}
-        <div class="renderizado">{{ artigo.body_html|safe }}</div>
+        <div class="renderizado">{% if citacoes_conferidas.notas %}{{ citacoes_conferidas.corpo_anotado|safe }}{% else %}{{ artigo.body_html|safe }}{% endif %}</div>
       </article>
+      {% if citacoes_conferidas.notas %}
+        <aside class="notas-da-revisao" aria-label="{% translate 'Notas da revisao' %}">
+          <div class="pre-visualizacao">{% translate "Notas da revisao" %}</div>
+          {% for nota in citacoes_conferidas.notas %}
+            <div class="nota-balao {{ nota.nivel }}">
+              {% if nota.marcada %}<a href="#nota-{{ nota.n }}" class="nota-numero">{{ nota.n }}</a>{% else %}<span class="nota-numero">{{ nota.n }}</span>{% endif %}
+              {{ nota.texto }}
+              {% if nota.antes %}<details class="ajuda"><summary>{% translate "como era antes" %}</summary><div>{{ nota.antes }}</div></details>{% endif %}
+              {% if not nota.marcada %}<div class="pre-visualizacao">{% translate "(a frase foi editada e nao esta mais igual no texto)" %}</div>{% endif %}
+            </div>
+          {% endfor %}
+        </aside>
+      {% endif %}
+      </div>
 
       <details style="margin-top:1rem">
         <summary>{% translate "Editar o texto inteiro de uma vez (avancado)" %}</summary>
