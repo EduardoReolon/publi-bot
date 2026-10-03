@@ -144,6 +144,30 @@ artigo no ar ──▶ escolha (regras) ──▶ PostSocial "sugerido"
 - **Artigo**: aba com os posts dele e o resultado por rede.
 - **Painel**: token perto de vencer; post que falhou.
 
+## Comentários: perguntas viram respostas (e pauta)
+
+Decidido não usar ferramenta pronta (Postiz: pesada, e o que ela tem de
+inteligência é genérico); o código dela serve só de **referência de leitura**
+das armadilhas de cada API (licença AGPL: não copiar trechos).
+
+- **Ler os comentários** de cada post publicado pela API da rede (LinkedIn,
+  Instagram, Google Meu Negócio), uma vez por dia nos posts recentes.
+- **É pergunta?** Por algoritmo primeiro (termina em "?", começa com
+  "como/quanto/qual/quando/onde/por que/pode/posso/é normal"…); só o que ficar
+  em dúvida vai a uma classificação curta pela LLM.
+- **Pergunta → área de Perguntas** (`Question`), com a origem (rede, id do
+  post e do comentário, link). O fluxo é o mesmo das perguntas do site: a
+  resposta sai do acervo **e da pesquisa de artigos do OpenAlex**
+  (`pesquisar_para_pergunta`, já pronta), fica para aprovar/editar, com as
+  fontes listadas para conferir.
+- **Aprovada → resposta no próprio comentário** (API de resposta de cada
+  rede), curta, com o link do artigo ou da resposta no site; e, se fizer
+  sentido, também publicada no site como hoje.
+- **O resto dos comentários** (elogio, reclamação, relato) agrupado como o
+  Radar faz com o YouTube: dores para o Negócio e pautas.
+- Nunca responder sozinho: sempre aprovação, por ser em nome do cliente
+  (regras de conselho profissional, tom).
+
 ## Fases (quando o dono pedir)
 
 1. **Copiar para postar** nas três redes: escolha, texto por rede, lâminas do

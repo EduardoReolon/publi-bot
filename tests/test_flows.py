@@ -328,6 +328,7 @@ def test_fluxo_da_resposta_produz_resposta_aguardando_revisao(
     resposta_do_modelo = "O que os estudos mostram sobre isso [[FONTE_1]] e consistente."
     modelo = ModeloFalso([resposta_do_modelo])
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+    _so_o_acervo()  # a pesquisa de artigos da pergunta tem teste proprio
 
     pergunta = Question.objects.create(
         site=site,
@@ -802,6 +803,7 @@ def test_resposta_com_duas_fontes_e_recusada(tenant_com_acervo, conexao, monkeyp
     site = Site.objects.create(name="S", slug="s", base_url="https://s.exemplo.org")
     modelo = ModeloFalso(["Um [[FONTE_1]] e tambem outro [[FONTE_2]]."])
     monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+    _so_o_acervo()  # a pesquisa de artigos da pergunta tem teste proprio
 
     pergunta = Question.objects.create(
         site=site,
@@ -816,3 +818,12 @@ def test_resposta_com_duas_fontes_e_recusada(tenant_com_acervo, conexao, monkeyp
 
     job.refresh_from_db()
     assert "limite" in job.last_error.lower()
+
+
+def _so_o_acervo() -> None:
+    """Fluxo B desligado: a pergunta responde so com o acervo do teste."""
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.fluxo_da_pesquisa = False
+    config.save()

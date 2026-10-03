@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.utils import timezone
 from django.utils.text import slugify
 
 from apps.content.dados_da_pauta import com_dados
@@ -715,12 +716,40 @@ def passo_redigir(job: GenerationJob) -> dict:
 # ---------------------------------------------------------------------------
 # Resposta a pergunta
 # ---------------------------------------------------------------------------
+# Quanto esperar o resumo dos artigos achados virar trecho, antes de responder
+# so com o que ja esta indexado.
+ESPERA_DOS_RESUMOS = 30 * 60
+TRECHOS_DA_PERGUNTA = 8
+
+
 def passo_recuperar_para_pergunta(job: GenerationJob) -> dict:
+    """Os trechos que sustentam a resposta: o acervo E a pesquisa cientifica
+    feita para a pergunta (OpenAlex, como no fluxo B), juntos e pela distancia."""
     question = Question.objects.filter(pk=job.target_object_id).first()
     if question is None:
         raise ValueError(f"pergunta {job.target_object_id} nao existe")
 
+    pesquisa = _pesquisa_da_pergunta(question)
+    documentos = pesquisa.get("documentos") or []
+    if documentos and _resumos_por_indexar(documentos, pesquisa):
+        raise PassoAdiado("indexando os resumos dos artigos achados", tentar_em_segundos=120)
+
     _, trechos = recuperar(consulta=question.question_text, origem=RetrievalQuery.Origin.QA)
+    if documentos:
+        from apps.knowledge.pesquisa import POR_PERGUNTA
+
+        _, da_pesquisa = recuperar(
+            consulta=question.question_text,
+            origem=RetrievalQuery.Origin.QA,
+            documentos=documentos,
+            distancia_maxima=2.0,
+            top_k=POR_PERGUNTA,
+        )
+        vistos = {t.chunk.pk for t in trechos}
+        trechos = sorted(
+            trechos + [t for t in da_pesquisa if t.chunk.pk not in vistos],
+            key=lambda t: t.distancia,
+        )[:TRECHOS_DA_PERGUNTA]
 
     if not trechos:
         # Marca a pergunta antes de falhar. Sem isso ela voltaria para a fila
@@ -729,9 +758,10 @@ def passo_recuperar_para_pergunta(job: GenerationJob) -> dict:
         # fato resolve: escrever a mao, ou acrescentar material ao acervo.
         Question.objects.filter(pk=question.pk).update(status=Question.Status.NEEDS_MORE_SOURCES)
         raise SemFontesSuficientes(
-            "o acervo nao sustenta esta pergunta. Responder assim mesmo seria "
-            "produzir texto sem fonte — exatamente o que o produto evita. "
-            "Acrescente material sobre o tema, ou responda a mao pelo painel."
+            "nem o acervo nem a pesquisa de artigos sustentam esta pergunta. "
+            "Responder assim mesmo seria produzir texto sem fonte — exatamente o "
+            "que o produto evita. Acrescente material sobre o tema, ou responda a "
+            "mao pelo painel."
         )
 
     return {
@@ -739,6 +769,43 @@ def passo_recuperar_para_pergunta(job: GenerationJob) -> dict:
         "distancias": [round(t.distancia, 4) for t in trechos],
         "melhor_distancia": round(trechos[0].distancia, 4),
     }
+
+
+def _pesquisa_da_pergunta(question) -> dict:
+    """A pesquisa de artigos da pergunta, feita uma vez (com o fluxo B ligado)."""
+    if question.pesquisa:
+        return question.pesquisa
+    from apps.content import fluxos
+    from apps.knowledge.pesquisa import PesquisaIndisponivel, pesquisar_para_pergunta
+
+    if fluxos.B not in fluxos.ligados():
+        return {}
+    try:
+        pesquisa = pesquisar_para_pergunta(question.question_text, str(question.pk))
+    except PesquisaIndisponivel as exc:
+        # Sem OpenAlex, responde com o acervo; a tela mostra o motivo.
+        pesquisa = {"erro": str(exc)[:300]}
+    Question.objects.filter(pk=question.pk).update(pesquisa=pesquisa)
+    question.pesquisa = pesquisa
+    return pesquisa
+
+
+def _resumos_por_indexar(documentos: list, pesquisa: dict) -> bool:
+    """Algum resumo ainda sem trecho, e a espera ainda nao venceu."""
+    from datetime import datetime
+
+    feitos = set(
+        SuperChunk.objects.filter(document_id__in=documentos, is_active=True).values_list(
+            "document_id", flat=True
+        )
+    )
+    if len(feitos) >= len(documentos):
+        return False
+    try:
+        desde = (timezone.now() - datetime.fromisoformat(pesquisa["em"])).total_seconds()
+    except (KeyError, ValueError):
+        return False
+    return desde < ESPERA_DOS_RESUMOS
 
 
 def passo_responder(job: GenerationJob) -> dict:

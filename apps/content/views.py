@@ -1523,11 +1523,37 @@ def revisar_resposta(request: HttpRequest, pk) -> HttpResponse:
                 }
             ),
             "agendamento": AgendamentoForm(),
-            "citacoes": resposta.citations.select_related("super_chunk").order_by("rank"),
+            "citacoes": _fontes_da_resposta(resposta),
+            "pesquisa": resposta.question.pesquisa if resposta.question_id else {},
             "proximo_horario": _proximo_horario(),
             "tem_autores": Author.objects.filter(is_active=True).exists(),
         },
     )
+
+
+def _fontes_da_resposta(resposta) -> list:
+    """As citacoes com o que quem confere precisa: titulo, autores e ano, o
+    link, o trecho que o modelo leu, e, no artigo cientifico, se foi lido so o
+    resumo e onde esta o PDF (aberto, ou pelo DOI)."""
+    from apps.knowledge.models import CandidatoDeFonte, Document
+
+    citacoes = list(resposta.citations.select_related("super_chunk__document").order_by("rank"))
+    documentos = [c.super_chunk.document_id for c in citacoes if c.super_chunk_id]
+    candidatos = {
+        c.documento_id: c for c in CandidatoDeFonte.objects.filter(documento_id__in=documentos)
+    }
+    for citacao in citacoes:
+        trecho = citacao.super_chunk
+        documento = trecho.document if trecho else None
+        candidato = candidatos.get(documento.pk) if documento else None
+        citacao.documento = documento
+        citacao.trecho = (trecho.content if trecho else "")[:1200]
+        citacao.so_resumo = bool(
+            documento and documento.extraction_method == Document.ExtractionMethod.RESUMO
+        )
+        citacao.pdf = (candidato.pdf_url if candidato else "") or ""
+        citacao.doi = ((candidato.doi if candidato else "") or "").removeprefix("https://doi.org/")
+    return citacoes
 
 
 def _processar_resposta(request: HttpRequest, resposta: Answer) -> HttpResponse:

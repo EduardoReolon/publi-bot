@@ -538,3 +538,48 @@ def test_ultimo_pdf_resolvido_poe_o_b_na_fila(
     pauta.refresh_from_db()
     assert pesquisa.pedidos_em_aberto(pauta) == 0
     assert (pauta.pk, fluxos.B) in disparados
+
+
+@pytest.mark.django_db
+def test_pergunta_e_respondida_tambem_com_a_pesquisa(ambiente, openalex, modelo):  # noqa: F811
+    """Com o fluxo B ligado, a pergunta ganha a pesquisa do OpenAlex (enxuta,
+    uma vez so) e os resumos achados entram nos trechos da resposta."""
+    from types import SimpleNamespace
+
+    from apps.content import flows
+    from apps.content.models import Question
+    from apps.integrations.models import Site
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.fluxo_da_pesquisa = True
+    config.save()
+    site = Site.objects.create(name="Site", slug="site", base_url="https://site.exemplo.org")
+    pergunta = Question.objects.create(
+        site=site,
+        remote_id="1",
+        question_text="Pedir desculpas recupera o cliente depois de uma falha?",
+        submitted_at="2026-01-01T00:00:00Z",
+    )
+
+    saida = flows.passo_recuperar_para_pergunta(SimpleNamespace(target_object_id=pergunta.pk))
+
+    pergunta.refresh_from_db()
+    assert 0 < len(pergunta.pesquisa["candidatos"]) <= pesquisa.POR_PERGUNTA
+    assert not any("openalex:" in c.get("filter", "") for c in openalex)  # sem bola de neve
+    documentos = {str(d) for d in pergunta.pesquisa["documentos"]}
+    from apps.knowledge.models import SuperChunk
+
+    usados = SuperChunk.objects.filter(pk__in=saida["chunk_ids"]).values_list(
+        "document_id", flat=True
+    )
+    assert documentos & {str(d) for d in usados}
+    assert all(
+        c.motivo == "Escolhido pela pesquisa da pergunta."
+        for c in CandidatoDeFonte.objects.filter(pk__in=pergunta.pesquisa["candidatos"])
+    )
+
+    # Uma vez so: rodar de novo nao busca outra vez.
+    antes = len(openalex)
+    flows.passo_recuperar_para_pergunta(SimpleNamespace(target_object_id=pergunta.pk))
+    assert len(openalex) == antes
