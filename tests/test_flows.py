@@ -890,3 +890,25 @@ def test_gerado_de_novo_nasce_como_versao_do_publicado(tenant_com_acervo, conexa
     nova = Article.objects.exclude(pk=publicado.pk).get(topic=topic)
     assert nova.previous_version == publicado and nova.version_number == 2
     assert nova.remote_id == "r9" and nova.slug == "efeito" and nova.e_atualizacao
+
+
+@pytest.mark.django_db
+def test_rascunho_gerado_de_novo_e_arquivado_quando_o_novo_nasce(
+    tenant_com_acervo, conexao, monkeypatch
+):
+    from apps.content.tasks import gerar_artigo
+
+    modelo = ModeloFalso(ROTEIRO_DO_ARTIGO)
+    monkeypatch.setattr("apps.content.inference.get_provider", lambda *a, **k: modelo)
+    topic = Topic.objects.create(title="Efeito no metabolismo")
+    rascunho = Article.objects.create(
+        title="Efeito", topic=topic, status=Article.Status.PENDING_REVIEW
+    )
+
+    _rodar_ate_o_fim(str(gerar_artigo(topic, substitui=str(rascunho.pk)).pk))
+
+    rascunho.refresh_from_db()
+    novo = Article.objects.exclude(pk=rascunho.pk).get(topic=topic)
+    assert rascunho.status == Article.Status.REJECTED
+    assert rascunho.thesis_json["substituido_por"] == str(novo.pk)
+    assert novo.previous_version is None

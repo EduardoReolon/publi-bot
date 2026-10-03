@@ -77,8 +77,13 @@
   {% endif %}
   {% if gerando_de_novo %}
     <div class="aviso {% if gerando_de_novo.etapa == 'erro' %}ruim{% else %}espera{% endif %}">
-      <strong>{% translate "Uma versao nova deste artigo esta sendo preparada." %}</strong>
-      {% translate "Esta pagina e a versao que esta no ar: ela continua publicada e nao muda. Quando o texto novo ficar pronto, ele aparece como versao seguinte, para voce revisar; so ao aprovar ele substitui esta no site." %}
+      {% if gerando_de_novo.publicado %}
+        <strong>{% translate "Uma versao nova deste artigo esta sendo preparada." %}</strong>
+        {% translate "Esta pagina e a versao que esta no ar: ela continua publicada e nao muda. Quando o texto novo ficar pronto, ele aparece como versao seguinte, para voce revisar; so ao aprovar ele substitui esta no site." %}
+      {% else %}
+        <strong>{% translate "Um texto novo, do zero, esta sendo preparado para substituir este rascunho." %}</strong>
+        {% translate "Ate ele ficar pronto, este continua aqui. Quando o novo for criado, este rascunho e arquivado (fica como rejeitado, para consulta) e o novo aparece na pauta para voce revisar." %}
+      {% endif %}
       <div style="margin-top:.4rem">
       {% if gerando_de_novo.etapa == 'pesquisa' %}
         {% blocktranslate trimmed with h=gerando_de_novo.desde|time:"H:i" %}
@@ -105,6 +110,14 @@
         {% endblocktranslate %}
       {% endif %}
       </div>
+    </div>
+  {% endif %}
+  {% if not gerando_de_novo and artigo.topic_id and artigo.status == 'pending_review' or not gerando_de_novo and artigo.topic_id and artigo.status == 'push_failed' or not gerando_de_novo and artigo.topic_id and artigo.status == 'approved_scheduled' %}
+    <div class="pre-visualizacao" style="margin-bottom:.6rem">
+      {% translate "Nao gostou deste texto?" %}
+      <form method="post" action="{% url 'content:gerar_de_novo' artigo.pk %}" style="display:inline" onsubmit="return confirm('{% translate "Gerar um texto novo do zero? Este rascunho continua aqui ate o novo ficar pronto; depois e arquivado." %}')">{% csrf_token %}
+        <button type="submit" class="pequeno discreto" title="{% if artigo.fluxo == 'pesquisa' %}{% translate 'Nova pesquisa de artigos e texto escrito do zero, com as regras atuais' %}{% else %}{% translate 'Texto escrito do zero, com as fontes e as regras atuais' %}{% endif %}">{% translate "Gerar de novo do zero" %}</button>
+      </form>
     </div>
   {% endif %}
   {% if artigo.status == 'published' or artigo.status == 'superseded' %}

@@ -117,53 +117,68 @@ def disparar(pauta, fluxo: str) -> tuple[str, str]:
     }
 
 
+# Rascunho que pode ser refeito do zero (ainda nao publicado, ja escrito).
+RASCUNHOS = (
+    Article.Status.PENDING_REVIEW,
+    Article.Status.PUSH_FAILED,
+    Article.Status.APPROVED_SCHEDULED,
+)
+
+
 def gerar_de_novo(artigo) -> tuple[str, str]:
-    """Gera o artigo de novo, do zero, como versao nova do publicado: mesmas
-    regras de uma geracao nova (e as atuais: conferencia de citacoes, filtro de
-    area). No B, com uma pesquisa de artigos nova."""
+    """Gera o artigo de novo, do zero, com as regras atuais (conferencia de
+    citacoes, filtro de area...). No B, com uma pesquisa de artigos nova.
+
+    * publicado -> versao nova (mesma pagina; so substitui ao aprovar);
+    * rascunho -> texto novo que arquiva este quando nascer (ate la, este fica).
+    """
     from apps.content.tasks import gerar_artigo
 
     pauta = artigo.topic
     fluxo = artigo.fluxo or A
-    if pauta is None or artigo.status != Article.Status.PUBLISHED or not artigo.remote_id:
-        return "error", _("So artigo publicado, ligado a uma pauta, pode ser gerado de novo.")
-    if artigo.versao_em_aberto is not None:
+    publicado = artigo.status == Article.Status.PUBLISHED and bool(artigo.remote_id)
+    if pauta is None or not (publicado or artigo.status in RASCUNHOS):
+        return "error", _(
+            "So artigo publicado ou ja escrito (ligado a uma pauta) pode ser gerado de novo."
+        )
+    if publicado and artigo.versao_em_aberto is not None:
         return "info", _("Ja ha uma versao nova deste artigo em andamento.")
     if em_andamento(pauta, fluxo) is not None:
         return "info", _("Ja ha uma geracao desta pauta em andamento.")
+    chave = "versao_de" if publicado else "substitui"
     if fluxo == B:
         from apps.knowledge.referencias import registrar
 
         pesquisa = situacao_da_pesquisa(pauta)
         dados = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
-        if dados.get("versao_de") == str(artigo.pk) and dados.get("situacao") == "pronta":
+        if dados.get(chave) == str(artigo.pk) and dados.get("situacao") == "pronta":
             from apps.knowledge.pesquisa import pedidos_em_aberto
 
             if pedidos_em_aberto(pauta):
                 return "info", _(
-                    "A pesquisa ja terminou e a versao nova espera os PDFs que o texto "
-                    "pediu: abra a pauta, em 'Conferir os PDFs pedidos', e envie ou siga "
-                    "com o resumo. Ela e gerada sozinha quando o ultimo for resolvido."
+                    "A pesquisa ja terminou e o texto novo espera os PDFs que ela "
+                    "pediu: abra 'Conferir os PDFs pedidos' e envie ou siga com o "
+                    "resumo. Ele e gerado sozinho quando o ultimo for resolvido."
                 )
         if pesquisa["rodando"] and not pesquisa["parada"]:
             # Segundo clique: a pesquisa ja esta na fila; nada novo e disparado.
             return "info", _(
-                "Ja esta pesquisando os artigos para a versao nova (desde %(h)s). "
-                "Ela e gerada sozinha quando a pesquisa terminar."
+                "Ja esta pesquisando os artigos para o texto novo (desde %(h)s). "
+                "Ele e gerado sozinho quando a pesquisa terminar."
             ) % {
                 "h": timezone.localtime(pesquisa["desde"]).strftime("%H:%M")
                 if pesquisa["desde"]
                 else "-"
             }
 
-        registrar(pauta, "pesquisa", versao_de=str(artigo.pk))
+        registrar(pauta, "pesquisa", **{"versao_de": "", "substitui": "", chave: str(artigo.pk)})
         iniciar_pesquisa(pauta, gerar_depois=True)
         return "success", _(
-            "Pesquisando artigos de novo; a versao nova e gerada sozinha quando a "
+            "Pesquisando artigos de novo; o texto novo e gerado sozinho quando a "
             "pesquisa terminar (alguns minutos)."
         )
-    trabalho = gerar_artigo(pauta, fluxo=fluxo, versao_de=str(artigo.pk))
-    return "success", _("Gerando a versao nova (trabalho %(id)s).") % {"id": str(trabalho.pk)[:8]}
+    trabalho = gerar_artigo(pauta, fluxo=fluxo, **{chave: str(artigo.pk)})
+    return "success", _("Gerando o texto novo (trabalho %(id)s).") % {"id": str(trabalho.pk)[:8]}
 
 
 def _disparar_b(pauta) -> tuple[str, str]:

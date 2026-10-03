@@ -186,6 +186,17 @@ def _criar_artigo_do_consenso(job, topic, tese, trechos, padrao):
     )
     registrar_citacoes(article, trechos)
 
+    # Gerado de novo do zero sobre um rascunho: o rascunho antigo sai de cena
+    # agora que o novo existe (antes disso, continuava la para ser lido).
+    substitui = (job.step_payloads or {}).get("substitui")
+    if substitui:
+        antigo = Article.objects.filter(pk=substitui).exclude(pk=article.pk).first()
+        if antigo is not None and antigo.status != Article.Status.PUBLISHED:
+            antigo.status = Article.Status.REJECTED
+            antigo.scheduled_for = None
+            antigo.thesis_json = {**(antigo.thesis_json or {}), "substituido_por": str(article.pk)}
+            antigo.save(update_fields=["status", "scheduled_for", "thesis_json", "updated_at"])
+
     # A pauta vira USED aqui, e nao no fim: a partir do momento em que existe
     # um artigo ligado a ela, sugeri-la de novo produziria dois textos sobre o
     # mesmo tema competindo entre si.
