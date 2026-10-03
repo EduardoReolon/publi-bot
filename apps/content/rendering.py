@@ -157,13 +157,28 @@ def validar_saida_do_modelo(texto: str, *, max_marcadores: int | None = 2) -> li
     return distintos
 
 
+def limitar_fontes(texto: str, maximo: int) -> tuple[str, list[int]]:
+    """Mais de `maximo` fontes distintas: ficam as mais citadas (empate, a que
+    aparece antes) e o marcador das outras sai do texto, que continua inteiro.
+    Antes, o trecho inteiro era descartado e o modelo tentava de novo, e ele
+    repetia o excesso ate o trabalho falhar. Devolve (texto, fontes tiradas)."""
+    marcadores = [int(n) for n in PADRAO_MARCADOR.findall(texto)]
+    ordem = sorted(dict.fromkeys(marcadores), key=lambda i: -marcadores.count(i))
+    tiradas = ordem[maximo:]
+    for indice in tiradas:
+        texto = _remover_marcador(texto, indice)
+    return texto, tiradas
+
+
 # Titulo da lista de referencias, quando os links vao para o fim do texto.
 TITULO_DAS_REFERENCIAS = "Referências"
 
 
 # O que costuma anteceder o marcador numa atribuicao ("segundo [[FONTE_1]]").
 # Numa fonte interna o marcador some, e a preposicao sozinha deixaria "segundo ,".
-_PREFIXO_DE_ATRIBUICAO = r"(?:\b(?:segundo|conforme|de acordo com|according to|seg[uú]n)\s+)?"
+_PREFIXO_DE_ATRIBUICAO = (
+    r"(?P<prefixo>\b(?:segundo|conforme|de acordo com|according to|seg[uú]n)\s+)?"
+)
 
 
 _INICIO_DE_FRASE = "\x00"
@@ -177,7 +192,9 @@ def _remover_marcador(texto: str, indice: int) -> str:
     duplo.
     """
     padrao = re.compile(
-        _PREFIXO_DE_ATRIBUICAO + re.escape(f"[[FONTE_{indice}]]") + r"[ \t]*", re.IGNORECASE
+        # Com o "segundo", a virgula que fechava a atribuicao sai junto.
+        _PREFIXO_DE_ATRIBUICAO + re.escape(f"[[FONTE_{indice}]]") + r"(?(prefixo),?)[ \t]*",
+        re.IGNORECASE,
     )
 
     def trocar(achado: re.Match) -> str:

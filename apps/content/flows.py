@@ -30,7 +30,11 @@ from django.utils.text import slugify
 from apps.content.dados_da_pauta import com_dados
 from apps.content.inference import executar_prompt
 from apps.content.models import Article, ArticleSection, Author, Question, Topic
-from apps.content.rendering import normalizar_marcadores, validar_saida_do_modelo
+from apps.content.rendering import (
+    limitar_fontes,
+    normalizar_marcadores,
+    validar_saida_do_modelo,
+)
 from apps.content.services import (
     SemEmbasamentoCentral,
     SemFontesSuficientes,
@@ -49,6 +53,9 @@ from apps.knowledge.models import RetrievalQuery, SuperChunk
 from apps.knowledge.services import recuperar
 from apps.ops.models import GenerationJob
 from apps.ops.orchestrator import Continuar, Fluxo, Passo, PassoAdiado, registrar_fluxo
+
+# A regra do prompt (REGRA_DOS_LINKS): no maximo 2 fontes diferentes por secao.
+MAXIMO_DE_FONTES_POR_SECAO = 2
 
 logger = logging.getLogger("publibot.content")
 
@@ -354,9 +361,14 @@ def passo_redigir_secoes(job: GenerationJob):
     # A validacao de link roda por secao, e nao so na montagem: uma URL escrita
     # pelo modelo precisa derrubar a secao que a produziu, e nao um artigo
     # inteiro que ja custou cinco outras chamadas.
-    texto = normalizar_marcadores(resultado.texto)
+    original = normalizar_marcadores(resultado.texto)
+    texto, tiradas = limitar_fontes(original, MAXIMO_DE_FONTES_POR_SECAO)
     usadas = validar_saida_do_modelo(texto)
     _exigir_fonte_na_secao_central(secao, usadas)
+    if tiradas:
+        from apps.content.citacoes import registrar_limite
+
+        registrar_limite(article, secao, original, tiradas)
 
     secao.body_markdown = texto.strip()
     secao.status = ArticleSection.Status.WRITTEN
@@ -453,6 +465,8 @@ def passo_abertura_e_fecho(job: GenerationJob) -> dict:
     abertura = str(moldura.get("abertura") or "").strip()
     fecho = str(moldura.get("fecho") or "").strip()
 
+    abertura = limitar_fontes(abertura, MAXIMO_DE_FONTES_POR_SECAO)[0]
+    fecho = limitar_fontes(fecho, MAXIMO_DE_FONTES_POR_SECAO)[0]
     validar_saida_do_modelo(f"{abertura}\n\n{fecho}")
 
     tese = dict(article.thesis_json or {})

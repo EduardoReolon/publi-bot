@@ -165,6 +165,22 @@ def test_excesso_de_fontes_e_recusado():
         validar_saida_do_modelo("[[FONTE_1]] [[FONTE_2]] [[FONTE_3]]")
 
 
+def test_excesso_de_fontes_perde_so_o_marcador_da_menos_citada():
+    """O modelo repetia o excesso a cada tentativa e o artigo falhava inteiro:
+    agora ficam as 2 mais citadas e o resto do texto nao muda."""
+    from apps.content.rendering import limitar_fontes
+
+    texto = (
+        "A taxa caiu [[FONTE_1]]. Segundo [[FONTE_3]], o custo subiu. "
+        "O prazo encurtou [[FONTE_2]][[FONTE_1]]. A demanda cresceu [[FONTE_2]]."
+    )
+    novo, tiradas = limitar_fontes(texto, 2)
+    assert tiradas == [3]
+    assert "O custo subiu." in novo and "FONTE_3" not in novo
+    assert validar_saida_do_modelo(novo) == [1, 2]
+    assert limitar_fontes("So [[FONTE_1]].", 2) == ("So [[FONTE_1]].", [])
+
+
 def test_substituicao_usa_a_url_do_banco():
     fontes = {1: Fonte(url="https://pubmed.gov/1", anchor="Silva et al., 2024")}
     md = substituir_marcadores("De acordo com [[FONTE_1]], o achado...", fontes)

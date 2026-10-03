@@ -145,7 +145,9 @@ def conferir_secao(article, secao, trechos: list, *, site=None, job=None) -> lis
     secao.save(update_fields=["body_markdown", "citacoes_conferidas", "updated_at"])
     if registro:
         article.conferencia_citacoes = [
-            r for r in (article.conferencia_citacoes or []) if r.get("secao") != secao.order
+            r
+            for r in (article.conferencia_citacoes or [])
+            if r.get("secao") != secao.order or r.get("acao") == "limite"
         ] + registro
         article.save(update_fields=["conferencia_citacoes"])
     return registro
@@ -208,6 +210,28 @@ def _conferir_frase(frase: str, proximidade, trechos: list, *, site, job) -> tup
     return sem, {"frase": sem, "acao": "sem_fonte", "de": validas}
 
 
+def registrar_limite(article, secao, original: str, tiradas: list[int]) -> None:
+    """As frases que perderam a unica citacao pelo limite de fontes da secao
+    vao para a revisao, como aviso: a afirmacao ficou sem fonte no texto."""
+    tiradas_txt = {str(n) for n in tiradas}
+    frases = [
+        re.sub(r"\s+([.!?,;:])", r"\1", _sem_marcadores(f))
+        for f in frases_citadas(original)
+        if set(PADRAO_MARCADOR.findall(f)) <= tiradas_txt
+    ]
+    if not frases:
+        return
+    article.conferencia_citacoes = [
+        r
+        for r in (article.conferencia_citacoes or [])
+        if not (r.get("secao") == secao.order and r.get("acao") == "limite")
+    ] + [
+        {"secao": secao.order, "frase": f, "acao": "limite", "de": tiradas, "aceita": False}
+        for f in frases
+    ]
+    article.save(update_fields=["conferencia_citacoes"])
+
+
 def pendencias(article) -> list[str]:
     """Afirmacao sem fonte ainda no texto e nao aceita: bloqueia a aprovacao."""
     corpo = " ".join((article.body_markdown or "").split())
@@ -233,6 +257,11 @@ NOTAS = {
         "atencao",
         "A frase original dizia algo que o estudo nao sustenta. Foi reescrita para dizer so "
         "o que ele diz. Confira se o sentido continua bom.",
+    ),
+    "limite": (
+        "atencao",
+        "Esta frase citava uma fonte a mais do que a secao permite (2), e a citacao "
+        "saiu. Confira se ela se sustenta sem a fonte, ou edite.",
     ),
     "sem_fonte": (
         "urgente",
@@ -262,7 +291,8 @@ def anotar(corpo_html: str, registro: list[dict]) -> tuple[str, list[dict]]:
         inicio = html_mod.escape(alvo[:45], quote=False)
         pos = corpo_html.find(inicio) if len(inicio) >= 20 else -1
         if pos >= 0:
-            fim = _FIM.search(corpo_html, pos + len(inicio))
+            # -1: frase curta cabe inteira no inicio, com o ponto final.
+            fim = _FIM.search(corpo_html, pos + len(inicio) - 1)
             final = fim.end() if fim else -1
             trecho = corpo_html[pos:final] if final > 0 else ""
             equilibrado = trecho.count("<a ") == trecho.count("</a>") and not re.search(
