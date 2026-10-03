@@ -142,6 +142,8 @@ MIDDLEWARE = [
     # os subdominios, sem isto qualquer pessoa autenticada entraria no painel
     # de qualquer tenant apenas digitando o subdominio.
     "apps.accounts.middleware.TenantAccessMiddleware",
+    # Datas da tela no fuso do site do tenant (o banco continua em UTC).
+    "apps.accounts.middleware.FusoDoSiteMiddleware",
 ]
 
 # O roteamento difere entre a home (apex) e um tenant (subdominio): a home tem

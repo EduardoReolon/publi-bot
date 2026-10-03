@@ -124,3 +124,35 @@ class TenantResolutionMiddleware(TenantMainMiddleware):
             )
 
         return super().no_tenant_found(request, hostname)
+
+
+class FusoDoSiteMiddleware:
+    """As datas da tela no fuso do site do tenant (o banco guarda em UTC).
+
+    Sem isto, "02/10 20:50" aparece para quem editou as 17:50 em Brasilia. No
+    schema public (sem site), fica o fuso padrao.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]):
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        import zoneinfo
+
+        from django.utils import timezone
+
+        fuso = None
+        if connection.schema_name != "public":
+            try:
+                from apps.integrations.models import Site
+
+                nome = Site.objects.values_list("site_timezone", flat=True).first()
+                fuso = zoneinfo.ZoneInfo(nome) if nome else None
+            except Exception:
+                fuso = None
+        if fuso is not None:
+            timezone.activate(fuso)
+        try:
+            return self.get_response(request)
+        finally:
+            timezone.deactivate()

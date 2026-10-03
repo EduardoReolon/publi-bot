@@ -13,6 +13,7 @@ e o B sem pesquisa comeca por ela e gera sozinho quando ela terminar.
 from __future__ import annotations
 
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from apps.content.models import Article, Fluxo
@@ -132,6 +133,18 @@ def gerar_de_novo(artigo) -> tuple[str, str]:
         return "info", _("Ja ha uma geracao desta pauta em andamento.")
     if fluxo == B:
         from apps.knowledge.referencias import registrar
+
+        pesquisa = situacao_da_pesquisa(pauta)
+        if pesquisa["rodando"] and not pesquisa["parada"]:
+            # Segundo clique: a pesquisa ja esta na fila; nada novo e disparado.
+            return "info", _(
+                "Ja esta pesquisando os artigos para a versao nova (desde %(h)s). "
+                "Ela e gerada sozinha quando a pesquisa terminar."
+            ) % {
+                "h": timezone.localtime(pesquisa["desde"]).strftime("%H:%M")
+                if pesquisa["desde"]
+                else "-"
+            }
 
         registrar(pauta, "pesquisa", versao_de=str(artigo.pk))
         iniciar_pesquisa(pauta, gerar_depois=True)

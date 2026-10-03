@@ -23,7 +23,15 @@ def trabalhos(request: HttpRequest) -> HttpResponse:
     if situacao:
         consulta = consulta.filter(status=situacao)
 
+    from apps.content.fluxos import situacao_da_pesquisa
+    from apps.content.models import Topic
     from apps.integrations.models import PublishAttempt
+
+    pesquisas = []
+    for pauta in Topic.objects.filter(
+        busca_de_fontes__pesquisa__situacao__in=["na_fila", "pesquisando"]
+    ):
+        pesquisas.append({"pauta": pauta, **situacao_da_pesquisa(pauta)})
 
     return render(
         request,
@@ -31,6 +39,7 @@ def trabalhos(request: HttpRequest) -> HttpResponse:
         {
             "aba": "operacao",
             "trabalhos": consulta[:100],
+            "pesquisas": pesquisas,
             "situacao": situacao,
             "situacoes": GenerationJob.Status.choices,
             "inferencias": InferenceLog.objects.select_related("connection").order_by(

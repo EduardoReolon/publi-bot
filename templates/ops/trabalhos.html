@@ -12,6 +12,18 @@
     {% endblocktranslate %}
   </p>
 
+  {% if pesquisas %}
+    <h2>{% translate "Pesquisas de artigos em andamento" %}</h2>
+    <p class="pre-visualizacao">{% translate "A pesquisa do fluxo B roda antes da geracao; quando termina, o texto vira um trabalho aqui embaixo." %}</p>
+    <ul class="lista">
+      {% for p in pesquisas %}
+        <li><a href="{% url 'content:pauta' p.pauta.pk %}">{{ p.pauta.title }}</a>
+          <span class="selo {% if p.parada %}ruim{% else %}espera{% endif %}">{% if p.parada %}{% translate "parada" %}{% elif p.situacao == 'na_fila' %}{% translate "na fila" %}{% else %}{% translate "pesquisando" %}{% endif %}</span>
+          {% if p.desde %}<span class="pre-visualizacao">{% translate "desde" %} {{ p.desde|date:"d/m H:i" }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
   <p class="pre-visualizacao">
     <a href="{% url 'operacao:trabalhos' %}">{% translate "Todos" %}</a>
     {% for valor, rotulo in situacoes %}

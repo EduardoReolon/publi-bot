@@ -192,3 +192,43 @@ def test_gerar_de_novo_vira_versao_do_publicado(ambiente, monkeypatch):  # noqa:
     assert nivel == "success"
     pesquisa = pauta.busca_de_fontes["pesquisa"]
     assert pesquisa["versao_de"] == str(publicado.pk) and pesquisa["gerar_depois"]
+
+
+@pytest.mark.django_db
+def test_segundo_clique_nao_dispara_outra_pesquisa(ambiente, monkeypatch):  # noqa: F811
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.knowledge.tasks import pesquisar_pauta
+
+    pedidos = []
+    monkeypatch.setattr(pesquisar_pauta, "delay", lambda pk: pedidos.append(pk))
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Crescimento linear")
+    publicado = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PUBLISHED,
+        remote_id="r1",
+    )
+    assert fluxos.gerar_de_novo(publicado)[0] == "success"
+    assert fluxos.gerar_de_novo(publicado)[0] == "info"
+
+    pagina = client.get(
+        reverse("content:revisar", args=[publicado.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Etapa 1 de 2" in pagina
+    operacao = client.get(
+        reverse("operacao:trabalhos", urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Pesquisas de artigos em andamento" in operacao and "Crescimento linear" in operacao
+
+
+def test_frase_central_e_a_que_mais_se_repete():
+    import numpy as np
+
+    from apps.content.services import _centralidade
+
+    vetores = np.array([[1, 0], [0.9, 0.1], [0.95, 0.05], [0, 1]])
+    nota = _centralidade(vetores)
+    assert nota.argmin() == 3  # a frase que destoa das outras e a menos central

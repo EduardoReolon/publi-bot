@@ -659,6 +659,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "indexacao_ligada": _indexacao_ligada(artigo),
         "dados_citados": [d for d in artigo.dados_usados or [] if d.get("citado")],
         "citacoes_conferidas": _resumo_da_conferencia(artigo),
+        "gerando_de_novo": _gerando_de_novo(artigo),
         "sem_oferta": not medir("oferta", texto_da_oferta),
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": medir("proximo_horario", _proximo_horario),
@@ -694,6 +695,24 @@ def _indexacao_ligada(artigo) -> bool:
     from apps.radar.indexacao import ligada
 
     return ligada()
+
+
+def _gerando_de_novo(artigo) -> dict | None:
+    """O 'Gerar de novo do zero' em curso para este artigo publicado, se houver."""
+    if artigo.status != Article.Status.PUBLISHED or artigo.topic_id is None:
+        return None
+    from apps.content import fluxos
+
+    if artigo.versao_em_aberto is not None:
+        return None  # a versao nova ja existe: o aviso de versao em aberto cobre
+    pesquisa = fluxos.situacao_da_pesquisa(artigo.topic)
+    versao_de = ((artigo.topic.busca_de_fontes or {}).get("pesquisa") or {}).get("versao_de")
+    if versao_de == str(artigo.pk) and pesquisa["rodando"]:
+        return {"etapa": "pesquisa", "desde": pesquisa["desde"], "parada": pesquisa["parada"]}
+    trabalho = fluxos.em_andamento(artigo.topic, artigo.fluxo or fluxos.A)
+    if trabalho is not None and (trabalho.step_payloads or {}).get("versao_de") == str(artigo.pk):
+        return {"etapa": "texto", "desde": trabalho.created_at, "passo": trabalho.current_step}
+    return None
 
 
 def _resumo_da_conferencia(artigo) -> dict:
