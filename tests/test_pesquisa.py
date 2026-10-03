@@ -583,3 +583,11 @@ def test_pergunta_e_respondida_tambem_com_a_pesquisa(ambiente, openalex, modelo)
     antes = len(openalex)
     flows.passo_recuperar_para_pergunta(SimpleNamespace(target_object_id=pergunta.pk))
     assert len(openalex) == antes
+
+
+def test_autores_viram_et_al_na_citacao():
+    from apps.knowledge.services import autores_para_citacao
+
+    assert autores_para_citacao("Ana Silva, Joao Souza, Rui Lima, Bia Reis") == "Ana Silva et al."
+    assert autores_para_citacao("Silva, A.") == "Silva, A."
+    assert autores_para_citacao("Silva et al.") == "Silva et al."

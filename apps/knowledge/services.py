@@ -101,6 +101,17 @@ def formatar_autores(autores: list[str]) -> str:
     return f"{limpos[0]} et al."
 
 
+def autores_para_citacao(texto: str) -> str:
+    """O campo de autores ja gravado, na forma de citacao. Lista separada por
+    virgula (como vem do OpenAlex: "Ana Silva, Joao Souza, ...") com 3 ou mais
+    nomes vira "Ana Silva et al."; ja formatado, ou com uma virgula so (pode
+    ser "Silva, A."), fica como esta."""
+    texto = (texto or "").strip()
+    if "et al" in texto or texto.count(",") < 2:
+        return texto
+    return formatar_autores(texto.replace(";", ",").split(","))
+
+
 @dataclass(frozen=True)
 class ResultadoDeIngestao:
     document: Document
@@ -183,7 +194,7 @@ def campos_da_fonte(document: Document) -> dict:
     categoria = document.category
     return {
         "source_title": document.title,
-        "source_authors": document.authors,
+        "source_authors": autores_para_citacao(document.authors)[:300],
         "source_year": document.year,
         "source_url": document.source_url,
         "source_authority": document.authority_score,

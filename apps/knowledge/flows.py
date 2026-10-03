@@ -369,7 +369,7 @@ def completar_pelo_doi(sugestoes: dict) -> dict:
     return {
         **sugestoes,
         "title": trabalho.titulo[:500],
-        "authors": (", ".join(trabalho.autores) or sugestoes["authors"])[:300],
+        "authors": (formatar_autores(trabalho.autores) or sugestoes["authors"])[:300],
         "year": trabalho.ano or sugestoes["year"],
         "fonte": "openalex",
     }
