@@ -273,3 +273,36 @@ def test_gerar_de_novo_esperando_pdfs_mostra_o_motivo(ambiente, monkeypatch):  #
     monkeypatch.setattr(transaction, "on_commit", lambda f: f())
     pesquisa._depois_dos_pedidos([pauta])
     assert disparos == [str(pauta.pk)]
+
+
+@pytest.mark.django_db
+def test_rascunho_do_b_pode_ser_gerado_de_novo_e_pesquisar_pela_pauta_e_barrado(
+    ambiente,  # noqa: F811
+    monkeypatch,
+):
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.knowledge.tasks import pesquisar_pauta
+
+    pedidos = []
+    monkeypatch.setattr(pesquisar_pauta, "delay", lambda pk: pedidos.append(pk))
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Crescimento linear")
+    rascunho = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PENDING_REVIEW,
+    )
+
+    # Pela pauta, nao: a pesquisa nova sem texto novo deixaria as referencias trocadas.
+    client.post(reverse("content:pesquisar_artigos", args=[pauta.pk], urlconf="core.urls_tenants"))
+    assert pedidos == []
+
+    assert fluxos.gerar_de_novo(rascunho)[0] == "success"
+    pauta.refresh_from_db()
+    assert pauta.busca_de_fontes["pesquisa"]["substitui"] == str(rascunho.pk)
+    pagina = client.get(
+        reverse("content:revisar", args=[rascunho.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "substituir este rascunho" in pagina

@@ -389,6 +389,20 @@ def pesquisar_artigos(request: HttpRequest, pk) -> HttpResponse:
     from apps.content.fluxos import iniciar_pesquisa
 
     pauta = get_object_or_404(Topic, pk=pk)
+    from apps.content.fluxos import B, artigo_do_fluxo
+
+    ativo = artigo_do_fluxo(pauta, B)
+    if ativo is not None:
+        # Pesquisar de novo com um artigo do B ativo deixaria as referencias da
+        # pauta diferentes das do artigo: refazer e pelo artigo.
+        messages.info(
+            request,
+            _(
+                "Esta pauta ja tem artigo no B. Para pesquisar de novo, use 'Gerar de novo "
+                "do zero' no artigo: a pesquisa nova vem junto com o texto novo."
+            ),
+        )
+        return redirect("content:revisar", pk=ativo.pk)
     iniciar_pesquisa(pauta, gerar_depois=None)
     messages.success(
         request,
@@ -698,31 +712,45 @@ def _indexacao_ligada(artigo) -> bool:
 
 
 def _gerando_de_novo(artigo) -> dict | None:
-    """O 'Gerar de novo do zero' em curso para este artigo publicado, se houver."""
-    if artigo.status != Article.Status.PUBLISHED or artigo.topic_id is None:
-        return None
+    """O 'Gerar de novo do zero' em curso para este artigo, se houver."""
     from apps.content import fluxos
 
-    if artigo.versao_em_aberto is not None:
+    publicado = artigo.status == Article.Status.PUBLISHED
+    if artigo.topic_id is None or not (publicado or artigo.status in fluxos.RASCUNHOS):
+        return None
+    if publicado and artigo.versao_em_aberto is not None:
         return None  # a versao nova ja existe: o aviso de versao em aberto cobre
+    chave = "versao_de" if publicado else "substitui"
+    meu = str(artigo.pk)
+    base = {"publicado": publicado}
     pesquisa = fluxos.situacao_da_pesquisa(artigo.topic)
     dados = (artigo.topic.busca_de_fontes or {}).get("pesquisa") or {}
-    versao_de = dados.get("versao_de")
-    if versao_de == str(artigo.pk) and pesquisa["rodando"]:
+    pedido = dados.get(chave) == meu
+    if pedido and pesquisa["rodando"]:
         return {
+            **base,
             "etapa": "pesquisa",
             "desde": pesquisa["desde"],
             "parada": pesquisa["parada"],
             "aviso": dados.get("erro", ""),  # "OpenAlex fora; tentando de novo em 10 min"
         }
-    if versao_de == str(artigo.pk) and dados.get("situacao") == "erro":
-        return {"etapa": "erro", "motivo": dados.get("erro", "")}
-    if versao_de == str(artigo.pk) and fluxos.em_andamento(artigo.topic, fluxos.B) is None:
+    if pedido and dados.get("situacao") == "erro":
+        return {**base, "etapa": "erro", "motivo": dados.get("erro", "")}
+    trabalho = fluxos.em_andamento(artigo.topic, artigo.fluxo or fluxos.A)
+    if trabalho is not None and (trabalho.step_payloads or {}).get(chave) == meu:
+        return {
+            **base,
+            "etapa": "texto",
+            "desde": trabalho.created_at,
+            "passo": trabalho.current_step,
+        }
+    if pedido and trabalho is None:
         # A pesquisa terminou e a geracao nao comecou: o motivo (PDFs pedidos,
         # pesquisa sem resultado, erro) fica visivel aqui, e nao so na pauta.
         from apps.knowledge.pesquisa import pedidos_em_aberto, pronta_para_gerar
 
         return {
+            **base,
             "etapa": "esperando",
             "motivo": dados.get("erro")
             or pronta_para_gerar(artigo.topic)
@@ -730,9 +758,6 @@ def _gerando_de_novo(artigo) -> dict | None:
             "pdfs": pedidos_em_aberto(artigo.topic),
             "pauta": artigo.topic,
         }
-    trabalho = fluxos.em_andamento(artigo.topic, artigo.fluxo or fluxos.A)
-    if trabalho is not None and (trabalho.step_payloads or {}).get("versao_de") == str(artigo.pk):
-        return {"etapa": "texto", "desde": trabalho.created_at, "passo": trabalho.current_step}
     return None
 
 
