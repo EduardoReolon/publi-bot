@@ -84,6 +84,10 @@
           depois o texto comeca a ser escrito e aparece em Operacao.
         {% endblocktranslate %}
         {% if gerando_de_novo.parada %}<div>{% translate "A pesquisa parece parada; ela e recomecada sozinha na proxima varredura." %}</div>{% endif %}
+      {% elif gerando_de_novo.etapa == 'esperando' %}
+        {% translate "A pesquisa de artigos terminou, mas o texto ainda nao comecou:" %}
+        <strong>{{ gerando_de_novo.motivo|default:_("motivo desconhecido; clique em Gerar de novo do zero para tentar outra vez.") }}</strong>
+        {% if gerando_de_novo.pdfs %}<a class="botao pequeno" href="{% url 'content:pdfs_da_pesquisa' gerando_de_novo.pauta.pk %}">{% translate "Conferir os PDFs pedidos" %}</a>{% endif %}
       {% else %}
         {% blocktranslate trimmed with p=gerando_de_novo.passo %}
           Etapa 2 de 2: escrevendo o texto (passo {{ p }}). A versao nova aparece aqui quando o artigo for criado.
