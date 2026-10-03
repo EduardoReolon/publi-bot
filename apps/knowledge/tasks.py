@@ -244,9 +244,9 @@ def reenfileirar_vetorizacoes() -> int:
 
 
 def _reenfileirar_tudo() -> int:
-    from apps.content.fluxos import pesquisas_paradas
+    from apps.content.fluxos import geracoes_esperando, pesquisas_paradas
 
-    return reenfileirar_parados() + pesquisas_paradas()
+    return reenfileirar_parados() + pesquisas_paradas() + geracoes_esperando()
 
 
 @shared_task(bind=True, max_retries=3)

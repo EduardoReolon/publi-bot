@@ -754,7 +754,7 @@ def _gerando_de_novo(artigo) -> dict | None:
             "etapa": "esperando",
             "motivo": dados.get("erro")
             or pronta_para_gerar(artigo.topic)
-            or dados.get("erro_ao_gerar", ""),
+            or _("tudo pronto (PDFs resolvidos); o texto deveria ter comecado."),
             "pdfs": pedidos_em_aberto(artigo.topic),
             "pauta": artigo.topic,
         }
@@ -1086,6 +1086,32 @@ def nova_versao(request: HttpRequest, pk) -> HttpResponse:
         % {"n": nova.version_number},
     )
     return redirect("content:revisar", pk=nova.pk)
+
+
+@login_required
+@require_POST
+def comecar_texto_novo(request: HttpRequest, pk) -> HttpResponse:
+    """A pesquisa terminou e os PDFs foram resolvidos, mas o texto nao comecou:
+    comeca agora (ou diz por que nao)."""
+    from apps.content import fluxos
+    from apps.content.tasks import gerar_b_quando_pronta
+    from apps.knowledge.pesquisa import pronta_para_gerar
+
+    artigo = get_object_or_404(Article, pk=pk)
+    pauta = artigo.topic
+    if pauta is None:
+        return redirect("content:revisar", pk=artigo.pk)
+    motivo = pronta_para_gerar(pauta)
+    if motivo:
+        messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
+    elif not fluxos.geracao_do_b_pendente(pauta):
+        messages.info(
+            request, _("Nao ha texto novo pedido para esta pauta, ou ele ja esta sendo gerado.")
+        )
+    else:
+        gerar_b_quando_pronta.apply(args=[str(pauta.pk)])
+        messages.success(request, _("Texto novo na fila: acompanhe em Operacao."))
+    return redirect("content:revisar", pk=artigo.pk)
 
 
 @login_required
