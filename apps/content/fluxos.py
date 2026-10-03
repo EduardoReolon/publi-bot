@@ -278,6 +278,36 @@ def pesquisas_paradas() -> int:
     return recomecadas
 
 
+def geracao_do_b_pendente(pauta) -> bool:
+    """A pesquisa terminou, alguem pediu o texto (gerar depois, versao nova ou
+    substituir rascunho), nao ha PDF pedido em aberto e nada esta gerando."""
+    from apps.knowledge.pesquisa import pedidos_em_aberto
+
+    dados = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    refazer = dados.get("versao_de") or dados.get("substitui")
+    if dados.get("situacao") != "pronta" or not (dados.get("gerar_depois") or refazer):
+        return False
+    if pedidos_em_aberto(pauta) or em_andamento(pauta, B) is not None:
+        return False
+    return bool(refazer) or artigo_do_fluxo(pauta, B) is None
+
+
+def geracoes_esperando() -> int:
+    """Rede de seguranca da varredura: o aviso de 'ultimo PDF resolvido' que
+    se perdeu (worker reiniciado, tarefa caida) nao deixa o texto parado."""
+    from apps.content.models import Topic
+    from apps.content.tasks import gerar_b_quando_pronta
+
+    if B not in ligados():
+        return 0
+    retomadas = 0
+    for pauta in Topic.objects.filter(busca_de_fontes__pesquisa__situacao="pronta"):
+        if geracao_do_b_pendente(pauta):
+            gerar_b_quando_pronta.delay(str(pauta.pk))
+            retomadas += 1
+    return retomadas
+
+
 def desistir(trabalho, motivo: str) -> None:
     """Encerra uma geracao em curso (placa desligada ha horas, por exemplo):
     o fluxo volta a poder ser gerado. O que ja foi feito fica no trabalho."""

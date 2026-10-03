@@ -306,3 +306,34 @@ def test_rascunho_do_b_pode_ser_gerado_de_novo_e_pesquisar_pela_pauta_e_barrado(
         reverse("content:revisar", args=[rascunho.pk], urlconf="core.urls_tenants")
     ).content.decode()
     assert "substituir este rascunho" in pagina
+
+
+@pytest.mark.django_db
+def test_pdfs_resolvidos_sem_texto_tem_botao_e_varredura(ambiente, monkeypatch):  # noqa: F811
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.content.tasks import gerar_b_quando_pronta
+    from apps.knowledge import pesquisa
+
+    _, _, client = ambiente
+    monkeypatch.setattr(pesquisa, "pedidos_em_aberto", lambda pauta: 0)
+    monkeypatch.setattr(pesquisa, "pronta_para_gerar", lambda pauta: "")
+    pauta = Topic.objects.create(title="Crescimento linear")
+    publicado = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PUBLISHED,
+        remote_id="r1",
+    )
+    pauta.busca_de_fontes = {
+        "pesquisa": {"situacao": "pronta", "versao_de": str(publicado.pk), "gerar_depois": False}
+    }
+    pauta.save()
+
+    url = reverse("content:revisar", args=[publicado.pk], urlconf="core.urls_tenants")
+    assert "Comecar o texto agora" in client.get(url).content.decode()
+
+    disparos = []
+    monkeypatch.setattr(gerar_b_quando_pronta, "delay", lambda pk: disparos.append(pk))
+    assert fluxos.geracoes_esperando() == 1 and disparos == [str(pauta.pk)]
