@@ -10,7 +10,8 @@
         {% else %}
           <a class="botao pequeno" href="{% url 'content:revisar' artigo.pk %}" title="{% translate 'Secoes, fontes, capa e o texto final' %}">{% translate "Abrir o artigo" %}</a>
           <span class="ajuda">{{ artigo.title|truncatechars:70 }}</span>
-          <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{{ artigo.get_status_display }}</span>
+          <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{% if artigo.status == 'published' %}{% translate "no ar" %}{% else %}{{ artigo.get_status_display }}{% endif %}</span>
+          {% if artigo.previous_version_id %}<span class="selo" title="{% translate 'Versao nova do artigo que esta no ar: aprovada, substitui a pagina' %}">{% blocktranslate with n=artigo.version_number %}versao {{ n }}{% endblocktranslate %}</span>{% endif %}
           {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
         {% endif %}
       </div>

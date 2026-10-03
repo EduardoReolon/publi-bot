@@ -709,7 +709,14 @@ def _gerando_de_novo(artigo) -> dict | None:
     dados = (artigo.topic.busca_de_fontes or {}).get("pesquisa") or {}
     versao_de = dados.get("versao_de")
     if versao_de == str(artigo.pk) and pesquisa["rodando"]:
-        return {"etapa": "pesquisa", "desde": pesquisa["desde"], "parada": pesquisa["parada"]}
+        return {
+            "etapa": "pesquisa",
+            "desde": pesquisa["desde"],
+            "parada": pesquisa["parada"],
+            "aviso": dados.get("erro", ""),  # "OpenAlex fora; tentando de novo em 10 min"
+        }
+    if versao_de == str(artigo.pk) and dados.get("situacao") == "erro":
+        return {"etapa": "erro", "motivo": dados.get("erro", "")}
     if versao_de == str(artigo.pk) and fluxos.em_andamento(artigo.topic, fluxos.B) is None:
         # A pesquisa terminou e a geracao nao comecou: o motivo (PDFs pedidos,
         # pesquisa sem resultado, erro) fica visivel aqui, e nao so na pauta.

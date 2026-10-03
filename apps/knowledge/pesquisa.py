@@ -44,6 +44,7 @@ RELACIONADOS_DOS_MELHORES = 3
 RELACIONADOS_POR_ARTIGO = 5
 TRECHOS_DA_PESQUISA = 12
 PAUSA_DA_SEMANTICA = 1.1  # o OpenAlex aceita 1 busca semantica por segundo
+ESPERAS_DO_OPENALEX = (3, 10)  # segundos antes da 2a e da 3a tentativa
 PESOS = {"sentido": 0.6, "citacoes": 0.25, "idade": 0.15}
 FILTRO = "type:article|review,has_abstract:true,is_retracted:false"
 CAMPOS_EXTRAS = ",related_works,relevance_score"
@@ -126,13 +127,26 @@ def _get(params: dict, *, consulta: str, endpoint: str) -> list[dict]:
     from apps.radar.models import ChamadaExterna
 
     params = {**params, "select": CAMPOS + CAMPOS_EXTRAS, **_parametros_da_conta()}
-    try:
-        resposta = httpx.get(OPENALEX, params=params, timeout=60)
-        resposta.raise_for_status()
-        itens = resposta.json().get("results") or []
-    except (httpx.HTTPError, ValueError) as exc:
-        _registrar(ChamadaExterna.Provedor.OPENALEX, endpoint, consulta[:200], erro=str(exc)[:500])
-        raise PesquisaIndisponivel(f"OpenAlex nao respondeu: {exc}") from exc
+    # O OpenAlex devolve 504/502 de vez em quando na busca semantica: tenta de
+    # novo, com espera, antes de desistir. Erro 4xx (pedido errado) nao repete.
+    for tentativa, espera in enumerate((*ESPERAS_DO_OPENALEX, None)):
+        try:
+            resposta = httpx.get(OPENALEX, params=params, timeout=60)
+            resposta.raise_for_status()
+            itens = resposta.json().get("results") or []
+            break
+        except (httpx.HTTPError, ValueError) as exc:
+            passageiro = isinstance(exc, httpx.TimeoutException | httpx.TransportError) or (
+                isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
+            )
+            if passageiro and espera is not None:
+                logger.info("OpenAlex falhou (%s); tentativa %s de novo.", exc, tentativa + 2)
+                time.sleep(espera)
+                continue
+            _registrar(
+                ChamadaExterna.Provedor.OPENALEX, endpoint, consulta[:200], erro=str(exc)[:500]
+            )
+            raise PesquisaIndisponivel(f"OpenAlex nao respondeu: {exc}") from exc
     _registrar(ChamadaExterna.Provedor.OPENALEX, endpoint, consulta[:200], itens=len(itens))
     return itens
 
@@ -483,17 +497,26 @@ def orientacao_dos_angulos(pauta) -> str:
 def _achados(hip: dict, *, quantos: int = POR_HIPOTESE) -> dict[str, dict]:
     """Uma busca semantica por hipotese (as contrarias marcadas), sem repetir."""
     achados: dict[str, dict] = {}
+    falhas: list[PesquisaIndisponivel] = []
     consultas = [(h, False) for h in hip["angulos"]] + [(h, True) for h in hip["contrarias"]]
     for n, (hipotese, contraria) in enumerate(consultas):
         if n:
             time.sleep(PAUSA_DA_SEMANTICA)
-        for dados in busca_semantica(hipotese["paragrafo"], quantos=quantos):
+        try:
+            resultados = busca_semantica(hipotese["paragrafo"], quantos=quantos)
+        except PesquisaIndisponivel as exc:
+            # Uma hipotese que falhou nao derruba as outras.
+            falhas.append(exc)
+            continue
+        for dados in resultados:
             chave = _chave(dados)
             if not chave or chave in achados:
                 continue
             dados["_contraria"] = contraria
             dados["_hipotese"] = hipotese["angulo"]
             achados[chave] = dados
+    if not achados and falhas:
+        raise falhas[0]
     return achados
 
 

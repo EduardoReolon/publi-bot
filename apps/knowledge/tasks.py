@@ -7,6 +7,7 @@ import logging
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from apps.knowledge.models import Document
 from apps.ops.models import GenerationJob
@@ -248,8 +249,8 @@ def _reenfileirar_tudo() -> int:
     return reenfileirar_parados() + pesquisas_paradas()
 
 
-@shared_task
-def pesquisar_pauta(topic_id: str) -> int:
+@shared_task(bind=True, max_retries=3)
+def pesquisar_pauta(self, topic_id: str) -> int:
     """A pesquisa de artigos da pauta (`knowledge.pesquisa`). Despachada de
     dentro do tenant."""
     from apps.content.models import Topic
@@ -262,6 +263,17 @@ def pesquisar_pauta(topic_id: str) -> int:
     try:
         achados = len(pesquisar(pauta)["artigos"])
     except PesquisaIndisponivel as exc:
+        # OpenAlex fora do ar: tenta a pesquisa inteira de novo daqui a 10 min,
+        # ate 3 vezes, antes de dar como falha.
+        if self.request.retries < self.max_retries and not self.request.called_directly:
+            registrar(
+                pauta,
+                "pesquisa",
+                situacao="na_fila",
+                em=timezone.now().isoformat(),
+                erro=f"{str(exc)[:200]} Tentando de novo em 10 minutos.",
+            )
+            raise self.retry(countdown=600) from exc
         registrar(pauta, "pesquisa", situacao="erro", erro=str(exc)[:300])
     except Exception as exc:
         logger.exception("Pesquisa da pauta %s falhou.", topic_id)
