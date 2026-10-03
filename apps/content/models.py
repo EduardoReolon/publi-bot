@@ -50,6 +50,8 @@ class PromptTemplate(models.Model):
         RESEARCH_HYPOTHESES = "research_hypotheses", _("Pesquisa: paragrafos hipoteticos")
         RESEARCH_SYNTHESIS = "research_synthesis", _("Pesquisa: sintese de um angulo")
         CALL_TO_ACTION_COPY = "call_to_action_copy", _("Texto da chamada para a oferta")
+        CITATION_CHECK = "citation_check", _("Conferencia: a fonte sustenta a frase?")
+        CITATION_FIX = "citation_fix", _("Conferencia: reescrever a frase sem fonte")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     key = models.CharField(_("chave"), max_length=32, choices=Key.choices, unique=True)
@@ -487,6 +489,9 @@ class Article(models.Model):
     # link): [{"n", "instituicao", "titulo", "valor", "unidade", "periodo",
     # "local", "url", "citado"}]. Ver apps/content/dados_da_pauta.py.
     dados_usados = models.JSONField(_("dados publicos usados"), default=list, blank=True)
+    # O que a conferencia de citacoes fez, por frase: [{"secao", "frase",
+    # "acao": trocada|reescrita|sem_fonte, "de", "para", "aceita"}].
+    conferencia_citacoes = models.JSONField(_("conferencia das citacoes"), default=list, blank=True)
 
     # Saida estruturada do filtro de consenso.
     thesis_json = models.JSONField(_("tese"), default=dict, blank=True)
@@ -739,6 +744,9 @@ class ArticleSection(models.Model):
     chunk_ids = models.JSONField(_("fontes"), default=list, blank=True)
 
     body_markdown = models.TextField(_("texto"), blank=True)
+    # A conferencia de citacoes (cada frase citada contra a fonte) ja rodou.
+    # Verdadeiro para o que existia antes dela; a secao recem-escrita nasce falso.
+    citacoes_conferidas = models.BooleanField(_("citacoes conferidas"), default=True)
     status = models.CharField(
         _("situacao"), max_length=8, choices=Status.choices, default=Status.PLANNED
     )

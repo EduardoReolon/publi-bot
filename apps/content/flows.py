@@ -288,7 +288,18 @@ def passo_redigir_secoes(job: GenerationJob):
     article = _artigo_do_job(job)
     site = _site_do_tenant()
 
-    pendentes = [s for s in article.sections.all() if not s.escrita]
+    from apps.content.citacoes import conferir_secao
+
+    secoes = list(article.sections.all())
+    # Secao escrita e ainda nao conferida (a conferencia esperou a placa):
+    # confere antes de escrever a proxima.
+    por_conferir = next((s for s in secoes if s.escrita and not s.citacoes_conferidas), None)
+    if por_conferir is not None:
+        conferir_secao(
+            article, por_conferir, _chunks_por_id(por_conferir.chunk_ids), site=site, job=job
+        )
+
+    pendentes = [s for s in secoes if not s.escrita]
     if not pendentes:
         return {"article_id": str(article.pk), "secoes_escritas": article.sections.count()}
 
@@ -323,7 +334,11 @@ def passo_redigir_secoes(job: GenerationJob):
     secao.body_markdown = texto.strip()
     secao.status = ArticleSection.Status.WRITTEN
     secao.prompt_run = resultado.prompt_run
-    secao.save(update_fields=["body_markdown", "status", "prompt_run", "updated_at"])
+    secao.citacoes_conferidas = False
+    secao.save(
+        update_fields=["body_markdown", "status", "prompt_run", "citacoes_conferidas", "updated_at"]
+    )
+    conferir_secao(article, secao, trechos, site=site, job=job)
 
     restantes = len(pendentes) - 1
     logger.info(

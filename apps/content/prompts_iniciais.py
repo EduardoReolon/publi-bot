@@ -583,6 +583,54 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Orientacao:\n<fonte>\n{orientacao}\n</fonte>"
         ),
     },
+    "citation_check": {
+        "descricao": (
+            "Conferencia de citacao: o trecho da fonte sustenta o que a frase "
+            "afirma? Uma pergunta curta por frase citada."
+        ),
+        "variaveis": ["frase", "trecho"],
+        "temperatura": 0.0,
+        "sistema": (
+            "Voce confere citacoes como um revisor cientifico. Diga se o TRECHO da "
+            "fonte sustenta o que a FRASE afirma.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com um objeto JSON: "
+            '{"veredito": "sustenta" | "parcial" | "nao"}.\n'
+            "- sustenta: o trecho diz o que a frase diz (parafrase vale).\n"
+            "- parcial: o trecho sustenta o essencial; um detalhe secundario e "
+            "generalizacao razoavel.\n"
+            "- nao: a ideia principal da frase nao esta no trecho, o trecho trata de "
+            "outro contexto apresentado como se fosse este, ou a frase atribui ao "
+            "estudo algo que ele nao diz."
+        ),
+        "usuario": (
+            "Frase:\n<fonte>\n{frase}\n</fonte>\n\n"
+            "Trecho da fonte citada:\n<fonte>\n{trecho}\n</fonte>"
+        ),
+    },
+    "citation_fix": {
+        "descricao": (
+            "Conferencia de citacao: reescreve UMA frase para dizer so o que a fonte "
+            "sustenta, mantendo o lugar dela no paragrafo."
+        ),
+        "variaveis": ["frase", "trecho", "marcador", "dica", "idioma"],
+        "temperatura": 0.2,
+        "sistema": (
+            "Voce corrige UMA frase de um artigo cuja citacao nao se sustenta. "
+            "Reescreva a frase para afirmar apenas o que o trecho da fonte diz, no "
+            "mesmo tom e mesmo papel no paragrafo, curta. Se a fonte for de outro "
+            "contexto (outro setor, outro pais, outro tipo de organizacao), diga de "
+            "onde vem a evidencia em vez de apresenta-la como se fosse sobre o "
+            "assunto do artigo. Termine a frase com o marcador indicado.\n\n"
+            f"{AVISO_DE_DELIMITADOR}\n\n"
+            "Responda SOMENTE com a frase reescrita, sem aspas nem comentario."
+        ),
+        "usuario": (
+            "Idioma: {idioma}\nMarcador: {marcador}\nO que estava errado: {dica}\n\n"
+            "Frase original:\n<fonte>\n{frase}\n</fonte>\n\n"
+            "Trecho da fonte:\n<fonte>\n{trecho}\n</fonte>"
+        ),
+    },
     "call_to_action_copy": {
         "descricao": (
             "O texto da chamada para a oferta do site, ligado ao assunto do artigo: "

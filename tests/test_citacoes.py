@@ -1,0 +1,144 @@
+"""Conferencia de citacoes: cada frase citada contra a fonte, corrigida sozinha.
+
+* a fonte citada nao sustenta, outra da secao sustenta -> troca o marcador;
+* nenhuma sustenta -> reescreve so a frase (ate 2 vezes), conferindo de novo;
+* ainda nao -> tira o marcador e bloqueia a aprovacao ate aceitar ou editar.
+"""
+
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+
+import pytest
+from django.urls import reverse
+
+from apps.content import citacoes
+from apps.content.models import Article, ArticleSection
+from tests.test_interface import ambiente  # noqa: F401
+
+FONTES = [
+    SimpleNamespace(content="Estudo sobre escalar inovacoes em projetos de desenvolvimento."),
+    SimpleNamespace(content="Revisao: escalar gera desigualdade e dano ambiental."),
+]
+
+
+def _modelo(monkeypatch, julgar, reescrever=None):
+    from apps.content import inference
+
+    chamadas = []
+
+    def executar(*, key, variaveis, **kw):
+        chamadas.append(key)
+        if key == "citation_check":
+            texto = json.dumps({"veredito": julgar(variaveis["frase"], variaveis["trecho"])})
+        else:
+            texto = reescrever(variaveis) if reescrever else "Frase nova."
+        return SimpleNamespace(texto=texto)
+
+    monkeypatch.setattr(inference, "executar_prompt", executar)
+    return chamadas
+
+
+def _secao(texto):
+    artigo = Article.objects.create(title="Tema")
+    secao = ArticleSection.objects.create(
+        article=artigo, order=1, heading="Um", body_markdown=texto, citacoes_conferidas=False
+    )
+    return artigo, secao
+
+
+@pytest.mark.django_db
+def test_fonte_trocada_quando_outra_sustenta(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    conferencia_de_citacoes,
+    embedding_falso,
+):
+    _modelo(monkeypatch, lambda frase, trecho: "sustenta" if "desigualdade" in trecho else "nao")
+    artigo, secao = _secao("Escalar gera desigualdade [[FONTE_1]]. Outra frase sem citacao.")
+
+    citacoes.conferir_secao(artigo, secao, FONTES)
+
+    secao.refresh_from_db()
+    assert secao.body_markdown == "Escalar gera desigualdade [[FONTE_2]]. Outra frase sem citacao."
+    assert secao.citacoes_conferidas
+    assert artigo.conferencia_citacoes[0]["acao"] == "trocada"
+
+
+@pytest.mark.django_db
+def test_frase_reescrita_ate_a_fonte_sustentar(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    conferencia_de_citacoes,
+    embedding_falso,
+):
+    tentativas = []
+
+    def reescrever(variaveis):
+        tentativas.append(variaveis["dica"])
+        return (
+            "Projetos de desenvolvimento escalam inovacoes"
+            if len(tentativas) == 2
+            else "Ainda errado."
+        )
+
+    chamadas = _modelo(
+        monkeypatch,
+        lambda frase, trecho: "sustenta"
+        if frase.startswith("Projetos de desenvolvimento")
+        else "nao",
+        reescrever,
+    )
+    artigo, secao = _secao("Empresas lucram mais ao escalar [[FONTE_1]].")
+
+    citacoes.conferir_secao(artigo, secao, FONTES)
+
+    secao.refresh_from_db()
+    assert len(tentativas) == 2 and "mais literal" in tentativas[1]
+    assert secao.body_markdown.startswith("Projetos de desenvolvimento escalam inovacoes [[FONTE_")
+    assert artigo.conferencia_citacoes[0]["acao"] == "reescrita"
+    assert chamadas.count("citation_fix") == 2
+
+
+@pytest.mark.django_db
+def test_sem_fonte_bloqueia_ate_aceitar(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    conferencia_de_citacoes,
+    embedding_falso,
+):
+    from apps.content.services import pendencias_para_aprovar
+
+    _, _, client = ambiente
+    _modelo(monkeypatch, lambda frase, trecho: "nao", lambda v: "Continua sem base.")
+    artigo, secao = _secao("Toda empresa quebra ao crescer rapido [[FONTE_1]].")
+
+    citacoes.conferir_secao(artigo, secao, FONTES)
+
+    secao.refresh_from_db()
+    assert "[[FONTE_" not in secao.body_markdown
+    artigo.body_markdown = secao.body_markdown
+    artigo.save()
+    assert any("afirmacao sem fonte" in p for p in pendencias_para_aprovar(artigo))
+
+    client.post(reverse("content:aceitar_sem_fonte", args=[artigo.pk], urlconf="core.urls_tenants"))
+    artigo.refresh_from_db()
+    assert not any("afirmacao sem fonte" in p for p in pendencias_para_aprovar(artigo))
+
+
+def test_pesquisa_tira_artigo_de_outra_area():
+    import numpy as np
+
+    from apps.knowledge.pesquisa import por_area
+
+    def achado(n, area, sentido):
+        return {"id": n, "_sentido": sentido, "primary_topic": {"field": {"display_name": area}}}
+
+    achados = [achado(i, "Business", 0.9 - i / 100) for i in range(8)]
+    achados += [achado(8, "Engineering", 0.5), achado(9, "Computer Science", 0.95)]
+    ficam, vetores = por_area(achados, np.zeros((10, 2)))
+    ids = [d["id"] for d in ficam]
+    assert 8 not in ids  # outra area, longe da pauta: sai
+    assert 9 in ids  # outra area, mas entre os mais proximos: fica
+    assert len(vetores) == len(ficam)

@@ -56,6 +56,7 @@ urlpatterns = [
     path("artigos/<uuid:pk>/faq/", views.salvar_faq, name="salvar_faq"),
     path("artigos/<uuid:pk>/chamada/", views.mudar_chamada, name="mudar_chamada"),
     path("artigos/<uuid:pk>/chamada/texto/", views.texto_da_chamada, name="texto_da_chamada"),
+    path("artigos/<uuid:pk>/citacoes/aceitar/", views.aceitar_sem_fonte, name="aceitar_sem_fonte"),
     path("artigos/<uuid:pk>/indexacao/", views.conferir_indexacao, name="conferir_indexacao"),
     path("artigos/<uuid:pk>/capas/", views.gerar_capas, name="gerar_capas"),
     path("artigos/<uuid:pk>/capas/escolher/", views.escolher_capa, name="escolher_capa"),
