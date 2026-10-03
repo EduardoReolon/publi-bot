@@ -532,6 +532,10 @@ PUBLISH_DRY_RUN = env.boolean("PUBLISH_DRY_RUN", False)
 # significaria publicar citando uma fonte cujo conteudo foi lido errado.
 PERMITIR_EXTRACAO_LOCAL = env.boolean("PERMITIR_EXTRACAO_LOCAL", True)
 
+# Conferir cada frase citada contra a fonte depois de escrever a secao
+# (apps/content/citacoes.py). Uma chamada curta de modelo por frase citada.
+PUBLIBOT_CONFERIR_CITACOES = env.boolean("PUBLIBOT_CONFERIR_CITACOES", True)
+
 # ---------------------------------------------------------------------------
 # Semente da conexao de inferencia
 # ---------------------------------------------------------------------------

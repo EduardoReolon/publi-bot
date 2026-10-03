@@ -214,6 +214,41 @@ def ordenar(pauta, achados: list[dict]) -> tuple[list[dict], np.ndarray]:
     return [achados[i] for i in ordem], vetores[ordem]
 
 
+# Areas (OpenAlex: primary_topic.field) dos artigos mais proximos da pauta. O
+# artigo de outra area so entra se estiver entre os MAIS proximos: "scalability"
+# de linha de montagem ou de software casa a palavra, nao o assunto.
+AREA_REFERENCIA = 10
+AREA_MINIMA = 0.2
+AREA_LIVRE = 5
+
+
+def _area(dados: dict) -> str:
+    return ((dados.get("primary_topic") or {}).get("field") or {}).get("display_name") or ""
+
+
+def por_area(ordenados: list[dict], vetores: np.ndarray) -> tuple[list[dict], np.ndarray]:
+    """Tira os achados de area alheia a pauta (sem modelo)."""
+    if not ordenados:
+        return ordenados, vetores
+    referencia = sorted(ordenados, key=lambda d: -d.get("_sentido", 0))[:AREA_REFERENCIA]
+    contagem = Counter(_area(d) for d in referencia if _area(d))
+    total = sum(contagem.values())
+    if not total:
+        return ordenados, vetores
+    areas = {a for a, n in contagem.items() if n / total >= AREA_MINIMA}
+    livres = {id(d) for d in referencia[:AREA_LIVRE]}
+    manter = [
+        i for i, d in enumerate(ordenados) if not _area(d) or _area(d) in areas or id(d) in livres
+    ]
+    if len(manter) < len(ordenados):
+        logger.info(
+            "Pesquisa: %s achado(s) de outra area fora (areas: %s).",
+            len(ordenados) - len(manter),
+            ", ".join(sorted(areas)),
+        )
+    return [ordenados[i] for i in manter], vetores[manter]
+
+
 def escolher(ordenados: list[dict], vetores: np.ndarray) -> tuple[list[dict], np.ndarray]:
     """Os melhores, com vaga reservada para o contraponto (achado pelas
     hipoteses contrarias), se houver."""
@@ -476,9 +511,10 @@ def pesquisar_para_pergunta(texto: str, chave: str) -> dict:
 
     alvo = SimpleNamespace(pk=f"pergunta:{chave}", title=texto, target_keyword="", briefing="")
     hip = hipoteses(alvo)
-    ordenados, _vetores = ordenar(
+    ordenados, vetores = ordenar(
         alvo, list(_achados(hip, quantos=POR_HIPOTESE_DA_PERGUNTA).values())
     )
+    ordenados, _vetores = por_area(ordenados, vetores)
     contrarios = [i for i, d in enumerate(ordenados) if d.get("_contraria")][:1]
     resto = [i for i in range(len(ordenados)) if i not in contrarios]
     escolhidos = [
@@ -524,6 +560,7 @@ def pesquisar(pauta) -> dict:
     if novos:
         ordenados, vetores = ordenar(pauta, list(achados.values()))
 
+    ordenados, vetores = por_area(ordenados, vetores)
     escolhidos, vetores_escolhidos = escolher(ordenados, vetores)
     grupos = angulos(escolhidos, vetores_escolhidos)
     candidatos = registrar_fontes(pauta, escolhidos)

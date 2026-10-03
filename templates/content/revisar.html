@@ -160,6 +160,32 @@
   </nav>
 
   <section class="aba-do-artigo" id="aba-revisar">
+    {% if citacoes_conferidas.itens %}
+      <div class="aviso {% if citacoes_conferidas.sem_fonte %}ruim{% else %}ok{% endif %}">
+        <strong>{% translate "Conferencia das citacoes:" %}</strong>
+        {% blocktranslate trimmed with t=citacoes_conferidas.trocadas r=citacoes_conferidas.reescritas s=citacoes_conferidas.sem_fonte %}
+          {{ t }} trocada(s) para a fonte certa, {{ r }} frase(s) reescrita(s), {{ s }} sem fonte.
+        {% endblocktranslate %}
+        <details class="ajuda"><summary>{% translate "ver o que mudou" %}</summary>
+          <ul>
+            {% for c in citacoes_conferidas.itens %}
+              <li>
+                {% if c.acao == 'trocada' %}<span class="selo">{% translate "fonte trocada" %}</span>
+                {% elif c.acao == 'reescrita' %}<span class="selo alerta">{% translate "reescrita" %}</span>
+                {% else %}<span class="selo ruim">{% translate "sem fonte" %}</span>{% if c.aceita %} <span class="selo">{% translate "aceita" %}</span>{% endif %}{% endif %}
+                {% translate "secao" %} {{ c.secao }}: "{{ c.frase|truncatechars:200 }}"
+                {% if c.nova %}<div class="pre-visualizacao">→ "{{ c.nova|truncatechars:200 }}"</div>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% if citacoes_conferidas.sem_fonte %}
+          <form method="post" action="{% url 'content:aceitar_sem_fonte' artigo.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="pequeno discreto" title="{% translate 'A frase fica, sem citacao, como opiniao do texto' %}">{% translate "Aceitar como opiniao do texto" %}</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
     {% if dados_citados %}
       <div class="aviso">
         <strong>{% translate "Dados oficiais no texto:" %}</strong>

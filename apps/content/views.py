@@ -658,6 +658,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "partes_da_chamada": _partes_da_chamada(artigo),
         "indexacao_ligada": _indexacao_ligada(artigo),
         "dados_citados": [d for d in artigo.dados_usados or [] if d.get("citado")],
+        "citacoes_conferidas": _resumo_da_conferencia(artigo),
         "sem_oferta": not medir("oferta", texto_da_oferta),
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": medir("proximo_horario", _proximo_horario),
@@ -693,6 +694,31 @@ def _indexacao_ligada(artigo) -> bool:
     from apps.radar.indexacao import ligada
 
     return ligada()
+
+
+def _resumo_da_conferencia(artigo) -> dict:
+    registro = artigo.conferencia_citacoes or []
+    return {
+        "itens": registro,
+        "trocadas": sum(1 for r in registro if r.get("acao") == "trocada"),
+        "reescritas": sum(1 for r in registro if r.get("acao") == "reescrita"),
+        "sem_fonte": sum(
+            1 for r in registro if r.get("acao") == "sem_fonte" and not r.get("aceita")
+        ),
+    }
+
+
+@login_required
+@require_POST
+def aceitar_sem_fonte(request: HttpRequest, pk) -> HttpResponse:
+    """A afirmacao sem fonte fica como opiniao do texto: libera a aprovacao."""
+    artigo = get_object_or_404(Article, pk=pk)
+    for r in artigo.conferencia_citacoes or []:
+        if r.get("acao") == "sem_fonte":
+            r["aceita"] = True
+    artigo.save(update_fields=["conferencia_citacoes"])
+    messages.success(request, _("Afirmacoes sem fonte aceitas como opiniao do texto."))
+    return _ao_artigo(artigo, "revisar")
 
 
 def _partes_da_chamada(artigo) -> list[tuple]:

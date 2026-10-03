@@ -42,6 +42,10 @@ def _sem_bases_academicas(request, monkeypatch):
     from django.conf import settings as configuracao
 
     monkeypatch.setattr(configuracao, "PUBLIBOT_INDEXAR_NA_HORA", True, raising=False)
+    # A conferencia de citacoes chama o modelo por frase: desligada nos testes
+    # que roteirizam as respostas do modelo. Quem a testa pede a fixture.
+    if "conferencia_de_citacoes" not in request.fixturenames:
+        monkeypatch.setattr(configuracao, "PUBLIBOT_CONFERIR_CITACOES", False, raising=False)
     if "bases_academicas" in request.fixturenames:
         return
     from apps.knowledge import academicos
@@ -370,3 +374,9 @@ def pronto_para_aprovar(artigo):
     if not artigo.images.filter(is_chosen=True).exists():
         artigo.images.create(order=1, is_chosen=True, image=ContentFile(b"webp", name="capa.webp"))
     return artigo
+
+
+@pytest.fixture
+def conferencia_de_citacoes(settings):
+    """Liga a conferencia de citacoes (desligada por padrao nos testes)."""
+    settings.PUBLIBOT_CONFERIR_CITACOES = True

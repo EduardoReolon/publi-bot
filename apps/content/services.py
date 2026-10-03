@@ -521,9 +521,11 @@ def pendencias_para_aprovar(article: Article) -> list[str]:
             "a outra versao desta pauta ja foi aprovada; so uma vai ao ar "
             "(rejeite ou volte aquela antes)"
         )
+    from apps.content.citacoes import pendencias as pendencias_das_citacoes
     from apps.content.dados_da_pauta import pendencias as pendencias_dos_dados
 
     faltam += pendencias_dos_dados(article)
+    faltam += pendencias_das_citacoes(article)
     return faltam
 
 
