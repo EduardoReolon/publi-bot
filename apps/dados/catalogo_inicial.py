@@ -107,6 +107,7 @@ INSTITUICOES = [
         "site": "https://www.who.int/data/gho",
         "dominios": ["who.int", "ghoapi.azureedge.net"],
         "nichos": ["saude"],
+        "adaptador": "oms",
         "notas": "GHO: API OData com indicadores por pais. Bom para comparar Brasil e mundo.",
     },
     # --- IA e tecnologia ---------------------------------------------------------
@@ -198,3 +199,22 @@ INSTITUICOES = [
         "notas": "Indicadores do mercado imobiliario (com a Fipe). Relatorios periodicos.",
     },
 ]
+
+# Termos de busca (nao codigos) para `explorar_dados <adaptador> --nichos`: o
+# ponto de partida da curadoria nos nichos do produto (saude, IA, obras) e no
+# geral. Os codigos saem da busca na propria instituicao.
+TERMOS_POR_NICHO = {
+    "ibge": [
+        "plano de saude",
+        "autoavaliacao de saude",
+        "doenca cronica",
+        "tecnologia da informacao e comunicacao",
+        "internet",
+        "industria da construcao",
+        "custo medio da construcao",
+        "rendimento medio",
+        "estimativa populacao",
+    ],
+    "bcb": ["IPCA", "Selic", "INCC", "IGP-M", "credito pessoa juridica"],
+    "oms": ["life expectancy", "obesity", "diabetes", "hypertension", "physicians density"],
+}

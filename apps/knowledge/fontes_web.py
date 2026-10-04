@@ -151,6 +151,18 @@ def confiavel(caminho: CaminhoConfiavel | None) -> bool:
     return caminho is not None and caminho.nivel != CaminhoConfiavel.Nivel.BLOQUEAR
 
 
+def _de_instituicao_confiavel(url: str) -> bool:
+    """Link de instituicao que a curadoria do catalogo de dados marcou como
+    confiavel. O catalogo mora no schema public: sem ele, nao."""
+    try:
+        from apps.dados.catalogo import link_confiavel
+
+        return link_confiavel(url)
+    except Exception:
+        logger.debug("Catalogo de dados indisponivel para %s.", url)
+        return False
+
+
 def _ja_conhecida(url: str) -> bool:
     return (
         CandidatoDeFonte.objects.filter(url=url).exists()
@@ -270,6 +282,12 @@ def _buscar_paginas(pauta, consultas: list[str], limite: int) -> list[CandidatoD
             )
             if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
                 aprovar(candidato, categoria=caminho.categoria, automatico=True)
+            elif caminho is None and _de_instituicao_confiavel(url):
+                # Instituicao de dados publicos marcada confiavel no catalogo
+                # (IBGE, Banco Central...): entra como documento oficial.
+                from apps.knowledge.perfis import categoria_da_natureza
+
+                aprovar(candidato, categoria=categoria_da_natureza("normativo"), automatico=True)
             else:
                 acolher_se_ligado(candidato)
             novos.append(candidato)

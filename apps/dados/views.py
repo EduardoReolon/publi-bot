@@ -189,3 +189,31 @@ def situacao_do_pedido(request: HttpRequest, pk) -> HttpResponse:
         pedido.notas = request.POST.get("notas", pedido.notas)
         pedido.save(update_fields=["situacao", "notas"])
     return _de_volta(request, "pedidos")
+
+
+@login_required
+@require_POST
+def procurar(request: HttpRequest, pk) -> HttpResponse:
+    """Procura no catalogo da instituicao e grava o que achar como sugerida."""
+    from apps.dados.catalogo import procurar_e_sugerir
+
+    _curador(request)
+    instituicao = get_object_or_404(Instituicao, pk=pk)
+    termo = request.POST.get("termo", "").strip()
+    try:
+        series = procurar_e_sugerir(instituicao, termo)
+    except Exception as exc:  # rede, formato que mudou: avisa, nao derruba a tela
+        messages.error(
+            request,
+            _("A busca em %(i)s falhou: %(e)s") % {"i": instituicao.sigla, "e": exc},
+        )
+        return _de_volta(request, "instituicoes")
+    if series:
+        messages.success(
+            request,
+            _("%(n)s serie(s) de %(i)s para aprovar (filtro 'Sugerida').")
+            % {"n": len(series), "i": instituicao.sigla},
+        )
+        return redirect(f"{_url()}?aba=series&situacao=sugerida&q=")
+    messages.info(request, _("Nada encontrado para '%(t)s'.") % {"t": termo})
+    return _de_volta(request, "instituicoes")

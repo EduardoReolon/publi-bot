@@ -9,5 +9,6 @@ urlpatterns = [
     path("series/nova/", views.nova_serie, name="nova_serie"),
     path("series/<uuid:pk>/situacao/", views.situacao_da_serie, name="situacao_da_serie"),
     path("instituicoes/<int:pk>/confiavel/", views.confiavel, name="confiavel"),
+    path("instituicoes/<int:pk>/procurar/", views.procurar, name="procurar"),
     path("pedidos/<int:pk>/", views.situacao_do_pedido, name="situacao_do_pedido"),
 ]

@@ -64,11 +64,12 @@ def rodar_radar() -> str:
 
 @shared_task
 def conferir_fontes_vencidas() -> int:
-    """Uma vez por dia: artigos no ar que citam fonte vencida."""
+    """Uma vez por dia: artigos no ar que citam fonte vencida, ou dado publico
+    que ganhou periodo mais novo na instituicao."""
     from apps.accounts.varredura import para_cada_tenant
-    from apps.radar.atualizacoes import pelas_fontes
+    from apps.radar.atualizacoes import pelas_fontes, pelos_dados
 
-    return para_cada_tenant(pelas_fontes, "conferir_fontes_vencidas")
+    return para_cada_tenant(lambda: pelas_fontes() + pelos_dados(), "conferir_fontes_vencidas")
 
 
 @shared_task

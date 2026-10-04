@@ -24,6 +24,7 @@ class Instituicao(models.Model):
         NENHUM = "", _("sem adaptador")
         IBGE = "ibge", _("IBGE (SIDRA)")
         BCB = "bcb", _("Banco Central (SGS)")
+        OMS = "oms", _("OMS (Global Health Observatory)")
 
     sigla = models.CharField(_("sigla"), max_length=40, unique=True)
     nome = models.CharField(_("nome"), max_length=200)

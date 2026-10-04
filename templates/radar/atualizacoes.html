@@ -36,7 +36,7 @@
   <article class="secao atualizacao tipo-{{ s.tipo }}">
     <header class="cabeca-oportunidade">
       <div>
-        <span class="selo {% if s.tipo == 'perdeu' or s.tipo == 'fonte' %}ruim{% elif s.tipo == 'quase_la' %}ok{% else %}espera{% endif %}">{{ s.get_tipo_display }}</span>
+        <span class="selo {% if s.tipo == 'perdeu' or s.tipo == 'fonte' or s.tipo == 'dado' %}ruim{% elif s.tipo == 'quase_la' %}ok{% else %}espera{% endif %}">{{ s.get_tipo_display }}</span>
         <h3><a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.titulo }}</a></h3>
         {% if s.artigo %}<a class="ajuda" href="{% url 'content:revisar' s.artigo.pk %}">{% translate "abrir no PubliBot" %}</a>{% endif %}
       </div>
@@ -56,6 +56,11 @@
       <p>{% blocktranslate trimmed %}O artigo cita fontes que venceram. Quando ja ha versao nova no acervo, <em>Atualizar no PubliBot</em> troca as citacoes por ela; os numeros do texto voce confere na revisao.{% endblocktranslate %}</p>
       <ul class="sinais">
         {% for f in s.evidencia.fontes %}<li>{{ f.titulo }} <span class="ajuda">{% translate "valia ate" %} {{ f.valida_ate }}</span>{% if f.substituta %} → <strong>{{ f.substituta }}</strong>{% else %} <span class="ajuda">· {% translate "sem versao nova no acervo" %}</span>{% endif %}</li>{% endfor %}
+      </ul>
+    {% elif s.tipo == "dado" %}
+      <p>{% blocktranslate trimmed %}A instituicao publicou um periodo mais novo de dados que o artigo cita. <em>Atualizar no PubliBot</em> cria a versao nova ja com o valor novo; troque o numero no texto (a revisao confere).{% endblocktranslate %}</p>
+      <ul class="sinais">
+        {% for d in s.evidencia.dados %}<li>{{ d.instituicao }} — {{ d.titulo }} ({{ d.local }}): {{ d.de }} → <strong>{{ d.para }}</strong></li>{% endfor %}
       </ul>
     {% else %}
       <p>{% blocktranslate with a=s.evidencia.posicao_anterior b=s.evidencia.posicao trimmed %}A posicao media caiu de <strong>{{ a }}</strong> para <strong>{{ b }}</strong>. Confira se as fontes e os dados ainda valem, e compare com quem passou na frente.{% endblocktranslate %}</p>

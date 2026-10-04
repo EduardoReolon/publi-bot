@@ -1008,6 +1008,7 @@ class SugestaoDeAtualizacao(models.Model):
         QUASE_LA = "quase_la", _("Quase na primeira pagina")
         PERDEU_POSICAO = "perdeu", _("Perdeu posicao")
         FONTE_VENCIDA = "fonte", _("Fonte vencida ou substituida")
+        DADO_NOVO = "dado", _("Dado publico com periodo mais novo")
 
     class Situacao(models.TextChoices):
         ABERTA = "aberta", _("Aberta")

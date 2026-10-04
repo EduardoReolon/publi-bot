@@ -10,12 +10,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from decimal import Decimal
 from urllib.parse import urlsplit
 
 from django.utils import timezone
 
-from apps.dados.adaptadores import AdaptadorPendente, adaptador_de
+from apps.dados.adaptadores import AdaptadorPendente, adaptador_de, periodo_legivel
 from apps.dados.models import Instituicao, Serie, Valor
 
 logger = logging.getLogger("publibot.dados")
@@ -77,7 +78,18 @@ def valor_atual(serie: Serie, local: str = "Brasil") -> Valor | None:
 
     local = normalizar(local)
     adaptador = adaptador_de(serie.instituicao)
-    if adaptador is not None and adaptador.pronto:
+    # Serie cadastrada a mao tem codigo inventado ("manual-..."): so o valor
+    # gravado vale. Valor buscado ha menos de um dia nao e buscado de novo
+    # (a geracao pede o mesmo fato varias vezes).
+    recente = serie.valores.filter(
+        local=local, buscado_em__gte=timezone.now() - timedelta(days=1)
+    ).exists()
+    if (
+        adaptador is not None
+        and adaptador.pronto
+        and serie.origem != Serie.Origem.MANUAL
+        and not recente
+    ):
         try:
             for obs in adaptador.valores(serie, local=local, ultimos=1):
                 Valor.objects.update_or_create(
@@ -124,7 +136,9 @@ def fato(serie: Serie, local: str = "Brasil") -> dict | None:
         "titulo": serie.titulo,
         "unidade": serie.unidade,
         "local": valor.local,
-        "periodo": valor.periodo,
+        "periodo": periodo_legivel(valor.periodo),
+        # Para comparar com o periodo mais novo (a forma legivel nao ordena).
+        "periodo_ordenavel": valor.periodo,
         "valor": formatar(valor.valor),
         "valor_bruto": str(valor.valor),
         "url": serie.url or serie.instituicao.site,
@@ -152,3 +166,30 @@ def link_confiavel(url: str) -> bool:
     """Link de instituicao marcada como confiavel: dispensa a curadoria."""
     instituicao = instituicao_do_link(url)
     return bool(instituicao and instituicao.confiavel)
+
+
+def procurar_e_sugerir(instituicao: Instituicao, termo: str, *, limite: int = 20) -> list[Serie]:
+    """Procura no catalogo da instituicao (pelo adaptador) e grava o que achou
+    como series SUGERIDAS, para a curadoria aprovar. Serie que ja existe nao
+    muda (a curadoria pode ter editado)."""
+    adaptador = adaptador_de(instituicao)
+    if adaptador is None or not adaptador.pronto:
+        raise AdaptadorPendente(f"{instituicao.sigla} nao tem adaptador pronto.")
+    series = []
+    for achada in adaptador.procurar(termo, limite=limite):
+        serie, _nova = Serie.objects.get_or_create(
+            instituicao=instituicao,
+            codigo=achada.codigo[:120],
+            defaults={
+                "titulo": achada.titulo[:300] or achada.codigo,
+                "descricao": achada.descricao,
+                "unidade": achada.unidade[:60],
+                "recortes": achada.recortes,
+                "periodicidade": achada.periodicidade[:40],
+                "url": achada.url[:500],
+                "nichos": list(instituicao.nichos or []),
+                "origem": Serie.Origem.CATALOGO,
+            },
+        )
+        series.append(serie)
+    return series
