@@ -138,7 +138,9 @@
     /* A caixa de uma secao guarda 2 a 4 paragrafos, nao um artigo inteiro. Com
        a altura minima do corpo completo, seis secoes empurram os botoes para
        fora da tela e a pagina deixa de ser navegavel. */
-    textarea.curto { min-height: 9rem; }
+    textarea.curto { min-height: 14rem; }
+    /* No celular a linha e estreita e o mesmo paragrafo ocupa o dobro de altura. */
+    @media (max-width: 40rem) { textarea.curto { min-height: 24rem; } }
     /* A meta description tem 160 caracteres. Numa caixa alta ela flutuaria num
        campo quase todo vazio; numa linha unica so se leria o pedaco sob o
        cursor. Tres linhas mostram a frase inteira. */

@@ -222,7 +222,7 @@ def test_curadoria_marca_metadados_como_conferidos(ambiente):
 
     chunk = documento.chunks.first()
     assert chunk.heading == "Conclusao"
-    assert chunk.source_authors == "Souza, M. et al."
+    assert chunk.source_authors == "Souza et al."  # so o sobrenome, na citacao
     assert chunk.source_authority == 70
 
 
@@ -1002,6 +1002,34 @@ def test_editar_secao_a_mao_remonta_o_artigo(ambiente):
     assert primeira.status == "edited"
     assert "## Primeira, revisada" in artigo.body_markdown
     assert "mais fundamento" in artigo.body_markdown
+
+
+@pytest.mark.django_db
+def test_abertura_e_fecho_editados_na_tela_das_secoes(ambiente):
+    """Quem nao mexe no Markdown tambem precisa corrigir o comeco e o fim."""
+    _, _, client = ambiente
+    artigo = _artigo_com_secoes()
+    artigo.thesis_json = {"moldura": {"abertura": "Comeco velho.", "fecho": "Fim velho."}}
+    artigo.save()
+    url = reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
+    assert 'name="abertura"' in client.get(url).content.decode()
+
+    client.post(
+        reverse("content:salvar_secoes", args=[artigo.pk], urlconf="core.urls_tenants"),
+        {
+            "abertura": "Comeco novo.",
+            "fecho": "Fim velho.",
+            "titulo_1": artigo.sections.get(order=1).heading,
+            "secao_1": artigo.sections.get(order=1).body_markdown,
+            "titulo_2": artigo.sections.get(order=2).heading,
+            "secao_2": artigo.sections.get(order=2).body_markdown,
+        },
+    )
+
+    artigo.refresh_from_db()
+    assert artigo.thesis_json["moldura"] == {"abertura": "Comeco novo.", "fecho": "Fim velho."}
+    assert artigo.body_markdown.startswith("Comeco novo.")
+    assert artigo.body_markdown.rstrip().endswith("Fim velho.")
 
 
 # ---------------------------------------------------------------------------
