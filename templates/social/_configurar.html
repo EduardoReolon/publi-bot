@@ -1,0 +1,97 @@
+{% load i18n %}
+<section class="secao">
+  <h2>{% translate "Contas" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Cada conta tem o proprio publico, tom e aprovacao — o perfil pessoal no LinkedIn e
+      a pagina da empresa sao duas contas. Sem conectar a API, a conta ja funciona: o post
+      fica pronto para copiar e colar, e os cliques sao medidos do mesmo jeito.
+    {% endblocktranslate %}
+  </p>
+  {% for d in destinos %}
+    <details class="secao" {% if d.ultimo_erro or d.vence_logo %}open{% endif %}>
+      <summary>
+        <strong>{{ d.nome }}</strong> <span class="selo">{{ d.rede_nome }}</span>
+        {% if not d.ligado %}<span class="selo">{% translate "desligada" %}</span>{% endif %}
+        {% if d.conectado %}<span class="selo ok">{% translate "API conectada" %}: {{ d.conta_nome }}</span>{% else %}<span class="selo">{% translate "copiar para postar" %}</span>{% endif %}
+        {% if d.vence_logo %}<span class="selo ruim">{% translate "acesso vence em" %} {{ d.expira_em|date:"d/m" }}</span>{% endif %}
+      </summary>
+      {% if d.ultimo_erro %}<div class="aviso ruim">{{ d.ultimo_erro }}</div>{% endif %}
+      <form method="post" action="{% url 'social:salvar_destino' d.pk %}">
+        {% csrf_token %}
+        {% for campo in d.form %}{% include "_campo.html" %}{% endfor %}
+        <div class="acoes"><button type="submit" class="botao">{% translate "Salvar conta" %}</button></div>
+      </form>
+      <div class="acoes">
+        <a class="botao secundario" href="{% url 'social:conectar' d.pk %}">{% if d.conectado %}{% translate "Reconectar" %}{% else %}{% translate "Conectar a API" %}{% endif %}</a>
+        {% if d.conectado %}
+          <form method="post" action="{% url 'social:desconectar' d.pk %}">{% csrf_token %}<button type="submit" class="botao discreto">{% translate "Desconectar" %}</button></form>
+        {% endif %}
+      </div>
+      {% if d.rede == 'instagram' %}
+        <p class="ajuda">{% translate "Link na bio (ponha na bio do Instagram):" %} <code>{{ d.bio }}</code></p>
+      {% endif %}
+      <details class="ajuda">
+        <summary>{% translate "Como conectar a API desta rede" %}</summary>
+        <ol>{% for passo in d.rede_obj.preparo %}<li>{{ passo }}</li>{% endfor %}</ol>
+        <p>{% translate "Endereco de retorno para cadastrar no app da rede:" %} <code>{{ retorno }}</code></p>
+        <p><strong>{% translate "Como e o publico desta rede:" %}</strong> {{ d.rede_obj.estilo }}</p>
+      </details>
+    </details>
+  {% endfor %}
+
+  <details class="secao" {% if not destinos %}open{% endif %}>
+    <summary><strong>{% translate "Cadastrar uma conta" %}</strong></summary>
+    <form method="post" action="{% url 'social:novo_destino' %}">
+      {% csrf_token %}
+      {% for campo in form_destino %}{% include "_campo.html" %}{% endfor %}
+      <div class="acoes"><button type="submit" class="botao">{% translate "Cadastrar" %}</button></div>
+    </form>
+  </details>
+</section>
+
+<section class="secao">
+  <h2>{% translate "Para todas as redes" %}</h2>
+  <form method="post" action="{% url 'social:configurar' %}">
+    {% csrf_token %}
+    {% for campo in form_config %}{% include "_campo.html" %}{% endfor %}
+    <div class="acoes"><button type="submit" class="botao">{% translate "Salvar" %}</button></div>
+  </form>
+</section>
+
+<section class="secao">
+  <h2>{% translate "Abordagens" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      O jeito de convencer: o gancho que faz a pessoa parar de rolar a tela. Edite, desligue
+      ou crie outras — o texto vai inteiro no pedido ao modelo, e o placar de cada uma
+      aparece em "O que funciona". Para mudar o jeito de escrever de uma rede inteira, edite
+      o prompt dela (social_linkedin, social_instagram, social_gmn) em
+    {% endblocktranslate %}
+    <a href="/admin/content/prompttemplate/">{% translate "Prompts" %}</a>.
+  </p>
+  {% for a in abordagens %}
+    <details class="secao">
+      <summary><strong>{{ a.nome }}</strong>{% if not a.ativa %} <span class="selo">{% translate "desligada" %}</span>{% endif %}{% if a.redes %} <span class="ajuda">{{ a.redes|join:", " }}</span>{% endif %}</summary>
+      <form method="post" action="{% url 'social:salvar_abordagem' a.pk %}">
+        {% csrf_token %}
+        <div class="campo"><label>{% translate "nome" %}</label><input type="text" name="nome" value="{{ a.nome }}" required></div>
+        <div class="campo"><label>{% translate "o que pedir a IA" %}</label><textarea name="instrucao" class="curto" rows="4" required>{{ a.instrucao }}</textarea></div>
+        <div class="campo">
+          <label>{% translate "redes (nenhuma: todas)" %}</label>
+          {% for codigo, r in redes.items %}<label style="font-weight:400; display:inline-flex; gap:.3rem; margin-right:1rem"><input type="checkbox" name="redes" value="{{ codigo }}" style="width:auto" {% if codigo in a.redes %}checked{% endif %}>{{ r.nome }}</label>{% endfor %}
+        </div>
+        <div class="campo caixa"><input type="checkbox" name="ativa" id="ativa-{{ a.pk }}" {% if a.ativa %}checked{% endif %}><label for="ativa-{{ a.pk }}">{% translate "ativa" %}</label></div>
+        <div class="acoes"><button type="submit" class="botao secundario">{% translate "Salvar abordagem" %}</button></div>
+      </form>
+    </details>
+  {% endfor %}
+  <details class="secao">
+    <summary><strong>{% translate "Nova abordagem" %}</strong></summary>
+    <form method="post" action="{% url 'social:nova_abordagem' %}">
+      {% csrf_token %}
+      {% for campo in form_abordagem %}{% include "_campo.html" %}{% endfor %}
+      <div class="acoes"><button type="submit" class="botao">{% translate "Criar" %}</button></div>
+    </form>
+  </details>
+</section>

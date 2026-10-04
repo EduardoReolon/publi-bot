@@ -46,6 +46,13 @@
       {% translate "Perguntas" %}
       {% if pendencias.perguntas %}<span class="contagem">{{ pendencias.perguntas }}</span>{% endif %}
     </a>
+    {% comment %}Modulos opcionais declaram o proprio item (apps/ops/extensoes.py).{% endcomment %}
+    {% for item in menus_extras %}
+      <a href="{% url item.url %}" class="{% if aba == item.aba %}ativo{% endif %}">
+        {{ item.rotulo }}
+        {% for chave, n in pendencias.items %}{% if chave == item.pendencia and n %}<span class="contagem">{{ n }}</span>{% endif %}{% endfor %}
+      </a>
+    {% endfor %}
     <a href="{% url 'operacao:trabalhos' %}" class="{% if aba == 'operacao' %}ativo{% endif %}">
       {% translate "Operacao" %}
       {% if pendencias.falhas %}<span class="contagem">{{ pendencias.falhas }}</span>{% endif %}

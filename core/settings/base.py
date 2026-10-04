@@ -90,6 +90,9 @@ TENANT_APPS = [
     "apps.integrations",
     "apps.editorial",
     "apps.radar",
+    # Redes sociais: modulo a parte, ligado ao nucleo so por extensoes
+    # (apps/ops/extensoes.py). Tirar esta linha tira o modulo inteiro.
+    "apps.social",
     #   "apps.integrations",
     #   "apps.ops",
 ]
@@ -501,12 +504,43 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 300.0,
         "options": {"expires": 240},
     },
+    # Redes sociais (apps/social): a escolha do dia, a publicacao do que
+    # venceu (e a resposta aos comentarios) e a medicao.
+    "sugerir-posts": {
+        "task": "apps.social.tasks.sugerir_posts",
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
+    "publicar-posts": {
+        "task": "apps.social.tasks.publicar_posts",
+        "schedule": 300.0,
+        "options": {"expires": 240},
+    },
+    "medir-posts": {
+        "task": "apps.social.tasks.medir_posts",
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
     "purge-expired-questions": {
         "task": "apps.integrations.tasks.purge_expired_questions",
         # Uma vez por dia: e uma obrigacao de retencao, nao algo urgente.
         "schedule": 86_400.0,
     },
 }
+
+# ---------------------------------------------------------------------------
+# Redes sociais: o APP de cada rede (criado pelo dono do PubliBot no LinkedIn
+# Developers, na Meta e no Google Cloud). O acesso de cada cliente fica
+# cifrado na conta (apps/social). Vazio: a rede funciona no "copiar para postar".
+# ---------------------------------------------------------------------------
+SOCIAL_LINKEDIN_CLIENT_ID = env.get("SOCIAL_LINKEDIN_CLIENT_ID", "")
+SOCIAL_LINKEDIN_CLIENT_SECRET = env.get("SOCIAL_LINKEDIN_CLIENT_SECRET", "")
+SOCIAL_LINKEDIN_VERSAO = env.get("SOCIAL_LINKEDIN_VERSAO", "202509")
+SOCIAL_META_APP_ID = env.get("SOCIAL_META_APP_ID", "")
+SOCIAL_META_APP_SECRET = env.get("SOCIAL_META_APP_SECRET", "")
+SOCIAL_META_VERSAO = env.get("SOCIAL_META_VERSAO", "v21.0")
+SOCIAL_GOOGLE_CLIENT_ID = env.get("SOCIAL_GOOGLE_CLIENT_ID", "")
+SOCIAL_GOOGLE_CLIENT_SECRET = env.get("SOCIAL_GOOGLE_CLIENT_SECRET", "")
 
 # ---------------------------------------------------------------------------
 # Interruptor geral de publicacao

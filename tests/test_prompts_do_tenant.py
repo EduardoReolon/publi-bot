@@ -26,7 +26,10 @@ from django_tenants.utils import schema_context
 
 from apps.accounts.models import Tenant
 from apps.content.models import PromptVersion
-from apps.content.prompts_iniciais import PROMPTS_INICIAIS
+from apps.ops.extensoes import prompts_iniciais
+
+# As sementes do nucleo e as dos modulos ligados (redes sociais, por exemplo).
+PROMPTS_INICIAIS = prompts_iniciais()
 
 pytestmark = pytest.mark.django_db
 
