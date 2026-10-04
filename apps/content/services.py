@@ -324,6 +324,31 @@ def fontes_para_substituicao(article: Article) -> dict[int, Fonte]:
     }
 
 
+def markdown_com_links(article: Article, markdown_bruto: str) -> str:
+    """Os marcadores [[FONTE_N]] e [[DADO_N]] trocados pelas citacoes, com a
+    lista de referencias. O mesmo para o texto do modelo e para o que a pessoa
+    remontou editando as secoes (que guardam os marcadores)."""
+    from apps.content.dados_da_pauta import trocar_marcadores
+    from apps.content.rendering import fontes_com_link, normalizar_marcadores
+
+    markdown_bruto = normalizar_marcadores(markdown_bruto)
+    markdown_bruto, referencias_de_dados = trocar_marcadores(markdown_bruto, article)
+    validar_saida_do_modelo(markdown_bruto, max_marcadores=None)
+
+    fontes = fontes_para_substituicao(article)
+    primaria = article.citations.filter(used_as_primary=True).values_list("rank", flat=True).first()
+    return substituir_marcadores(
+        markdown_bruto,
+        fontes,
+        ao_final=article.link_placement == Article.LinkPlacement.END,
+        com_link=fontes_com_link(
+            markdown_bruto, fontes, maximo=MAXIMO_DE_FONTES_NO_ARTIGO, primaria=primaria
+        ),
+        referencias="aberta" if article.fluxo == "pesquisa" else "fechada",
+        extras=referencias_de_dados,
+    )
+
+
 @transaction.atomic
 def aplicar_rascunho(
     article: Article, markdown_bruto: str, *, prompt_run: PromptRun | None = None
@@ -335,25 +360,7 @@ def aplicar_rascunho(
     citadas pelo nome, e todas saem na lista de referencias do fim — aberta no
     fluxo B (pesquisa cientifica), recolhida no A.
     """
-    from apps.content.dados_da_pauta import trocar_marcadores
-    from apps.content.rendering import fontes_com_link, normalizar_marcadores
-
-    markdown_bruto = normalizar_marcadores(markdown_bruto)
-    markdown_bruto, referencias_de_dados = trocar_marcadores(markdown_bruto, article)
-    validar_saida_do_modelo(markdown_bruto, max_marcadores=None)
-
-    fontes = fontes_para_substituicao(article)
-    primaria = article.citations.filter(used_as_primary=True).values_list("rank", flat=True).first()
-    markdown_final = substituir_marcadores(
-        markdown_bruto,
-        fontes,
-        ao_final=article.link_placement == Article.LinkPlacement.END,
-        com_link=fontes_com_link(
-            markdown_bruto, fontes, maximo=MAXIMO_DE_FONTES_NO_ARTIGO, primaria=primaria
-        ),
-        referencias="aberta" if article.fluxo == "pesquisa" else "fechada",
-        extras=referencias_de_dados,
-    )
+    markdown_final = markdown_com_links(article, markdown_bruto)
 
     dominios = _dominios_das_citacoes(article)
     html = markdown_para_html(markdown_final, dominios_permitidos=dominios or None)
