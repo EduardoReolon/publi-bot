@@ -1007,8 +1007,18 @@ def test_editar_secao_a_mao_remonta_o_artigo(ambiente):
 @pytest.mark.django_db
 def test_abertura_e_fecho_editados_na_tela_das_secoes(ambiente):
     """Quem nao mexe no Markdown tambem precisa corrigir o comeco e o fim."""
+    from apps.content.models import ArticleCitation
+
     _, _, client = ambiente
     artigo = _artigo_com_secoes()
+    ArticleCitation.objects.create(
+        article=artigo,
+        rank=1,
+        distance=0.1,
+        source_title="Estudo",
+        source_label="Silva et al., 2024",
+        source_url="https://revista.exemplo.org/estudo",
+    )
     artigo.thesis_json = {"moldura": {"abertura": "Comeco velho.", "fecho": "Fim velho."}}
     artigo.save()
     url = reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
@@ -1020,7 +1030,8 @@ def test_abertura_e_fecho_editados_na_tela_das_secoes(ambiente):
             "abertura": "Comeco novo.",
             "fecho": "Fim velho.",
             "titulo_1": artigo.sections.get(order=1).heading,
-            "secao_1": artigo.sections.get(order=1).body_markdown,
+            # As secoes guardam o marcador; o artigo remontado nao pode leva-lo cru.
+            "secao_1": "Um, com fonte [[FONTE_1]].",
             "titulo_2": artigo.sections.get(order=2).heading,
             "secao_2": artigo.sections.get(order=2).body_markdown,
         },
@@ -1029,7 +1040,17 @@ def test_abertura_e_fecho_editados_na_tela_das_secoes(ambiente):
     artigo.refresh_from_db()
     assert artigo.thesis_json["moldura"] == {"abertura": "Comeco novo.", "fecho": "Fim velho."}
     assert artigo.body_markdown.startswith("Comeco novo.")
-    assert artigo.body_markdown.rstrip().endswith("Fim velho.")
+    assert "Fim velho." in artigo.body_markdown  # antes da lista de referencias
+    assert "[[FONTE" not in artigo.body_markdown
+    assert "Silva et al., 2024" in artigo.body_markdown
+
+    # Marcador de fonte que nao existe, digitado a mao: avisa, sem erro na tela.
+    resposta = client.post(
+        reverse("content:salvar_secoes", args=[artigo.pk], urlconf="core.urls_tenants"),
+        {"secao_2": "Dois [[FONTE_7]].", "titulo_2": "Segunda"},
+        follow=True,
+    )
+    assert "nao foi remontado" in resposta.content.decode()
 
 
 # ---------------------------------------------------------------------------

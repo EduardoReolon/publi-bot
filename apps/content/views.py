@@ -1135,7 +1135,7 @@ def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
     depois: o texto do artigo e derivado das secoes, e nao o contrario.
     """
     from apps.content.models import ArticleSection
-    from apps.content.services import montar_markdown_das_secoes
+    from apps.content.services import markdown_com_links, montar_markdown_das_secoes
 
     artigo = get_object_or_404(Article, pk=pk)
     alteradas = 0
@@ -1174,7 +1174,21 @@ def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
         artigo.save(update_fields=["thesis_json"])
 
     if alteradas:
-        aplicar_edicao_humana(artigo, montar_markdown_das_secoes(artigo), editor=request.user)
+        # As secoes guardam os marcadores [[FONTE_N]]: o texto remontado passa
+        # pela mesma troca por links que o do modelo, senao eles iam crus.
+        try:
+            markdown = markdown_com_links(artigo, montar_markdown_das_secoes(artigo))
+        except ValueError as exc:  # marcador de fonte que nao existe, URL solta
+            messages.error(
+                request,
+                _(
+                    "As secoes foram salvas, mas o artigo nao foi remontado: %(erro)s. "
+                    "Corrija o marcador na secao (ou apague-o) e salve de novo."
+                )
+                % {"erro": exc},
+            )
+            return _ao_artigo(artigo, "secoes")
+        aplicar_edicao_humana(artigo, markdown, editor=request.user)
         messages.success(
             request,
             _("%(total)s parte(s) salvas e artigo remontado.") % {"total": alteradas},
