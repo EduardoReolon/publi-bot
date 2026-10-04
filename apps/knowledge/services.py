@@ -101,15 +101,72 @@ def formatar_autores(autores: list[str]) -> str:
     return f"{limpos[0]} et al."
 
 
+_SUFIXOS_DO_NOME = {"jr", "jr.", "júnior", "junior", "filho", "neto", "sobrinho", "ii", "iii", "iv"}
+# Particulas que fazem parte do sobrenome na citacao ("van der Berg"). As do
+# portugues (da, de, dos) ficam de fora: a citacao e "Silva", nao "da Silva".
+_PARTICULAS_DO_SOBRENOME = {"van", "von", "der", "den", "ter", "ten"}
+_INICIAIS = re.compile(r"^(?:[A-ZÀ-Ú]\.?[\s-]*){1,4}$")
+
+
+def _parece_pessoa(nome: str) -> bool:
+    """Nome de gente (2 a 5 palavras, todas com maiuscula ou particula), e nao
+    de instituicao: "Ministerio da Saude" nao vira "Saude"."""
+    if "," in nome:
+        return True
+    palavras = nome.split()
+    if not 2 <= len(palavras) <= 5:
+        return False
+    particulas = {"da", "de", "do", "das", "dos", "e", *_PARTICULAS_DO_SOBRENOME}
+    return all(p[:1].isupper() or p.lower() in particulas for p in palavras)
+
+
+def sobrenome(nome: str) -> str:
+    """O sobrenome, como se cita no texto: "Jimmy Huang" -> "Huang";
+    "Huang, J." -> "Huang"; "Joao Silva Filho" -> "Silva Filho"."""
+    nome = nome.strip()
+    if "," in nome:
+        return nome.split(",")[0].strip()
+    palavras = nome.split()
+    if len(palavras) < 2 or not _parece_pessoa(nome):
+        return nome
+    inicio = len(palavras) - 1
+    if palavras[inicio].lower() in _SUFIXOS_DO_NOME and inicio >= 2:
+        inicio -= 1
+    while inicio > 1 and palavras[inicio - 1].lower() in _PARTICULAS_DO_SOBRENOME:
+        inicio -= 1
+    return " ".join(palavras[inicio:])
+
+
 def autores_para_citacao(texto: str) -> str:
-    """O campo de autores ja gravado, na forma de citacao. Lista separada por
-    virgula (como vem do OpenAlex: "Ana Silva, Joao Souza, ...") com 3 ou mais
-    nomes vira "Ana Silva et al."; ja formatado, ou com uma virgula so (pode
-    ser "Silva, A."), fica como esta."""
+    """O campo de autores ja gravado, na forma de citacao no texto (so o
+    sobrenome, como no meio academico): "Ana Silva, Joao Souza, Rui Lima" ->
+    "Silva et al."; "Jimmy Huang et al." -> "Huang et al."; dois autores ->
+    "Silva e Souza". Um autor so fica como esta (pode ser uma instituicao)."""
     texto = (texto or "").strip()
-    if "et al" in texto or texto.count(",") < 2:
+    if not texto:
+        return ""
+    com_et_al = re.fullmatch(r"(.+?),?\s+et al\.?", texto)
+    if com_et_al:
+        return f"{sobrenome(com_et_al.group(1))} et al."
+    if ";" in texto:
+        nomes = [n.strip() for n in texto.split(";") if n.strip()]
+    else:
+        nomes = []
+        for parte in (p.strip() for p in texto.split(",")):
+            # "Silva, A., Souza, B.": as iniciais voltam para o sobrenome.
+            if nomes and _INICIAIS.match(parte):
+                nomes[-1] = f"{nomes[-1]}, {parte}"
+            elif parte:
+                nomes.append(parte)
+        if len(nomes) == 1:
+            dois = re.split(r"\s+(?:e|and|&)\s+", texto)
+            if len(dois) == 2 and all(_parece_pessoa(n) for n in dois):
+                nomes = dois
+    if len(nomes) <= 1:
         return texto
-    return formatar_autores(texto.replace(";", ",").split(","))
+    if len(nomes) == 2:
+        return f"{sobrenome(nomes[0])} e {sobrenome(nomes[1])}"
+    return f"{sobrenome(nomes[0])} et al."
 
 
 @dataclass(frozen=True)

@@ -620,9 +620,23 @@ def test_pergunta_e_respondida_tambem_com_a_pesquisa(ambiente, openalex, modelo)
 def test_autores_viram_et_al_na_citacao():
     from apps.knowledge.services import autores_para_citacao
 
-    assert autores_para_citacao("Ana Silva, Joao Souza, Rui Lima, Bia Reis") == "Ana Silva et al."
+    # So o sobrenome, como no meio academico.
+    assert autores_para_citacao("Ana Silva, Joao Souza, Rui Lima, Bia Reis") == "Silva et al."
+    assert autores_para_citacao("Jimmy Huang et al.") == "Huang et al."
+    assert autores_para_citacao("Mark O Lewis, Lars Mathiassen, Arun Rai") == "Lewis et al."
+    assert autores_para_citacao("Silva, A., Souza, B., Lima, C.") == "Silva et al."
+    assert autores_para_citacao("Ana Silva, Joao Souza") == "Silva e Souza"
+    assert autores_para_citacao("Ana Silva e Joao Souza") == "Silva e Souza"
+    assert autores_para_citacao("Joao Silva Filho et al.") == "Silva Filho et al."
+    assert autores_para_citacao("Jan van der Berg et al.") == "van der Berg et al."
     assert autores_para_citacao("Silva, A.") == "Silva, A."
     assert autores_para_citacao("Silva et al.") == "Silva et al."
+    # Um autor so, e instituicao, ficam como estao.
+    assert autores_para_citacao("Ministerio da Saude") == "Ministerio da Saude"
+    assert autores_para_citacao("Ana Silva") == "Ana Silva"
+    assert autores_para_citacao("Instituto de Pesquisa e Estatistica") == (
+        "Instituto de Pesquisa e Estatistica"
+    )
 
 
 @pytest.mark.django_db

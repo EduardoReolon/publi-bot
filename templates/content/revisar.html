@@ -568,6 +568,10 @@
 
     <form method="post" action="{% url 'content:salvar_secoes' artigo.pk %}" id="form-secoes">
       {% csrf_token %}
+      <div class="campo">
+        <label for="moldura_abertura">{% translate "Abertura (o comeco do artigo, antes da primeira secao)" %}</label>
+        <textarea name="abertura" id="moldura_abertura" class="curto" rows="6">{{ moldura.abertura }}</textarea>
+      </div>
       <ul class="lista">
         {% for secao in secoes %}
           <li>
@@ -601,6 +605,10 @@
           </li>
         {% endfor %}
       </ul>
+      <div class="campo">
+        <label for="moldura_fecho">{% translate "Fecho (o final do artigo, depois da ultima secao)" %}</label>
+        <textarea name="fecho" id="moldura_fecho" class="curto" rows="6">{{ moldura.fecho }}</textarea>
+      </div>
       <div class="acoes">
         <button type="submit" class="botao secundario">
           {% translate "Salvar edicoes das secoes" %}

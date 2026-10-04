@@ -1157,11 +1157,27 @@ def salvar_secoes(request: HttpRequest, pk) -> HttpResponse:
             secao.save(update_fields=["heading", "body_markdown", "status", "updated_at"])
             alteradas += 1
 
+    # Abertura e fecho nao sao secoes (ficam na moldura), mas quem edita o
+    # texto precisa mexer neles na mesma tela.
+    tese = dict(artigo.thesis_json or {})
+    moldura = dict(tese.get("moldura") or {})
+    for parte in ("abertura", "fecho"):
+        if parte not in request.POST:
+            continue
+        texto = (request.POST.get(parte) or "").strip()
+        if texto != (moldura.get(parte) or "").strip():
+            moldura[parte] = texto
+            alteradas += 1
+    if moldura != (tese.get("moldura") or {}):
+        tese["moldura"] = moldura
+        artigo.thesis_json = tese
+        artigo.save(update_fields=["thesis_json"])
+
     if alteradas:
         aplicar_edicao_humana(artigo, montar_markdown_das_secoes(artigo), editor=request.user)
         messages.success(
             request,
-            _("%(total)s secao(oes) salvas e artigo remontado.") % {"total": alteradas},
+            _("%(total)s parte(s) salvas e artigo remontado.") % {"total": alteradas},
         )
     else:
         messages.info(request, _("Nada mudou."))
