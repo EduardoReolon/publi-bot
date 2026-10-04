@@ -10,6 +10,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
+from apps.ops.extensoes import rotas as rotas_dos_modulos
 from core.arquivos import servir_midia
 
 urlpatterns = [
@@ -25,6 +26,12 @@ urlpatterns = [
     path("radar/", include("apps.radar.urls", namespace="radar")),
     path("dados/", include("apps.dados.urls", namespace="dados")),
     path("operacao/", include("apps.ops.urls_painel", namespace="operacao")),
+]
+
+# Modulos opcionais trazem as proprias rotas (ver apps/ops/extensoes.py).
+urlpatterns += [
+    path(prefixo, include(urlconf, namespace=namespace))
+    for prefixo, urlconf, namespace in rotas_dos_modulos()
 ]
 
 # Os arquivos do tenant (foto de autor, capa em revisao), com login. Em

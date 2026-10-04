@@ -1,0 +1,137 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Os artigos viram posts com o jeito de cada rede: o PubliBot escolhe o artigo e a
+      conta, escreve com uma abordagem (e mede qual funciona), e nada sai sem passar por
+      voce — a nao ser na conta em que voce ligar a publicacao automatica.
+    {% endblocktranslate %}
+  </p>
+
+  <nav class="abas">
+    <a href="?aba=revisar" class="{% if aba_das_redes == 'revisar' %}ativo{% endif %}">{% translate "Para revisar" %}{% if contagens.revisar %} <span class="selo alerta">{{ contagens.revisar }}</span>{% endif %}</a>
+    <a href="?aba=agenda" class="{% if aba_das_redes == 'agenda' %}ativo{% endif %}">{% translate "Agenda" %}{% if contagens.agenda %} <span class="selo">{{ contagens.agenda }}</span>{% endif %}</a>
+    <a href="?aba=publicados" class="{% if aba_das_redes == 'publicados' %}ativo{% endif %}">{% translate "Publicados" %}</a>
+    <a href="?aba=comentarios" class="{% if aba_das_redes == 'comentarios' %}ativo{% endif %}">{% translate "Comentarios" %}{% if contagens.comentarios %} <span class="selo alerta">{{ contagens.comentarios }}</span>{% endif %}</a>
+    <a href="?aba=funciona" class="{% if aba_das_redes == 'funciona' %}ativo{% endif %}">{% translate "O que funciona" %}</a>
+    <a href="?aba=configurar" class="{% if aba_das_redes == 'configurar' %}ativo{% endif %}">{% translate "Configurar" %}</a>
+  </nav>
+
+  {% if not destinos and aba_das_redes != 'configurar' %}
+    <div class="aviso">
+      {% translate "Nenhuma conta cadastrada ainda." %}
+      <a href="?aba=configurar">{% translate "Cadastrar a primeira (LinkedIn, Instagram ou Google)" %}</a>.
+    </div>
+  {% endif %}
+
+  {% if destinos and aba_das_redes != 'configurar' and aba_das_redes != 'funciona' and aba_das_redes != 'comentarios' %}
+    <form method="get" class="acoes" style="margin-bottom:1rem">
+      <input type="hidden" name="aba" value="{{ aba_das_redes }}">
+      <select name="destino" onchange="this.form.submit()" style="width:auto">
+        <option value="">{% translate "Todas as contas" %}</option>
+        {% for d in destinos %}<option value="{{ d.pk }}" {% if filtro == d.pk|stringformat:'s' %}selected{% endif %}>{{ d.nome }}</option>{% endfor %}
+      </select>
+    </form>
+  {% endif %}
+
+  {% if aba_das_redes == 'revisar' or aba_das_redes == 'agenda' or aba_das_redes == 'publicados' %}
+    {% for post in posts %}
+      {% include "social/_post.html" %}
+    {% empty %}
+      <p class="pre-visualizacao">
+        {% if aba_das_redes == 'revisar' %}
+          {% blocktranslate trimmed %}
+            Nada para revisar. Os posts aparecem aqui quando um artigo e publicado (com
+            "sugerir sozinho" ligado) ou quando voce clica em "Levar as redes", no artigo.
+          {% endblocktranslate %}
+        {% elif aba_das_redes == 'agenda' %}
+          {% translate "Nenhum post aprovado esperando a hora." %}
+        {% else %}
+          {% translate "Nenhum post publicado ainda." %}
+        {% endif %}
+      </p>
+    {% endfor %}
+
+  {% elif aba_das_redes == 'comentarios' %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Lidos uma vez por dia nos posts dos ultimos 30 dias (onde a rede deixa). Pergunta
+        vira Pergunta do PubliBot: responda la, como as do site; aprovada a resposta, o
+        PubliBot responde no proprio comentario, com o link.
+      {% endblocktranslate %}
+      <a href="{% url 'content:perguntas' %}">{% translate "Ir para Perguntas" %}</a>
+    </p>
+    <div class="rolagem"><table>
+      <thead><tr><th>{% translate "Comentario" %}</th><th>{% translate "Tipo" %}</th><th>{% translate "Post" %}</th><th>{% translate "Resposta" %}</th></tr></thead>
+      <tbody>
+        {% for c in comentarios %}
+          <tr>
+            <td>{{ c.texto|truncatechars:240 }}{% if c.autor %}<div class="ajuda">{{ c.autor }} · {{ c.escrito_em|date:"d/m H:i" }}</div>{% endif %}</td>
+            <td><span class="selo {% if c.tipo == 'pergunta' %}alerta{% elif c.tipo == 'reclamacao' %}ruim{% elif c.tipo == 'elogio' %}ok{% endif %}">{{ c.get_tipo_display }}</span></td>
+            <td>{{ c.post.destino.nome }}{% if c.post.url_remota %} · <a href="{{ c.post.url_remota }}" target="_blank" rel="noopener noreferrer">{% translate "ver" %}</a>{% endif %}<div class="ajuda">{{ c.post.artigo_titulo|truncatechars:60 }}</div></td>
+            <td>
+              {% if c.respondido_em %}<span class="selo ok">{% translate "respondido" %}</span> <span class="ajuda">{{ c.respondido_em|date:"d/m" }}</span>
+              {% elif c.pergunta_id %}<span class="selo espera">{% translate "esperando a resposta ser aprovada em Perguntas" %}</span>
+              {% else %}—{% endif %}
+              {% if c.erro %}<div class="ajuda">{{ c.erro|truncatechars:160 }}</div>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="pre-visualizacao">{% translate "Nenhum comentario lido ainda." %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+
+  {% elif aba_das_redes == 'funciona' %}
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed with m=metrica %}
+        Cada post e escrito com uma abordagem. Depois de 7 dias no ar, ele "funcionou" se
+        ficou acima da mediana da propria conta em: <strong>{{ m }}</strong> (mude em
+        Configurar). O PubliBot sorteia a abordagem de cada post favorecendo as que
+        funcionam, sem parar de testar as outras — abordagem nova tem a mesma chance.
+      {% endblocktranslate %}
+    </p>
+    {% for destino, linhas in quadros %}
+      <section class="secao">
+        <h2>{{ destino.nome }} <span class="selo">{{ destino.rede_nome }}</span></h2>
+        <div class="rolagem"><table>
+          <thead><tr><th>{% translate "Abordagem" %}</th><th class="numero">{% translate "Publicados" %}</th><th class="numero">{% translate "Medidos" %}</th><th class="numero">{% translate "Funcionaram" %}</th></tr></thead>
+          <tbody>
+            {% for l in linhas %}
+              <tr>
+                <td>{{ l.abordagem.nome }}{% if not l.abordagem.ativa %} <span class="selo">{% translate "desligada" %}</span>{% endif %}</td>
+                <td class="numero">{{ l.publicados }}</td>
+                <td class="numero">{{ l.medidos }}</td>
+                <td class="numero">{% if l.taxa is not None %}{{ l.taxa }}% <span class="ajuda">({{ l.sucessos }}/{{ l.medidos }})</span>{% else %}<span class="ajuda">{% translate "cedo para dizer" %}</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      </section>
+    {% empty %}
+      <p class="pre-visualizacao">{% translate "Cadastre uma conta para comecar a medir." %}</p>
+    {% endfor %}
+
+  {% else %}
+    {% include "social/_configurar.html" %}
+  {% endif %}
+
+  <script>
+    document.querySelectorAll("[data-copiar-texto]").forEach(function (botao) {
+      botao.addEventListener("click", function () {
+        var alvo = document.getElementById(botao.getAttribute("data-copiar-texto"));
+        if (!alvo) return;
+        var texto = alvo.value !== undefined ? alvo.value : alvo.textContent;
+        navigator.clipboard.writeText(texto).then(function () {
+          var antes = botao.textContent;
+          botao.textContent = "{% translate 'Copiado!' %}";
+          setTimeout(function () { botao.textContent = antes; }, 1500);
+        });
+      });
+    });
+  </script>
+{% endblock %}

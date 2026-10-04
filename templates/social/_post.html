@@ -1,0 +1,133 @@
+{% load i18n %}
+<section class="secao" id="post-{{ post.pk }}">
+  <div class="acoes" style="margin-top:0; justify-content:space-between">
+    <div>
+      <strong>{{ post.destino.nome }}</strong> <span class="selo">{{ post.destino.rede_nome }}</span>
+      <span class="selo {% if post.situacao == 'rascunho' %}alerta{% elif post.situacao == 'publicado' %}ok{% elif post.situacao == 'falhou' %}ruim{% else %}espera{% endif %}">{{ post.get_situacao_display }}</span>
+      {% if post.abordagem %}<span class="selo" title="{% translate 'abordagem' %}">{{ post.abordagem.nome }}</span>{% endif %}
+      {% if post.variante_de_id or post.variantes.exists %}<span class="selo" title="{% translate 'ha outra versao deste artigo para esta conta: aprove a que preferir' %}">{% translate "versao A/B" %}</span>{% endif %}
+    </div>
+    <div class="ajuda">{{ post.criado_em|date:"d/m H:i" }}</div>
+  </div>
+
+  <p style="margin:.4rem 0">
+    {% translate "Artigo:" %}
+    {% if post.artigo_url %}<a href="{{ post.artigo_url }}" target="_blank" rel="noopener noreferrer">{{ post.artigo_titulo }}</a>{% else %}{{ post.artigo_titulo }}{% endif %}
+  </p>
+  <div class="ajuda"><strong>{{ post.get_motivo_display }}.</strong> {{ post.por_que }}</div>
+
+  {% if post.situacao == 'sugerido' or post.situacao == 'gerando' %}
+    <p class="pre-visualizacao">{% translate "Escrevendo... (recarregue em instantes)" %}{% if post.erro %} — {{ post.erro|truncatechars:200 }}{% endif %}</p>
+  {% elif post.situacao == 'falhou' and not post.texto %}
+    <div class="aviso ruim">{{ post.erro }}</div>
+  {% endif %}
+
+  {% if post.avisos %}
+    <div class="aviso alerta" style="margin-top:.6rem">
+      <strong>{% translate "Confira antes de aprovar:" %}</strong>
+      <ul>{% for a in post.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  {% if post.texto %}
+    {% if post.situacao == 'rascunho' or post.situacao == 'falhou' %}
+      <form method="post" action="{% url 'social:acao_no_post' post.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+        <div class="campo">
+          <label for="texto-{{ post.pk }}">{% translate "Texto do post" %} <span class="ajuda">({{ post.texto|length }} {% translate "caracteres" %})</span></label>
+          <textarea name="texto" id="texto-{{ post.pk }}" class="curto" rows="8">{{ post.texto }}</textarea>
+        </div>
+        {% if post.extras.primeiro_comentario is not None and post.destino.rede == 'linkedin' %}
+          <div class="campo">
+            <label>{% translate "Primeiro comentario (o link vai depois dele)" %}</label>
+            <input type="text" name="primeiro_comentario" value="{{ post.extras.primeiro_comentario }}">
+          </div>
+        {% endif %}
+        {% if post.destino.rede == 'instagram' %}
+          <div class="campo">
+            <label>{% translate "Laminas (uma por linha: titulo | texto)" %}</label>
+            <textarea name="laminas" class="curto" rows="6">{% for l in post.extras.laminas %}{{ l.titulo }} | {{ l.texto }}
+{% endfor %}</textarea>
+          </div>
+        {% endif %}
+        <div class="acoes">
+          <button type="submit" name="acao" value="salvar" class="botao secundario">{% translate "Salvar" %}</button>
+          <input type="datetime-local" name="quando" style="width:auto" title="{% translate 'vazio: o proximo horario livre da conta' %}">
+          <button type="submit" name="acao" value="aprovar" class="botao">{% translate "Aprovar" %}</button>
+          <select name="abordagem" style="width:auto">
+            <option value="">{% translate "outra abordagem (sorteio)" %}</option>
+            {% for a in abordagens %}{% if a.pk != post.abordagem_id %}<option value="{{ a.pk }}">{{ a.nome }}</option>{% endif %}{% endfor %}
+          </select>
+          <button type="submit" name="acao" value="reescrever" class="botao secundario">{% translate "Reescrever" %}</button>
+          <button type="submit" name="acao" value="descartar" class="botao discreto">{% translate "Descartar" %}</button>
+        </div>
+      </form>
+    {% else %}
+      <div class="texto-capturado" id="copiar-{{ post.pk }}">{{ post.texto }}</div>
+      {% if post.extras.primeiro_comentario %}
+        <div class="ajuda" style="margin-top:.4rem">{% translate "Primeiro comentario:" %} <span id="comentario-{{ post.pk }}">{{ post.extras.primeiro_comentario }} {{ post.extras.link }}</span></div>
+      {% endif %}
+      {% if post.extras.link and post.destino.rede == 'gmn' %}
+        <div class="ajuda">{% translate "Botao 'Saiba mais':" %} {{ post.extras.link }}</div>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if post.imagens %}
+    <div class="acoes" style="gap:.4rem">
+      {% for i in post.imagens %}
+        {% if post.destino.rede == 'instagram' %}
+          <a href="{% url 'social:imagem' post.chave_publica forloop.counter %}" target="_blank" rel="noopener noreferrer" download><img src="{% url 'social:imagem' post.chave_publica forloop.counter %}" alt="{% translate 'lamina' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda)"></a>
+        {% elif i.url %}
+          <a href="{{ i.url }}" target="_blank" rel="noopener noreferrer"><img src="{{ i.url }}" alt="{% translate 'capa' %}" style="width:180px; border-radius:.4rem; border:1px solid var(--borda)"></a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if post.situacao == 'aprovado' or post.situacao == 'publicando' %}
+    <p class="ajuda">
+      {% translate "Na agenda para" %} <strong>{{ post.agendado_para|date:"d/m/Y H:i" }}</strong>.
+      {% if post.destino.conectado %}{% translate "Sai sozinho na hora (conta conectada)." %}{% else %}{% translate "Conta sem API: na hora, copie e poste." %}{% endif %}
+      {% if post.erro %}<br>{{ post.erro|truncatechars:240 }}{% endif %}
+    </p>
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
+      {% csrf_token %}
+      <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+      <button type="button" class="botao secundario" data-copiar-texto="copiar-{{ post.pk }}">{% translate "Copiar texto" %}</button>
+      {% if post.extras.primeiro_comentario %}<button type="button" class="botao secundario" data-copiar-texto="comentario-{{ post.pk }}">{% translate "Copiar comentario com o link" %}</button>{% endif %}
+      {% if post.destino.conectado %}
+        <button type="submit" name="acao" value="publicar_agora" class="botao">{% translate "Publicar agora" %}</button>
+      {% else %}
+        <input type="url" name="url" placeholder="{% translate 'endereco do post, depois de postar' %}" style="min-width:16rem; width:auto">
+        <button type="submit" name="acao" value="ja_postei" class="botao">{% translate "Ja postei" %}</button>
+      {% endif %}
+      <button type="submit" name="acao" value="voltar_para_revisao" class="botao discreto">{% translate "Voltar para revisao" %}</button>
+    </form>
+  {% endif %}
+
+  {% if post.situacao == 'publicado' %}
+    <p class="ajuda">
+      {% translate "Publicado em" %} {{ post.publicado_em|date:"d/m/Y H:i" }}
+      {% if post.url_remota %} · <a href="{{ post.url_remota }}" target="_blank" rel="noopener noreferrer">{% translate "ver na rede" %}</a>{% endif %}
+    </p>
+    <div class="acoes" style="gap:.4rem">
+      <span class="selo">{{ post.cliques }} {% translate "cliques" %}</span>
+      {% if post.metricas.conversoes %}<span class="selo ok">{{ post.metricas.conversoes }} {% translate "conversoes provaveis" %}</span>{% endif %}
+      {% if post.metricas.curtidas is not None %}<span class="selo">{{ post.metricas.curtidas }} {% translate "curtidas" %}</span>{% endif %}
+      {% if post.metricas.comentarios is not None %}<span class="selo">{{ post.metricas.comentarios }} {% translate "comentarios" %}</span>{% endif %}
+      {% if post.metricas.alcance is not None %}<span class="selo">{{ post.metricas.alcance }} {% translate "alcance" %}</span>{% endif %}
+      {% if post.sucesso is True %}<span class="selo ok">{% translate "funcionou" %}</span>{% elif post.sucesso is False %}<span class="selo">{% translate "abaixo da mediana" %}</span>{% endif %}
+    </div>
+  {% endif %}
+
+  {% if post.material.identificacao or post.material.achados %}
+    <details class="ajuda" style="margin-top:.6rem">
+      <summary>{% translate "De onde saiu (o material do artigo que a IA recebeu)" %}</summary>
+      {% if post.material.dores %}<p><strong>{% translate "Dores:" %}</strong> {{ post.material.dores|join:"; " }}</p>{% endif %}
+      {% if post.material.identificacao %}<p><strong>{% translate "Identificacao:" %}</strong></p><ul>{% for f in post.material.identificacao %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+      {% if post.material.achados %}<p><strong>{% translate "Achados:" %}</strong></p><ul>{% for f in post.material.achados %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+    </details>
+  {% endif %}
+</section>

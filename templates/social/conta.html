@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Escolher a conta" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Qual conta?" %}</h1>
+  <p class="sub">{% blocktranslate trimmed with n=destino.nome %}O acesso alcanca mais de uma conta. Escolha a que "{{ n }}" vai usar.{% endblocktranslate %}</p>
+  <form method="post" action="{% url 'social:escolher_conta' destino.pk %}" class="secao">
+    {% csrf_token %}
+    {% for id, nome in contas %}
+      <div class="campo caixa">
+        <input type="radio" name="conta" value="{{ id }}" id="conta-{{ forloop.counter }}" {% if forloop.first %}checked{% endif %}>
+        <label for="conta-{{ forloop.counter }}">{{ nome }}</label>
+        <input type="hidden" name="nome_{{ id }}" value="{{ nome }}">
+      </div>
+    {% endfor %}
+    <div class="acoes"><button type="submit" class="botao">{% translate "Usar esta conta" %}</button></div>
+  </form>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% load i18n %}
+{% comment %}Bloco do modulo de redes na tela do artigo (apps/ops/extensoes.py).{% endcomment %}
+{% if artigo.status == 'published' and artigo.published_url %}
+  <div class="aviso" style="display:flex; gap:.8rem; align-items:center; flex-wrap:wrap">
+    <span><strong>{% translate "Redes sociais:" %}</strong> {% translate "um post deste artigo em cada conta ligada, com o jeito de cada rede, para voce revisar." %}</span>
+    <form method="post" action="{% url 'social:levar_as_redes' artigo.pk %}" style="margin:0">
+      {% csrf_token %}
+      <input type="hidden" name="voltar" value="{% url 'social:inicio' %}">
+      <button type="submit" class="botao pequeno">{% translate "Levar as redes" %}</button>
+    </form>
+  </div>
+{% endif %}

@@ -32,6 +32,7 @@ from apps.content.services import (
 )
 from apps.content.tasks import responder_pergunta
 from apps.knowledge.referencias import painel as painel_de_referencias
+from apps.ops.extensoes import blocos_do_artigo
 from apps.ops.models import GenerationJob
 from apps.radar.links_quebrados import cobertura_do_artigo
 
@@ -645,6 +646,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "secoes": artigo.sections.all(),
         "titulos_sugeridos": (artigo.thesis_json or {}).get("titulos_sugeridos") or [],
         "moldura": (artigo.thesis_json or {}).get("moldura") or {},
+        "blocos_do_artigo": blocos_do_artigo(),
         "refazendo": medir("refazendo", _trabalho_em_curso, artigo),
         "site": site,
         "tem_autores": Author.objects.filter(is_active=True).exists(),

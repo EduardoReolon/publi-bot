@@ -564,9 +564,9 @@ def garantir_prompts_padrao() -> None:
     Ficam no banco, e nao em constantes no codigo, para que ajustar o
     comportamento do modelo nao exija deploy.
     """
-    from apps.content.prompts_iniciais import PROMPTS_INICIAIS
+    from apps.ops.extensoes import prompts_iniciais
 
-    for chave, dados in PROMPTS_INICIAIS.items():
+    for chave, dados in prompts_iniciais().items():
         template, _ = PromptTemplate.objects.get_or_create(
             key=chave, defaults={"description": dados["descricao"]}
         )
@@ -602,11 +602,11 @@ def atualizar_prompts_padrao(chaves: set[str] | None = None) -> list[str]:
 
     Devolve as chaves atualizadas.
     """
-    from apps.content.prompts_iniciais import PROMPTS_INICIAIS
+    from apps.ops.extensoes import prompts_iniciais
 
     atualizadas = []
 
-    for chave, dados in PROMPTS_INICIAIS.items():
+    for chave, dados in prompts_iniciais().items():
         if chaves is not None and chave not in chaves:
             continue
 

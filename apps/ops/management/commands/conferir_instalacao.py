@@ -231,10 +231,10 @@ class Command(BaseCommand):
 
     def _prompts(self) -> str:
         from apps.content.models import PromptTemplate
-        from apps.content.prompts_iniciais import PROMPTS_INICIAIS
+        from apps.ops.extensoes import prompts_iniciais
 
         existentes = set(PromptTemplate.objects.values_list("key", flat=True))
-        faltam = sorted(set(PROMPTS_INICIAIS) - existentes)
+        faltam = sorted(set(prompts_iniciais()) - existentes)
         if faltam:
             raise RuntimeError(
                 f"faltam {', '.join(faltam)}. Rode: manage.py semear_prompts --todos"

@@ -207,6 +207,9 @@
     </div>
   {% endif %}
 
+  {% comment %}Blocos de modulos opcionais (ver apps/ops/extensoes.py).{% endcomment %}
+  {% for bloco in blocos_do_artigo %}{% include bloco %}{% endfor %}
+
   <nav class="abas" id="abas-do-artigo">
     <a href="#revisar">{% translate "Revisar e aprovar" %}</a>
     <a href="#capa">{% translate "Capa" %}{% if not capa_escolhida %} <span class="selo ruim">!</span>{% endif %}</a>

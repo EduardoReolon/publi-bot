@@ -21,6 +21,11 @@ def pendencias(request):
     if usuario is None or not usuario.is_authenticated:
         return {}
 
+    from apps.ops import extensoes
     from apps.ops.painel import contagens_de_pendencia
 
-    return {"pendencias": contagens_de_pendencia()}
+    return {
+        "pendencias": {**contagens_de_pendencia(), **extensoes.pendencias()},
+        # Telas de modulos opcionais (ver apps/ops/extensoes.py).
+        "menus_extras": extensoes.menus(),
+    }

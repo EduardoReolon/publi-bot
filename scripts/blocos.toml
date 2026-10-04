@@ -261,6 +261,29 @@ padroes = [
   "docs/DADOS_PUBLICOS.md",
   "apps/content/dados_da_pauta.py",
   "tests/test_dados_publicos.py",
+  "tests/test_dados_adaptadores.py",
+]
+
+
+# ---------------------------------------------------------------------------
+# apps/social — redes sociais (modulo a parte, ligado por extensoes)
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "redes-sociais"
+titulo = "Redes sociais: escolha, escrita por rede, abordagens testadas e publicacao"
+resumo = """
+Modulo isolado: o nucleo nao o importa (apps/ops/extensoes.py) e ele so le o
+nucleo por apps/social/fontes.py. Escolhe artigo e conta por regras, monta o
+material do artigo por vetores (identificacao e achados), escreve com uma
+abordagem sorteada pelo placar (Thompson sampling), confere numeros e termos,
+monta o carrossel (Pillow) e publica pela API de cada rede ou pelo copiar.
+"""
+entrada = ["apps/social/models.py", "apps/social/escolha.py", "apps/social/redacao.py"]
+relacionados = ["conteudo-modelos", "orquestracao"]
+padroes = [
+  "apps/social/**",
+  "templates/social/**",
+  "docs/REDES_SOCIAIS.md",
 ]
 
 

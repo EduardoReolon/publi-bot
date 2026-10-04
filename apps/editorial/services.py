@@ -69,7 +69,9 @@ def texto_do_guia(
     `com_convite=False` quando o artigo nao leva chamada (tema longe da
     oferta): ai o fecho tambem nao convida.
     """
-    if perfil is None or chave not in PROMPTS_COM_GUIA:
+    from apps.ops.extensoes import prompts_com_guia
+
+    if perfil is None or chave not in PROMPTS_COM_GUIA | prompts_com_guia():
         return ""
 
     linhas = ["GUIA EDITORIAL DO SITE — siga no texto que escrever:"]

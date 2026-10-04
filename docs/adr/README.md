@@ -34,3 +34,4 @@ de quem decidiu com a informacao daquele momento.
 | [0020](ADR-0020-radar-e-web-como-fornecedora-de-fontes.md) | Radar de pautas, e a web como fornecedora de fontes | Aceito |
 | [0021](ADR-0021-chamada-medicao-e-fonte-vencida.md) | Chamada para a oferta, leitura e conversao, e fonte que vence | Aceito |
 | [0022](ADR-0022-negocio-e-comparacao-com-anuncios.md) | Perfil do negocio, e o PubliBot medido como anuncio | Aceito |
+| [0023](ADR-0023-redes-sociais-como-modulo-isolado.md) | Redes sociais como modulo isolado, no mesmo projeto | Aceito |

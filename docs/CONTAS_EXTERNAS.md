@@ -229,6 +229,23 @@ Rota `/v1/audio/transcriptions` no worker — especificação em
 [`WORKER_TRANSCRICAO.md`](WORKER_TRANSCRICAO.md). Usa o mesmo
 `WORKER_SHARED_SECRET` das outras rotas.
 
+## 8. Redes sociais — LinkedIn, Instagram e Google (gratuito)
+
+Sem estas chaves, as redes funcionam no **copiar e colar** (o post fica pronto,
+com o link rastreado). Com elas, cada conta conecta pela tela e o post sai
+sozinho no horário. Um app por rede, criado **uma vez** pelo dono do PubliBot,
+vale para todos os clientes. Passo a passo e permissões em
+[`REDES_SOCIAIS.md`](REDES_SOCIAIS.md#conectar-as-apis-o-que-o-dono-precisa-fazer).
+
+```
+SOCIAL_LINKEDIN_CLIENT_ID=      SOCIAL_LINKEDIN_CLIENT_SECRET=
+SOCIAL_META_APP_ID=             SOCIAL_META_APP_SECRET=
+SOCIAL_GOOGLE_CLIENT_ID=        SOCIAL_GOOGLE_CLIENT_SECRET=
+```
+
+Endereço de retorno para cadastrar em cada app:
+`https://<domínio do painel>/redes/conectar/retorno/`.
+
 ---
 
 ## Análise de concorrentes
