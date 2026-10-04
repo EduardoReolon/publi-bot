@@ -12,7 +12,9 @@ Tres motivos, cada um com evidencia na tela:
   Search Console para o outro;
 * **fonte vencida**: o artigo cita uma fonte que venceu (validade da
   categoria) ou que ganhou versao nova no acervo. Para pagina de preco e o
-  motivo principal: o endereco fica, o dado muda.
+  motivo principal: o endereco fica, o dado muda;
+* **dado novo**: um dado publico citado (IBGE, Banco Central...) ganhou
+  periodo mais novo na instituicao.
 
 A atualizacao em si e feita pela pessoa, no artigo; o contrato com o site
 ainda nao tem republicacao. Marcada como feita, a mesma sugestao nao volta por
@@ -396,6 +398,61 @@ def pelas_fontes() -> int:
     return novas
 
 
+def pelos_dados() -> int:
+    """Artigos no ar que citam um dado publico que ganhou periodo mais novo
+    (IBGE, Banco Central...). O mesmo conjunto de valores novos nao volta
+    depois de decidido; um periodo ainda mais novo volta."""
+    from apps.content.dados_da_pauta import dados_com_valor_novo
+    from apps.content.models import Article
+
+    tipo = SugestaoDeAtualizacao.Tipo.DADO_NOVO
+    novas = 0
+    artigos = (
+        Article.objects.filter(status=Article.Status.PUBLISHED)
+        .exclude(published_url="")
+        .exclude(dados_usados=[])
+    )
+    for artigo in artigos:
+        try:
+            dados = dados_com_valor_novo(artigo)
+        except Exception:
+            logger.exception("Dados do artigo %s nao conferidos.", artigo.pk)
+            continue
+        if not dados:
+            continue
+        chaves = sorted(d["chave"] for d in dados)
+        decididas = SugestaoDeAtualizacao.objects.filter(
+            url=artigo.published_url,
+            tipo=tipo,
+            situacao__in=[
+                SugestaoDeAtualizacao.Situacao.FEITA,
+                SugestaoDeAtualizacao.Situacao.DISPENSADA,
+            ],
+        )
+        if any(sorted(s.evidencia.get("chaves") or []) == chaves for s in decididas):
+            continue
+        evidencia = {"dados": [{k: v for k, v in d.items() if k != "fato"} for d in dados]}
+        evidencia["chaves"] = chaves
+        aberta = SugestaoDeAtualizacao.objects.filter(
+            url=artigo.published_url, tipo=tipo, situacao=SugestaoDeAtualizacao.Situacao.ABERTA
+        ).first()
+        if aberta:
+            aberta.evidencia, aberta.artigo = evidencia, artigo
+            aberta.save(update_fields=["evidencia", "artigo", "atualizada_em"])
+            continue
+        SugestaoDeAtualizacao.objects.create(
+            url=artigo.published_url,
+            titulo=artigo.title[:300],
+            artigo=artigo,
+            tipo=tipo,
+            evidencia=evidencia,
+            # Pronto para fazer (o valor novo ja esta aqui), como a fonte com substituta.
+            prioridade=70.0,
+        )
+        novas += 1
+    return novas
+
+
 def atualizar_sugestoes() -> int:
     antes = SugestaoDeAtualizacao.objects.count()
     paginas = paginas_publicadas()
@@ -403,4 +460,5 @@ def atualizar_sugestoes() -> int:
     pela_canibalizacao([p for p in paginas if _chave(p["url"]) not in atendidas])
     pelo_search_console(paginas)
     pelas_fontes()
+    pelos_dados()
     return SugestaoDeAtualizacao.objects.count() - antes

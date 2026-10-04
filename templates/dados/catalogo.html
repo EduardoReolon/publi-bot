@@ -105,7 +105,12 @@
             <td><strong>{{ i.sigla }}</strong> — {% if i.site %}<a href="{{ i.site }}" target="_blank" rel="noopener noreferrer">{{ i.nome }}</a>{% else %}{{ i.nome }}{% endif %}
               {% if i.notas %}<details class="ajuda"><summary>{% translate "o que tem" %}</summary><div>{{ i.notas }}</div></details>{% endif %}</td>
             <td class="pre-visualizacao">{{ i.nichos|join:", " }}</td>
-            <td>{% if i.estado == 'pronto' %}<span class="selo ok">{% translate "pronto" %}</span>{% elif i.estado == 'a_fazer' %}<span class="selo alerta">{% translate "a fazer" %}</span>{% else %}<span class="selo">{% translate "sem adaptador" %}</span>{% endif %}</td>
+            <td>{% if i.estado == 'pronto' %}<span class="selo ok">{% translate "pronto" %}</span>
+                {% if curador %}<form method="post" action="{% url 'dados:procurar' i.pk %}" style="margin-top:.4rem; display:flex; gap:.3rem">{% csrf_token %}
+                  <input type="text" name="termo" required placeholder="{% if i.adaptador == 'oms' %}{% translate 'termo em ingles' %}{% else %}{% translate 'ex.: plano de saude' %}{% endif %}" style="min-width:10rem">
+                  <button type="submit" class="pequeno secundario">{% translate "Procurar series" %}</button>
+                </form>{% endif %}
+              {% elif i.estado == 'a_fazer' %}<span class="selo alerta">{% translate "a fazer" %}</span>{% else %}<span class="selo">{% translate "sem adaptador" %}</span>{% endif %}</td>
             <td class="numero">{{ i.n_series }}</td>
             <td>{% if curador %}<form method="post" action="{% url 'dados:confiavel' i.pk %}">{% csrf_token %}<button type="submit" class="pequeno {% if not i.confiavel %}discreto{% endif %}">{% if i.confiavel %}{% translate "sim" %}{% else %}{% translate "nao" %}{% endif %}</button></form>{% else %}{{ i.confiavel|yesno:_("sim,nao") }}{% endif %}</td>
           </tr>

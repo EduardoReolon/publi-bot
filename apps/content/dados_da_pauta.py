@@ -193,3 +193,48 @@ def pendencias(article) -> list[str]:
                 "tire a citacao"
             )
     return faltam
+
+
+def dados_com_valor_novo(article) -> list[dict]:
+    """Os dados citados no artigo que ganharam periodo mais novo na instituicao
+    (o adaptador busca; serie a mao conta com o valor que a curadoria digitar)."""
+    from apps.dados.catalogo import fato
+    from apps.dados.models import Serie
+
+    novos = []
+    for f in article.dados_usados or []:
+        if not f.get("citado") or not f.get("serie_id"):
+            continue
+        serie = Serie.objects.select_related("instituicao").filter(pk=f["serie_id"]).first()
+        atual = fato(serie, f.get("local") or "Brasil") if serie else None
+        antes = f.get("periodo_ordenavel") or f.get("periodo", "")
+        if atual is None or atual["periodo_ordenavel"] <= antes:
+            continue
+        novos.append(
+            {
+                "n": f["n"],
+                "instituicao": f.get("instituicao", ""),
+                "titulo": f.get("titulo", ""),
+                "local": f.get("local", ""),
+                "de": f"{f.get('periodo', '')}: {f.get('valor', '')}",
+                "para": f"{atual['periodo']}: {atual['valor']}",
+                "chave": f"{f['serie_id']}:{f.get('local', '')}:{atual['periodo_ordenavel']}",
+                "fato": atual,
+            }
+        )
+    return novos
+
+
+def atualizar_dados_da_versao(article) -> int:
+    """Na versao nova de um artigo, os dados citados passam ao valor mais novo.
+    A conferencia do numero (`pendencias`) passa a exigir o numero novo no
+    texto: a pessoa atualiza o numero e o periodo, ou tira a citacao."""
+    por_n = {d["n"]: d["fato"] for d in dados_com_valor_novo(article)}
+    if not por_n:
+        return 0
+    article.dados_usados = [
+        {**f, **por_n[f["n"]], "n": f["n"], "citado": f.get("citado")} if f["n"] in por_n else f
+        for f in article.dados_usados
+    ]
+    article.save(update_fields=["dados_usados"])
+    return len(por_n)

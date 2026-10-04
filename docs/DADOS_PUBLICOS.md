@@ -54,7 +54,7 @@ catálogo de cada instituição, conferidos.
 - Contexto do modelo: no máximo 8 fatos por artigo e 4 por seção (os mais
   próximos dela), sempre marcados como opcionais.
 
-## Pronto (estrutura)
+## Pronto
 
 - Modelos, migração, semente com 20 instituições (geral, saúde, IA, obras).
 - Tela do catálogo (séries, instituições, pedidos), cadastro à mão, aprovar e
@@ -65,29 +65,60 @@ catálogo de cada instituição, conferidos.
   referência. Revisão: conferência do número.
 - Varredura diária do acervo e pedidos de adaptador.
 
-## A fazer (próxima etapa: explorar os sites)
+## Adaptadores prontos
 
-Para cada item: explorar o site, escrever o adaptador com testes sobre
-respostas gravadas (sem rede), marcar `pronto = True`.
+| Instituição | Busca (`procurar`) | Valores (`valores`) | Recortes | Link reconhecido |
+|---|---|---|---|---|
+| IBGE (SIDRA) | catálogo de agregados (`servicodados.ibge.gov.br/api/v3/agregados`), pelo nome da pesquisa e da tabela; cada variável vira uma série `tabela/variável` | `…/agregados/{tabela}/periodos/-N/variaveis/{v}?localidades=N1[all]` ou `N3[UF]`; pega o **total** de cada classificação e pula "-", "...", "X" | Brasil, estado | `sidra.ibge.gov.br/tabela/N`, `apisidra…/values/t/N` |
+| Banco Central (SGS) | portal de dados abertos (CKAN, `package_search`): cada série traz o link `bcdata.sgs.{código}` | `api.bcb.gov.br/dados/serie/bcdata.sgs.{código}/dados/ultimos/N` | Brasil | `bcdata.sgs.N` |
+| OMS (GHO) | `ghoapi.azureedge.net/api/Indicator` (nomes em **inglês**) | `…/api/{código}?$filter=SpatialDim eq 'BRA'`, ambos os sexos | Brasil | `ghoapi…/api/{código}` |
 
-1. **IBGE (SIDRA)** — `procurar` pelo catálogo de agregados
-   (`servicodados.ibge.gov.br/api/v3/agregados`), `valores` pela
-   `apisidra.ibge.gov.br`, `codigo_do_link` para `sidra.ibge.gov.br/tabela/N`.
-   Recortes Brasil/UF/município. Comando para popular o catálogo com as
-   tabelas dos nichos (PNS, PNAD TIC, PAIC, SINAPI...) como séries sugeridas.
-2. **Banco Central (SGS)** — `valores` por código; uma lista curada de
-   códigos (IPCA, Selic, INCC) na semente, conferida na API.
-3. **OMS (GHO)** — API OData por indicador e país.
-4. **DATASUS** — o mais trabalhoso: arquivos grandes. O adaptador baixa com
-   `arquivo_temporario` (apaga ao terminar, com teto de tamanho), resume por
-   ano e estado e grava só o resumo em `Valor`: a base inteira nunca fica no
-   servidor.
-5. **Cetic.br, CBIC/CUB, SINAPI (Caixa)** — planilhas: adaptador de planilha
-   com mapeamento de colunas por publicação.
-6. **Atualização** — tarefa que pede o período mais novo das séries em uso e,
-   quando muda, sugere atualizar o artigo (reaproveitar o "fonte vencida").
-7. **Instituição confiável** — usar `link_confiavel` na curadoria do acervo
-   (documento dessas instituições dispensa a aprovação).
+- O período é guardado numa forma que ordena ("2019", "2024-08", "2024-T1",
+  "2024-08-15") e aparece legível no texto ("ago/2024", "1º tri/2024").
+- Valor buscado há menos de um dia não é buscado de novo; série cadastrada à
+  mão nunca chama o adaptador (o código dela é inventado).
+- Testes: `tests/test_dados_adaptadores.py`, sobre respostas no formato
+  documentado de cada API, sem rede.
+
+### Como popular e conferir
+
+```bash
+# As APIs de verdade respondem? (precisa de internet; nao grava nada)
+manage.py conferir_adaptadores
+
+# Procurar series e deixar como "Sugerida" para aprovar na tela Dados
+manage.py explorar_dados ibge "plano de saude"
+manage.py explorar_dados bcb IPCA
+manage.py explorar_dados oms "obesity"
+manage.py explorar_dados ibge --nichos      # os termos de TERMOS_POR_NICHO
+```
+
+Na tela **Dados → Instituições**, o superusuário tem o mesmo "Procurar séries"
+por instituição. Série sugerida só vai para as pautas depois de **aprovada**.
+
+### Atualização
+
+Uma vez por dia (com as sugestões de atualização do Radar), os dados citados
+nos artigos no ar são conferidos na instituição. Período mais novo vira a
+sugestão **"Dado público com período mais novo"** (Radar → Atualizações), com
+"de → para". *Atualizar no PubliBot* cria a versão nova já com o valor novo, e
+a conferência do número na revisão passa a exigir o número novo no texto.
+
+### Instituição confiável
+
+Fonte achada na busca de fontes cujo link é de instituição marcada
+**confiável** no catálogo entra aprovada, na categoria "Norma ou documento
+oficial", sem esperar a curadoria.
+
+## A fazer
+
+1. **DATASUS** — arquivos grandes. O adaptador baixa com `arquivo_temporario`
+   (apaga ao terminar, com teto de tamanho), resume por ano e estado e grava
+   só o resumo em `Valor`: a base inteira nunca fica no servidor. Depende de
+   escolher as bases (SIM, SINASC, SIH...) e o recorte que interessa.
+2. **Cetic.br, CBIC/CUB, SINAPI (Caixa)** — planilhas, sem API: adaptador de
+   planilha com mapeamento de colunas por publicação. Até lá, cadastro à mão.
+3. **IPEA (ipeadata)** — tem API OData; mesma forma do adaptador da OMS.
 
 Ao explorar, cada pedido de adaptador da tela já traz domínio, exemplos de
 links e quantas fontes citam: é o ponto de partida.

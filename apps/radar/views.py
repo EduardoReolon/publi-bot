@@ -796,6 +796,17 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
         except VersaoRecusada as exc:
             messages.error(request, str(exc))
             return redirect("radar:atualizacoes")
+        if sugestao.tipo == SugestaoDeAtualizacao.Tipo.DADO_NOVO:
+            from apps.content.dados_da_pauta import atualizar_dados_da_versao
+
+            if atualizar_dados_da_versao(nova):
+                messages.info(
+                    request,
+                    _(
+                        "Os dados da versao nova ja tem o valor mais novo: "
+                        "troque os numeros no texto."
+                    ),
+                )
         if sugestao.tipo == SugestaoDeAtualizacao.Tipo.FONTE_VENCIDA:
             trocadas = trocar_fontes_substituidas(nova)
             if trocadas:

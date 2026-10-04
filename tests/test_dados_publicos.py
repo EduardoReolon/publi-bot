@@ -101,7 +101,8 @@ def test_cadastro_a_mao_so_superusuario_e_tela(ambiente):  # noqa: F811
 
     assert client.post(reverse("dados:nova_serie", urlconf=U), dados).status_code == 403
     pagina = client.get(reverse("dados:catalogo", urlconf=U) + "?aba=instituicoes").content.decode()
-    assert "a fazer" in pagina and "Cadastrar um dado" not in pagina
+    assert "pronto" in pagina and "Cadastrar um dado" not in pagina
+    assert "Procurar series" not in pagina  # buscar na instituicao: so curador
 
     usuario.is_superuser = True
     usuario.save()
@@ -205,3 +206,53 @@ def test_arquivo_grande_e_apagado(monkeypatch):
     with arquivo_temporario("https://exemplo.gov.br/base.csv") as caminho:
         assert os.path.getsize(caminho) == 10
     assert not os.path.exists(caminho)
+
+
+@pytest.mark.django_db
+def test_periodo_novo_vira_sugestao_e_a_versao_exige_o_numero_novo(ambiente):  # noqa: F811
+    from apps.content.dados_da_pauta import pendencias
+    from apps.radar.atualizacoes import pelos_dados
+    from apps.radar.models import SugestaoDeAtualizacao
+
+    _, _, client = ambiente
+    serie = _serie()
+    artigo = Article.objects.create(
+        title="Obesidade",
+        status=Article.Status.PUBLISHED,
+        remote_id="r1",
+        published_url="https://site.exemplo.org/obesidade/",
+        body_markdown="Em 2019, 25,9% dos adultos (IBGE, 2019).",
+        dados_usados=[
+            {**catalogo.fato(serie, "Brasil"), "n": 1, "citado": True, "automatico": False}
+        ],
+    )
+    assert pelos_dados() == 0  # nada mais novo ainda
+
+    Valor.objects.create(serie=serie, local="Brasil", periodo="2023", valor=Decimal("27.8"))
+    assert pelos_dados() == 1
+    sugestao = SugestaoDeAtualizacao.objects.get(tipo="dado")
+    assert sugestao.evidencia["dados"][0]["para"] == "2023: 27,8"
+    assert pelos_dados() == 0  # a mesma nao duplica
+
+    client.post(
+        reverse("radar:decidir_atualizacao", args=[sugestao.pk], urlconf=U),
+        {"decisao": "versao"},
+    )
+    nova = Article.objects.get(previous_version=artigo)
+    assert nova.dados_usados[0]["valor"] == "27,8" and nova.dados_usados[0]["citado"]
+    assert "27,8" in pendencias(nova)[0]  # a revisao pede o numero novo no texto
+    assert "27,8" in nova.update_notes
+
+
+@pytest.mark.django_db
+def test_link_de_instituicao_confiavel_entra_sem_curadoria():
+    from apps.knowledge.fontes_web import _de_instituicao_confiavel
+
+    ibge = Instituicao.objects.create(
+        sigla="IBGE-T", nome="IBGE", dominios=["ibge-teste.gov.br"], confiavel=False
+    )
+    assert not _de_instituicao_confiavel("https://www.ibge-teste.gov.br/estatisticas/x")
+    ibge.confiavel = True
+    ibge.save()
+    assert _de_instituicao_confiavel("https://www.ibge-teste.gov.br/estatisticas/x")
+    assert not _de_instituicao_confiavel("https://outro.org/x")

@@ -148,6 +148,16 @@ def notas_da_sugestao(sugestao) -> str:
                     "acervo: envie a fonte atualizada ou confira se o dado ainda vale."
                 )
         linhas.append('Atualize tambem a data do dado no texto ("precos de setembro/2026").')
+    elif sugestao.tipo == "dado":
+        linhas = ["Dados publicos citados com valor mais novo na instituicao:"]
+        linhas += [
+            f"- {d['instituicao']} — {d['titulo']} ({d['local']}): {d['de']} -> {d['para']}"
+            for d in evidencia.get("dados", [])
+        ]
+        linhas.append(
+            'Troque o numero e o periodo no texto (inclusive na citacao, ex.: "(IBGE, 2023)"). '
+            "A revisao confere o numero novo."
+        )
     else:
         linhas = [
             f"A posicao media caiu de {evidencia.get('posicao_anterior')} para "
