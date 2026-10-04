@@ -199,7 +199,9 @@ def fetch_pending_questions(site_id: str | None = None) -> int:
     total = 0
 
     for site in sites:
-        if not site.suporta("qa"):
+        # Esta coleta roda sempre: e tambem o que mantem os recursos do
+        # cadastro em dia com o /health/ do site.
+        if not site.suporta("qa", reconsultar=True):
             continue
 
         try:

@@ -254,7 +254,7 @@ def publicar_artigo(article: Article, site: Site) -> Article:
     Versao nova de um artigo que ja esta no ar vai pela rota de atualizacao,
     para a MESMA pagina — se o site declarar o recurso `update`.
     """
-    if article.e_atualizacao and not site.suporta("update"):
+    if article.e_atualizacao and not site.suporta("update", reconsultar=True):
         raise PublicacaoBloqueada(
             f"o site {site.name!r} nao declara o recurso 'update' em /health/: a versao "
             f"nova nao tem como substituir a pagina que esta no ar."
@@ -271,7 +271,7 @@ def publicar_resposta(answer, site: Site):
     um caminho proprio aqui divergiria do do artigo na primeira correcao feita
     so de um lado.
     """
-    if not site.suporta("qa"):
+    if not site.suporta("qa", reconsultar=True):
         raise PublicacaoBloqueada(f"o site {site.name!r} nao declara o recurso 'qa' em /health/.")
     return _publicar(answer, site, payload=montar_payload_de_resposta(answer, site))
 

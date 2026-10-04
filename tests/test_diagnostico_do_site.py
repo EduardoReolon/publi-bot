@@ -81,6 +81,9 @@ def test_site_que_segue_o_contrato_passa_em_tudo(site, monkeypatch):
         "Recusa horario vencido",
         "Leitura das publicacoes",
     }
+    # O teste grava no cadastro o que o site declara.
+    site.refresh_from_db()
+    assert site.capabilities == ["publish"] and site.contract_version == "1"
 
 
 @pytest.mark.django_db

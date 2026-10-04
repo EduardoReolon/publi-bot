@@ -135,7 +135,7 @@ def coletar_de_todos() -> int:
     """Os sites deste tenant que declaram `insights`."""
     total = 0
     for site in Site.objects.all():
-        if not site.suporta("insights"):
+        if not site.suporta("insights", reconsultar=True):
             continue
         try:
             leituras, conversoes = coletar(site)
