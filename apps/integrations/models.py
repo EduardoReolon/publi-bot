@@ -144,9 +144,38 @@ class Site(models.Model):
     def circuito_aberto(self) -> bool:
         return bool(self.circuit_open_until and self.circuit_open_until > django_timezone.now())
 
-    def suporta(self, recurso: str) -> bool:
-        """Se o site declarou suportar um recurso opcional do contrato."""
+    def suporta(self, recurso: str, *, reconsultar: bool = False) -> bool:
+        """Se o site declarou suportar um recurso opcional do contrato.
+
+        `reconsultar`: sem o recurso no cadastro, pergunta ao /health/ uma vez
+        antes de dizer que nao (o site pode ter ganho o recurso depois)."""
+        if recurso in (self.capabilities or []):
+            return True
+        if not reconsultar:
+            return False
+        from apps.integrations.errors import SiteError
+
+        try:
+            self.atualizar_recursos()
+        except SiteError:
+            return False
         return recurso in (self.capabilities or [])
+
+    def atualizar_recursos(self, saude: dict | None = None) -> dict:
+        """Grava a versao do contrato e os recursos que o site declara no
+        /health/. Sem `saude`, consulta o site."""
+        if saude is None:
+            from apps.integrations.client import SiteClient
+
+            saude = SiteClient(self).health()
+        versoes = saude.get("contract_versions") or saude.get("contract_version") or ""
+        if isinstance(versoes, list | tuple):
+            versoes = ", ".join(map(str, versoes))
+        recursos = saude.get("capabilities") or saude.get("features") or []
+        self.contract_version = str(versoes)[:16]
+        self.capabilities = [str(r) for r in recursos if r]
+        self.save(update_fields=["contract_version", "capabilities"])
+        return saude
 
 
 class SitePost(models.Model):

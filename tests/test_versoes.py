@@ -125,6 +125,32 @@ def test_site_sem_update_nao_recebe_versao(site, settings):  # noqa: F811
 
 
 @pytest.mark.django_db
+def test_site_que_ganhou_update_e_reconsultado_antes_de_bloquear(
+    site,  # noqa: F811
+    monkeypatch,
+):
+    """O cadastro so tinha os recursos digitados a mao: antes de bloquear, o
+    PubliBot pergunta ao /health/ e grava o que o site declara."""
+    from apps.content.versoes import criar_nova_versao
+    from apps.integrations import publishing
+    from apps.integrations.client import SiteClient
+
+    site.capabilities = []
+    site.save()
+    monkeypatch.setattr(
+        SiteClient,
+        "health",
+        lambda self: {"contract_versions": ["1"], "capabilities": ["publish", "update"]},
+    )
+    monkeypatch.setattr(publishing, "_publicar", lambda artigo, site, payload: artigo)
+    v2 = criar_nova_versao(_publicado())
+
+    assert publishing.publicar_artigo(v2, site) == v2
+    site.refresh_from_db()
+    assert site.capabilities == ["publish", "update"] and site.contract_version == "1"
+
+
+@pytest.mark.django_db
 def test_da_sugestao_de_atualizacao_para_a_versao(ambiente):  # noqa: F811
     from apps.radar.models import SugestaoDeAtualizacao
 

@@ -74,6 +74,9 @@ def testar_site(site) -> list[Etapa]:
         )
         return etapas
 
+    # O teste e tambem o momento de atualizar o cadastro: os recursos sao os
+    # que o site declara agora, e nao os digitados a mao.
+    site.atualizar_recursos(saude)
     versoes = saude.get("contract_versions") or saude.get("contract_version") or "?"
     if isinstance(versoes, list | tuple):
         versoes = ", ".join(map(str, versoes))
