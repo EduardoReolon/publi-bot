@@ -465,8 +465,10 @@ def passo_abertura_e_fecho(job: GenerationJob) -> dict:
     abertura = str(moldura.get("abertura") or "").strip()
     fecho = str(moldura.get("fecho") or "").strip()
 
-    abertura = limitar_fontes(abertura, MAXIMO_DE_FONTES_POR_SECAO)[0]
-    fecho = limitar_fontes(fecho, MAXIMO_DE_FONTES_POR_SECAO)[0]
+    # O modelo da moldura nao viu as fontes: marcador que ele escreve e
+    # atribuicao as cegas (a fonte 1 do artigo levava a tese inteira). Sai.
+    abertura = limitar_fontes(normalizar_marcadores(abertura), 0)[0]
+    fecho = limitar_fontes(normalizar_marcadores(fecho), 0)[0]
     validar_saida_do_modelo(f"{abertura}\n\n{fecho}")
 
     tese = dict(article.thesis_json or {})

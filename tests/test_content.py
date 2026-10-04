@@ -179,6 +179,11 @@ def test_excesso_de_fontes_perde_so_o_marcador_da_menos_citada():
     assert "O custo subiu." in novo and "FONTE_3" not in novo
     assert validar_saida_do_modelo(novo) == [1, 2]
     assert limitar_fontes("So [[FONTE_1]].", 2) == ("So [[FONTE_1]].", [])
+    # Abertura e fecho nao citam (o modelo deles nao viu as fontes).
+    assert limitar_fontes("Depende de capacidades dinamicas [[FONTE_1]].", 0) == (
+        "Depende de capacidades dinamicas.",
+        [1],
+    )
 
 
 def test_substituicao_usa_a_url_do_banco():

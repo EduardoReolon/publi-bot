@@ -244,7 +244,9 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Sao escritos por ultimo de proposito: so quem sabe o que o artigo "
             "diz consegue prometer no comeco exatamente o que o texto entrega. "
             "Abertura escrita antes promete o que o artigo nao cumpre.\n\n"
-            f"{REGRA_DOS_LINKS}\n\n"
+            "Voce nao viu as fontes, entao NAO cite nenhuma: nada de marcador "
+            "[[FONTE_N]], nome de autor ou endereco da web. As citacoes estao no "
+            "corpo do artigo.\n\n"
             "Responda SOMENTE com um objeto JSON:\n"
             '  "abertura": 1 a 2 paragrafos. Comece pelo problema de quem le, '
             "nao por definicao de dicionario. Diga o que o artigo responde. "

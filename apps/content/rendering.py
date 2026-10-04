@@ -167,6 +167,8 @@ def limitar_fontes(texto: str, maximo: int) -> tuple[str, list[int]]:
     tiradas = ordem[maximo:]
     for indice in tiradas:
         texto = _remover_marcador(texto, indice)
+    if tiradas:
+        texto = re.sub(r"[ \t]+([.!?,;:])", r"\1", texto)
     return texto, tiradas
 
 
