@@ -46,6 +46,13 @@ Semente: `manage.py semear_dados` (o deploy roda) cria as instituições de
 onde estão os dados. Códigos de tabela não entram de memória: saem do
 catálogo de cada instituição, conferidos.
 
+## Catalogo global, escolha por site
+
+O catalogo e o mesmo para todos os clientes. Cada site escolhe, em **Negocio >
+Dados publicos que interessam a este site**, de quais nichos (saude, IA, obras,
+geral) as pautas recebem sugestao; nenhum marcado, todos. Mesmo sem marcar, uma
+serie so entra numa pauta se for muito proxima do tema dela.
+
 ## Regras que valem para todo adaptador
 
 - `valores(serie, local=...)` recebe "Brasil" ou o nome do estado

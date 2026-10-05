@@ -521,6 +521,16 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 86400.0,
         "options": {"expires": 80000},
     },
+    "recalcular-temas": {
+        "task": "apps.social.tasks.recalcular_temas",
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
+    "placar-coletivo": {
+        "task": "apps.social.tasks.consolidar_placar_coletivo",
+        "schedule": 86400.0,
+        "options": {"expires": 80000},
+    },
     "purge-expired-questions": {
         "task": "apps.integrations.tasks.purge_expired_questions",
         # Uma vez por dia: e uma obrigacao de retencao, nao algo urgente.

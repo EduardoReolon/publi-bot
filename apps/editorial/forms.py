@@ -130,9 +130,25 @@ class PerfilDoNegocioForm(forms.ModelForm):
     """O perfil do negocio. As dores ficam no Radar, junto das sementes: as
     duas viram busca."""
 
+    nichos_de_dados = forms.MultipleChoiceField(
+        label=_("Dados publicos que interessam a este site"),
+        choices=[
+            ("saude", _("Saude")),
+            ("ia", _("IA e tecnologia")),
+            ("obras", _("Obras e engenharia")),
+            ("geral", _("Geral (inflacao, populacao, renda...)")),
+        ],
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_(
+            "O catalogo de dados (IBGE, Banco Central...) e o mesmo para todos os sites; "
+            "aqui voce escolhe de quais nichos as pautas recebem sugestao. Nenhum marcado: todos."
+        ),
+    )
+
     class Meta:
         model = PerfilDoNegocio
-        fields = ["tema", "publico", "oferta", "frentes"]
+        fields = ["tema", "publico", "oferta", "frentes", "nichos_de_dados"]
         widgets = {
             "oferta": forms.Textarea(attrs={"rows": 3}),
             "frentes": forms.Textarea(attrs={"rows": 4}),

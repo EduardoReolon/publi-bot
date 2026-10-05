@@ -6,6 +6,8 @@ app_name = "social"
 
 urlpatterns = [
     path("", views.inicio, name="inicio"),
+    path("estrategia/", views.estrategia, name="estrategia"),
+    path("estrategia/acao/", views.acao_na_estrategia, name="acao_na_estrategia"),
     path("posts/<uuid:pk>/", views.acao_no_post, name="acao_no_post"),
     path("artigo/<uuid:artigo_id>/levar/", views.levar_as_redes, name="levar_as_redes"),
     path("configurar/", views.configurar, name="configurar"),

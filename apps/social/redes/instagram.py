@@ -223,6 +223,39 @@ class PublicadorInstagram(Publicador):
             "id", ""
         )
 
+    def seguidores(self) -> int | None:
+        dados = self._get(self.destino.conta_id, "Instagram (seguidores)", fields="followers_count")
+        return dados.get("followers_count")
+
+    def referencias(self, hashtag: str, limite: int = 25) -> list[dict]:
+        """Hashtag Search: os posts com mais engajamento da hashtag (de outras
+        contas). A Meta limita a 30 hashtags diferentes por semana por conta."""
+        conta = self.destino.conta_id
+        achadas = self._get(
+            "ig_hashtag_search", "Instagram (hashtag)", user_id=conta, q=hashtag.lstrip("#")
+        ).get("data", [])
+        if not achadas:
+            return []
+        dados = self._get(
+            f"{achadas[0]['id']}/top_media",
+            "Instagram (posts da hashtag)",
+            user_id=conta,
+            fields="id,caption,like_count,comments_count,media_type,permalink,timestamp",
+            limit=limite,
+        )
+        return [
+            {
+                "id_remoto": item["id"],
+                "legenda": item.get("caption", "") or "",
+                "formato": item.get("media_type", ""),
+                "curtidas": item.get("like_count") or 0,
+                "comentarios": item.get("comments_count") or 0,
+                "link": item.get("permalink", ""),
+                "publicado_em": item.get("timestamp", ""),
+            }
+            for item in dados.get("data", [])
+        ]
+
     NOMES = {
         "reach": "alcance",
         "likes": "curtidas",

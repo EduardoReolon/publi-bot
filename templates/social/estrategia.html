@@ -1,0 +1,205 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Estrategia" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+
+  {% if not destino %}
+    <div class="aviso">{% translate "Cadastre uma conta em" %} <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Configurar" %}</a> {% translate "para ver a estrategia dela." %}</div>
+  {% else %}
+  {% with p=plano %}
+  <form method="get" class="acoes" style="margin-bottom:1rem">
+    <select name="destino" onchange="this.form.submit()" style="width:auto">
+      {% for d in destinos %}<option value="{{ d.pk }}" {% if d.pk == destino.pk %}selected{% endif %}>{{ d.nome }} ({{ d.rede_nome }})</option>{% endfor %}
+    </select>
+  </form>
+
+  {# --- Fase ------------------------------------------------------------------- #}
+  <section class="secao">
+    <h2>{% translate "Fase:" %} {{ p.info.nome }}</h2>
+    <div class="paginas" style="margin:.2rem 0 .8rem">
+      {% for codigo, nome in fases %}<span class="selo {% if codigo == p.fase %}ok{% endif %}">{{ forloop.counter }}. {{ nome }}</span>{% endfor %}
+    </div>
+    <p><strong>{% translate "Objetivo agora:" %}</strong> {{ p.info.objetivo }}</p>
+    <p class="pre-visualizacao"><strong>{% translate "Por que:" %}</strong> {{ p.info.por_que }}</p>
+    <div class="acoes" style="gap:1.2rem">
+      <span>{% translate "Seguidores:" %} <strong>{{ destino.seguidores|default:"?" }}</strong>{% if p.crescimento is not None %} <span class="ajuda">({{ p.crescimento }} {% translate "por semana, ultimas 4 semanas" %})</span>{% endif %}</span>
+      {% if p.proxima %}<span class="ajuda">{% blocktranslate trimmed with n=p.faltam f=p.proxima %}Faltam {{ n }} para a fase {{ f }}.{% endblocktranslate %}</span>{% endif %}
+    </div>
+    <div class="acoes">
+      <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes" style="margin:0">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="seguidores">
+        <input type="number" name="seguidores" min="0" placeholder="{% translate 'seguidores hoje' %}" style="width:10rem">
+        <button type="submit" class="botao secundario pequeno">{% translate "Registrar" %}</button>
+      </form>
+      <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes" style="margin:0">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="fase">
+        <select name="fase_manual" style="width:auto">
+          <option value="">{% translate "fase pelos seguidores" %}</option>
+          {% for codigo, nome in fases %}<option value="{{ codigo }}" {% if destino.fase_manual == codigo %}selected{% endif %}>{% translate "fixar em" %} {{ nome }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="botao discreto pequeno">{% translate "Salvar" %}</button>
+      </form>
+    </div>
+    <p class="ajuda">{% translate "Com a conta conectada (Instagram, pagina do LinkedIn), os seguidores sao lidos sozinhos todo dia." %}</p>
+  </section>
+
+  {# --- Esta semana ------------------------------------------------------------- #}
+  <section class="secao">
+    <h2>{% translate "O que fazer agora" %}</h2>
+    <ul>{% for item in p.info.fazer %}<li>{{ item }}</li>{% endfor %}</ul>
+    <p>
+      {% blocktranslate trimmed with f=p.semana.feitos t=p.semana.teto e=p.semana.esperando %}
+        Ultimos 7 dias: <strong>{{ f }} de {{ t }}</strong> posts (aprovados ou publicados);
+        {{ e }} esperando sua revisao.
+      {% endblocktranslate %}
+      <a href="{% url 'social:inicio' %}?aba=revisar">{% translate "Revisar" %}</a>
+    </p>
+    <p class="ajuda"><strong>{% translate "Medir:" %}</strong> {{ p.info.medir }}</p>
+  </section>
+
+  {# --- Temas ------------------------------------------------------------------- #}
+  <section class="secao">
+    <h2>{% translate "Temas mais promissores" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Ideias que aparecem em varios artigos, com nota pelo que o PubliBot ja sabe do
+        publico SEM depender de seguidores: perto das dores, buscado no Google (Radar),
+        artigos que trazem clientes, e o que engaja no nicho (hashtags de referencia). Os
+        pesos estao nos parametros, abaixo.
+      {% endblocktranslate %}
+    </p>
+    {% for tema in temas %}
+      <div class="secao" style="margin:.5rem 0">
+        <div class="acoes" style="margin-top:0; justify-content:space-between">
+          <strong>{{ tema.titulo|truncatechars:180 }}</strong>
+          <span class="selo ok">{% translate "nota" %} {{ tema.nota|floatformat:2 }}</span>
+        </div>
+        <div class="ajuda">{{ tema.sinais.explicacao|join:" · " }}</div>
+        <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes">
+          {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="tema" value="{{ tema.pk }}"><input type="hidden" name="acao" value="gerar_do_tema">
+          <button type="submit" name="par" value="0" class="botao secundario pequeno">{% translate "Gerar post deste tema" %}</button>
+          {% if p.fase == 'comeco' %}<button type="submit" name="par" value="1" class="botao pequeno">{% translate "Gerar par para teste A/B" %}</button>{% endif %}
+        </form>
+      </div>
+    {% empty %}
+      <p class="pre-visualizacao">{% translate "Nenhum tema ainda (precisa de pelo menos 2 artigos publicados com ideias em comum)." %}</p>
+    {% endfor %}
+    <form method="post" action="{% url 'social:acao_na_estrategia' %}">
+      {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="recalcular_temas">
+      <button type="submit" class="botao discreto pequeno">{% translate "Recalcular temas agora" %}</button>
+      <span class="ajuda">{% translate "(sozinho, uma vez por dia)" %}</span>
+    </form>
+  </section>
+
+  {# --- Impulso pago ----------------------------------------------------------- #}
+  <section class="secao">
+    <h2>{% translate "Impulso pago" %}</h2>
+    <p>
+      {% if p.orcamento %}
+        {% blocktranslate trimmed with g=p.gasto|floatformat:2 o=p.orcamento|floatformat:2 %}Este mes: R$ {{ g }} de R$ {{ o }} registrados.{% endblocktranslate %}
+      {% else %}
+        <span class="selo">{% translate "so organico" %}</span>
+        {% translate "Sem orcamento definido (parametros, abaixo): estas sao as recomendacoes que valeriam se houvesse." %}
+      {% endif %}
+    </p>
+    {% for r in p.impulsos %}
+      <div class="secao" style="margin:.5rem 0">
+        <strong>{{ r.titulo }}</strong>
+        <p class="pre-visualizacao">{{ r.por_que }}</p>
+        {% if r.tipo == 'gerar_par' %}
+          <form method="post" action="{% url 'social:acao_na_estrategia' %}">
+            {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="tema" value="{{ r.tema.pk }}"><input type="hidden" name="acao" value="gerar_do_tema"><input type="hidden" name="par" value="1">
+            <button type="submit" class="botao pequeno">{% translate "Gerar o par do tema:" %} {{ r.tema.titulo|truncatechars:60 }}</button>
+          </form>
+        {% else %}
+          <ul>
+            <li>{% translate "Quanto:" %} <strong>R$ {{ r.valor|floatformat:0 }}</strong>{% if r.posts|length > 1 %} {% translate "em cada versao" %}{% endif %}, {% translate "por" %} {{ r.dias }} {% translate "dias" %}</li>
+            <li>{% translate "Objetivo:" %} {{ r.objetivo }}</li>
+            <li>{% translate "Publico:" %} {{ r.publico }}</li>
+          </ul>
+          {% for post in r.posts %}
+            <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes">
+              {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="impulso">
+              <span>{{ post.abordagem|default:"" }} — {% if post.url_remota %}<a href="{{ post.url_remota }}" target="_blank" rel="noopener noreferrer">{% translate "abrir o post" %}</a>{% else %}{% translate "ainda nao publicado" %}{% endif %}</span>
+              <input type="text" name="valor" value="{{ r.valor|floatformat:0 }}" style="width:6rem">
+              <button type="submit" class="botao secundario pequeno">{% translate "Registrei o impulso" %}</button>
+            </form>
+          {% endfor %}
+        {% endif %}
+      </div>
+    {% empty %}
+      <p class="pre-visualizacao">
+        {% if destino.rede == 'gmn' %}{% translate "O Perfil da Empresa no Google nao tem impulso de post." %}
+        {% elif p.fase == 'comeco' %}{% translate "Nada a impulsionar agora: gere um tema para ter o par do teste." %}
+        {% else %}{% translate "Nenhum post recente acima do normal da conta: impulsionar agora seria gastar no que nao se destacou." %}{% endif %}
+      </p>
+    {% endfor %}
+    {% if p.como_impulsionar %}
+      <details class="ajuda"><summary>{% translate "Como impulsionar e pagar nesta rede" %}</summary><ol>{% for passo in p.como_impulsionar %}<li>{{ passo }}</li>{% endfor %}</ol></details>
+    {% endif %}
+  </section>
+
+  {# --- Sinais e aprendizado --------------------------------------------------------- #}
+  <section class="secao">
+    <h2>{% translate "O que os numeros dizem" %}</h2>
+    {% if p.taxa_media is not None %}
+      <p>
+        {% blocktranslate trimmed with t=p.taxa_media n=p.medidos %}Taxa media da conta: <strong>{{ t }}%</strong> ({{ n }} posts organicos medidos).{% endblocktranslate %}
+        {% if p.taxa_referencia %}<span class="ajuda">{% blocktranslate trimmed with r=p.taxa_referencia %}Referencia de mercado: ~{{ r }}% — so para situar; publico de nicho costuma ficar abaixo, e o que conta e a comparacao com a propria conta.{% endblocktranslate %}</span>{% endif %}
+      </p>
+    {% else %}
+      <p class="pre-visualizacao">{% translate "Ainda sem posts com alcance medido (precisa da conta conectada). Ate la, a medida e o clique no link." %}</p>
+    {% endif %}
+    {% if p.inconclusivos %}<p class="ajuda">{% blocktranslate trimmed with n=p.inconclusivos %}{{ n }} post(s) com alcance abaixo do minimo: ficaram como inconclusivos (nem bons nem ruins).{% endblocktranslate %}</p>{% endif %}
+    <div class="rolagem"><table>
+      <thead><tr><th>{% translate "Abordagem" %}</th><th class="numero">{% translate "Nesta conta" %}</th><th class="numero">{% translate "Em todas as contas do PubliBot" %}</th></tr></thead>
+      <tbody>
+        {% for l in p.abordagens %}
+          <tr>
+            <td>{{ l.abordagem.nome }}</td>
+            <td class="numero">{% if l.taxa is not None %}{{ l.taxa }}% <span class="ajuda">({{ l.medidos }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td>
+            <td class="numero">{% if l.coletivo is not None %}{{ l.coletivo }}% <span class="ajuda">({{ l.coletivo_medidos }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+
+  {% if destino.rede == 'instagram' %}
+  <section class="secao">
+    <h2>{% translate "O que engaja no nicho" %}</h2>
+    {% if p.tem_referencias %}
+      {% if p.formatos %}<p>{% translate "Engajamento medio por formato:" %} {% for f in p.formatos %}<span class="selo">{{ f.formato }}: {{ f.media }} ({{ f.posts }})</span> {% endfor %}</p>{% endif %}
+      <ul>{% for r in p.referencias %}<li>#{{ r.hashtag }} · {{ r.curtidas }} {% translate "curtidas" %}, {{ r.comentarios }} {% translate "comentarios" %} — {{ r.legenda|truncatechars:140 }} {% if r.link %}<a href="{{ r.link }}" target="_blank" rel="noopener noreferrer">{% translate "ver" %}</a>{% endif %}</li>{% endfor %}</ul>
+    {% else %}
+      <p class="pre-visualizacao">{% translate "Preencha as hashtags de referencia da conta (Configurar) e conecte a API: uma vez por semana o PubliBot le os posts que mais engajam nelas." %}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# --- Parametros --------------------------------------------------------------- #}
+  <details class="secao">
+    <summary><strong>{% translate "Parametros da estrategia (ajustaveis)" %}</strong></summary>
+    <p class="pre-visualizacao">{% translate "Pontos de partida, nao verdades: ajuste ao seu publico. Valor igual ao padrao volta a seguir o padrao." %}</p>
+    <form method="post" action="{% url 'social:acao_na_estrategia' %}">
+      {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="parametros">
+      {% regroup parametros by p.grupo as grupos %}
+      {% for grupo in grupos %}
+        <h3>{{ grupo.grouper }}</h3>
+        {% for item in grupo.list %}
+          <div class="campo">
+            <label for="par-{{ item.p.nome }}">{{ item.p.rotulo }}{% if item.mudado %} <span class="selo alerta">{% translate "ajustado" %}</span>{% endif %}</label>
+            <input type="text" name="{{ item.p.nome }}" id="par-{{ item.p.nome }}" value="{{ item.valor }}" style="width:8rem">
+            <div class="ajuda">{{ item.p.ajuda }} {% translate "Padrao:" %} {{ item.p.padrao }}</div>
+          </div>
+        {% endfor %}
+      {% endfor %}
+      <div class="acoes"><button type="submit" class="botao">{% translate "Salvar parametros" %}</button></div>
+    </form>
+  </details>
+  {% endwith %}
+  {% endif %}
+{% endblock %}

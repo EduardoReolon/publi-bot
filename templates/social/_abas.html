@@ -1,0 +1,10 @@
+{% load i18n %}
+  <nav class="abas">
+    <a href="{% url 'social:estrategia' %}" class="{% if aba_das_redes == 'estrategia' %}ativo{% endif %}"><strong>{% translate "Estrategia" %}</strong></a>
+    <a href="{% url 'social:inicio' %}?aba=revisar" class="{% if aba_das_redes == 'revisar' %}ativo{% endif %}">{% translate "Para revisar" %}{% if contagens.revisar %} <span class="selo alerta">{{ contagens.revisar }}</span>{% endif %}</a>
+    <a href="{% url 'social:inicio' %}?aba=agenda" class="{% if aba_das_redes == 'agenda' %}ativo{% endif %}">{% translate "Agenda" %}{% if contagens.agenda %} <span class="selo">{{ contagens.agenda }}</span>{% endif %}</a>
+    <a href="{% url 'social:inicio' %}?aba=publicados" class="{% if aba_das_redes == 'publicados' %}ativo{% endif %}">{% translate "Publicados" %}</a>
+    <a href="{% url 'social:inicio' %}?aba=comentarios" class="{% if aba_das_redes == 'comentarios' %}ativo{% endif %}">{% translate "Comentarios" %}{% if contagens.comentarios %} <span class="selo alerta">{{ contagens.comentarios }}</span>{% endif %}</a>
+    <a href="{% url 'social:inicio' %}?aba=funciona" class="{% if aba_das_redes == 'funciona' %}ativo{% endif %}">{% translate "O que funciona" %}</a>
+    <a href="{% url 'social:inicio' %}?aba=configurar" class="{% if aba_das_redes == 'configurar' %}ativo{% endif %}">{% translate "Configurar" %}</a>
+  </nav>

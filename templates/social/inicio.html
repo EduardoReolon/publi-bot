@@ -12,19 +12,12 @@
     {% endblocktranslate %}
   </p>
 
-  <nav class="abas">
-    <a href="?aba=revisar" class="{% if aba_das_redes == 'revisar' %}ativo{% endif %}">{% translate "Para revisar" %}{% if contagens.revisar %} <span class="selo alerta">{{ contagens.revisar }}</span>{% endif %}</a>
-    <a href="?aba=agenda" class="{% if aba_das_redes == 'agenda' %}ativo{% endif %}">{% translate "Agenda" %}{% if contagens.agenda %} <span class="selo">{{ contagens.agenda }}</span>{% endif %}</a>
-    <a href="?aba=publicados" class="{% if aba_das_redes == 'publicados' %}ativo{% endif %}">{% translate "Publicados" %}</a>
-    <a href="?aba=comentarios" class="{% if aba_das_redes == 'comentarios' %}ativo{% endif %}">{% translate "Comentarios" %}{% if contagens.comentarios %} <span class="selo alerta">{{ contagens.comentarios }}</span>{% endif %}</a>
-    <a href="?aba=funciona" class="{% if aba_das_redes == 'funciona' %}ativo{% endif %}">{% translate "O que funciona" %}</a>
-    <a href="?aba=configurar" class="{% if aba_das_redes == 'configurar' %}ativo{% endif %}">{% translate "Configurar" %}</a>
-  </nav>
+  {% include "social/_abas.html" %}
 
   {% if not destinos and aba_das_redes != 'configurar' %}
     <div class="aviso">
       {% translate "Nenhuma conta cadastrada ainda." %}
-      <a href="?aba=configurar">{% translate "Cadastrar a primeira (LinkedIn, Instagram ou Google)" %}</a>.
+      <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Cadastrar a primeira (LinkedIn, Instagram ou Google)" %}</a>.
     </div>
   {% endif %}
 

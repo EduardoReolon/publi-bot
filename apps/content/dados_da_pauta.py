@@ -27,6 +27,14 @@ def _texto_da_pauta(pauta) -> str:
     return ". ".join(p for p in [pauta.title, pauta.target_keyword, pauta.briefing] if p)
 
 
+def nichos_do_cliente() -> list[str]:
+    """Os nichos de dados que este site usa (Negocio); vazio: todos."""
+    from apps.editorial.models import PerfilDoNegocio
+
+    perfil = PerfilDoNegocio.objects.first()
+    return list(getattr(perfil, "nichos_de_dados", None) or [])
+
+
 def garantir_automaticos(pauta) -> None:
     """As series muito proximas da pauta entram sozinhas (sem repetir as tiradas)."""
     from apps.content.models import DadoDaPauta
@@ -36,7 +44,9 @@ def garantir_automaticos(pauta) -> None:
     vagas = MAXIMO_AUTOMATICOS - pauta.dados.filter(automatico=True, tirado=False).count()
     if vagas <= 0:
         return
-    for serie in sugerir(_texto_da_pauta(pauta), limite=vagas, excluir=ja):
+    for serie in sugerir(
+        _texto_da_pauta(pauta), limite=vagas, excluir=ja, nichos=nichos_do_cliente()
+    ):
         if serie.distancia <= DISTANCIA_AUTOMATICA:
             DadoDaPauta.objects.get_or_create(
                 topic=pauta, serie=serie, defaults={"automatico": True}
@@ -48,7 +58,7 @@ def sugestoes(pauta, limite: int = 5) -> list:
     from apps.dados.catalogo import sugerir
 
     ja = pauta.dados.values_list("serie_id", flat=True)
-    return sugerir(_texto_da_pauta(pauta), limite=limite, excluir=ja)
+    return sugerir(_texto_da_pauta(pauta), limite=limite, excluir=ja, nichos=nichos_do_cliente())
 
 
 def escolhidos(pauta) -> list:

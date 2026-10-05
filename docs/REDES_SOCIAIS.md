@@ -24,6 +24,59 @@ No artigo publicado, o botao **"Levar as redes"** cria um post em cada conta
 ligada, na hora. Com **"sugerir sozinho"** ligado (Configurar), o PubliBot faz
 a escolha uma vez por dia.
 
+## Estrategia (a aba principal) — `estrategia.py`, `temas.py`, `parametros.py`
+
+Uma pagina por conta: **em que fase ela esta, o que fazer agora e por que**.
+
+| Fase | Seguidores (ajustavel) | Objetivo | Impulso pago |
+|---|---|---|---|
+| Comeco | ate 300 | descobrir o que o publico quer | teste A/B: mesmo tema, 2 abordagens, mesmo valor e publico |
+| Tracao | 300–1.000 | consistencia | so o que ficou entre os 25% melhores da conta em 48 h |
+| Crescimento | 1.000–10.000 | ampliar | os melhores, para publico parecido com quem engaja |
+| Escala | 10.000+ | converter | trafego para os artigos com chamada para a oferta |
+
+Os seguidores vem da API (Instagram, pagina do LinkedIn) ou sao digitados na
+pagina; a pessoa pode fixar a fase.
+
+**Comecar sem seguidores (amostra pequena).** O que o mercado e a estatistica
+recomendam, e o que o PubliBot faz:
+
+1. **Sinal de fora antes do sinal de dentro.** Os *temas* (ideias que
+   atravessam varios artigos) tem nota por sinais que nao dependem de
+   seguidores: perto das dores do publico, buscado no Google (grupos de
+   demanda do Radar, com volume), artigos que trazem clientes, quantos artigos
+   tocam no tema e o que engaja no nicho (posts de outras contas nas hashtags
+   de referencia, lidos uma vez por semana pela API). No Instagram, o post
+   do dia nasce do melhor tema ainda nao usado.
+2. **Ponto de partida informado.** O sorteio das abordagens comeca com o
+   placar das outras contas do cliente e de todas as contas do PubliBot
+   (so contagens por abordagem e rede, somadas uma vez por dia), em vez de
+   do zero.
+3. **Poucas coisas de cada vez.** No Comeco, so 3 abordagens no sorteio.
+4. **Proporcao, nao total, e contra a propria conta.** A medida "taxa" e
+   (salvos + compartilhamentos + comentarios + cliques) / alcance; post com
+   alcance abaixo do minimo fica *inconclusivo*; "funcionou" e acima da
+   mediana da propria conta — publico pequeno ou de nicho (poucos % com
+   interesse) nao e julgado pela regua de conta grande. A taxa de referencia
+   de mercado (~2% Instagram, ~3% LinkedIn) aparece so para situar.
+5. **Teste pago A/B.** Com orcamento, o PubliBot gera o par (mesmo tema, duas
+   abordagens) e diz quanto pagar em cada, por quantos dias, com que objetivo
+   e publico. Depois dos dias do teste, a de taxa maior ganha; o resultado vale
+   mais que posts organicos soltos. Impulsionados ficam fora da mediana
+   organica.
+
+**Impulso pago.** O PubliBot nunca gasta: recomenda qual post, quanto, por
+quantos dias, objetivo e publico, e explica como pagar em cada rede (Instagram:
+"Impulsionar" ou Gerenciador de Anuncios, cartao ou saldo pre-pago; LinkedIn:
+Campaign Manager, so para post com chance de cliente; Google: sem impulso de
+post). A pessoa registra o valor ("Registrei o impulso") e o gasto do mes
+aparece contra o orcamento.
+
+**Tudo ajustavel** em "Parametros da estrategia": limites das fases, alcance
+minimo, dias para julgar, taxas de referencia, quantas abordagens no Comeco,
+peso do placar coletivo, pesos da nota dos temas, orcamento, valores do teste
+e do amplificar. Valor igual ao padrao volta a seguir o padrao.
+
 ## O caminho de um post
 
 ```
@@ -176,7 +229,9 @@ em cada rede e o teste que falta** — faca com um post de teste e confira.
 |---|---|---|
 | `sugerir-posts` | 1x/dia | escolha do dia (com "sugerir sozinho") |
 | `publicar-posts` | 5 em 5 min | publica os aprovados vencidos (contas conectadas) e responde comentarios com resposta aprovada |
-| `medir-posts` | 1x/dia | resultado, comentarios e placar das abordagens |
+| `medir-posts` | 1x/dia | resultado, comentarios, seguidores, referencias do nicho (semanal) e placar |
+| `recalcular-temas` | 1x/dia | temas entre os artigos, com a nota |
+| `placar-coletivo` | 1x/dia | soma do placar das abordagens entre todos os clientes |
 
 ## Ideias para depois
 

@@ -5,6 +5,8 @@
       <strong>{{ post.destino.nome }}</strong> <span class="selo">{{ post.destino.rede_nome }}</span>
       <span class="selo {% if post.situacao == 'rascunho' %}alerta{% elif post.situacao == 'publicado' %}ok{% elif post.situacao == 'falhou' %}ruim{% else %}espera{% endif %}">{{ post.get_situacao_display }}</span>
       {% if post.abordagem %}<span class="selo" title="{% translate 'abordagem' %}">{{ post.abordagem.nome }}</span>{% endif %}
+      {% if post.tema_id %}<span class="selo espera" title="{{ post.tema.titulo }}">{% translate "tema" %}</span>{% endif %}
+      {% if post.impulsionado %}<span class="selo alerta">{% translate "impulsionado" %} R$ {{ post.custo_impulso }}</span>{% endif %}
       {% if post.variante_de_id or post.variantes.exists %}<span class="selo" title="{% translate 'ha outra versao deste artigo para esta conta: aprove a que preferir' %}">{% translate "versao A/B" %}</span>{% endif %}
     </div>
     <div class="ajuda">{{ post.criado_em|date:"d/m H:i" }}</div>
@@ -120,6 +122,15 @@
       {% if post.metricas.alcance is not None %}<span class="selo">{{ post.metricas.alcance }} {% translate "alcance" %}</span>{% endif %}
       {% if post.sucesso is True %}<span class="selo ok">{% translate "funcionou" %}</span>{% elif post.sucesso is False %}<span class="selo">{% translate "abaixo da mediana" %}</span>{% endif %}
     </div>
+    {% if not post.impulsionado and post.destino.rede != 'gmn' %}
+      <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes">
+        {% csrf_token %}<input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="impulso">
+        <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+        <input type="text" name="valor" placeholder="R$" style="width:6rem">
+        <button type="submit" class="botao discreto pequeno">{% translate "Registrei um impulso pago" %}</button>
+        <a class="ajuda" href="{% url 'social:estrategia' %}?destino={{ post.destino_id }}">{% translate "o que impulsionar?" %}</a>
+      </form>
+    {% endif %}
   {% endif %}
 
   {% if post.material.identificacao or post.material.achados %}

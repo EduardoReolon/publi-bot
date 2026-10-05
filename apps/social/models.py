@@ -29,6 +29,7 @@ class ConfiguracaoSocial(models.Model):
         CLIQUES = "cliques", _("Cliques no link")
         CONVERSOES = "conversoes", _("Conversoes no site")
         ENGAJAMENTO = "engajamento", _("Engajamento na rede (curtidas, comentarios...)")
+        TAXA = "taxa", _("Taxa sobre o alcance (salvos, compartilhamentos, comentarios, cliques)")
 
     id = models.SmallAutoField(primary_key=True)
     ligado = models.BooleanField(
@@ -80,6 +81,8 @@ class ConfiguracaoSocial(models.Model):
         ),
         help_text=_("Regras do conselho profissional e do negocio. Vao em todo post."),
     )
+    # Os numeros da estrategia que a pessoa mudou (ver apps/social/parametros.py).
+    parametros = models.JSONField(_("parametros"), default=dict, blank=True)
 
     class Meta:
         verbose_name = _("configuracao das redes")
@@ -127,6 +130,25 @@ class Destino(models.Model):
     # Lâminas (carrossel): {"fundo": "#...", "texto": "#...", "destaque": "#..."}.
     cores = models.JSONField(_("cores das laminas"), default=dict, blank=True)
     chamada_final = models.CharField(_("ultima lamina / chamada"), max_length=160, blank=True)
+
+    # --- Estrategia -------------------------------------------------------------
+    # Pela API (Instagram, pagina do LinkedIn) ou digitado (perfil pessoal).
+    seguidores = models.PositiveIntegerField(_("seguidores"), null=True, blank=True)
+    # [{"dia": "2026-10-05", "n": 120}]: o crescimento por semana.
+    seguidores_historico = models.JSONField(default=list, blank=True)
+    # Vazio: a fase sai dos seguidores. Preenchido: a pessoa fixou a fase.
+    fase_manual = models.CharField(_("fase (fixar)"), max_length=20, blank=True)
+    hashtags_de_referencia = models.CharField(
+        _("hashtags de referencia do nicho"),
+        max_length=300,
+        blank=True,
+        help_text=_(
+            "Instagram: ate 10, separadas por virgula. O PubliBot le os posts que mais "
+            "engajam nelas (de outras contas) uma vez por semana, para saber que temas e "
+            "formatos funcionam no nicho antes de voce ter seguidores."
+        ),
+    )
+    referencias_em = models.DateTimeField(null=True, blank=True)
 
     # --- Conexao com a API ----------------------------------------------------
     conta_id = models.CharField(_("id da conta na rede"), max_length=200, blank=True)
@@ -199,6 +221,61 @@ class Abordagem(models.Model):
         return not self.redes or rede in self.redes
 
 
+class Tema(models.Model):
+    """Um assunto que atravessa varios artigos (para o carrossel do Instagram,
+    principalmente): as frases parecidas de artigos diferentes, juntas, com a
+    nota de quanto o publico se interessa (dores, busca, conversao, nicho)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    titulo = models.CharField(_("tema"), max_length=400)
+    # [{"artigo_id", "artigo_titulo", "frase"}]
+    frases = models.JSONField(default=list, blank=True)
+    artigos = models.JSONField(default=list, blank=True)
+    artigo_principal = models.UUIDField(null=True, blank=True)
+    nota = models.FloatField(default=0)
+    # As parcelas da nota e o porque, para a tela.
+    sinais = models.JSONField(default=dict, blank=True)
+    centro = models.JSONField(default=list, blank=True)
+    ativo = models.BooleanField(default=True)
+    atualizado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-nota"]
+
+    def __str__(self) -> str:
+        return self.titulo[:80]
+
+
+class ReferenciaDoNicho(models.Model):
+    """Um post de OUTRA conta, numa hashtag de referencia, com o engajamento
+    dele. E o que funciona no nicho antes de a conta ter seguidores."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="referencias")
+    hashtag = models.CharField(max_length=80)
+    id_remoto = models.CharField(max_length=120)
+    legenda = models.TextField(blank=True)
+    formato = models.CharField(max_length=30, blank=True)
+    curtidas = models.PositiveIntegerField(default=0)
+    comentarios = models.PositiveIntegerField(default=0)
+    link = models.URLField(max_length=500, blank=True)
+    publicado_em = models.DateTimeField(null=True, blank=True)
+    coletado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-curtidas"]
+        constraints = [
+            models.UniqueConstraint(fields=["destino", "id_remoto"], name="uniq_referencia")
+        ]
+
+    def __str__(self) -> str:
+        return f"#{self.hashtag}: {self.legenda[:50]}"
+
+    @property
+    def engajamento(self) -> int:
+        return self.curtidas + 3 * self.comentarios
+
+
 class Post(models.Model):
     class Situacao(models.TextChoices):
         SUGERIDO = "sugerido", _("Sugerido")
@@ -215,6 +292,8 @@ class Post(models.Model):
         SUBINDO = "subindo", _("Quase na primeira pagina do Google")
         CONVERTE = "converte", _("Artigo que traz clientes")
         PEDIDO = "pedido", _("Pedido por voce")
+        TEMA = "tema", _("Tema que atravessa varios artigos")
+        TESTE = "teste", _("Teste pago de abordagem")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="posts")
@@ -223,6 +302,10 @@ class Post(models.Model):
     artigo_url = models.URLField(_("endereco do artigo"), max_length=500, blank=True)
     abordagem = models.ForeignKey(
         Abordagem, on_delete=models.SET_NULL, null=True, blank=True, related_name="posts"
+    )
+    # Post de um tema (varios artigos), e nao de um artigo so.
+    tema = models.ForeignKey(
+        Tema, on_delete=models.SET_NULL, null=True, blank=True, related_name="posts"
     )
     motivo = models.CharField(_("motivo"), max_length=10, choices=Motivo.choices)
     por_que = models.TextField(_("por que este post"), blank=True)
@@ -253,6 +336,12 @@ class Post(models.Model):
     metricas = models.JSONField(_("resultado"), default=dict, blank=True)
     # Acima da mediana da conta na medida escolhida? None: cedo para dizer.
     sucesso = models.BooleanField(_("funcionou"), null=True, blank=True)
+    # Impulso pago: o PubliBot recomenda, a pessoa paga na rede e registra aqui.
+    impulsionado = models.BooleanField(_("impulsionado"), default=False)
+    custo_impulso = models.DecimalField(
+        _("valor do impulso (R$)"), max_digits=8, decimal_places=2, null=True, blank=True
+    )
+    impulso_em = models.DateTimeField(null=True, blank=True)
     aprovado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
