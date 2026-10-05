@@ -56,7 +56,10 @@ def _contagens() -> dict:
 
 @login_required
 def inicio(request: HttpRequest) -> HttpResponse:
+    from apps.social.abordagens import garantir_contas_padrao
+
     garantir_abordagens()
+    garantir_contas_padrao()
     aba = request.GET.get("aba") if request.GET.get("aba") in ABAS else "revisar"
     destinos = list(Destino.objects.all())
     filtro = request.GET.get("destino", "")
@@ -380,17 +383,34 @@ def bio(request: HttpRequest, chave: str) -> HttpResponse:
 # -- Estrategia --------------------------------------------------------------------
 @login_required
 def estrategia(request: HttpRequest) -> HttpResponse:
+    from django.core.cache import cache
+    from django.db import connection as conexao
+
     from apps.social import estrategia as modulo
     from apps.social import parametros
+    from apps.social.abordagens import garantir_contas_padrao
+    from apps.social.models import Tema
+    from apps.social.tasks import recalcular_temas_do_cliente
 
     garantir_abordagens()
+    if garantir_contas_padrao():
+        messages.info(
+            request,
+            _(
+                "Criei uma conta de cada rede (Instagram, LinkedIn e Google), ja ligadas: os "
+                "posts comecam a ser sugeridos sozinhos. Desligue em Configurar a que nao usar."
+            ),
+        )
+    # Sem temas ainda: calcula ja (em segundo plano), no maximo uma vez por hora.
+    if not Tema.objects.filter(ativo=True).exists() and cache.add(
+        f"social:temas-pedidos:{conexao.schema_name}", 1, timeout=3600
+    ):
+        recalcular_temas_do_cliente.delay(conexao.schema_name)
     destinos = list(Destino.objects.filter(ligado=True)) or list(Destino.objects.all())
     escolhido = next(
         (d for d in destinos if str(d.pk) == request.GET.get("destino")),
         destinos[0] if destinos else None,
     )
-    from apps.social.models import Tema
-
     return render(
         request,
         "social/estrategia.html",
@@ -401,6 +421,7 @@ def estrategia(request: HttpRequest) -> HttpResponse:
             "destinos": destinos,
             "destino": escolhido,
             "plano": modulo.plano(escolhido) if escolhido else None,
+            "passos": modulo.primeiros_passos(escolhido) if escolhido else [],
             "fases": [(c, modulo.FASES[c]["nome"]) for c in modulo.ORDEM],
             "parametros": parametros.todos(),
             "temas": Tema.objects.filter(ativo=True).order_by("-nota")[:15],

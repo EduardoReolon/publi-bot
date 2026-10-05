@@ -85,3 +85,14 @@ def consolidar_placar_coletivo() -> int:
                 logger.exception("Placar do tenant %s indisponivel.", schema)
     total = consolidar_coletivo(placares)
     return sum(s + f for nomes in total.values() for s, f in nomes.values())
+
+
+@shared_task
+def recalcular_temas_do_cliente(schema: str) -> int:
+    """Os temas de UM cliente, agora (primeira visita a Estrategia sem temas)."""
+    from django_tenants.utils import schema_context
+
+    from apps.social.temas import recalcular
+
+    with schema_context(schema):
+        return recalcular()

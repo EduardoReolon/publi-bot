@@ -371,3 +371,79 @@ def plano(destino: Destino) -> dict:
         "referencias": list(destino.referencias.order_by("-curtidas")[:6]),
         "tem_referencias": ReferenciaDoNicho.objects.filter(destino=destino).exists(),
     }
+
+
+def primeiros_passos(destino: Destino) -> list[dict]:
+    """O que falta para a conta andar sozinha, do essencial ao opcional. Cada
+    item diz o que e, se esta feito, e onde fazer."""
+    from django.conf import settings
+
+    from apps.social.redes import rede
+
+    r = rede(destino.rede)
+    app = {
+        "linkedin": "SOCIAL_LINKEDIN_CLIENT_ID",
+        "instagram": "SOCIAL_META_APP_ID",
+        "gmn": "SOCIAL_GOOGLE_CLIENT_ID",
+    }[destino.rede]
+    tem_app = bool(getattr(settings, app, ""))
+    itens = [
+        {
+            "feito": bool(destino.publico.strip()),
+            "titulo": "Dizer quem esta nesta conta",
+            "explica": (
+                "O publico da conta muda o texto (um LinkedIn de gestores nao e um Instagram "
+                "de pacientes). Vazio, vale o padrao da rede: '" + r.publico_padrao + "'"
+            ),
+            "onde": "configurar",
+            "essencial": True,
+        },
+        {
+            "feito": destino.posts.filter(
+                situacao__in=[Post.Situacao.APROVADO, Post.Situacao.PUBLICADO]
+            ).exists(),
+            "titulo": "Aprovar o primeiro post",
+            "explica": "Os posts sao escritos sozinhos; nada sai sem voce aprovar.",
+            "onde": "revisar",
+            "essencial": True,
+        },
+        {
+            "feito": destino.conectado,
+            "titulo": "Conectar a conta (publicar sozinho)",
+            "explica": (
+                "Opcional. Sem conectar, voce copia e cola o post — e os cliques sao medidos "
+                "do mesmo jeito. Conectado, o post sai sozinho na hora e o PubliBot le "
+                "seguidores, alcance e comentarios."
+                + ("" if tem_app else f" Antes, o app da rede precisa estar no .env ({app}).")
+            ),
+            "onde": "configurar",
+            "essencial": False,
+        },
+    ]
+    if destino.rede == "instagram":
+        itens.append(
+            {
+                "feito": bool(destino.hashtags_de_referencia.strip()),
+                "titulo": "Hashtags de referencia do nicho",
+                "explica": (
+                    "Opcional. Ate 10 hashtags que o seu publico segue: o PubliBot le os posts "
+                    "que mais engajam nelas (com a conta conectada) e usa na nota dos temas."
+                ),
+                "onde": "configurar",
+                "essencial": False,
+            }
+        )
+    if destino.rede != "gmn":
+        itens.append(
+            {
+                "feito": parametros.valor("orcamento_mensal") > 0,
+                "titulo": "Orcamento para impulso (se quiser)",
+                "explica": (
+                    "Opcional. Com algum valor por mes, o PubliBot recomenda testes pagos que "
+                    "ensinam em dias o que o organico levaria meses. Zero: so organico."
+                ),
+                "onde": "parametros",
+                "essencial": False,
+            }
+        )
+    return itens

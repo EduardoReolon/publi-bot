@@ -4,6 +4,19 @@ Modulo `apps/social` (menu **Redes**). Separado do resto do PubliBot por
 decisao (ver [ADR-0023](adr/ADR-0023-redes-sociais-como-modulo-isolado.md)):
 o nucleo nao sabe que ele existe, e ele so le o nucleo por `apps/social/fontes.py`.
 
+## Para comecar (2 minutos)
+
+1. Abra **Redes**. Na primeira visita o PubliBot cria uma conta de cada rede
+   (Instagram, LinkedIn pessoal, Google), ja ligadas e com o publico do
+   Negocio, liga a sugestao diaria e calcula os temas em segundo plano.
+2. Na aba **Estrategia**, siga "Primeiros passos desta conta": o unico
+   essencial e aprovar o primeiro post (aba Para revisar). O resto (conectar
+   a API, hashtags de referencia, orcamento) e opcional e explicado ali.
+3. Nao usa uma das redes? Configurar > a conta > desmarque "ligado".
+
+Sem conectar nenhuma API, tudo funciona: os posts chegam prontos para copiar e
+colar, e os cliques sao medidos pelo link do PubliBot.
+
 ## Como esta organizado (e por que nao nas Pautas)
 
 Pauta e "um tema vira um artigo". Post e outra coisa: **um artigo vira varios

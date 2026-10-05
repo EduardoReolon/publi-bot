@@ -93,3 +93,32 @@ def garantir_abordagens() -> int:
         )
         criadas += nova
     return criadas
+
+
+CONTAS_PADRAO = [
+    # (rede, nome, autor, teto semanal)
+    ("instagram", "Instagram", "perfil", 3),
+    ("linkedin", "LinkedIn (perfil pessoal)", "pessoa", 2),
+    ("gmn", "Perfil da Empresa no Google", "local", 1),
+]
+
+
+def garantir_contas_padrao() -> bool:
+    """Na primeira visita as Redes: uma conta de cada rede, ja ligada, com o
+    publico do Negocio, e a sugestao diaria ligada. Ninguem precisa cadastrar
+    nada para ver posts sendo escritos; o que nao quiser, desliga. Devolve se
+    criou (so na primeira vez: depois, a pessoa decide)."""
+    from apps.social import fontes
+    from apps.social.models import ConfiguracaoSocial, Destino
+
+    if Destino.objects.exists():
+        return False
+    publico = (fontes.negocio().get("publico") or "").strip()
+    for rede, nome, autor, teto in CONTAS_PADRAO:
+        Destino.objects.create(
+            rede=rede, nome=nome, autor=autor, teto_semanal=teto, publico=publico, ligado=True
+        )
+    config = ConfiguracaoSocial.carregar()
+    config.ligado = True
+    config.save(update_fields=["ligado"])
+    return True
