@@ -60,6 +60,8 @@ Hospedado em um servidor na nuvem, atuando como o núcleo do sistema.
 
 * Disparar o "Push" final do conteúdo aprovado.
 
+* Levar o conteúdo às redes sociais (módulo opcional `apps/social`, isolado do núcleo — ver `docs/adr/ADR-0023-redes-sociais-como-modulo-isolado.md` e `docs/REDES_SOCIAIS.md`), com as páginas públicas de privacidade, termos e exclusão de dados no domínio raiz.
+
 
 
 

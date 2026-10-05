@@ -60,4 +60,14 @@ Por dentro, o que mais muda e dado, nao codigo:
 - Uma mudanca no nucleo que quebre o modulo aparece nos testes do modulo, que
   rodam na mesma suite.
 - O ponto de extensao (`apps/ops/extensoes.py`) serve a outros modulos
-  opcionais do mesmo jeito.
+  opcionais do mesmo jeito. Depois desta decisao ele ganhou `alertas` (o
+  painel do cliente mostra leitura automatica parada e banco de fotos
+  acabando) e `exclusao_de_dados` (o pedido de exclusao que chega ao nucleo,
+  no dominio raiz, e atendido por cada modulo no schema de cada cliente).
+- O que e da conta de varios clientes ao mesmo tempo mora no nucleo, sem
+  conhecer o modulo: as paginas de privacidade, termos e exclusao
+  (`apps/accounts/privacidade.py`) e o endereco de retorno OAuth unico
+  (`core/retorno_oauth.py`), que segue para o cliente pelo `state` assinado.
+- O material proprio (caso real, novidade, banco de fotos) entrou dentro do
+  modulo (`proprio.py`, `fotos.py`): a transcricao do audio reaproveita a do
+  acervo pela porta `fontes.py`.

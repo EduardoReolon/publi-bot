@@ -27,6 +27,7 @@ PubliBot closes the whole loop — **demand → sources → writing → human re
 4. **Anti-Frankenstein Thesis:** before drafting, the model reads the retrieved passages and builds a single "consensus thesis", explicitly recording where sources disagree. The article is written from that thesis, with citations that point back to real, verifiable sources.
 5. **Human-in-the-Loop, enforced:** nothing is published without approval by an identified author. An editorial guide checks tone, forbidden terms and telltale AI phrasing before approval.
 6. **Closed Feedback Loop:** Google Search Console shows impressions, clicks and position for every published article; the client site reports who actually read and who became a customer. Both feed the radar back.
+7. **Social distribution (optional module):** each article becomes posts for LinkedIn, Instagram (rendered carousels) and Google Business Profile, written per audience and checked against the article (no invented numbers). Approaches are A/B-tested with Thompson sampling; existing accounts are imported and diagnosed in a minute (formats, timing, wasted ad spend); businesses that live on real photos (barbershops, beauty salons, restaurants) get a photo bank with blur/duplicate filtering and automatic scheduling. Privacy policy, terms and the Meta data-deletion callback ship with it ([`docs/REDES_SOCIAIS.md`](docs/REDES_SOCIAIS.md)).
 
 ## 💰 An Organic Alternative to Paid Search, on the Same Scoreboard
 
