@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block titulo %}Política de privacidade — PubliBot{% endblock %}
+{% block conteudo %}
+<h1>Política de privacidade</h1>
+<p class="sub">Vale para o PubliBot ({{ c.dominio }}) e para os apps dele no LinkedIn, na Meta (Instagram e Facebook) e no Google. Atualizada em outubro de 2026.</p>
+
+<h2>Quem somos</h2>
+<p>O PubliBot é uma ferramenta de conteúdo para negócios: pesquisa o que o público procura, escreve artigos com fontes, publica no site do cliente depois da revisão dele e leva esses conteúdos às redes sociais. Responsável pelo tratamento dos dados: <strong>{{ c.operador }}</strong>{% if c.documento %} ({{ c.documento }}){% endif %}. Contato: <a href="mailto:{{ c.email }}">{{ c.email }}</a>.</p>
+
+<h2>Que dados tratamos</h2>
+<ul>
+  <li><strong>Da conta no PubliBot:</strong> nome e e-mail de quem usa, e o que o cliente cadastra (o negócio, o site, as fontes, as fotos e os textos que envia).</li>
+  <li><strong>Das redes conectadas</strong> (só quando o cliente conecta, e só da conta que ele escolhe):
+    <ul>
+      <li>o acesso concedido (token), guardado cifrado;</li>
+      <li>o identificador e o nome da conta, da página ou do local;</li>
+      <li>os posts da conta e os números de cada um (alcance, curtidas, comentários, salvos, compartilhamentos), e o número de seguidores;</li>
+      <li>os comentários dos posts (texto, data e só o primeiro nome de quem comentou), para responder perguntas e medir o que funciona;</li>
+      <li>com permissão própria, o gasto e o resultado dos anúncios da conta de anúncios ligada;</li>
+      <li>posts públicos de outras contas nas hashtags que o cliente escolher (legenda e engajamento), para saber o que funciona no nicho.</li>
+    </ul>
+  </li>
+  <li><strong>Dos visitantes do site do cliente</strong> que clicam nos links dos posts: só a contagem de cliques. O PubliBot não guarda IP nem identifica o visitante.</li>
+</ul>
+
+<h2>Para que usamos</h2>
+<ul>
+  <li>Publicar, no horário e na conta que o cliente aprovou, os posts que ele revisou.</li>
+  <li>Medir o resultado de cada post e mostrar ao cliente o que funciona.</li>
+  <li>Transformar perguntas dos comentários em respostas que o cliente aprova.</li>
+  <li>Montar o diagnóstico da conta e o relatório de gasto com anúncios para o próprio cliente.</li>
+</ul>
+<p>Não vendemos dados, não usamos os dados de um cliente para anunciar nem os mostramos a outro cliente. O único uso entre clientes é um placar somado e anônimo de quais <em>jeitos de escrever</em> funcionam em cada rede (só contagens, sem texto nem conta).</p>
+
+<h2>Dados do Google</h2>
+<p>O uso e a transferência, para qualquer outro app, de informações recebidas das APIs do Google seguem a <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">Política de dados do usuário dos serviços de API do Google</a>, incluindo os requisitos de Uso Limitado. Os dados do Perfil da Empresa no Google servem só para publicar e ler os posts do próprio cliente.</p>
+
+<h2>Com quem compartilhamos</h2>
+<p>Só com quem opera o serviço para nós, sob contrato: a hospedagem (servidor e banco de dados) e os provedores de modelo de linguagem que escrevem os textos. Os textos enviados a esses modelos são o material do próprio cliente; não enviamos o token de acesso nem dados de quem comentou. As próprias redes recebem o que é publicado nelas.</p>
+
+<h2>Por quanto tempo</h2>
+<p>Enquanto o cliente usar o serviço. Desconectar uma rede apaga o acesso na hora. Encerrada a conta, os dados são apagados em até 90 dias, salvo o que a lei obrigue a guardar. Perguntas vindas de comentários ficam no máximo 90 dias.</p>
+
+<h2>Seus direitos (LGPD)</h2>
+<p>Você pode pedir confirmação, acesso, correção, portabilidade e exclusão dos seus dados, e revogar o consentimento, pelo e-mail <a href="mailto:{{ c.email }}">{{ c.email }}</a>. Para apagar o que veio de uma rede, veja <a href="{% url 'accounts:exclusao_de_dados' %}">Exclusão de dados</a>.</p>
+
+<h2>Segurança</h2>
+<p>Conexão sempre criptografada (HTTPS), tokens de acesso cifrados no banco, dados de cada cliente separados dos demais, e acesso restrito a quem opera o serviço.</p>
+
+<p class="ajuda"><a href="{% url 'accounts:termos' %}">Termos de serviço</a> · <a href="{% url 'accounts:exclusao_de_dados' %}">Exclusão de dados</a></p>
+{% endblock %}

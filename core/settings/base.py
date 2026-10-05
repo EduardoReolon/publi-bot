@@ -35,6 +35,10 @@ ROOT_DOMAIN = env.get("ROOT_DOMAIN", "localhost")
 # veiculos como origem dos dados) e o contato comercial da pagina inicial.
 PUBLIBOT_DOMINIO_PUBLICO = env.get("PUBLIBOT_DOMINIO_PUBLICO", "")
 CONTATO_COMERCIAL_WHATSAPP = env.get("CONTATO_COMERCIAL_WHATSAPP", "")
+# Quem responde pelos dados (paginas /privacidade/ e /termos/, exigidas pelas redes).
+OPERADOR_NOME = env.get("OPERADOR_NOME", "")
+OPERADOR_DOCUMENTO = env.get("OPERADOR_DOCUMENTO", "")
+PRIVACIDADE_EMAIL = env.get("PRIVACIDADE_EMAIL", "")
 
 # ---------------------------------------------------------------------------
 # Seguranca

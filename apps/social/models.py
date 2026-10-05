@@ -185,6 +185,9 @@ class Destino(models.Model):
     # --- Conexao com a API ----------------------------------------------------
     conta_id = models.CharField(_("id da conta na rede"), max_length=200, blank=True)
     conta_nome = models.CharField(_("conta conectada"), max_length=200, blank=True)
+    # Quem conectou, pelo id da rede (Meta: o id por app que vem no pedido de
+    # exclusao de dados).
+    usuario_remoto = models.CharField(max_length=120, blank=True, db_index=True)
     credenciais = models.BinaryField(_("credenciais (cifradas)"), null=True, blank=True)
     expira_em = models.DateTimeField(_("acesso vence em"), null=True, blank=True)
     conectado_em = models.DateTimeField(_("conectado em"), null=True, blank=True)

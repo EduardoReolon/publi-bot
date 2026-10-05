@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
@@ -12,7 +13,8 @@ from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_GET
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.accounts.enderecos import url_do_tenant
 from apps.accounts.forms import SignupForm, criar_tenant_e_dono
@@ -239,4 +241,97 @@ def painel(request: HttpRequest) -> HttpResponse:
             + extensoes.alertas(),
             "busca": busca,
         },
+    )
+
+
+# -- Paginas publicas que as redes exigem (privacidade, termos, exclusao) ---------------
+def privacidade(request: HttpRequest) -> HttpResponse:
+    from apps.accounts.privacidade import contato
+
+    return render(request, "accounts/privacidade.html", {"c": contato()})
+
+
+def termos(request: HttpRequest) -> HttpResponse:
+    from apps.accounts.privacidade import contato
+
+    return render(request, "accounts/termos.html", {"c": contato()})
+
+
+def exclusao_de_dados(request: HttpRequest) -> HttpResponse:
+    """Como pedir a exclusao, e o andamento de um pedido (pelo codigo)."""
+    from apps.accounts.models import PedidoDeExclusao
+    from apps.accounts.privacidade import contato
+
+    codigo = request.GET.get("codigo", "").strip()
+    pedido = PedidoDeExclusao.objects.filter(codigo=codigo).first() if codigo else None
+    return render(
+        request,
+        "accounts/exclusao.html",
+        {"c": contato(), "codigo": codigo, "pedido": pedido},
+    )
+
+
+def _signed_request(request: HttpRequest) -> dict:
+    from apps.accounts.privacidade import ler_signed_request
+
+    return ler_signed_request(
+        request.POST.get("signed_request", ""), getattr(settings, "SOCIAL_META_APP_SECRET", "")
+    )
+
+
+@csrf_exempt
+@require_POST
+def meta_exclusao(request: HttpRequest) -> HttpResponse:
+    """Callback de exclusao de dados da Meta: apaga e devolve o acompanhamento."""
+    from apps.accounts.privacidade import PedidoInvalido, registrar_exclusao
+
+    try:
+        dados = _signed_request(request)
+    except PedidoInvalido as exc:
+        return JsonResponse({"erro": str(exc)}, status=400)
+    pedido = registrar_exclusao("instagram", str(dados["user_id"]))
+    url = (
+        f"{settings.ESQUEMA_PUBLICO}://{settings.ROOT_DOMAIN}"
+        f"{reverse('accounts:exclusao_de_dados')}?codigo={pedido.codigo}"
+    )
+    return JsonResponse({"url": url, "confirmation_code": pedido.codigo})
+
+
+@csrf_exempt
+@require_POST
+def meta_desautorizar(request: HttpRequest) -> HttpResponse:
+    """Callback de "remover o app" da Meta: desconecta (nao apaga)."""
+    from apps.accounts.privacidade import PedidoInvalido, excluir_em_todos_os_clientes
+
+    try:
+        dados = _signed_request(request)
+    except PedidoInvalido as exc:
+        return HttpResponse(str(exc), status=400)
+    excluir_em_todos_os_clientes("instagram", str(dados["user_id"]), apagar=False)
+    return HttpResponse("ok")
+
+
+def retorno_oauth(request: HttpRequest) -> HttpResponse:
+    """O retorno unico das conexoes (core/retorno_oauth.py): segue para o
+    cliente do `state`, com o codigo, sem trocar nada aqui."""
+    from django.core import signing
+
+    from apps.accounts.models import Domain
+    from core.retorno_oauth import ler
+
+    try:
+        estado = ler(request.GET.get("state", ""))
+    except signing.BadSignature:
+        messages.error(request, _("O pedido de conexao venceu ou nao e deste PubliBot."))
+        return redirect("accounts:landing")
+    dominio = (
+        Domain.objects.filter(tenant__schema_name=estado.get("schema"))
+        .order_by("-is_primary")
+        .first()
+    )
+    volta = str(estado.get("volta") or "")
+    if dominio is None or not volta.startswith("/"):
+        return redirect("accounts:landing")
+    return redirect(
+        f"{settings.ESQUEMA_PUBLICO}://{dominio.domain}{volta}?{request.GET.urlencode()}"
     )
