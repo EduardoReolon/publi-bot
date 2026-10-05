@@ -4,6 +4,18 @@
 {% block menu %}{% include "_menu.html" %}{% endblock %}
 {% block conteudo %}
   <h1>{% translate "Dados publicos" %}</h1>
+  {% if contagens.por_aprovar and curador %}
+    <div class="aviso alerta">
+      {% blocktranslate trimmed with n=contagens.por_aprovar %}
+        <strong>{{ n }} serie(s) esperando sua aprovacao.</strong> O PubliBot as encontrou
+        sozinho (nos nichos dos sites e nas fontes que voce aprovou). Filtre por "Sugerida",
+        marque as que fazem sentido e clique em "Aprovar as marcadas". Aprovar e seguro: uma
+        serie so entra numa pauta quando e muito proxima do tema dela, e cada site so ve os
+        nichos que escolheu em Negocio.
+      {% endblocktranslate %}
+      <a href="?aba=series&situacao=sugerida">{% translate "Ver as sugeridas" %}</a>
+    </div>
+  {% endif %}
   <p class="sub">
     {% blocktranslate trimmed %}
       Numeros oficiais (IBGE, Banco Central, DATASUS...) que os artigos podem citar.
@@ -40,7 +52,7 @@
         <thead><tr>
           <th>{% translate "Serie" %}</th><th>{% translate "Ultimo valor" %}</th>
           <th class="numero" title="{% translate 'fontes do acervo que citam' %}">{% translate "Citada" %}</th>
-          <th>{% translate "Situacao" %}</th>{% if curador %}<th></th>{% endif %}
+          <th>{% translate "Situacao" %}</th>{% if curador %}<th><input type="checkbox" form="lote" title="{% translate 'marcar todas' %}" onclick="document.querySelectorAll('input[name=serie]').forEach(function (c) { c.checked = this.checked; }, this)" style="width:auto"></th>{% endif %}
         </tr></thead>
         <tbody>
           {% for s in series %}
@@ -52,6 +64,7 @@
               <td class="numero">{{ s.citacoes|default:"" }}</td>
               <td><span class="selo {% if s.situacao == 'aprovada' %}ok{% elif s.situacao == 'recusada' %}ruim{% else %}alerta{% endif %}">{{ s.get_situacao_display }}</span></td>
               {% if curador %}<td>
+                <input type="checkbox" name="serie" value="{{ s.pk }}" form="lote" style="width:auto">
                 <form method="post" action="{% url 'dados:situacao_da_serie' s.pk %}" style="display:inline">{% csrf_token %}
                   <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
                   {% if s.situacao != 'aprovada' %}<button name="situacao" value="aprovada" class="pequeno">{% translate "Aprovar" %}</button>{% endif %}
@@ -62,6 +75,13 @@
           {% endfor %}
         </tbody>
       </table></div>
+      {% if curador %}
+        <form method="post" action="{% url 'dados:situacao_em_lote' %}" id="lote" class="acoes">{% csrf_token %}
+          <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+          <button name="situacao" value="aprovada" class="botao pequeno">{% translate "Aprovar as marcadas" %}</button>
+          <button name="situacao" value="recusada" class="botao discreto pequeno">{% translate "Recusar as marcadas" %}</button>
+        </form>
+      {% endif %}
     {% else %}
       <p class="aviso">
         {% blocktranslate trimmed %}

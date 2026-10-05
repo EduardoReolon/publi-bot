@@ -87,6 +87,15 @@ serie so entra numa pauta se for muito proxima do tema dela.
 - Testes: `tests/test_dados_adaptadores.py`, sobre respostas no formato
   documentado de cada API, sem rede.
 
+### Sem ninguem rodar nada
+
+Uma vez por dia (tarefa `varrer-dados-do-acervo`), cada instituicao com
+adaptador pronto que ainda nao tem nenhuma serie do proprio catalogo recebe as
+**series iniciais dos nichos** (`TERMOS_POR_NICHO`, ate 5 por termo), como
+"Sugerida". A tela Dados avisa quantas esperam aprovacao; marque as que fazem
+sentido e "Aprovar as marcadas". Depois disso, so entra serie nova pelo acervo
+(fontes que citam) ou por busca sua.
+
 ### Como popular e conferir
 
 ```bash

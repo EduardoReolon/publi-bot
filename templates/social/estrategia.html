@@ -16,6 +16,31 @@
     </select>
   </form>
 
+  {# --- Primeiros passos ----------------------------------------------------------- #}
+  <section class="secao">
+    <h2>{% translate "Primeiros passos desta conta" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        O PubliBot ja escolhe os artigos e temas, escreve os posts e diz o que fazer. Para
+        ver rodando, basta o primeiro item; os outros melhoram o resultado quando houver tempo.
+      {% endblocktranslate %}
+    </p>
+    <ol>
+      {% for passo in passos %}
+        <li style="margin-bottom:.4rem">
+          {% if passo.feito %}<span class="selo ok">{% translate "feito" %}</span>{% elif passo.essencial %}<span class="selo alerta">{% translate "falta" %}</span>{% else %}<span class="selo">{% translate "opcional" %}</span>{% endif %}
+          <strong>{{ passo.titulo }}</strong>
+          {% if not passo.feito %}
+            {% if passo.onde == 'revisar' %}<a href="{% url 'social:inicio' %}?aba=revisar">{% translate "ir" %}</a>
+            {% elif passo.onde == 'configurar' %}<a href="{% url 'social:inicio' %}?aba=configurar">{% translate "ir" %}</a>
+            {% else %}<a href="#parametros">{% translate "ir" %}</a>{% endif %}
+          {% endif %}
+          <div class="ajuda">{{ passo.explica }}</div>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+
   {# --- Fase ------------------------------------------------------------------- #}
   <section class="secao">
     <h2>{% translate "Fase:" %} {{ p.info.nome }}</h2>
@@ -181,7 +206,7 @@
   {% endif %}
 
   {# --- Parametros --------------------------------------------------------------- #}
-  <details class="secao">
+  <details class="secao" id="parametros">
     <summary><strong>{% translate "Parametros da estrategia (ajustaveis)" %}</strong></summary>
     <p class="pre-visualizacao">{% translate "Pontos de partida, nao verdades: ajuste ao seu publico. Valor igual ao padrao volta a seguir o padrao." %}</p>
     <form method="post" action="{% url 'social:acao_na_estrategia' %}">

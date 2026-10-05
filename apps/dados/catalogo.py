@@ -201,3 +201,28 @@ def procurar_e_sugerir(instituicao: Instituicao, termo: str, *, limite: int = 20
         )
         series.append(serie)
     return series
+
+
+POR_TERMO_INICIAL = 5
+
+
+def explorar_nichos_iniciais() -> int:
+    """Uma vez por instituicao: procura os termos dos nichos (TERMOS_POR_NICHO)
+    e deixa as series como SUGERIDAS. Quem ainda nao tem nenhuma serie vinda do
+    catalogo dela recebe as sugestoes iniciais sozinha, sem ninguem rodar
+    comando. Falha de rede num termo nao derruba os outros."""
+    from apps.dados.catalogo_inicial import TERMOS_POR_NICHO
+
+    novas = 0
+    for instituicao in Instituicao.objects.exclude(adaptador=""):
+        adaptador = adaptador_de(instituicao)
+        if adaptador is None or not adaptador.pronto:
+            continue
+        if instituicao.series.filter(origem=Serie.Origem.CATALOGO).exists():
+            continue
+        for termo in TERMOS_POR_NICHO.get(instituicao.adaptador, []):
+            try:
+                novas += len(procurar_e_sugerir(instituicao, termo, limite=POR_TERMO_INICIAL))
+            except Exception as exc:
+                logger.warning("Busca inicial %s %r falhou: %s", instituicao.sigla, termo, exc)
+    return novas

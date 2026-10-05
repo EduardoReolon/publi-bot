@@ -349,3 +349,45 @@ def test_instagram_posta_o_tema_com_material_de_varios_artigos(
     assert "Tema que aparece em" in pedidos[0]["resumo"]
     assert len(post.material["secoes"]) >= 2  # titulos dos artigos do tema
     assert destino.posts.count() == 1
+
+
+@pytest.mark.django_db
+def test_primeira_visita_cria_as_contas_e_mostra_os_passos(ambiente, monkeypatch):
+    from apps.social import tasks
+
+    _, _, client = ambiente
+    pedidos = []
+    monkeypatch.setattr(tasks.recalcular_temas_do_cliente, "delay", lambda s: pedidos.append(s))
+    from django.core.cache import cache
+
+    cache.clear()
+    html = client.get(reverse("social:estrategia", urlconf=U), follow=True).content.decode()
+    assert {d.rede for d in Destino.objects.all()} == {"instagram", "linkedin", "gmn"}
+    assert ConfiguracaoSocial.carregar().ligado
+    assert "Primeiros passos desta conta" in html and "Aprovar o primeiro post" in html
+    assert len(pedidos) == 1  # temas calculados em segundo plano, uma vez
+    client.get(reverse("social:estrategia", urlconf=U))
+    assert len(pedidos) == 1 and Destino.objects.count() == 3  # nada se repete
+
+
+@pytest.mark.django_db
+def test_series_iniciais_dos_nichos_uma_vez_so(ambiente, monkeypatch):
+    from apps.dados import catalogo
+    from apps.dados.adaptadores import SerieEncontrada
+    from apps.dados.models import Instituicao
+
+    termos = []
+
+    class Falso:
+        pronto = True
+
+        def procurar(self, termo, limite=20):
+            termos.append(termo)
+            return [SerieEncontrada(codigo=f"{termo}/1", titulo=termo)]
+
+    monkeypatch.setattr(catalogo, "adaptador_de", lambda i: Falso())
+    Instituicao.objects.get_or_create(sigla="BCB", defaults={"nome": "BC", "adaptador": "bcb"})
+    Instituicao.objects.exclude(sigla="BCB").update(adaptador="")
+    assert catalogo.explorar_nichos_iniciais() == 5
+    assert "IPCA" in termos
+    assert catalogo.explorar_nichos_iniciais() == 0  # ja tem series do catalogo

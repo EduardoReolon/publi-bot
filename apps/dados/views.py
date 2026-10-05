@@ -217,3 +217,16 @@ def procurar(request: HttpRequest, pk) -> HttpResponse:
         return redirect(f"{_url()}?aba=series&situacao=sugerida&q=")
     messages.info(request, _("Nada encontrado para '%(t)s'.") % {"t": termo})
     return _de_volta(request, "instituicoes")
+
+
+@login_required
+@require_POST
+def situacao_em_lote(request: HttpRequest) -> HttpResponse:
+    """Aprovar ou recusar varias series de uma vez (as marcadas na lista)."""
+    _curador(request)
+    nova = request.POST.get("situacao")
+    ids = request.POST.getlist("serie")
+    if nova in Serie.Situacao.values and ids:
+        n = Serie.objects.filter(pk__in=ids).update(situacao=nova)
+        messages.success(request, _("%(n)s serie(s) atualizadas.") % {"n": n})
+    return _de_volta(request)

@@ -108,7 +108,7 @@ def negocio() -> dict:
         "tema": getattr(perfil, "tema", "") or "",
         "publico": getattr(perfil, "publico", "") or "",
         "oferta": getattr(perfil, "oferta", "") or "",
-        "dores": radar.lista_de_dores(),
+        "dores": radar.lista_de_dores,
         "regioes": regioes,
         "idioma": getattr(site(), "content_language", "") or "pt-BR",
     }
