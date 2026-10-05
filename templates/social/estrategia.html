@@ -68,7 +68,7 @@
         <button type="submit" class="botao discreto pequeno">{% translate "Salvar" %}</button>
       </form>
     </div>
-    <p class="ajuda">{% translate "Com a conta conectada (Instagram, pagina do LinkedIn), os seguidores sao lidos sozinhos todo dia." %}</p>
+    <p class="ajuda">{% translate "Com a conta conectada (Instagram, pagina do LinkedIn), os seguidores sao lidos sozinhos todo dia." %} <a href="{% url 'social:diagnostico' %}?destino={{ destino.pk }}">{% translate "Diagnostico da conta (o que funcionou antes)" %}</a></p>
   </section>
 
   {# --- Esta semana ------------------------------------------------------------- #}
@@ -184,7 +184,7 @@
       <tbody>
         {% for l in p.abordagens %}
           <tr>
-            <td>{{ l.abordagem.nome }}</td>
+            <td>{{ l.abordagem.nome }}{% if l.abordagem.origem == 'outra_ia' %} <span class="selo">{% translate "da outra IA" %}</span>{% endif %}</td>
             <td class="numero">{% if l.taxa is not None %}{{ l.taxa }}% <span class="ajuda">({{ l.medidos }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td>
             <td class="numero">{% if l.coletivo is not None %}{{ l.coletivo }}% <span class="ajuda">({{ l.coletivo_medidos }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td>
           </tr>
@@ -204,6 +204,47 @@
     {% endif %}
   </section>
   {% endif %}
+
+  {# --- Segunda opiniao de uma IA grande ------------------------------------------- #}
+  <section class="secao" id="outra-ia">
+    <h2>{% translate "Segunda opiniao de uma IA grande" %}</h2>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        O PubliBot escolhe e escreve sozinho; para JULGAR (qual tema postar agora, que jeito
+        de falar falta, o que esta acontecendo no mundo que conversa com os seus artigos), um
+        modelo grande ajuda — e, se ele pesquisar na web, traz campanhas do mes, datas e
+        noticias recentes. 1. Copie o pedido e cole no Claude, ChatGPT ou Gemini (com a
+        pesquisa na web ligada, se tiver). Ele comenta primeiro; peca "pode gerar" quando
+        estiver de acordo. 2. Cole aqui a resposta inteira: voce ve tudo antes de aplicar.
+        Nada e enviado pelo PubliBot.
+      {% endblocktranslate %}
+    </p>
+    <div class="acoes"><button type="button" class="botao" data-copiar="pedido-ia">{% translate "Copiar para outra IA" %}</button></div>
+    <details><summary>{% translate "Ver o texto" %}</summary>
+      <textarea id="pedido-ia" readonly rows="14" style="width:100%">{{ pedido_ia }}</textarea>
+    </details>
+    <form method="post" action="{% url 'social:revisar_resposta_ia' %}" style="margin-top:.8rem">
+      {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}">
+      <label for="resposta-ia">{% translate "Cole aqui a resposta inteira" %}</label>
+      <textarea id="resposta-ia" name="resposta" rows="5" style="width:100%" required></textarea>
+      <div class="acoes"><button type="submit" class="botao secundario">{% translate "Ver o que muda" %}</button></div>
+    </form>
+    {% if comparativo.tem_algo %}
+      <h3>{% translate "A outra IA acerta mais que o PubliBot sozinho?" %}</h3>
+      <p class="ajuda">{% translate "Proporcao de posts que funcionaram (acima do normal da conta). Com poucos posts julgados, e cedo para concluir." %}</p>
+      <div class="rolagem"><table>
+        <thead><tr><th></th><th class="numero">{% translate "Da outra IA" %}</th><th class="numero">{% translate "Do PubliBot / demais" %}</th></tr></thead>
+        <tbody>
+          <tr><td>{% translate "Posts sugeridos" %}</td>
+            <td class="numero">{% if comparativo.posts_ia.taxa is not None %}{{ comparativo.posts_ia.taxa }}% <span class="ajuda">({{ comparativo.posts_ia.n }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td>
+            <td class="numero">{% if comparativo.posts_publibot.taxa is not None %}{{ comparativo.posts_publibot.taxa }}% <span class="ajuda">({{ comparativo.posts_publibot.n }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td></tr>
+          <tr><td>{% translate "Abordagens criadas" %} ({{ comparativo.abordagens_criadas }})</td>
+            <td class="numero">{% if comparativo.abordagens_ia.taxa is not None %}{{ comparativo.abordagens_ia.taxa }}% <span class="ajuda">({{ comparativo.abordagens_ia.n }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td>
+            <td class="numero">{% if comparativo.abordagens_outras.taxa is not None %}{{ comparativo.abordagens_outras.taxa }}% <span class="ajuda">({{ comparativo.abordagens_outras.n }})</span>{% else %}<span class="ajuda">—</span>{% endif %}</td></tr>
+        </tbody>
+      </table></div>
+    {% endif %}
+  </section>
 
   {# --- Parametros --------------------------------------------------------------- #}
   <details class="secao" id="parametros">

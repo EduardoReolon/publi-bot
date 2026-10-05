@@ -5,6 +5,10 @@
     <a href="{% url 'social:inicio' %}?aba=agenda" class="{% if aba_das_redes == 'agenda' %}ativo{% endif %}">{% translate "Agenda" %}{% if contagens.agenda %} <span class="selo">{{ contagens.agenda }}</span>{% endif %}</a>
     <a href="{% url 'social:inicio' %}?aba=publicados" class="{% if aba_das_redes == 'publicados' %}ativo{% endif %}">{% translate "Publicados" %}</a>
     <a href="{% url 'social:inicio' %}?aba=comentarios" class="{% if aba_das_redes == 'comentarios' %}ativo{% endif %}">{% translate "Comentarios" %}{% if contagens.comentarios %} <span class="selo alerta">{{ contagens.comentarios }}</span>{% endif %}</a>
+    <a href="{% url 'social:diagnostico' %}" class="{% if aba_das_redes == 'diagnostico' %}ativo{% endif %}">{% translate "Diagnostico" %}{% if contagens.diagnostico %} <span class="selo alerta" title="{% translate 'leitura automatica parada' %}">!</span>{% endif %}</a>
     <a href="{% url 'social:inicio' %}?aba=funciona" class="{% if aba_das_redes == 'funciona' %}ativo{% endif %}">{% translate "O que funciona" %}</a>
     <a href="{% url 'social:inicio' %}?aba=configurar" class="{% if aba_das_redes == 'configurar' %}ativo{% endif %}">{% translate "Configurar" %}</a>
   </nav>
+  {% if contagens.diagnostico and aba_das_redes != 'diagnostico' %}
+    <div class="aviso alerta">{% translate "A leitura automatica de uma conta parou." %} <a href="{% url 'social:diagnostico' %}">{% translate "Ver o que houve" %}</a></div>
+  {% endif %}

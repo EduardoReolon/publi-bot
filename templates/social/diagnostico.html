@@ -1,0 +1,181 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Diagnostico" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+
+  {% if not destino %}
+    <div class="aviso">{% translate "Cadastre uma conta em" %} <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Configurar" %}</a>.</div>
+  {% else %}
+  <form method="get" class="acoes" style="margin-bottom:1rem">
+    <select name="destino" onchange="this.form.submit()" style="width:auto">
+      {% for x in destinos %}<option value="{{ x.pk }}" {% if x.pk == destino.pk %}selected{% endif %}>{{ x.nome }} ({{ x.rede_nome }}){% if x.conectado %} ✓{% endif %}</option>{% endfor %}
+    </select>
+  </form>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      O que funcionou e o que nao funcionou nesta conta, calculado a partir dos posts (os de
+      antes do PubliBot sao importados ao conectar) e do gasto com anuncios. Cada ponto traz o
+      numero que o sustenta e quantos posts entraram na conta: diferenca so e apontada com
+      pelo menos 3 posts em cada grupo e 30% de distancia.
+    {% endblocktranslate %}
+  </p>
+
+  {% if parada %}<div class="aviso alerta">{{ parada }}</div>{% endif %}
+
+  {# --- Historico ---------------------------------------------------------------- #}
+  <section class="secao">
+    <h2>{% translate "Historico da conta" %}</h2>
+    {% if not destino.conectado %}
+      <p>{% translate "Conecte a conta para o PubliBot importar os posts antigos, com o resultado e os comentarios de cada um." %} <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Conectar" %}</a></p>
+    {% elif not suporta_historico %}
+      <p class="pre-visualizacao">{% translate "Esta rede nao entrega os posts antigos pela API (LinkedIn de perfil pessoal e Perfil da Empresa no Google). O diagnostico usa os posts feitos pelo PubliBot." %}</p>
+    {% else %}
+      <p>
+        {% if destino.historico_importado_em %}
+          {% blocktranslate trimmed with q=destino.historico_importado_em|date:"d/m/Y H:i" n=d.resumo.importados %}Importado em {{ q }}: {{ n }} posts de antes do PubliBot.{% endblocktranslate %}
+          {% if faltam %}<span class="selo alerta">{% blocktranslate trimmed with n=faltam %}{{ n }} ainda sem o detalhe (continua sozinho, em lotes){% endblocktranslate %}</span>{% endif %}
+        {% else %}
+          {% translate "Ainda nao importado." %}
+        {% endif %}
+      </p>
+      <form method="post" action="{% url 'social:acao_no_diagnostico' %}" class="acoes">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="importar">
+        <button type="submit" class="botao secundario pequeno">{% if destino.historico_importado_em %}{% translate "Atualizar agora" %}{% else %}{% translate "Importar agora" %}{% endif %}</button>
+        <span class="ajuda">{% translate "Posts, alcance, salvos, compartilhamentos e comentarios. Comentarios antigos nao viram perguntas na fila." %}</span>
+      </form>
+    {% endif %}
+  </section>
+
+  {% if not d.suficiente %}
+    <div class="aviso">{% blocktranslate trimmed with n=d.resumo.posts %}Poucos posts para um diagnostico ({{ n }}; precisa de pelo menos 6 publicados).{% endblocktranslate %}</div>
+  {% else %}
+    {# --- Resumo e pontos ------------------------------------------------------- #}
+    <section class="secao">
+      <h2>{% translate "Em resumo" %}</h2>
+      <div class="acoes" style="gap:1.2rem; flex-wrap:wrap">
+        <span>{% translate "Posts:" %} <strong>{{ d.resumo.posts }}</strong></span>
+        <span>{% translate "De" %} {{ d.resumo.desde|date:"d/m/Y" }} {% translate "a" %} {{ d.resumo.ate|date:"d/m/Y" }}</span>
+        <span>{% translate "Por semana (90 dias):" %} <strong>{{ d.resumo.por_semana }}</strong></span>
+        {% if d.resumo.seguidores %}<span>{% translate "Seguidores:" %} <strong>{{ d.resumo.seguidores }}</strong></span>{% endif %}
+        <span>{% if d.medida == 'taxa' %}{% translate "Taxa mediana (interacoes que importam / alcance):" %}{% else %}{% translate "Interacoes por post (mediana):" %}{% endif %} <strong>{{ d.resumo.mediana }}</strong></span>
+      </div>
+    </section>
+
+    <div class="duas-colunas">
+      <section class="secao">
+        <h2>{% translate "O que esta bom" %}</h2>
+        <ul>{% for p in d.bons %}<li>{{ p.texto }} <span class="ajuda">({{ p.evidencia }})</span></li>{% empty %}<li class="vazio">{% translate "Nada que se destaque com seguranca ainda." %}</li>{% endfor %}</ul>
+      </section>
+      <section class="secao">
+        <h2>{% translate "O que melhorar" %}</h2>
+        <ul>{% for p in d.ruins %}<li>{{ p.texto }} <span class="ajuda">({{ p.evidencia }})</span></li>{% empty %}<li class="vazio">{% translate "Nenhum problema claro." %}</li>{% endfor %}</ul>
+      </section>
+    </div>
+    {% if d.fazer %}
+      <section class="secao">
+        <h2>{% translate "O que fazer (o PubliBot ja cuida da maior parte)" %}</h2>
+        <ul>{% for x in d.fazer %}<li>{{ x }}</li>{% endfor %}</ul>
+      </section>
+    {% endif %}
+
+    <div class="duas-colunas">
+      <section class="secao">
+        <h2>{% translate "Os 3 melhores" %}</h2>
+        <ol>{% for post, v in d.melhores %}<li>{% if post.url_remota %}<a href="{{ post.url_remota }}" target="_blank" rel="noopener noreferrer">{{ post.gancho|default:post.texto|truncatechars:90 }}</a>{% else %}{{ post.gancho|default:post.texto|truncatechars:90 }}{% endif %} <span class="selo ok">{{ v }}</span> <span class="ajuda">{{ post.publicado_em|date:"d/m/Y" }}</span></li>{% endfor %}</ol>
+      </section>
+      <section class="secao">
+        <h2>{% translate "Os 3 piores" %}</h2>
+        <ol>{% for post, v in d.piores %}<li>{% if post.url_remota %}<a href="{{ post.url_remota }}" target="_blank" rel="noopener noreferrer">{{ post.gancho|default:post.texto|truncatechars:90 }}</a>{% else %}{{ post.gancho|default:post.texto|truncatechars:90 }}{% endif %} <span class="selo ruim">{{ v }}</span> <span class="ajuda">{{ post.publicado_em|date:"d/m/Y" }}</span></li>{% endfor %}</ol>
+      </section>
+    </div>
+
+    <details class="secao">
+      <summary><strong>{% translate "Os numeros por formato, dia, horario e legenda" %}</strong></summary>
+      <p class="ajuda">{% translate "Mediana de cada grupo (so grupos com 3 posts ou mais). Indicio, nao causa: dia e formato andam junto com o tema." %}</p>
+      {% for nome, tabela in d.grupos.items %}
+        {% if tabela %}
+          <h3>{{ nome }}</h3>
+          <p>{% for g, t in tabela.items %}<span class="selo">{{ g }}: {{ t.mediana }} ({{ t.n }})</span> {% endfor %}</p>
+        {% endif %}
+      {% endfor %}
+      {% if d.resumo.tendencia %}<p>{% blocktranslate trimmed with a=d.resumo.tendencia.antes b=d.resumo.tendencia.depois n=d.resumo.tendencia.n %}Tendencia: {{ n }} posts anteriores {{ a }} → ultimos {{ n }}: {{ b }}.{% endblocktranslate %}</p>{% endif %}
+      {% if d.comentarios %}<p>{% blocktranslate trimmed with t=d.comentarios.total r=d.comentarios.respondidos p=d.comentarios.perguntas s=d.comentarios.perguntas_sem_resposta %}Comentarios: {{ t }} lidos, {{ r }} respondidos; {{ p }} perguntas ({{ s }} sem resposta).{% endblocktranslate %}</p>{% endif %}
+    </details>
+
+    <section class="secao">
+      <h2>{% translate "Para mandar ao dono da conta" %}</h2>
+      <div class="acoes"><button type="button" class="botao secundario" data-copiar="texto-diagnostico">{% translate "Copiar o diagnostico" %}</button></div>
+      <details><summary>{% translate "Ver o texto" %}</summary><textarea id="texto-diagnostico" readonly rows="12" style="width:100%">{{ texto }}</textarea></details>
+    </section>
+  {% endif %}
+
+  {# --- Anuncios ----------------------------------------------------------------- #}
+  {% if destino.rede == 'instagram' %}
+  <section class="secao" id="anuncios">
+    <h2>{% translate "Gasto com anuncios (Meta Ads)" %}</h2>
+    {% if d.anuncios.tem %}
+      <p>
+        {% blocktranslate trimmed with n=d.anuncios.n g=d.anuncios.gasto %}{{ n }} anuncio(s), {{ g }} no total.{% endblocktranslate %}
+        {% if d.anuncios.custo_por_clique %}{% translate "Custo por clique no link:" %} <strong>{{ d.anuncios.custo_por_clique }}</strong>.{% endif %}
+        {% if d.anuncios.cpm_alcance %}{% translate "Custo por mil pessoas alcancadas:" %} {{ d.anuncios.cpm_alcance }}.{% endif %}
+        {% if d.anuncios.em_fracos %}{% translate "Do gasto ligado a posts, foi em posts abaixo da mediana:" %} <strong>{{ d.anuncios.em_fracos }}</strong>.{% endif %}
+        {% if d.anuncios.sem_post %}<span class="ajuda">{% blocktranslate trimmed with n=d.anuncios.sem_post %}{{ n }} sem post ligado (anuncio criado direto no Gerenciador, sem post no perfil).{% endblocktranslate %}</span>{% endif %}
+      </p>
+      <div class="rolagem"><table>
+        <thead><tr><th>{% translate "Anuncio" %}</th><th class="numero">{% translate "Gasto" %}</th><th class="numero">{% translate "Alcance" %}</th><th class="numero">{% translate "Cliques" %}</th><th>{% translate "Post" %}</th></tr></thead>
+        <tbody>{% for a in anuncios %}
+          <tr><td>{{ a.nome|truncatechars:70 }} <span class="ajuda">{{ a.inicio|date:"d/m/Y" }}</span></td><td class="numero">R$ {{ a.gasto|floatformat:2 }}</td><td class="numero">{{ a.alcance|default:"" }}</td><td class="numero">{{ a.cliques|default:"" }}</td>
+            <td>{% if a.post %}{% if a.post.url_remota %}<a href="{{ a.post.url_remota }}" target="_blank" rel="noopener noreferrer">{{ a.post.gancho|default:a.post.texto|truncatechars:50 }}</a>{% else %}{{ a.post.gancho|truncatechars:50 }}{% endif %}{% else %}<span class="ajuda">—</span>{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% endif %}
+
+    <h3>{% translate "Automatico (recomendado)" %}</h3>
+    {% if destino.anuncios_conta_id %}
+      <p>
+        <span class="selo ok">{% translate "ligado" %}</span> {{ destino.anuncios_conta_nome|default:destino.anuncios_conta_id }} ·
+        {% if destino.anuncios_sincronizados_em %}{% translate "lido em" %} {{ destino.anuncios_sincronizados_em|date:"d/m/Y H:i" }}{% else %}{% translate "ainda nao lido" %}{% endif %}
+        {% if destino.anuncios_erro %}<span class="selo ruim">{% translate "erro" %}</span> <span class="ajuda">{{ destino.anuncios_erro|truncatechars:300 }}</span>{% endif %}
+      </p>
+      <form method="post" action="{% url 'social:acao_no_diagnostico' %}" class="acoes">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}">
+        <button type="submit" name="acao" value="sincronizar_anuncios" class="botao secundario pequeno">{% translate "Ler agora" %}</button>
+        <button type="submit" name="acao" value="desligar_anuncios" class="botao discreto pequeno">{% translate "Desligar" %}</button>
+      </form>
+      <p class="ajuda">{% translate "Lido sozinho uma vez por dia. Se parar por mais de 3 dias, o painel avisa; enquanto isso, a planilha abaixo resolve." %}</p>
+    {% elif contas_de_anuncio %}
+      <form method="post" action="{% url 'social:acao_no_diagnostico' %}" class="acoes">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="conta_de_anuncios">
+        <select name="conta" style="width:auto">{% for id, nome in contas_de_anuncio %}<option value="{{ id }}">{{ nome }}</option>{% endfor %}</select>
+        {% for id, nome in contas_de_anuncio %}<input type="hidden" name="nome_{{ id }}" value="{{ nome }}">{% endfor %}
+        <button type="submit" class="botao pequeno">{% translate "Usar esta conta de anuncios" %}</button>
+      </form>
+    {% elif destino.conectado %}
+      <p>
+        {% blocktranslate trimmed %}
+          O PubliBot le sozinho quanto foi gasto em cada anuncio e qual post ele impulsionou.
+          Precisa de uma permissao a mais da Meta (<code>ads_read</code>), pedida a parte para
+          nao travar a conta. Sem ela, use a planilha abaixo.
+        {% endblocktranslate %}
+      </p>
+      <a class="botao secundario pequeno" href="{% url 'social:conectar' destino.pk %}?anuncios=1">{% translate "Conectar anuncios" %}</a>
+    {% else %}
+      <p class="pre-visualizacao">{% translate "Conecte a conta do Instagram primeiro (Configurar)." %}</p>
+    {% endif %}
+
+    <h3>{% translate "Pela planilha (sem permissao, ou se a leitura automatica parar)" %}</h3>
+    <ol class="ajuda">{% for passo in como_exportar %}<li>{{ passo }}</li>{% endfor %}</ol>
+    <form method="post" action="{% url 'social:acao_no_diagnostico' %}" enctype="multipart/form-data" class="acoes">
+      {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="planilha">
+      <input type="file" name="planilha" accept=".csv,text/csv" required style="width:auto">
+      <button type="submit" class="botao secundario pequeno">{% translate "Enviar planilha" %}</button>
+      {% if destino.anuncios_planilha_em %}<span class="ajuda">{% translate "ultima:" %} {{ destino.anuncios_planilha_em|date:"d/m/Y" }}</span>{% endif %}
+    </form>
+    <p class="ajuda">{% translate "Um impulso isolado tambem pode ser registrado no proprio post, na pagina Estrategia ('Registrei o impulso')." %}</p>
+  </section>
+  {% endif %}
+  {% endif %}
+{% endblock %}

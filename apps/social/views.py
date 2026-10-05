@@ -50,8 +50,17 @@ def _contagens() -> dict:
         ).count(),
         "comentarios": Comentario.objects.filter(
             tipo=Comentario.Tipo.PERGUNTA, respondido_em__isnull=True
-        ).count(),
+        )
+        .exclude(post__motivo=Post.Motivo.HISTORICO)
+        .count(),
+        "diagnostico": sum(1 for d in Destino.objects.filter(ligado=True) if _leitura_parada(d)),
     }
+
+
+def _leitura_parada(destino: Destino) -> bool:
+    from apps.social.painel import leitura_parada
+
+    return bool(leitura_parada(destino))
 
 
 @login_required
@@ -260,12 +269,15 @@ def salvar_abordagem(request: HttpRequest, pk=None) -> HttpResponse:
 def conectar(request: HttpRequest, pk) -> HttpResponse:
     destino = get_object_or_404(Destino, pk=pk)
     r = rede(destino.rede)
+    anuncios = destino.rede == "instagram" and request.GET.get("anuncios") == "1"
     estado = signing.dumps(
-        {"destino": str(destino.pk), "schema": connection.schema_name}, salt=SAL_DO_OAUTH
+        {"destino": str(destino.pk), "schema": connection.schema_name, "anuncios": anuncios},
+        salt=SAL_DO_OAUTH,
     )
     try:
+        extra = {"escopos_extras": "ads_read"} if anuncios else {}
         url = r.oauth().url_de_autorizacao(
-            destino, request.build_absolute_uri(reverse("social:retorno")), estado
+            destino, request.build_absolute_uri(reverse("social:retorno")), estado, **extra
         )
     except ErroDaRede as exc:
         messages.error(request, str(exc))
@@ -305,11 +317,14 @@ def retorno(request: HttpRequest) -> HttpResponse:
         destino.save(update_fields=["ultimo_erro"])
         messages.error(request, _("Nao conectou: %(e)s") % {"e": exc})
         return redirect(f"{reverse('social:inicio')}?aba=configurar")
+    if estado.get("anuncios") and destino.conta_id:
+        # Reconexao so para ler anuncios: a conta do Instagram ja esta escolhida.
+        return _depois_de_conectar(request, destino, anuncios=True)
     if len(contas) == 1:
         destino.conta_id, destino.conta_nome = contas[0]
         destino.save(update_fields=["conta_id", "conta_nome"])
         messages.success(request, _("Conectado: %(c)s.") % {"c": destino.conta_nome})
-        return redirect(f"{reverse('social:inicio')}?aba=configurar")
+        return _depois_de_conectar(request, destino, anuncios=estado.get("anuncios", False))
     if not contas:
         messages.error(
             request,
@@ -333,6 +348,48 @@ def escolher_conta(request: HttpRequest, pk) -> HttpResponse:
     destino.conta_id, destino.conta_nome = conta_id[:200], nome[:200]
     destino.save(update_fields=["conta_id", "conta_nome"])
     messages.success(request, _("Conectado: %(c)s.") % {"c": destino.conta_nome})
+    return _depois_de_conectar(request, destino)
+
+
+def _depois_de_conectar(request, destino: Destino, *, anuncios: bool = False) -> HttpResponse:
+    """Conta conectada: importa o passado (em segundo plano) e, se a pessoa
+    pediu, acha a conta de anuncios. Termina no diagnostico da conta."""
+    from apps.social import historico
+    from apps.social.redes.meta_anuncios import AnunciosMeta
+    from apps.social.tasks import importar_historico
+
+    if anuncios:
+        try:
+            api = AnunciosMeta(destino)
+            if not api.liberado():
+                messages.warning(
+                    request,
+                    _(
+                        "A Meta nao liberou a leitura de anuncios (ads_read) para este app. "
+                        "Use a planilha exportada do Gerenciador, no Diagnostico."
+                    ),
+                )
+            else:
+                contas = api.contas()
+                if len(contas) == 1:
+                    destino.anuncios_conta_id, destino.anuncios_conta_nome = contas[0]
+                    destino.save(update_fields=["anuncios_conta_id", "anuncios_conta_nome"])
+                    messages.success(
+                        request, _("Anuncios: %(c)s.") % {"c": destino.anuncios_conta_nome}
+                    )
+                elif not contas:
+                    messages.warning(request, _("Nenhuma conta de anuncios nesta pessoa."))
+                else:
+                    messages.info(request, _("Escolha a conta de anuncios, abaixo."))
+        except Exception as exc:  # a conta ja esta conectada: o erro so vai para a tela
+            messages.error(request, _("Anuncios: %(e)s") % {"e": exc})
+    if historico.suporta(destino):
+        importar_historico.delay(connection.schema_name, str(destino.pk))
+        messages.info(
+            request,
+            _("Importando os posts antigos da conta: o diagnostico fica pronto em instantes."),
+        )
+        return redirect(f"{reverse('social:diagnostico')}?destino={destino.pk}")
     return redirect(f"{reverse('social:inicio')}?aba=configurar")
 
 
@@ -376,7 +433,11 @@ def bio(request: HttpRequest, chave: str) -> HttpResponse:
     """O 'link na bio' do Instagram: os artigos dos posts recentes da conta,
     cada um pelo link rastreado do proprio post."""
     destino = get_object_or_404(Destino, chave_publica=chave)
-    posts = destino.posts.filter(situacao=Post.Situacao.PUBLICADO).order_by("-publicado_em")[:12]
+    posts = (
+        destino.posts.filter(situacao=Post.Situacao.PUBLICADO)
+        .exclude(artigo_url="")
+        .order_by("-publicado_em")[:12]
+    )
     return render(request, "social/bio.html", {"destino": destino, "posts": posts})
 
 
@@ -387,7 +448,7 @@ def estrategia(request: HttpRequest) -> HttpResponse:
     from django.db import connection as conexao
 
     from apps.social import estrategia as modulo
-    from apps.social import parametros
+    from apps.social import outra_ia, parametros
     from apps.social.abordagens import garantir_contas_padrao
     from apps.social.models import Tema
     from apps.social.tasks import recalcular_temas_do_cliente
@@ -425,6 +486,8 @@ def estrategia(request: HttpRequest) -> HttpResponse:
             "fases": [(c, modulo.FASES[c]["nome"]) for c in modulo.ORDEM],
             "parametros": parametros.todos(),
             "temas": Tema.objects.filter(ativo=True).order_by("-nota")[:15],
+            "pedido_ia": outra_ia.pedido(escolhido) if escolhido else "",
+            "comparativo": outra_ia.comparativo(escolhido) if escolhido else {},
         },
     )
 
@@ -487,3 +550,163 @@ def acao_na_estrategia(request: HttpRequest) -> HttpResponse:
         post.save(update_fields=["impulsionado", "custo_impulso", "impulso_em", "atualizado_em"])
         messages.success(request, _("Impulso registrado: o resultado passa a contar como pago."))
     return redirect(request.POST.get("voltar") or voltar)
+
+
+# -- Segunda opiniao de uma IA grande ---------------------------------------------------
+@login_required
+@require_POST
+def revisar_resposta_ia(request: HttpRequest) -> HttpResponse:
+    from apps.social import outra_ia
+
+    destino = get_object_or_404(Destino, pk=request.POST.get("destino"))
+    resposta = request.POST.get("resposta", "")
+    leitura = outra_ia.ler(resposta)
+    if leitura.vazia and not leitura.comentarios:
+        messages.error(
+            request,
+            _(
+                "Nao achei os blocos PROPOSTAS, ABORDAGENS ou EVENTOS na resposta. Peca a IA "
+                "'pode gerar' e cole a resposta inteira."
+            ),
+        )
+        return redirect(f"{reverse('social:estrategia')}?destino={destino.pk}#outra-ia")
+    return render(
+        request,
+        "social/resposta_ia.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "estrategia",
+            "contagens": _contagens(),
+            "destino": destino,
+            "leitura": leitura,
+            "resposta": resposta,
+        },
+    )
+
+
+@login_required
+@require_POST
+def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
+    from apps.social import outra_ia
+
+    destino = get_object_or_404(Destino, pk=request.POST.get("destino"))
+
+    def indices(nome: str) -> set[int]:
+        return {int(x) for x in request.POST.getlist(nome) if x.isdigit()}
+
+    feito = outra_ia.aplicar(
+        outra_ia.ler(request.POST.get("resposta", "")),
+        destino,
+        propostas=indices("proposta"),
+        abordagens=indices("abordagem"),
+        eventos=indices("evento"),
+    )
+    messages.success(
+        request,
+        _("%(p)s post(s) sendo escritos e %(a)s abordagem(ns) nova(s) no sorteio.")
+        % {"p": feito["posts"], "a": feito["abordagens"]},
+    )
+    return redirect(f"{reverse('social:inicio')}?aba=revisar")
+
+
+# -- Diagnostico, historico e anuncios ----------------------------------------------------
+@login_required
+def diagnostico(request: HttpRequest) -> HttpResponse:
+    from apps.social import diagnostico as modulo
+    from apps.social import historico
+    from apps.social.anuncios import COMO_EXPORTAR
+    from apps.social.painel import leitura_parada
+
+    destinos = list(Destino.objects.all())
+    escolhido = next(
+        (d for d in destinos if str(d.pk) == request.GET.get("destino")),
+        next((d for d in destinos if d.conectado), destinos[0] if destinos else None),
+    )
+    contexto = {
+        "aba": "redes",
+        "aba_das_redes": "diagnostico",
+        "contagens": _contagens(),
+        "destinos": destinos,
+        "destino": escolhido,
+        "como_exportar": COMO_EXPORTAR,
+    }
+    if escolhido is not None:
+        d = modulo.montar(escolhido)
+        contexto.update(
+            {
+                "d": d,
+                "texto": modulo.como_texto(d),
+                "suporta_historico": historico.suporta(escolhido),
+                "faltam": escolhido.posts.filter(
+                    motivo=Post.Motivo.HISTORICO, extras__detalhado__isnull=True
+                ).count(),
+                "parada": leitura_parada(escolhido),
+                "anuncios": escolhido.anuncios.select_related("post")[:50],
+                "contas_de_anuncio": _contas_de_anuncio(escolhido),
+            }
+        )
+    return render(request, "social/diagnostico.html", contexto)
+
+
+def _contas_de_anuncio(destino: Destino) -> list:
+    """Para escolher a conta de anuncios: so quando ha acesso e nenhuma escolhida."""
+    if destino.anuncios_conta_id or destino.rede != "instagram" or not destino.conectado:
+        return []
+    from apps.social.redes.meta_anuncios import AnunciosMeta
+
+    try:
+        api = AnunciosMeta(destino)
+        return api.contas() if api.liberado() else []
+    except Exception as exc:  # rede fora do ar: a tela abre do mesmo jeito
+        logger.info("Contas de anuncio de %s indisponiveis: %s", destino, exc)
+        return []
+
+
+@login_required
+@require_POST
+def acao_no_diagnostico(request: HttpRequest) -> HttpResponse:
+    from apps.social import anuncios
+    from apps.social.tasks import importar_historico
+
+    destino = get_object_or_404(Destino, pk=request.POST.get("destino"))
+    voltar = f"{reverse('social:diagnostico')}?destino={destino.pk}"
+    acao = request.POST.get("acao")
+    if acao == "importar":
+        importar_historico.delay(connection.schema_name, str(destino.pk))
+        messages.info(request, _("Importando em segundo plano: recarregue em um minuto."))
+    elif acao == "conta_de_anuncios":
+        conta = request.POST.get("conta", "")
+        destino.anuncios_conta_id = conta[:60]
+        destino.anuncios_conta_nome = request.POST.get(f"nome_{conta}", conta)[:200]
+        destino.save(update_fields=["anuncios_conta_id", "anuncios_conta_nome"])
+        n = anuncios.sincronizar(destino)
+        messages.success(request, _("%(n)s anuncio(s) lidos.") % {"n": n})
+    elif acao == "sincronizar_anuncios":
+        n = anuncios.sincronizar(destino)
+        if destino.anuncios_erro:
+            messages.error(request, _("A Meta recusou: %(e)s") % {"e": destino.anuncios_erro})
+        else:
+            messages.success(request, _("%(n)s anuncio(s) lidos.") % {"n": n})
+    elif acao == "desligar_anuncios":
+        destino.anuncios_conta_id = destino.anuncios_conta_nome = destino.anuncios_erro = ""
+        destino.save(update_fields=["anuncios_conta_id", "anuncios_conta_nome", "anuncios_erro"])
+        messages.info(
+            request, _("Leitura automatica de anuncios desligada (a planilha segue valendo).")
+        )
+    elif acao == "planilha":
+        arquivo = request.FILES.get("planilha")
+        if arquivo is None:
+            messages.error(request, _("Escolha o arquivo .csv exportado do Gerenciador."))
+        elif arquivo.size > 10 * 1024 * 1024:
+            messages.error(request, _("Arquivo grande demais (maximo 10 MB)."))
+        else:
+            try:
+                feito = anuncios.importar_planilha(destino, arquivo.read())
+                messages.success(
+                    request,
+                    _("%(a)s anuncio(s) lidos; %(l)s ligados a posts.")
+                    % {"a": feito["anuncios"], "l": feito["ligados"]},
+                )
+            except anuncios.PlanilhaInvalida as exc:
+                messages.error(request, str(exc))
+    return redirect(voltar)

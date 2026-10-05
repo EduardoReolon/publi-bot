@@ -246,6 +246,15 @@ SOCIAL_GOOGLE_CLIENT_ID=        SOCIAL_GOOGLE_CLIENT_SECRET=
 Endereço de retorno para cadastrar em cada app:
 `https://<domínio do painel>/redes/conectar/retorno/`.
 
+**Gasto com anúncios (opcional).** Para o PubliBot ler sozinho quanto cada
+cliente gastou em cada anúncio (Meta Ads), o mesmo app da Meta precisa do
+produto **Marketing API** e da permissão **`ads_read`** aprovada na revisão
+do app (App Review > Permissões e recursos > `ads_read` > pedir acesso
+avançado, explicando: "ler o gasto e o resultado dos anúncios das contas dos
+clientes para relatório"). Enquanto não sai — ou se um dia a Meta retirar —,
+cada cliente manda a planilha exportada do Gerenciador (aba Diagnóstico de
+Redes), e o resto funciona igual. Sem variável nova no `.env`.
+
 ---
 
 ## Análise de concorrentes

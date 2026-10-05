@@ -259,7 +259,11 @@ def escrever(post: Post) -> Post:
     post.situacao = Post.Situacao.GERANDO
     post.save(update_fields=["situacao", "atualizado_em"])
 
-    ajuste, avisos, texto, extras = "", [], "", {}
+    # O angulo sugerido (outra IA, evento) vai como sugestao, nao como ordem:
+    # o material continua sendo o limite do que se afirma.
+    ideia = (post.extras or {}).get("ideia", "")
+    base = f"IDEIA SUGERIDA (use se couber no material): {ideia}\n" if ideia else ""
+    ajuste, avisos, texto, extras = base, [], "", {}
     for _tentativa in range(2):
         try:
             dados = _ler(
@@ -269,20 +273,20 @@ def escrever(post: Post) -> Post:
             )
         except ValueError as exc:
             avisos = [f"o modelo devolveu algo que nao e JSON: {exc}"]
-            ajuste = "A resposta anterior nao era um JSON valido. Responda SOMENTE o JSON."
+            ajuste = base + "A resposta anterior nao era um JSON valido. Responda SOMENTE o JSON."
             continue
         texto, extras = montar(post, dados)
         avisos = conferir(post, texto, extras, artigo)
         if not avisos:
             break
-        ajuste = (
+        ajuste = base + (
             "A versao anterior teve estes problemas; corrija sem mudar o resto: "
             + "; ".join(avisos)
             + "."
         )
 
     post.texto = texto
-    post.extras = extras
+    post.extras = {**extras, "ideia": ideia} if ideia else extras
     post.avisos = avisos
     post.material = mat
     post.erro = ""

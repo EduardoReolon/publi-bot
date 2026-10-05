@@ -28,6 +28,7 @@ NICHOS = [
     ("geral", _l("Geral")),
 ]
 ABAS = ("series", "instituicoes", "pedidos")
+POR_PAGINA = 50
 
 
 def _curador(request) -> None:
@@ -61,9 +62,15 @@ def catalogo(request: HttpRequest) -> HttpResponse:
         series = series.filter(situacao=situacao)
     if busca:
         series = series.filter(Q(titulo__icontains=busca) | Q(descricao__icontains=busca))
-    series = list(series.order_by("situacao", "-citacoes", "instituicao__sigla", "titulo")[:300])
+    from django.core.paginator import Paginator
+
     from apps.dados.catalogo import formatar
 
+    total_filtrado = series.count()
+    pagina = Paginator(
+        series.order_by("situacao", "-citacoes", "instituicao__sigla", "titulo"), POR_PAGINA
+    ).get_page(request.GET.get("pagina", 1))
+    series = list(pagina)
     for serie in series:
         serie.ultimo = serie.valores.order_by("-periodo").first() if serie.n_valores else None
         if serie.ultimo:
@@ -82,6 +89,9 @@ def catalogo(request: HttpRequest) -> HttpResponse:
             "aba": "dados",
             "aba_do_catalogo": aba,
             "series": series,
+            "pagina": pagina,
+            "total_filtrado": total_filtrado,
+            "filtros_da_url": _filtros_da_url(request),
             "instituicoes": instituicoes,
             "todas_as_instituicoes": Instituicao.objects.order_by("sigla"),
             "pedidos": _pedidos(),
@@ -101,6 +111,14 @@ def catalogo(request: HttpRequest) -> HttpResponse:
             "curador": request.user.is_superuser,
         },
     )
+
+
+def _filtros_da_url(request) -> str:
+    """A URL atual sem a pagina, para os links das paginas manterem os filtros."""
+    copia = request.GET.copy()
+    copia.pop("pagina", None)
+    texto = copia.urlencode()
+    return f"{texto}&" if texto else ""
 
 
 def _pedidos() -> list:
@@ -225,8 +243,22 @@ def situacao_em_lote(request: HttpRequest) -> HttpResponse:
     """Aprovar ou recusar varias series de uma vez (as marcadas na lista)."""
     _curador(request)
     nova = request.POST.get("situacao")
-    ids = request.POST.getlist("serie")
-    if nova in Serie.Situacao.values and ids:
-        n = Serie.objects.filter(pk__in=ids).update(situacao=nova)
+    if nova not in Serie.Situacao.values:
+        return _de_volta(request)
+    if request.POST.get("todas_sugeridas"):
+        # Todas as sugeridas do filtro atual (nicho, instituicao e busca), nao so a pagina.
+        consulta = Serie.objects.filter(situacao=Serie.Situacao.SUGERIDA)
+        nicho = request.POST.get("nicho", "")
+        if nicho:
+            consulta = consulta.filter(
+                Q(nichos__contains=[nicho]) | Q(instituicao__nichos__contains=[nicho])
+            )
+        busca = request.POST.get("q", "").strip()
+        if busca:
+            consulta = consulta.filter(Q(titulo__icontains=busca) | Q(descricao__icontains=busca))
+        n = consulta.update(situacao=nova)
+    else:
+        n = Serie.objects.filter(pk__in=request.POST.getlist("serie")).update(situacao=nova)
+    if n:
         messages.success(request, _("%(n)s serie(s) atualizadas.") % {"n": n})
     return _de_volta(request)

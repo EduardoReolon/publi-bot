@@ -54,14 +54,28 @@ def rodada(*, http=None) -> int:
     ).select_related("destino"):
         medir(post, http=http)
         try:
-            comentarios.ler(post, http=http)
+            comentarios.ler(post, http=http, criar_perguntas=post.motivo != Post.Motivo.HISTORICO)
         except ErroDaRede as exc:
             logger.info("Comentarios do post %s nao lidos: %s", post.pk, exc)
         medidos += 1
     for destino in Destino.objects.all():
         acompanhar_conta(destino, http=http)
+        _historico_e_anuncios(destino, http=http)
         experimentos.avaliar(destino)
     return medidos
+
+
+def _historico_e_anuncios(destino: Destino, *, http=None) -> None:
+    """Segue a importacao do historico (em lotes) e le o gasto com anuncios.
+    Um erro aqui fica gravado no destino; nao para a rodada das outras contas."""
+    from apps.social import anuncios, historico
+
+    try:
+        historico.continuar(destino, http=http)
+        if destino.anuncios_conta_id and destino.conectado:
+            anuncios.sincronizar(destino, http=http)
+    except Exception:
+        logger.exception("Historico/anuncios de %s falharam.", destino)
 
 
 def acompanhar_conta(destino: Destino, *, http=None) -> None:
@@ -76,8 +90,13 @@ def acompanhar_conta(destino: Destino, *, http=None) -> None:
         n = publicador.seguidores()
         if n is not None:
             registrar_seguidores(destino, n)
+        destino.sincronizado_em = timezone.now()
+        destino.erro_de_sincronia = ""
     except ErroDaRede as exc:
+        # O painel avisa quando a leitura automatica para por dias seguidos.
         logger.info("Seguidores de %s indisponiveis: %s", destino, exc)
+        destino.erro_de_sincronia = str(exc)[:2000]
+    destino.save(update_fields=["sincronizado_em", "erro_de_sincronia"])
     if destino.hashtags_de_referencia and (
         destino.referencias_em is None
         or destino.referencias_em <= timezone.now() - timedelta(days=7)
