@@ -12,10 +12,18 @@
     <div class="ajuda">{{ post.criado_em|date:"d/m H:i" }}</div>
   </div>
 
-  <p style="margin:.4rem 0">
-    {% translate "Artigo:" %}
-    {% if post.artigo_url %}<a href="{{ post.artigo_url }}" target="_blank" rel="noopener noreferrer">{{ post.artigo_titulo }}</a>{% else %}{{ post.artigo_titulo }}{% endif %}
-  </p>
+  {% if post.entrada_id %}
+    <p style="margin:.4rem 0">
+      <span class="selo">{{ post.entrada.get_tipo_display }}</span>
+      {% if post.entrada.relato %}<span class="ajuda">“{{ post.entrada.relato|truncatechars:160 }}”</span>{% endif %}
+      {% if post.artigo_url %}· {% translate "leva para" %} <a href="{{ post.artigo_url }}" target="_blank" rel="noopener noreferrer">{{ post.artigo_url|truncatechars:60 }}</a>{% endif %}
+    </p>
+  {% else %}
+    <p style="margin:.4rem 0">
+      {% translate "Artigo:" %}
+      {% if post.artigo_url %}<a href="{{ post.artigo_url }}" target="_blank" rel="noopener noreferrer">{{ post.artigo_titulo }}</a>{% else %}{{ post.artigo_titulo }}{% endif %}
+    </p>
+  {% endif %}
   <div class="ajuda"><strong>{{ post.get_motivo_display }}.</strong> {{ post.por_que }}</div>
 
   {% if post.situacao == 'sugerido' or post.situacao == 'gerando' %}
@@ -46,7 +54,7 @@
             <input type="text" name="primeiro_comentario" value="{{ post.extras.primeiro_comentario }}">
           </div>
         {% endif %}
-        {% if post.destino.rede == 'instagram' %}
+        {% if post.destino.rede == 'instagram' and not post.imagens.0.tipo %}
           <div class="campo">
             <label>{% translate "Laminas (uma por linha: titulo | texto)" %}</label>
             <textarea name="laminas" class="curto" rows="6">{% for l in post.extras.laminas %}{{ l.titulo }} | {{ l.texto }}
@@ -79,7 +87,12 @@
   {% if post.imagens %}
     <div class="acoes" style="gap:.4rem">
       {% for i in post.imagens %}
-        {% if post.destino.rede == 'instagram' %}
+        {% if i.tipo == 'video' %}
+          <video src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" controls preload="metadata" style="width:200px; border-radius:.4rem"></video>
+          <a class="ajuda" href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" download>{% translate "baixar o video" %}</a>
+        {% elif i.tipo == 'foto' %}
+          <a href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" target="_blank" rel="noopener noreferrer" download><img src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" alt="{% translate 'foto' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda)"></a>
+        {% elif post.destino.rede == 'instagram' %}
           <a href="{% url 'social:imagem' post.chave_publica forloop.counter %}" target="_blank" rel="noopener noreferrer" download><img src="{% url 'social:imagem' post.chave_publica forloop.counter %}" alt="{% translate 'lamina' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda)"></a>
         {% elif i.url %}
           <a href="{{ i.url }}" target="_blank" rel="noopener noreferrer"><img src="{{ i.url }}" alt="{% translate 'capa' %}" style="width:180px; border-radius:.4rem; border:1px solid var(--borda)"></a>
@@ -91,7 +104,7 @@
   {% if post.situacao == 'aprovado' or post.situacao == 'publicando' %}
     <p class="ajuda">
       {% translate "Na agenda para" %} <strong>{{ post.agendado_para|date:"d/m/Y H:i" }}</strong>.
-      {% if post.destino.conectado %}{% translate "Sai sozinho na hora (conta conectada)." %}{% else %}{% translate "Conta sem API: na hora, copie e poste." %}{% endif %}
+      {% if post.extras.so_copiar %}{% translate "Este post sai pelo copiar e postar:" %} {{ post.extras.so_copiar }}{% elif post.destino.conectado %}{% translate "Sai sozinho na hora (conta conectada)." %}{% else %}{% translate "Conta sem API: na hora, copie e poste." %}{% endif %}
       {% if post.erro %}<br>{{ post.erro|truncatechars:240 }}{% endif %}
     </p>
     <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
@@ -99,7 +112,7 @@
       <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
       <button type="button" class="botao secundario" data-copiar-texto="copiar-{{ post.pk }}">{% translate "Copiar texto" %}</button>
       {% if post.extras.primeiro_comentario %}<button type="button" class="botao secundario" data-copiar-texto="comentario-{{ post.pk }}">{% translate "Copiar comentario com o link" %}</button>{% endif %}
-      {% if post.destino.conectado %}
+      {% if post.destino.conectado and not post.extras.so_copiar %}
         <button type="submit" name="acao" value="publicar_agora" class="botao">{% translate "Publicar agora" %}</button>
       {% else %}
         <input type="url" name="url" placeholder="{% translate 'endereco do post, depois de postar' %}" style="min-width:16rem; width:auto">

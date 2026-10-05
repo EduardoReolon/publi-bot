@@ -121,8 +121,12 @@ class LLMClient(ABC):
         temperature: float = 0.2,
         max_tokens: int | None = None,
         json_schema: dict | None = None,
+        imagens: list[tuple[str, bytes]] | None = None,
     ) -> LLMResponse:
         """Uma rodada de conversa.
+
+        `imagens`: [(tipo, bytes)] junto da mensagem, para modelo que enxerga
+        imagem (descrever uma foto). Modelo sem visao recusa: erro permanente.
 
         `json_schema` pede saida estruturada quando o provedor suporta. E o que
         permite ao filtro de consenso devolver

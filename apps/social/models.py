@@ -83,6 +83,15 @@ class ConfiguracaoSocial(models.Model):
     )
     # Os numeros da estrategia que a pessoa mudou (ver apps/social/parametros.py).
     parametros = models.JSONField(_("parametros"), default=dict, blank=True)
+    descrever_fotos = models.BooleanField(
+        _("descrever as fotos com o modelo"),
+        default=False,
+        help_text=_(
+            "Foto do banco sem nota ganha uma descricao do que aparece, feita por um modelo "
+            "que enxerga imagem (precisa de uma conexao de inferencia com modelo de visao). "
+            "Desligado: a legenda sai da nota e do Negocio."
+        ),
+    )
 
     class Meta:
         verbose_name = _("configuracao das redes")
@@ -113,6 +122,16 @@ class Destino(models.Model):
         _("aprovacao"), max_length=12, choices=Aprovacao.choices, default=Aprovacao.SEMPRE
     )
     teto_semanal = models.PositiveSmallIntegerField(_("posts por semana, no maximo"), default=3)
+    fotos_por_cento = models.PositiveSmallIntegerField(
+        _("posts do banco de fotos (%)"),
+        default=0,
+        help_text=_(
+            "Quanto dos posts automaticos desta conta vem do banco de fotos (o resto, dos "
+            "artigos). 0: so artigos (consultoria, clinica). 80: quase tudo foto (barbearia, "
+            "estetica). Entre 1 e 99, o PubliBot ajusta sozinho para o tipo que funciona mais."
+        ),
+    )
+    mistura_ajustada_em = models.DateTimeField(null=True, blank=True)
     publico = models.TextField(
         _("quem esta nesta conta"),
         blank=True,
@@ -315,6 +334,8 @@ class Post(models.Model):
         TEMA = "tema", _("Tema que atravessa varios artigos")
         TESTE = "teste", _("Teste pago de abordagem")
         OUTRA_IA = "outra_ia", _("Sugerido pela outra IA")
+        CASO = "caso", _("Caso ou novidade sua")
+        FOTOS = "fotos", _("Do banco de fotos")
         HISTORICO = "historico", _("Antes do PubliBot (importado)")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -324,6 +345,10 @@ class Post(models.Model):
     artigo_url = models.URLField(_("endereco do artigo"), max_length=500, blank=True)
     abordagem = models.ForeignKey(
         Abordagem, on_delete=models.SET_NULL, null=True, blank=True, related_name="posts"
+    )
+    # Post do material da propria pessoa (caso, novidade, fotos), e nao de artigo.
+    entrada = models.ForeignKey(
+        "Entrada", on_delete=models.SET_NULL, null=True, blank=True, related_name="posts"
     )
     # Post de um tema (varios artigos), e nao de um artigo so.
     tema = models.ForeignKey(
@@ -463,3 +488,114 @@ class Anuncio(models.Model):
 
     def __str__(self) -> str:
         return self.nome or self.id_remoto
+
+
+def _caminho_da_midia(instancia, nome: str) -> str:
+    import os
+
+    extensao = os.path.splitext(nome)[1].lower()[:6] or ".bin"
+    return f"social/midias/{timezone.now():%Y/%m}/{instancia.pk}{extensao}"
+
+
+class Midia(models.Model):
+    """Uma foto ou video da propria pessoa: do banco de fotos (agenda sozinho)
+    ou anexado a um post proprio. A foto e guardada ja normalizada (girada,
+    no maximo 2048 px, sem os metadados — inclusive a localizacao)."""
+
+    class Tipo(models.TextChoices):
+        FOTO = "foto", _("Foto")
+        VIDEO = "video", _("Video")
+
+    class Situacao(models.TextChoices):
+        NOVA = "nova", _("No banco")
+        USADA = "usada", _("Ja usada")
+        DESCARTADA = "descartada", _("Descartada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tipo = models.CharField(max_length=6, choices=Tipo.choices, default=Tipo.FOTO)
+    arquivo = models.FileField(upload_to=_caminho_da_midia, max_length=300)
+    # Do banco de fotos (o PubliBot agenda) ou so de um post proprio.
+    banco = models.BooleanField(default=False)
+    nota = models.TextField(_("nota"), blank=True)
+    # O que aparece na foto, escrito pelo modelo de visao (opcional).
+    descricao = models.TextField(blank=True)
+    descricao_tentada = models.BooleanField(default=False)
+    tirada_em = models.DateTimeField(null=True, blank=True)
+    largura = models.PositiveIntegerField(null=True, blank=True)
+    altura = models.PositiveIntegerField(null=True, blank=True)
+    nitidez = models.FloatField(null=True, blank=True)
+    brilho = models.FloatField(null=True, blank=True)
+    # dHash de 64 bits (hex): fotos quase iguais tem assinaturas proximas.
+    assinatura = models.CharField(max_length=16, blank=True)
+    # Fotos do mesmo atendimento (tiradas perto uma da outra) viram um carrossel.
+    grupo = models.UUIDField(null=True, blank=True, db_index=True)
+    situacao = models.CharField(max_length=10, choices=Situacao.choices, default=Situacao.NOVA)
+    motivo = models.CharField(_("por que descartada"), max_length=200, blank=True)
+    # Quem aparece autorizou o uso da imagem (ou nao aparece ninguem).
+    autorizada = models.BooleanField(default=False)
+    criada_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["tirada_em", "criada_em"]
+
+    def __str__(self) -> str:
+        return self.nota[:50] or self.arquivo.name
+
+
+class Entrada(models.Model):
+    """O material que a propria pessoa manda: um caso real, uma novidade, ou um
+    grupo de fotos do banco. E o "artigo" dos posts que nao vem de artigo: o
+    post so afirma o que esta aqui."""
+
+    class Tipo(models.TextChoices):
+        CASO = "caso", _("Caso real")
+        NOVIDADE = "novidade", _("Novidade ou bastidor")
+        FOTOS = "fotos", _("Fotos do trabalho")
+
+    class Transcricao(models.TextChoices):
+        NENHUMA = "", _("Sem audio")
+        ESPERANDO = "esperando", _("Transcrevendo")
+        PRONTA = "pronta", _("Transcrita")
+        FALHOU = "falhou", _("Falhou")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    texto = models.TextField(_("o que aconteceu"), blank=True)
+    audio = models.FileField(upload_to="social/audios/%Y/%m/", max_length=300, blank=True)
+    transcricao = models.TextField(blank=True)
+    situacao_do_audio = models.CharField(
+        max_length=10, choices=Transcricao.choices, blank=True, default=""
+    )
+    midias = models.ManyToManyField(Midia, blank=True, related_name="entradas")
+    # Para onde o post leva: um artigo relacionado (id do nucleo) ou um endereco.
+    artigo_id = models.UUIDField(null=True, blank=True)
+    link = models.URLField(_("link"), max_length=500, blank=True)
+    autorizado = models.BooleanField(default=False)
+    # As contas que recebem o post (esperando a transcricao, quando ha audio).
+    destinos = models.JSONField(default=list, blank=True)
+    criada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    criada_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-criada_em"]
+
+    def __str__(self) -> str:
+        return self.titulo
+
+    @property
+    def relato(self) -> str:
+        """Tudo o que o post pode afirmar: o texto, o audio transcrito e as notas
+        (e descricoes) das fotos."""
+        partes = [self.texto, self.transcricao]
+        for midia in self.midias.all():
+            partes += [midia.nota, midia.descricao]
+        return "\n".join(p.strip() for p in partes if p and p.strip())
+
+    @property
+    def titulo(self) -> str:
+        primeira = next((linha.strip() for linha in self.relato.splitlines() if linha.strip()), "")
+        if primeira:
+            return primeira[:120]
+        return str(self.get_tipo_display())

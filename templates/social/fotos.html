@@ -1,0 +1,76 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Banco de fotos" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+  <h2>{% translate "Banco de fotos" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Para negocio que vive de foto real (barbearia, estetica, restaurante, obra): suba as
+      fotos quando tiver, direto do celular, em lote. O PubliBot descarta as tremidas,
+      escuras e repetidas (fica a mais nitida), junta as do mesmo atendimento num carrossel,
+      apaga a localizacao que vem escondida na foto e agenda sozinho, na proporcao de cada
+      conta (Configurar > a conta > "posts do banco de fotos (%)"). A nota, se houver, entra
+      na legenda.
+    {% endblocktranslate %}
+  </p>
+
+  {% for d, e in estoques %}
+    <div class="aviso {% if e.baixo %}alerta{% else %}ok{% endif %}">
+      <strong>{{ d.nome }}</strong> ({{ d.fotos_por_cento }}% {% translate "de fotos" %}):
+      {% blocktranslate trimmed with g=e.grupos %}{{ g }} atendimento(s) ainda nao postado(s){% endblocktranslate %}{% if e.dias is not None %}, {% blocktranslate trimmed with n=e.dias %}~{{ n }} dia(s) de posts{% endblocktranslate %}{% endif %}.
+      {% if e.baixo %}{% translate "Envie fotos novas." %}{% endif %}
+    </div>
+  {% empty %}
+    <p class="ajuda">{% translate "Nenhuma conta usa o banco ainda: em Configurar, a conta > 'posts do banco de fotos (%)'." %}</p>
+  {% endfor %}
+
+  <form method="post" enctype="multipart/form-data" class="secao">
+    {% csrf_token %}<input type="hidden" name="acao" value="enviar">
+    <div class="campo">
+      <label for="fotos">{% translate "Fotos ou videos" %}</label>
+      <input type="file" id="fotos" name="fotos" accept="image/*,video/*" multiple required>
+    </div>
+    <div class="campo">
+      <label for="nota">{% translate "Nota (opcional, vale para este lote)" %}</label>
+      <input type="text" id="nota" name="nota" placeholder="{% translate 'ex.: degrade navalhado, primeira vez dele aqui' %}">
+    </div>
+    <label style="display:block; margin:.6rem 0"><input type="checkbox" name="autorizada" value="1" style="width:auto"> <strong>{% translate "Quem aparece autorizou o uso da imagem (ou nao aparece ninguem)." %}</strong></label>
+    <div class="acoes"><button type="submit" class="botao">{% translate "Enviar" %}</button></div>
+    {% if not config.descrever_fotos %}<p class="ajuda">{% translate "Foto sem nota: legenda curta e generica. Para o PubliBot descrever a foto, ligue 'descrever as fotos com o modelo' em Configurar (precisa de modelo de visao)." %}</p>{% endif %}
+  </form>
+
+  {% for grupo, midias in grupos %}
+    <section class="secao">
+      <div class="acoes" style="gap:.5rem; flex-wrap:wrap">
+        {% for m in midias %}
+          <div style="text-align:center; {% if m.situacao == 'descartada' %}opacity:.45{% endif %}">
+            {% if m.tipo == 'video' %}<video src="{% url 'social:midia_privada' m.pk %}" preload="metadata" style="width:130px; border-radius:.4rem"></video>
+            {% else %}<img src="{% url 'social:midia_privada' m.pk %}" alt="{{ m.nota|default:_('foto') }}" loading="lazy" style="width:130px; height:160px; object-fit:cover; border-radius:.4rem; border:1px solid var(--borda)">{% endif %}
+            <div class="ajuda">{% if m.situacao == 'descartada' %}<span class="selo ruim">{{ m.motivo|truncatechars:40 }}</span>{% elif m.situacao == 'usada' %}<span class="selo ok">{% translate "usada" %}</span>{% else %}<span class="selo">{% translate "no banco" %}</span>{% endif %}</div>
+            <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="midia" value="{{ m.pk }}">
+              {% if m.situacao == 'descartada' %}<button name="acao" value="usar" class="pequeno discreto">{% translate "usar mesmo assim" %}</button>{% else %}<button name="acao" value="descartar" class="pequeno discreto">{% translate "descartar" %}</button>{% endif %}
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+      {% with primeira=midias.0 %}
+        {% if primeira.grupo %}
+          <form method="post" class="acoes">{% csrf_token %}<input type="hidden" name="grupo" value="{{ primeira.grupo }}">
+            <input type="text" name="nota" value="{{ primeira.nota }}" placeholder="{% translate 'nota do atendimento (entra na legenda)' %}" style="min-width:16rem">
+            <button name="acao" value="nota" class="pequeno secundario">{% translate "Salvar nota" %}</button>
+            {% if destinos %}
+              <select name="destino" style="width:auto">{% for d in destinos %}<option value="{{ d.pk }}">{{ d.nome }}</option>{% endfor %}</select>
+              <button name="acao" value="postar_agora" class="pequeno">{% translate "Postar agora" %}</button>
+            {% endif %}
+          </form>
+          {% if primeira.descricao %}<p class="ajuda">{% translate "O modelo viu:" %} {{ primeira.descricao }}</p>{% endif %}
+        {% endif %}
+      {% endwith %}
+    </section>
+  {% empty %}
+    <p class="vazio">{% translate "Nenhuma foto ainda." %}</p>
+  {% endfor %}
+{% endblock %}

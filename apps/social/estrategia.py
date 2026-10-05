@@ -29,7 +29,7 @@ from decimal import Decimal
 from django.db.models import Sum
 from django.utils import timezone
 
-from apps.social import experimentos, fontes, parametros
+from apps.social import experimentos, fontes, parametros, proprio
 from apps.social.models import ConfiguracaoSocial, Destino, Post, ReferenciaDoNicho, Tema
 
 FASES = {
@@ -368,6 +368,8 @@ def plano(destino: Destino) -> dict:
             and (p.metricas or {}).get("alcance", 0) < minimo
         ),
         "formatos": formatos_do_nicho(destino),
+        "por_tipo": proprio.placar_por_tipo(destino),
+        "estoque": proprio.estoque(destino) if destino.fotos_por_cento else None,
         "referencias": list(destino.referencias.order_by("-curtidas")[:6]),
         "tem_referencias": ReferenciaDoNicho.objects.filter(destino=destino).exists(),
     }

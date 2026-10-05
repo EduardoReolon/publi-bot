@@ -173,6 +173,8 @@ class PublicadorLinkedIn(Publicador):
         return inicio["image"]
 
     def publicar(self, post, texto: str, imagens) -> Publicado:
+        if any(i.video for i in imagens):
+            raise SemSuporte("video no LinkedIn sai pelo 'copiar para postar'.")
         cabecalhos = self._cabecalhos()
         corpo = {
             "author": self.destino.conta_id,

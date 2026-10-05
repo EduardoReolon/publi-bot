@@ -11,6 +11,9 @@ urlpatterns = [
     path("estrategia/ia/", views.revisar_resposta_ia, name="revisar_resposta_ia"),
     path("estrategia/ia/aplicar/", views.aplicar_resposta_ia, name="aplicar_resposta_ia"),
     path("diagnostico/", views.diagnostico, name="diagnostico"),
+    path("novo/", views.novo_post, name="novo_post"),
+    path("fotos/", views.banco_de_fotos, name="banco_de_fotos"),
+    path("fotos/<uuid:pk>/", views.midia_privada, name="midia_privada"),
     path("diagnostico/acao/", views.acao_no_diagnostico, name="acao_no_diagnostico"),
     path("posts/<uuid:pk>/", views.acao_no_post, name="acao_no_post"),
     path("artigo/<uuid:artigo_id>/levar/", views.levar_as_redes, name="levar_as_redes"),
@@ -26,5 +29,6 @@ urlpatterns = [
     # Publicos, sem login.
     path("r/<str:chave>/", views.clique, name="clique"),
     path("m/<str:chave>/<int:n>.png", views.imagem, name="imagem"),
+    path("m/<str:chave>/<int:n>/", views.imagem, name="midia_publica"),
     path("bio/<str:chave>/", views.bio, name="bio"),
 ]

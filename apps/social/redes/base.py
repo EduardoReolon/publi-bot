@@ -69,6 +69,7 @@ class ImagemPublica:
 
     url: str
     caminho: str  # no storage
+    video: bool = False
 
 
 @dataclass

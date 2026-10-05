@@ -32,14 +32,30 @@ class AnthropicClient(LLMClient):
         temperature: float = 0.2,
         max_tokens: int | None = None,
         json_schema: dict | None = None,
+        imagens: list[tuple[str, bytes]] | None = None,
     ) -> LLMResponse:
+        conteudo: str | list = user
+        if imagens:
+            import base64
+
+            conteudo = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": tipo,
+                        "data": base64.b64encode(dados).decode(),
+                    },
+                }
+                for tipo, dados in imagens
+            ] + [{"type": "text", "text": user}]
         corpo: dict = {
             "model": model,
             # Obrigatorio nesta API, ao contrario da compativel com OpenAI.
             "max_tokens": max_tokens or 4096,
             "temperature": temperature,
             "system": system,
-            "messages": [{"role": "user", "content": user}],
+            "messages": [{"role": "user", "content": conteudo}],
         }
         if json_schema:
             # Sem modo JSON nativo: preenchemos o inicio da resposta do

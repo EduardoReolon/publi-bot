@@ -244,7 +244,29 @@ def converter_no_worker(
 
 
 def _transcrever_no_worker(document, *, timeout: float) -> ResultadoDaExtracao:
-    """Audio -> texto com marcas de tempo, no worker da placa (Whisper).
+    """Um documento de audio -> markdown com marcas de tempo (ver transcrever_audio)."""
+    from apps.knowledge.videos import markdown_da_transcricao
+
+    segmentos, duracao = transcrever_audio(
+        document.nome_do_arquivo,
+        _ler_arquivo(document),
+        idioma=document.language or "pt",
+        dono=f"transcricao:{document.pk}",
+        timeout=timeout,
+    )
+    return ResultadoDaExtracao(
+        markdown=markdown_da_transcricao(document.title or "", segmentos),
+        metodo="audio",
+        duracao_ms=int(duracao * 1000),
+    )
+
+
+def transcrever_audio(
+    nome: str, conteudo: bytes, *, idioma: str, dono: str, timeout: float
+) -> tuple[list[tuple[float, str]], float]:
+    """Audio -> [(segundo, texto)] e a duracao, no worker da placa (Whisper).
+    Serve ao acervo (documento de audio) e a quem mais precisar (o audio de um
+    post proprio, nas redes).
 
     Rota `/v1/audio/transcriptions`, no dialeto da OpenAI (multipart com
     `file`, `model`, `language` e `response_format=verbose_json`). Segue o
@@ -256,7 +278,6 @@ def _transcrever_no_worker(document, *, timeout: float) -> ResultadoDaExtracao:
         _codigo_do_erro,
         _retry_after,
     )
-    from apps.knowledge.videos import markdown_da_transcricao
 
     conexao = conexao_de_conversao()
     if conexao is None:
@@ -267,13 +288,13 @@ def _transcrever_no_worker(document, *, timeout: float) -> ResultadoDaExtracao:
     segredo = decifrar_chave(conexao) or ""
 
     try:
-        with reserva(conexao, owner_key=f"transcricao:{document.pk}"):
+        with reserva(conexao, owner_key=dono):
             resposta = httpx.post(
                 f"{conexao.base_url.rstrip('/')}/v1/audio/transcriptions",
-                files={"file": (document.nome_do_arquivo, _ler_arquivo(document))},
+                files={"file": (nome, conteudo)},
                 data={
                     "model": "whisper",
-                    "language": (document.language or "pt")[:2],
+                    "language": (idioma or "pt")[:2],
                     "response_format": "verbose_json",
                 },
                 headers={"Authorization": f"Bearer {segredo}"},
@@ -317,11 +338,7 @@ def _transcrever_no_worker(document, *, timeout: float) -> ResultadoDaExtracao:
         segmentos = [(0.0, dados["text"])]
     if not segmentos:
         raise ExtracaoIndisponivel("o worker devolveu uma transcricao vazia.")
-    return ResultadoDaExtracao(
-        markdown=markdown_da_transcricao(document.title or "", segmentos),
-        metodo="audio",
-        duracao_ms=int(float(dados.get("duration") or 0) * 1000),
-    )
+    return segmentos, float(dados.get("duration") or 0)
 
 
 def _ler_arquivo(document) -> bytes:

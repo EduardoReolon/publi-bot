@@ -107,6 +107,7 @@ def executar_prompt(
     workload: str = InferenceConnection.Workload.TEXT,
     tipo_de_conteudo: str = "",
     com_convite: bool = True,
+    imagens: list[tuple[str, bytes]] | None = None,
 ) -> ResultadoDoPrompt:
     """Roda um prompt e devolve o texto cru do modelo.
 
@@ -161,6 +162,8 @@ def executar_prompt(
                 temperature=versao.temperature,
                 max_tokens=versao.max_tokens,
                 json_schema=json_schema,
+                # So quando ha imagem: provedores de teste nao conhecem o argumento.
+                **({"imagens": imagens} if imagens else {}),
             )
     except SemCapacidade as exc:
         # Corrida: a vaga existia na escolha e sumiu antes da reserva.

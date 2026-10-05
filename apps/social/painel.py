@@ -59,7 +59,17 @@ def pendencias() -> dict:
 
 
 def alertas() -> list[str]:
-    """Para o painel do cliente: leituras automaticas paradas."""
+    """Para o painel do cliente: leituras automaticas paradas e banco de fotos
+    acabando (conta que vive de foto)."""
     from apps.social.models import Destino
+    from apps.social.proprio import estoque
 
-    return [texto for d in Destino.objects.filter(ligado=True) if (texto := leitura_parada(d))]
+    saida = [texto for d in Destino.objects.filter(ligado=True) if (texto := leitura_parada(d))]
+    for destino in Destino.objects.filter(ligado=True, fotos_por_cento__gt=0):
+        e = estoque(destino)
+        if e["baixo"]:
+            saida.append(
+                f"{destino.nome}: o banco de fotos da para ~{e['dias']} dia(s) "
+                f"({e['grupos']} atendimento(s)). Envie fotos novas em Redes > Fotos."
+            )
+    return saida
