@@ -284,6 +284,7 @@ padroes = [
   "apps/social/**",
   "templates/social/**",
   "docs/REDES_SOCIAIS.md",
+  "docs/PLATEIA_SIMULADA.md",
 ]
 
 

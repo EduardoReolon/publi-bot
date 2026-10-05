@@ -248,6 +248,10 @@ em cada rede e o teste que falta** — faca com um post de teste e confira.
 
 ## Ideias para depois
 
+- **Plateia simulada** (personas de vozes reais que comparam as versoes antes
+  de publicar, com calibracao contra o resultado real): desenho completo em
+  [PLATEIA_SIMULADA.md](PLATEIA_SIMULADA.md).
+
 - Melhor horario por conta, aprendido dos cliques (hoje: dias e horarios fixos).
 - Abordagem por publico: o placar ja e por conta; dar para o modelo os 2
   melhores posts da conta como exemplo.
