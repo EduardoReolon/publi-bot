@@ -1,12 +1,13 @@
 {% comment %}
   Paginas de uma lista. Uso: {% include "_paginas.html" with pagina=obj parametro="temas" ancora="temas" id="paginas-temas" %}
+  `extra` (opcional): os outros filtros da URL, terminando em "&" (ex.: "aba=series&q=ipca&").
 {% endcomment %}
 {% if pagina.paginator.num_pages > 1 %}
   <nav class="paginas" id="{{ id }}" aria-label="paginas">
-    {% if pagina.has_previous %}<a href="?{{ parametro }}={{ pagina.previous_page_number }}#{{ ancora }}">&larr;</a>{% endif %}
+    {% if pagina.has_previous %}<a href="?{{ extra }}{{ parametro }}={{ pagina.previous_page_number }}#{{ ancora }}">&larr;</a>{% endif %}
     {% for numero in pagina.paginator.page_range %}
-      {% if numero == pagina.number %}<strong>{{ numero }}</strong>{% else %}<a href="?{{ parametro }}={{ numero }}#{{ ancora }}">{{ numero }}</a>{% endif %}
+      {% if numero == pagina.number %}<strong>{{ numero }}</strong>{% else %}<a href="?{{ extra }}{{ parametro }}={{ numero }}#{{ ancora }}">{{ numero }}</a>{% endif %}
     {% endfor %}
-    {% if pagina.has_next %}<a href="?{{ parametro }}={{ pagina.next_page_number }}#{{ ancora }}">&rarr;</a>{% endif %}
+    {% if pagina.has_next %}<a href="?{{ extra }}{{ parametro }}={{ pagina.next_page_number }}#{{ ancora }}">&rarr;</a>{% endif %}
   </nav>
 {% endif %}

@@ -190,7 +190,7 @@ def procurar_e_sugerir(instituicao: Instituicao, termo: str, *, limite: int = 20
             codigo=achada.codigo[:120],
             defaults={
                 "titulo": achada.titulo[:300] or achada.codigo,
-                "descricao": achada.descricao,
+                "descricao": _sem_html(achada.descricao),
                 "unidade": achada.unidade[:60],
                 "recortes": achada.recortes,
                 "periodicidade": achada.periodicidade[:40],
@@ -201,6 +201,15 @@ def procurar_e_sugerir(instituicao: Instituicao, termo: str, *, limite: int = 20
         )
         series.append(serie)
     return series
+
+
+def _sem_html(texto: str) -> str:
+    """Alguns catalogos (o do BCB) mandam a descricao em HTML."""
+    import html
+
+    from django.utils.html import strip_tags
+
+    return " ".join(html.unescape(strip_tags(texto or "")).split())
 
 
 POR_TERMO_INICIAL = 5

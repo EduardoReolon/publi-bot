@@ -96,3 +96,27 @@ def recalcular_temas_do_cliente(schema: str) -> int:
 
     with schema_context(schema):
         return recalcular()
+
+
+@shared_task
+def importar_historico(schema: str, destino_id: str) -> dict:
+    """O passado de uma conta recem-conectada: posts, resultado, comentarios e
+    o gasto com anuncios. Roda em lotes (a medicao diaria continua o resto)."""
+    from django_tenants.utils import schema_context
+
+    from apps.social import anuncios, historico
+    from apps.social.models import Destino
+    from apps.social.redes.base import ErroDaRede
+
+    with schema_context(schema):
+        destino = Destino.objects.filter(pk=destino_id).first()
+        if destino is None or not historico.suporta(destino):
+            return {}
+        try:
+            feito = historico.importar(destino)
+        except ErroDaRede as exc:
+            logger.info("Historico de %s nao importado: %s", destino, exc)
+            return {"erro": str(exc)}
+        if destino.anuncios_conta_id:
+            feito["anuncios"] = anuncios.sincronizar(destino)
+        return feito

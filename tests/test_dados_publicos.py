@@ -278,3 +278,50 @@ def test_cada_site_escolhe_os_nichos_de_dados(ambiente, monkeypatch):  # noqa: F
     assert [s.pk for s in catalogo.sugerir("x", limite=10, nichos=nichos_do_cliente())] == [
         saude.pk
     ]
+
+
+@pytest.mark.django_db
+def test_sugeridas_paginadas_e_aprovar_todas(ambiente):  # noqa: F811
+    from apps.dados.views import POR_PAGINA
+
+    _, usuario, client = ambiente
+    call_command("semear_dados")
+    bcb = Instituicao.objects.get(sigla="BCB")
+    for n in range(POR_PAGINA + 5):
+        Serie.objects.create(
+            instituicao=bcb,
+            codigo=str(n),
+            titulo=f"Serie {n:03d}",
+            descricao="<P>O conceito &amp; a base</P>",
+            origem=Serie.Origem.CATALOGO,
+        )
+    url = reverse("dados:catalogo", urlconf=U) + "?aba=series&situacao=sugerida"
+
+    # Quem nao e superusuario ve o aviso de quem aprova, sem botoes.
+    pagina = client.get(url).content.decode()
+    assert "superusuario" in pagina and ">Aprovar<" not in pagina
+
+    usuario.is_superuser = True
+    usuario.save()
+    pagina = client.get(url).content.decode()
+    assert pagina.count('value="aprovada"') >= POR_PAGINA  # um Aprovar por linha
+    assert "&lt;P&gt;" not in pagina and "<P>" not in pagina
+    assert "situacao=sugerida&amp;pagina=2" in pagina  # a pagina mantem o filtro
+    assert "Serie 054" in client.get(url + "&pagina=2").content.decode()
+
+    client.post(
+        reverse("dados:situacao_em_lote", urlconf=U),
+        {"situacao": "aprovada", "todas_sugeridas": "1", "q": "Serie 00"},
+    )
+    assert Serie.objects.filter(situacao=Serie.Situacao.APROVADA).count() == 10
+    client.post(
+        reverse("dados:situacao_em_lote", urlconf=U),
+        {"situacao": "aprovada", "todas_sugeridas": "1"},
+    )
+    assert not Serie.objects.filter(situacao=Serie.Situacao.SUGERIDA).exists()
+
+
+def test_descricao_sem_html():
+    from apps.dados.catalogo import _sem_html
+
+    assert _sem_html("<P>O conceito &amp; a\n base</P>") == "O conceito & a base"

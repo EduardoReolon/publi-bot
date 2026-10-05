@@ -25,3 +25,4 @@ class SocialConfig(AppConfig):
     prompts_com_guia = frozenset({"social_linkedin", "social_instagram", "social_gmn"})
     blocos_do_artigo = ["social/_no_artigo.html"]
     pendencias = "apps.social.painel.pendencias"
+    alertas = "apps.social.painel.alertas"

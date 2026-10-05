@@ -1,0 +1,70 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Resposta da outra IA" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+  <h2>{% blocktranslate with n=destino.nome %}O que a resposta sugere para {{ n }}{% endblocktranslate %}</h2>
+  <p class="sub">{% translate "Nada foi aplicado ainda. Desmarque o que nao quiser e clique em Aplicar no fim da pagina. Os posts sao escritos pelo PubliBot, so com o material dos artigos, e passam pela sua revisao." %}</p>
+
+  <form method="post" action="{% url 'social:aplicar_resposta_ia' %}">
+    {% csrf_token %}
+    <input type="hidden" name="destino" value="{{ destino.pk }}">
+    <textarea name="resposta" hidden>{{ resposta }}</textarea>
+
+    <section class="secao">
+      <h3>{% translate "Propostas de post" %}</h3>
+      {% for p in leitura.propostas %}
+        <label style="display:block; margin-bottom:.5rem">
+          <input type="checkbox" name="proposta" value="{{ forloop.counter0 }}" checked style="width:auto">
+          <strong>{% if p.alvo.tema %}{% translate "Tema" %}{% else %}{% translate "Artigo" %}{% endif %}:</strong> {{ p.alvo.titulo|truncatechars:140 }}
+          {% if p.gancho %}<div class="ajuda">{% translate "Gancho sugerido:" %} “{{ p.gancho }}”</div>{% endif %}
+          {% if p.por_que %}<div class="ajuda">{% translate "Por que:" %} {{ p.por_que }}</div>{% endif %}
+        </label>
+      {% empty %}
+        <p class="vazio">{% translate "Nenhuma proposta com codigo reconhecido." %}</p>
+      {% endfor %}
+      {% if leitura.nao_achados %}
+        <p class="ajuda">{% translate "Codigos que nao reconheci (tema ou artigo que mudou desde o pedido):" %} {{ leitura.nao_achados|join:" · " }}</p>
+      {% endif %}
+    </section>
+
+    <section class="secao">
+      <h3>{% translate "Eventos e noticias (pesquisa na web)" %}</h3>
+      <p class="ajuda">{% translate "Viram post do tema ou artigo ligado, com o evento como gancho. Abra o link para conferir antes de aprovar." %}</p>
+      {% for e in leitura.eventos %}
+        <label style="display:block; margin-bottom:.5rem">
+          <input type="checkbox" name="evento" value="{{ forloop.counter0 }}" {% if e.alvo %}checked{% else %}disabled{% endif %} style="width:auto">
+          <strong>{{ e.data }}</strong> — {{ e.evento }} <a href="{{ e.link }}" target="_blank" rel="noopener noreferrer">{% translate "fonte" %}</a>
+          <div class="ajuda">{% if e.alvo %}{% translate "Liga com:" %} {{ e.alvo.titulo|truncatechars:100 }}{% else %}{% translate "Sem tema ou artigo ligado: so ideia (o post precisa de um artigo como material)." %}{% endif %}{% if e.ideia %} · {{ e.ideia }}{% endif %}</div>
+        </label>
+      {% empty %}
+        <p class="vazio">{% translate "Nenhum evento (a IA nao pesquisou na web, ou nao achou nada confirmado)." %}</p>
+      {% endfor %}
+    </section>
+
+    <section class="secao">
+      <h3>{% translate "Abordagens novas" %}</h3>
+      <p class="ajuda">{% translate "Entram no sorteio desta rede e competem com as outras pelo placar: se nao funcionarem, perdem espaco sozinhas. Da para editar ou desligar em Configurar." %}</p>
+      {% for a in leitura.abordagens %}
+        <label style="display:block; margin-bottom:.5rem">
+          <input type="checkbox" name="abordagem" value="{{ forloop.counter0 }}" checked style="width:auto">
+          <strong>{{ a.nome }}</strong>{% if a.existe %} <span class="selo alerta">{% translate "ja existe: entra com outro nome" %}</span>{% endif %}
+          <div class="ajuda">{{ a.instrucao }}</div>
+        </label>
+      {% empty %}
+        <p class="vazio">{% translate "Nenhuma abordagem nova." %}</p>
+      {% endfor %}
+    </section>
+
+    {% if leitura.comentarios %}
+      <section class="secao"><h3>{% translate "Comentarios da IA" %}</h3><p style="white-space:pre-line">{{ leitura.comentarios }}</p></section>
+    {% endif %}
+
+    <div class="acoes">
+      <button type="submit" class="botao">{% translate "Aplicar o que esta marcado" %}</button>
+      <a href="{% url 'social:estrategia' %}?destino={{ destino.pk }}" class="botao discreto">{% translate "Voltar sem aplicar" %}</a>
+    </div>
+  </form>
+{% endblock %}

@@ -61,8 +61,10 @@ def classificar(texto: str) -> str:
     return Comentario.Tipo.OUTRO
 
 
-def ler(post: Post, *, http=None) -> int:
-    """Le os comentarios novos do post. Devolve quantos entraram."""
+def ler(post: Post, *, http=None, criar_perguntas: bool = True) -> int:
+    """Le os comentarios novos do post. Devolve quantos entraram.
+    `criar_perguntas=False` (historico importado): so guarda, sem mandar as
+    perguntas antigas para a fila de Perguntas."""
     r = rede(post.destino.rede)
     if r.publicador is None or not post.id_remoto or not post.destino.conectado:
         return 0
@@ -74,20 +76,26 @@ def ler(post: Post, *, http=None) -> int:
     for lido in lidos:
         if lido.do_dono or not lido.texto.strip():
             continue
+        escrito_em = parse_datetime(lido.escrito_em or "") or timezone.now()
         comentario, criado = Comentario.objects.get_or_create(
             post=post,
             id_remoto=lido.id_remoto[:300],
             defaults={
                 "texto": lido.texto[:5000],
                 "autor": (lido.autor or "").split(" ")[0][:80],
-                "escrito_em": parse_datetime(lido.escrito_em or "") or timezone.now(),
+                "escrito_em": escrito_em,
                 "tipo": classificar(lido.texto),
+                # Respondido na rede, fora do PubliBot: nao fica pendente.
+                "respondido_em": escrito_em if lido.respondido else None,
             },
         )
         if not criado:
+            if lido.respondido and comentario.respondido_em is None:
+                comentario.respondido_em = escrito_em
+                comentario.save(update_fields=["respondido_em"])
             continue
         novos += 1
-        if comentario.tipo == Comentario.Tipo.PERGUNTA:
+        if criar_perguntas and comentario.tipo == Comentario.Tipo.PERGUNTA and not lido.respondido:
             comentario.pergunta_id = fontes.criar_pergunta(
                 comentario.texto, f"rede:{post.destino.rede}:{comentario.id_remoto}"
             )

@@ -12,6 +12,7 @@ le essas declaracoes daqui:
         prompts_com_guia = {"meu_prompt"}                 # recebem o guia editorial
         blocos_do_artigo = ["meu/_no_artigo.html"]        # incluidos na tela do artigo
         pendencias = "apps.meu.painel.pendencias"         # () -> {"chave": numero}
+        alertas = "apps.meu.painel.alertas"               # () -> ["texto", ...] no painel
 
 Tirar o modulo de INSTALLED_APPS tira tudo junto: o nucleo continua igual.
 """
@@ -75,4 +76,15 @@ def pendencias() -> dict:
             saida.update(import_string(caminho)() or {})
         except Exception:
             logger.exception("Pendencias de %s indisponiveis.", caminho)
+    return saida
+
+
+def alertas() -> list[str]:
+    """Os avisos que cada modulo poe no painel do cliente (o que parou)."""
+    saida: list[str] = []
+    for caminho in _declaracoes("alertas"):
+        try:
+            saida += [str(a) for a in import_string(caminho)() or []]
+        except Exception:
+            logger.exception("Alertas de %s indisponiveis.", caminho)
     return saida

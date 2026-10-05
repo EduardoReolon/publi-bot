@@ -174,10 +174,18 @@ def candidatos(destino: Destino, config: ConfiguracaoSocial, limite: int = 60) -
 
 
 def sugerir(
-    destino: Destino, artigo, motivo: str, por_que: str, *, tema=None, versoes: int | None = None
+    destino: Destino,
+    artigo,
+    motivo: str,
+    por_que: str,
+    *,
+    tema=None,
+    versoes: int | None = None,
+    ideia: str = "",
 ) -> list[Post]:
     """Cria o(s) post(s) sugerido(s) e pede a redacao. Com 2 versoes, cada uma
-    com uma abordagem diferente, ligadas uma a outra (o par do teste A/B)."""
+    com uma abordagem diferente, ligadas uma a outra (o par do teste A/B).
+    `ideia`: um angulo sugerido (pela outra IA) que vai para quem escreve."""
     from apps.social import experimentos
     from apps.social.tasks import escrever_post
 
@@ -197,6 +205,7 @@ def sugerir(
                 motivo=motivo,
                 por_que=por_que,
                 variante_de=posts[0] if posts else None,
+                extras={"ideia": ideia[:500]} if ideia else {},
             )
             posts.append(post)
         for post in posts:
@@ -221,19 +230,28 @@ def tema_para(destino: Destino, config: ConfiguracaoSocial):
     )
 
 
-def sugerir_tema(destino: Destino, tema, *, versoes: int | None = None) -> list[Post]:
+def sugerir_tema(
+    destino: Destino,
+    tema,
+    *,
+    versoes: int | None = None,
+    motivo: str = "",
+    por_que: str = "",
+    ideia: str = "",
+) -> list[Post]:
     artigo = fontes.artigo(tema.artigo_principal)
     if artigo is None:
         return []
     explicacao = "; ".join(tema.sinais.get("explicacao", []))
-    motivo = Post.Motivo.TESTE if versoes == 2 else Post.Motivo.TEMA
+    motivo = motivo or (Post.Motivo.TESTE if versoes == 2 else Post.Motivo.TEMA)
     return sugerir(
         destino,
         artigo,
         motivo,
-        f"Tema (nota {tema.nota:.2f}): {explicacao}.",
+        por_que or f"Tema (nota {tema.nota:.2f}): {explicacao}.",
         tema=tema,
         versoes=versoes,
+        ideia=ideia,
     )
 
 

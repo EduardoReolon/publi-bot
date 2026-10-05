@@ -216,6 +216,7 @@ def painel(request: HttpRequest) -> HttpResponse:
     from django.db import connection
 
     from apps.knowledge.saude import alertas_da_busca, montar_resumo_da_busca
+    from apps.ops import extensoes
     from apps.ops.painel import alertas_da_indexacao, alertas_do_site, montar_resumo
 
     resumo = montar_resumo()
@@ -234,7 +235,8 @@ def painel(request: HttpRequest) -> HttpResponse:
             "resumo": resumo,
             "alertas": alertas_do_site(resumo.site)
             + alertas_da_busca(busca)
-            + alertas_da_indexacao(),
+            + alertas_da_indexacao()
+            + extensoes.alertas(),
             "busca": busca,
         },
     )

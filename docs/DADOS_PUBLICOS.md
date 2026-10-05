@@ -87,6 +87,34 @@ serie so entra numa pauta se for muito proxima do tema dela.
 - Testes: `tests/test_dados_adaptadores.py`, sobre respostas no formato
   documentado de cada API, sem rede.
 
+### Series sugeridas: o que sao e o que fazer
+
+Uma serie **Sugerida** e um indicador que o PubliBot achou no catalogo de uma
+instituicao (pela busca dos nichos, pela sua busca ou porque uma fonte do
+acervo cita o link). Ela ainda **nao entra em pauta nenhuma**: so as
+**Aprovadas** sao oferecidas.
+
+**Onde aprovar:** menu **Dados**, aba **Series**, filtro "Sugerida". So o
+**superusuario** ve os botoes (o catalogo vale para todos os clientes); outra
+conta ve o aviso de quem aprova. Criar um superusuario no servidor:
+`python manage.py createsuperuser`.
+
+- Em cada linha, na coluna **Situacao**: **Aprovar** ou **Recusar**.
+- Varias de uma vez: marque as caixas da esquerda e use **Aprovar as
+  marcadas** (fim da lista).
+- Tudo de uma vez: **Aprovar todas as sugeridas deste filtro** (todas as
+  paginas, respeitando nicho e busca). A lista mostra 50 por pagina.
+
+**Na duvida, aprove.** Uma serie aprovada so e oferecida a uma pauta quando
+e muito proxima do tema dela (vetor do titulo e da descricao), e so nos sites
+que escolheram aquele nicho em Negocio. Uma serie fora do assunto (ex.: "Base
+monetaria ampliada" para uma clinica) simplesmente nunca chega perto de uma
+pauta. Recuse so o que claramente nao serve a cliente nenhum, para a lista
+ficar limpa.
+
+"Ultimo valor" vazio ("buscado ao usar") e normal: o valor e buscado na
+instituicao quando uma pauta usa a serie, e guardado.
+
 ### Sem ninguem rodar nada
 
 Uma vez por dia (tarefa `varrer-dados-do-acervo`), cada instituicao com

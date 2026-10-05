@@ -4,16 +4,27 @@
 {% block menu %}{% include "_menu.html" %}{% endblock %}
 {% block conteudo %}
   <h1>{% translate "Dados publicos" %}</h1>
-  {% if contagens.por_aprovar and curador %}
+  {% if contagens.por_aprovar %}
     <div class="aviso alerta">
-      {% blocktranslate trimmed with n=contagens.por_aprovar %}
-        <strong>{{ n }} serie(s) esperando sua aprovacao.</strong> O PubliBot as encontrou
-        sozinho (nos nichos dos sites e nas fontes que voce aprovou). Filtre por "Sugerida",
-        marque as que fazem sentido e clique em "Aprovar as marcadas". Aprovar e seguro: uma
-        serie so entra numa pauta quando e muito proxima do tema dela, e cada site so ve os
-        nichos que escolheu em Negocio.
-      {% endblocktranslate %}
-      <a href="?aba=series&situacao=sugerida">{% translate "Ver as sugeridas" %}</a>
+      {% if curador %}
+        {% blocktranslate trimmed with n=contagens.por_aprovar %}
+          <strong>{{ n }} serie(s) esperando sua aprovacao.</strong> O PubliBot as encontrou
+          sozinho, no catalogo de cada instituicao. Em cada linha, <strong>Aprovar</strong>
+          ou <strong>Recusar</strong>; ou marque varias e use os botoes do fim da lista; ou
+          aprove todas de uma vez. Aprovar e seguro: uma serie so entra numa pauta quando e
+          muito proxima do tema dela, e cada site so ve os nichos que escolheu em Negocio.
+          Recuse so o que claramente nao serve a nenhum cliente.
+        {% endblocktranslate %}
+        <a href="?aba=series&situacao=sugerida">{% translate "Ver as sugeridas" %}</a>
+      {% else %}
+        {% blocktranslate trimmed with n=contagens.por_aprovar %}
+          <strong>{{ n }} serie(s) sugerida(s) esperando aprovacao.</strong> Este catalogo vale
+          para todos os clientes, por isso so o <strong>superusuario</strong> aprova: entre com
+          a conta de superusuario para ver os botoes Aprovar e Recusar (criar uma:
+          <code>python manage.py createsuperuser</code>). Enquanto isso, as sugeridas nao
+          entram nas pautas.
+        {% endblocktranslate %}
+      {% endif %}
     </div>
   {% endif %}
   <p class="sub">
@@ -48,39 +59,55 @@
 
   {% if aba_do_catalogo == 'series' %}
     {% if series %}
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed count n=total_filtrado %}{{ n }} serie neste filtro{% plural %}{{ n }} series neste filtro{% endblocktranslate %}{% if pagina.paginator.num_pages > 1 %} · {% blocktranslate trimmed with p=pagina.number t=pagina.paginator.num_pages %}pagina {{ p }} de {{ t }}{% endblocktranslate %}{% endif %}
+      </p>
       <div class="rolagem"><table>
         <thead><tr>
-          <th>{% translate "Serie" %}</th><th>{% translate "Ultimo valor" %}</th>
+          {% if curador %}<th><input type="checkbox" form="lote" title="{% translate 'marcar todas desta pagina' %}" onclick="document.querySelectorAll('input[name=serie]').forEach(function (c) { c.checked = this.checked; }, this)" style="width:auto"></th>{% endif %}
+          <th>{% translate "Serie" %}</th>
+          <th>{% translate "Situacao" %}</th>
+          <th>{% translate "Ultimo valor" %}</th>
           <th class="numero" title="{% translate 'fontes do acervo que citam' %}">{% translate "Citada" %}</th>
-          <th>{% translate "Situacao" %}</th>{% if curador %}<th><input type="checkbox" form="lote" title="{% translate 'marcar todas' %}" onclick="document.querySelectorAll('input[name=serie]').forEach(function (c) { c.checked = this.checked; }, this)" style="width:auto"></th>{% endif %}
         </tr></thead>
         <tbody>
           {% for s in series %}
             <tr>
+              {% if curador %}<td><input type="checkbox" name="serie" value="{{ s.pk }}" form="lote" style="width:auto" aria-label="{% translate 'marcar' %}"></td>{% endif %}
               <td><strong>{{ s.instituicao.sigla }}</strong> — {{ s.titulo }}
                 {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">↗</a>{% endif %}
-                {% if s.descricao %}<div class="pre-visualizacao">{{ s.descricao|truncatechars:140 }}</div>{% endif %}</td>
-              <td>{% if s.ultimo %}{{ s.ultimo.texto }} {{ s.unidade }} <span class="pre-visualizacao">· {{ s.ultimo.local }}, {{ s.ultimo.periodo }}</span>{% else %}<span class="pre-visualizacao">—</span>{% endif %}</td>
+                {% if s.descricao %}<div class="pre-visualizacao">{{ s.descricao|striptags|truncatechars:140 }}</div>{% endif %}</td>
+              <td><span class="selo {% if s.situacao == 'aprovada' %}ok{% elif s.situacao == 'recusada' %}ruim{% else %}alerta{% endif %}">{{ s.get_situacao_display }}</span>
+                {% if curador %}
+                  <form method="post" action="{% url 'dados:situacao_da_serie' s.pk %}" style="margin-top:.3rem; display:flex; gap:.3rem; flex-wrap:wrap">{% csrf_token %}
+                    <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+                    {% if s.situacao != 'aprovada' %}<button name="situacao" value="aprovada" class="pequeno">{% translate "Aprovar" %}</button>{% endif %}
+                    {% if s.situacao != 'recusada' %}<button name="situacao" value="recusada" class="pequeno discreto">{% translate "Recusar" %}</button>{% endif %}
+                  </form>
+                {% endif %}</td>
+              <td>{% if s.ultimo %}{{ s.ultimo.texto }} {{ s.unidade }} <span class="pre-visualizacao">· {{ s.ultimo.local }}, {{ s.ultimo.periodo }}</span>{% else %}<span class="pre-visualizacao" title="{% translate 'o valor e buscado na instituicao quando uma pauta usa a serie' %}">{% translate "buscado ao usar" %}</span>{% endif %}</td>
               <td class="numero">{{ s.citacoes|default:"" }}</td>
-              <td><span class="selo {% if s.situacao == 'aprovada' %}ok{% elif s.situacao == 'recusada' %}ruim{% else %}alerta{% endif %}">{{ s.get_situacao_display }}</span></td>
-              {% if curador %}<td>
-                <input type="checkbox" name="serie" value="{{ s.pk }}" form="lote" style="width:auto">
-                <form method="post" action="{% url 'dados:situacao_da_serie' s.pk %}" style="display:inline">{% csrf_token %}
-                  <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-                  {% if s.situacao != 'aprovada' %}<button name="situacao" value="aprovada" class="pequeno">{% translate "Aprovar" %}</button>{% endif %}
-                  {% if s.situacao != 'recusada' %}<button name="situacao" value="recusada" class="pequeno discreto">{% translate "Recusar" %}</button>{% endif %}
-                </form>
-              </td>{% endif %}
             </tr>
           {% endfor %}
         </tbody>
       </table></div>
+      {% include "_paginas.html" with pagina=pagina parametro="pagina" ancora="" id="paginas-series" extra=filtros_da_url %}
       {% if curador %}
         <form method="post" action="{% url 'dados:situacao_em_lote' %}" id="lote" class="acoes">{% csrf_token %}
           <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
           <button name="situacao" value="aprovada" class="botao pequeno">{% translate "Aprovar as marcadas" %}</button>
           <button name="situacao" value="recusada" class="botao discreto pequeno">{% translate "Recusar as marcadas" %}</button>
         </form>
+        {% if contagens.por_aprovar %}
+          <form method="post" action="{% url 'dados:situacao_em_lote' %}" class="acoes" onsubmit="return confirm('{% translate 'Aprovar todas as series sugeridas deste filtro?' %}')">{% csrf_token %}
+            <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+            <input type="hidden" name="todas_sugeridas" value="1">
+            <input type="hidden" name="nicho" value="{{ nicho }}">
+            <input type="hidden" name="q" value="{{ busca }}">
+            <button name="situacao" value="aprovada" class="botao secundario pequeno">{% translate "Aprovar todas as sugeridas deste filtro" %}</button>
+            <span class="pre-visualizacao">{% translate "todas as paginas, respeitando nicho e busca" %}</span>
+          </form>
+        {% endif %}
       {% endif %}
     {% else %}
       <p class="aviso">

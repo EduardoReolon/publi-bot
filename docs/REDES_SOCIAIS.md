@@ -29,6 +29,7 @@ no formato de fila das ferramentas do mercado (Buffer, Hootsuite, Later):
 | Para revisar | Os posts escritos, com **o porque** (como nas pautas), a abordagem, os avisos da conferencia e "de onde saiu" (o material do artigo). Editar, aprovar (no proximo horario livre ou numa data), reescrever com outra abordagem, descartar. |
 | Agenda | Os aprovados, por horario. Conta conectada: sai sozinho. Sem API: "Copiar texto", "Copiar comentario com o link", baixar as laminas, postar e colar o endereco ("Ja postei"). |
 | Publicados | Cliques, conversoes provaveis, curtidas, comentarios, alcance; se "funcionou". |
+| Diagnostico | O que funcionou e o que nao na conta (inclusive antes do PubliBot), o gasto com anuncios e o aviso de leitura parada. |
 | Comentarios | Perguntas viram Perguntas do PubliBot; a resposta aprovada volta no proprio comentario. |
 | O que funciona | O placar das abordagens em cada conta. |
 | Configurar | Contas (publico, tom, aprovacao, teto, dias e horarios, cores), conexao com a API, regras, abordagens. |
@@ -197,6 +198,89 @@ resposta, o PubliBot responde no comentario com o comeco dela e o link.
   de resultado ou cura, sem urgencia falsa, sem antes e depois, sem preco como
   chamariz, so o que o artigo afirma. Editavel por negocio.
 
+## Conta que ja existe: historico e diagnostico — `historico.py`, `diagnostico.py`
+
+Ao conectar um Instagram que ja tem vida (cliente que veio de outra agencia,
+ou que postava por conta), o PubliBot **importa o passado sozinho** e abre a
+aba **Diagnostico**:
+
+| Vem sozinho (API) | Nao vem |
+|---|---|
+| Ate 500 posts: legenda, formato (carrossel, imagem, reels), data, link, curtidas, comentarios | Stories antigos (a Meta so guarda 24 h) |
+| Por post: alcance, salvos, compartilhamentos | Alcance de post feito antes de a conta virar **profissional** (fica so curtidas e comentarios) |
+| Comentarios de cada post, e se o dono respondeu | Mensagens diretas |
+| Seguidores hoje (o historico de seguidores comeca no dia da conexao) | Seguidores de meses atras |
+
+A importacao anda em lotes de 60 posts (as APIs limitam chamadas por hora); a
+medicao diaria continua o resto, e depois traz todo dia os posts feitos direto
+na rede, fora do PubliBot (o que ja esta no PubliBot — publicado pela API ou
+marcado com "Ja postei" — nao duplica). Comentarios antigos **nao** viram Perguntas
+(a fila nao e inundada de perguntas de anos atras). LinkedIn de perfil pessoal
+e Perfil do Google nao entregam o passado pela API: o diagnostico usa os posts
+do PubliBot.
+
+O historico tambem calibra a conta: "funcionou" e contra a mediana dela, e a
+mediana passa a ter historia desde o primeiro dia (na medida "taxa"; nas
+medidas de clique e conversao, posts importados ficam de fora, porque nao
+tinham o link rastreado).
+
+O **diagnostico** e so algoritmo (sem modelo), com o numero e o tamanho da
+amostra em cada ponto: ritmo (posts por semana, pausas, irregularidade, conta
+parada), taxa mediana contra a referencia, os 3 melhores e os 3 piores, e
+medianas por formato, dia da semana, horario, tamanho da legenda, hashtags e
+pergunta na legenda. So aponta diferenca com 3+ posts em cada grupo e 30% de
+distancia. Mais: comentarios respondidos, e no gasto com anuncios, o custo por
+clique, o mais caro x o mais barato e **quanto do impulso foi em post que ja
+ia mal no organico** (o desperdicio mais comum). "Copiar o diagnostico" da o
+texto corrido para mandar ao dono da conta.
+
+## Gasto com anuncios — `anuncios.py`, `redes/meta_anuncios.py`
+
+Dois caminhos para o mesmo lugar, porque a permissao de ler anuncios depende
+de uma revisao da Meta que pode nao sair (ou ser retirada um dia):
+
+1. **Automatico** — Diagnostico > "Conectar anuncios": a conexao da Meta e
+   refeita pedindo tambem `ads_read`. Com a permissao, o PubliBot acha a conta
+   de anuncios (escolhe sozinho se houver uma) e, uma vez por dia, le cada
+   anuncio do periodo todo (gasto, alcance, impressoes, cliques no link) e o
+   post que ele impulsiona. O post fica marcado como impulsionado, com o valor.
+2. **Planilha** — Gerenciador de Anuncios > aba *Anuncios* > periodo *Maximo* >
+   *Relatorios* > *Exportar dados da tabela* (.csv) > enviar no Diagnostico.
+   Portugues ou ingles; o anuncio e ligado ao post pelo comeco da legenda (a
+   Meta nomeia o impulso "Publicacao do Instagram: <legenda>"). Mandar de novo
+   nao duplica. O passo a passo esta na tela.
+
+E o impulso de um post so continua valendo pela Estrategia ("Registrei o
+impulso").
+
+**Aviso de leitura parada** (painel do cliente, menu Redes e aba Diagnostico):
+conta conectada sem ler ha mais de 2 dias, ou anuncios sem ler ha mais de 3,
+com o ultimo erro da rede. Instabilidade passa sozinha; se continuar, o aviso
+diz o que fazer (reconectar, ou mandar a planilha). Sem API de anuncios, um
+lembrete quando a ultima planilha tem mais de 35 dias.
+
+## Segunda opiniao de uma IA grande — `outra_ia.py`
+
+Na Estrategia, "Copiar para outra IA" leva a um modelo grande (Claude,
+ChatGPT, Gemini) o negocio, a conta, o placar das abordagens, os posts recentes
+com resultado, o que engaja no nicho e os candidatos (temas `m-` e artigos
+`a-`, com codigo). O pedido manda conversar antes e, **se a IA puder pesquisar
+na web**, trazer eventos confirmados com link (campanhas do mes, datas da
+area, regra nova, estudo que virou noticia) — sem pesquisa, nada de evento.
+
+A resposta colada vira previa; aplicado o que estiver marcado:
+
+- **PROPOSTAS** viram posts do tema ou artigo, com o gancho sugerido como
+  *ideia* para quem escreve (o material do artigo continua sendo o limite);
+- **EVENTOS** viram post do candidato ligado, com o evento como gancho (sem
+  link de fonte, a linha e ignorada);
+- **ABORDAGENS** entram no sorteio da rede e competem pelo placar.
+
+Tudo fica marcado (motivo "Sugerido pela outra IA", abordagem "da outra IA"),
+e a Estrategia mostra o **comparativo**: a proporcao de posts que funcionaram
+entre os sugeridos pela outra IA e os escolhidos pelo PubliBot. Assim ela
+ganha (ou perde) credito com dado, conta por conta.
+
 ## Conectar as APIs (o que o dono precisa fazer)
 
 Sem conectar, tudo funciona no **copiar e colar** — a medicao de cliques
@@ -208,7 +292,7 @@ pede aparece na tela: `https://<dominio do painel>/redes/conectar/retorno/`.
 | Rede | Onde | O que pedir | Variaveis no `.env` |
 |---|---|---|---|
 | LinkedIn | linkedin.com/developers (app ligado a uma pagina) | "Share on LinkedIn" e "Sign In with LinkedIn using OpenID Connect" (perfil pessoal, liberacao imediata); "Community Management API" para pagina (revisao do LinkedIn) | `SOCIAL_LINKEDIN_CLIENT_ID`, `SOCIAL_LINKEDIN_CLIENT_SECRET` (`SOCIAL_LINKEDIN_VERSAO`, padrao 202509) |
-| Instagram | developers.facebook.com (app tipo Empresa) | "Facebook Login" e "Instagram Graph API"; conta do Instagram **profissional** ligada a uma pagina do Facebook; revisao das permissoes `instagram_content_publish` e `instagram_manage_comments` para usar com contas de clientes | `SOCIAL_META_APP_ID`, `SOCIAL_META_APP_SECRET` (`SOCIAL_META_VERSAO`, padrao v21.0) |
+| Instagram | developers.facebook.com (app tipo Empresa) | "Facebook Login" e "Instagram Graph API"; conta do Instagram **profissional** ligada a uma pagina do Facebook; revisao das permissoes `instagram_content_publish`, `instagram_manage_comments` e `instagram_manage_insights` para usar com contas de clientes. Opcional: produto "Marketing API" e revisao de `ads_read` (gasto com anuncios automatico; sem ela, planilha) | `SOCIAL_META_APP_ID`, `SOCIAL_META_APP_SECRET` (`SOCIAL_META_VERSAO`, padrao v21.0) |
 | Google | formulario de acesso a Business Profile API (semanas; cota zero ate aprovar) + Google Cloud: ativar "My Business Account Management", "My Business Business Information" e "Google My Business" APIs; credencial OAuth "Aplicativo da Web" | — | `SOCIAL_GOOGLE_CLIENT_ID`, `SOCIAL_GOOGLE_CLIENT_SECRET` |
 
 O acesso do LinkedIn e da Meta vence em ~60 dias: a tela marca a conta uma
@@ -242,7 +326,7 @@ em cada rede e o teste que falta** — faca com um post de teste e confira.
 |---|---|---|
 | `sugerir-posts` | 1x/dia | escolha do dia (com "sugerir sozinho") |
 | `publicar-posts` | 5 em 5 min | publica os aprovados vencidos (contas conectadas) e responde comentarios com resposta aprovada |
-| `medir-posts` | 1x/dia | resultado, comentarios, seguidores, referencias do nicho (semanal) e placar |
+| `medir-posts` | 1x/dia | resultado, comentarios, seguidores, referencias do nicho (semanal), proximo lote do historico, gasto com anuncios (API) e placar |
 | `recalcular-temas` | 1x/dia | temas entre os artigos, com a nota |
 | `placar-coletivo` | 1x/dia | soma do placar das abordagens entre todos os clientes |
 
@@ -252,6 +336,11 @@ em cada rede e o teste que falta** — faca com um post de teste e confira.
   de publicar, com calibracao contra o resultado real): desenho completo em
   [PLATEIA_SIMULADA.md](PLATEIA_SIMULADA.md).
 
+- **O que estava DENTRO dos posts importados** (texto das laminas por OCR,
+  fala dos reels pela transcricao que o worker ja faz): hoje o diagnostico usa
+  legenda, formato e numeros. Se valer, so por amostra — os 10 melhores e os
+  10 piores da conta, sob pedido, na fila de baixa prioridade do worker e com
+  teto por conta —, nunca o acervo inteiro de uma vez.
 - Melhor horario por conta, aprendido dos cliques (hoje: dias e horarios fixos).
 - Abordagem por publico: o placar ja e por conta; dar para o modelo os 2
   melhores posts da conta como exemplo.

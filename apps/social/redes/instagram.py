@@ -44,7 +44,11 @@ class OAuthInstagram(OAuth):
         "instagram_manage_insights,pages_show_list,pages_read_engagement,business_management"
     )
 
-    def url_de_autorizacao(self, destino, redirect_uri: str, state: str) -> str:
+    def url_de_autorizacao(
+        self, destino, redirect_uri: str, state: str, *, escopos_extras: str = ""
+    ) -> str:
+        """`escopos_extras`: "ads_read" no "Conectar anuncios" (revisao propria
+        da Meta; pedido a parte para nao travar a conexao da conta)."""
         cliente, _segredo = self.app()
         versao = graph().rsplit("/", 1)[-1]
         return f"https://www.facebook.com/{versao}/dialog/oauth?" + urlencode(
@@ -52,7 +56,7 @@ class OAuthInstagram(OAuth):
                 "client_id": cliente,
                 "redirect_uri": redirect_uri,
                 "state": state,
-                "scope": self.ESCOPOS,
+                "scope": ",".join(x for x in [self.ESCOPOS, escopos_extras] if x),
                 "response_type": "code",
             }
         )
@@ -204,7 +208,8 @@ class PublicadorInstagram(Publicador):
         dados = self._get(
             f"{post.id_remoto}/comments",
             "Instagram (comentarios)",
-            fields="id,text,username,timestamp",
+            fields="id,text,username,timestamp,replies{username}",
+            limit=100,
         )
         dono = self.destino.conta_nome.split(" ", 1)[0].lstrip("@")
         return [
@@ -214,9 +219,49 @@ class PublicadorInstagram(Publicador):
                 autor=item.get("username", ""),
                 escrito_em=item.get("timestamp", ""),
                 do_dono=bool(dono) and item.get("username") == dono,
+                respondido=bool(dono)
+                and any(
+                    r.get("username") == dono for r in (item.get("replies") or {}).get("data", [])
+                ),
             )
             for item in dados.get("data", [])
         ]
+
+    CAMPOS_DO_HISTORICO = (
+        "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count"
+    )
+
+    def historico(self, limite: int = 500) -> list[dict]:
+        dados = self._get(
+            f"{self.destino.conta_id}/media",
+            "Instagram (posts antigos)",
+            fields=self.CAMPOS_DO_HISTORICO,
+            limit=50,
+        )
+        itens = list(dados.get("data", []))
+        proxima = (dados.get("paging") or {}).get("next")
+        while proxima and len(itens) < limite:
+            # O endereco "next" ja traz o acesso: nao repetir o token.
+            dados = self._conferir(self.http.get(proxima), "Instagram (posts antigos)").json()
+            itens += dados.get("data", [])
+            proxima = (dados.get("paging") or {}).get("next")
+        saida = []
+        for item in itens[:limite]:
+            formato = item.get("media_type", "")
+            if item.get("media_product_type") == "REELS":
+                formato = "REELS"
+            saida.append(
+                {
+                    "id_remoto": str(item["id"]),
+                    "legenda": item.get("caption", "") or "",
+                    "formato": formato,
+                    "link": item.get("permalink", ""),
+                    "publicado_em": item.get("timestamp", ""),
+                    "curtidas": item.get("like_count"),
+                    "comentarios": item.get("comments_count"),
+                }
+            )
+        return saida
 
     def responder(self, post, id_do_comentario: str, texto: str) -> str:
         return self._post(f"{id_do_comentario}/replies", "Instagram (resposta)", message=texto).get(

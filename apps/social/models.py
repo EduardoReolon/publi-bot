@@ -150,6 +150,19 @@ class Destino(models.Model):
     )
     referencias_em = models.DateTimeField(null=True, blank=True)
 
+    # --- Historico e leitura automatica ----------------------------------------
+    # Ultima leitura automatica que deu certo (seguidores, resultado): o painel
+    # avisa quando para, e diz o erro.
+    sincronizado_em = models.DateTimeField(null=True, blank=True)
+    erro_de_sincronia = models.TextField(blank=True)
+    historico_importado_em = models.DateTimeField(null=True, blank=True)
+    # Meta Ads: a conta de anuncios (act_...) lida pela API, ou a planilha.
+    anuncios_conta_id = models.CharField(_("conta de anuncios"), max_length=60, blank=True)
+    anuncios_conta_nome = models.CharField(max_length=200, blank=True)
+    anuncios_sincronizados_em = models.DateTimeField(null=True, blank=True)
+    anuncios_planilha_em = models.DateTimeField(null=True, blank=True)
+    anuncios_erro = models.TextField(blank=True)
+
     # --- Conexao com a API ----------------------------------------------------
     conta_id = models.CharField(_("id da conta na rede"), max_length=200, blank=True)
     conta_nome = models.CharField(_("conta conectada"), max_length=200, blank=True)
@@ -207,6 +220,13 @@ class Abordagem(models.Model):
     redes = models.JSONField(_("redes"), default=list, blank=True)
     ativa = models.BooleanField(_("ativa"), default=True)
     semente = models.BooleanField(default=False, editable=False)
+
+    class Origem(models.TextChoices):
+        PUBLIBOT = "", _("PubliBot ou voce")
+        OUTRA_IA = "outra_ia", _("Sugerida pela outra IA")
+
+    # De onde veio: o placar compara as que a outra IA criou com as demais.
+    origem = models.CharField(max_length=12, choices=Origem.choices, blank=True, default="")
     criada_em = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -294,6 +314,8 @@ class Post(models.Model):
         PEDIDO = "pedido", _("Pedido por voce")
         TEMA = "tema", _("Tema que atravessa varios artigos")
         TESTE = "teste", _("Teste pago de abordagem")
+        OUTRA_IA = "outra_ia", _("Sugerido pela outra IA")
+        HISTORICO = "historico", _("Antes do PubliBot (importado)")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="posts")
@@ -398,3 +420,46 @@ class Comentario(models.Model):
 
     def __str__(self) -> str:
         return self.texto[:60]
+
+
+class Anuncio(models.Model):
+    """Um anuncio pago (Meta Ads), com o gasto e o resultado do periodo todo.
+    Vem da API (ads_read) ou da planilha exportada do Gerenciador; ligado ao
+    post que impulsiona, quando da para saber qual."""
+
+    class Origem(models.TextChoices):
+        API = "api", _("API da Meta")
+        PLANILHA = "planilha", _("Planilha exportada")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="anuncios")
+    id_remoto = models.CharField(max_length=200)
+    nome = models.CharField(_("anuncio"), max_length=300, blank=True)
+    campanha = models.CharField(_("campanha"), max_length=300, blank=True)
+    objetivo = models.CharField(_("objetivo"), max_length=60, blank=True)
+    gasto = models.DecimalField(_("gasto (R$)"), max_digits=12, decimal_places=2, default=0)
+    alcance = models.PositiveIntegerField(null=True, blank=True)
+    impressoes = models.PositiveIntegerField(null=True, blank=True)
+    cliques = models.PositiveIntegerField(_("cliques no link"), null=True, blank=True)
+    resultados = models.PositiveIntegerField(null=True, blank=True)
+    inicio = models.DateField(null=True, blank=True)
+    fim = models.DateField(null=True, blank=True)
+    # O post do Instagram que o anuncio impulsiona (id na rede) e o criativo.
+    media_id = models.CharField(max_length=120, blank=True)
+    link = models.URLField(max_length=500, blank=True)
+    imagem = models.URLField(max_length=1000, blank=True)
+    texto = models.TextField(blank=True)
+    post = models.ForeignKey(
+        Post, on_delete=models.SET_NULL, null=True, blank=True, related_name="anuncios"
+    )
+    origem = models.CharField(max_length=10, choices=Origem.choices)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-inicio"]
+        constraints = [
+            models.UniqueConstraint(fields=["destino", "id_remoto"], name="uniq_anuncio")
+        ]
+
+    def __str__(self) -> str:
+        return self.nome or self.id_remoto

@@ -69,11 +69,15 @@ def avaliar(destino: Destino) -> int:
     config = ConfiguracaoSocial.carregar()
     limite = timezone.now() - timedelta(days=parametros.valor("dias_para_medir", config))
     minimo = parametros.valor("alcance_minimo", config)
-    posts = list(
-        destino.posts.filter(
-            situacao=Post.Situacao.PUBLICADO, publicado_em__lte=limite, impulsionado=False
-        )
+    consulta = destino.posts.filter(
+        situacao=Post.Situacao.PUBLICADO, publicado_em__lte=limite, impulsionado=False
     )
+    sem_link = (ConfiguracaoSocial.Metrica.CLIQUES, ConfiguracaoSocial.Metrica.CONVERSOES)
+    if config.metrica in sem_link:
+        # Posts de antes do PubliBot nao tem link rastreado: zero clique nao e
+        # resultado ruim, e falta de medida. Na taxa e no engajamento, entram.
+        consulta = consulta.exclude(motivo=Post.Motivo.HISTORICO)
+    posts = list(consulta)
     medidos = [
         (p, v) for p in posts if (v := valor(p, config.metrica, alcance_minimo=minimo)) is not None
     ]

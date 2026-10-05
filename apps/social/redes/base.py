@@ -85,6 +85,8 @@ class ComentarioLido:
     escrito_em: str = ""  # ISO
     # Resposta do proprio dono da conta: nao e comentario a tratar.
     do_dono: bool = False
+    # O dono ja respondeu este comentario (na rede, fora do PubliBot).
+    respondido: bool = False
 
 
 class Publicador:
@@ -116,6 +118,11 @@ class Publicador:
 
     def metricas(self, post) -> dict:
         return {}
+
+    def historico(self, limite: int = 500) -> list[dict]:
+        """Os posts da conta, mais novos primeiro: [{"id_remoto", "legenda",
+        "formato", "link", "publicado_em", "curtidas", "comentarios"}]."""
+        raise SemSuporte("esta rede nao entrega os posts antigos pela API.")
 
     def seguidores(self) -> int | None:
         """Quantos seguem a conta (None: a rede nao informa para este tipo de conta)."""
