@@ -13,6 +13,7 @@ le essas declaracoes daqui:
         blocos_do_artigo = ["meu/_no_artigo.html"]        # incluidos na tela do artigo
         pendencias = "apps.meu.painel.pendencias"         # () -> {"chave": numero}
         alertas = "apps.meu.painel.alertas"               # () -> ["texto", ...] no painel
+        exclusao_de_dados = "apps.meu.privacidade.excluir"  # (rede, usuario, apagar) -> n
 
 Tirar o modulo de INSTALLED_APPS tira tudo junto: o nucleo continua igual.
 """
@@ -88,3 +89,14 @@ def alertas() -> list[str]:
         except Exception:
             logger.exception("Alertas de %s indisponiveis.", caminho)
     return saida
+
+
+def excluir_dados(rede: str, usuario: str, *, apagar: bool) -> int:
+    """Pedido de exclusao (ou desconexao) de quem conectou uma rede: cada
+    modulo apaga o que guarda daquela pessoa, no schema atual. Devolve quantos
+    registros sairam. Aqui o erro sobe: um pedido de exclusao nao pode ser dado
+    como feito pela metade."""
+    total = 0
+    for caminho in _declaracoes("exclusao_de_dados"):
+        total += int(import_string(caminho)(rede, usuario, apagar=apagar) or 0)
+    return total

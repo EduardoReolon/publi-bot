@@ -7,7 +7,6 @@ from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from django.core import signing
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import connection
@@ -197,9 +196,9 @@ def test_conectar_e_voltar_da_rede(ambiente, monkeypatch, settings):
     monkeypatch.setattr(
         instagram.OAuthInstagram, "contas", lambda self, d: [("1", "@a (A)"), ("2", "@b (B)")]
     )
-    estado = signing.dumps(
-        {"destino": str(destino.pk), "schema": connection.schema_name}, salt="social-oauth"
-    )
+    from core.retorno_oauth import assinar
+
+    estado = assinar(connection.schema_name, "/redes/conectar/retorno/", destino=str(destino.pk))
     pagina = client.get(retorno, {"state": estado, "code": "x"}).content.decode()
     assert "@a (A)" in pagina and "@b (B)" in pagina
     client.post(

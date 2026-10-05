@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titulo %}Exclusão de dados — PubliBot{% endblock %}
+{% block conteudo %}
+<h1>Exclusão de dados</h1>
+
+{% if codigo %}
+  {% if pedido %}
+    <div class="aviso ok">
+      <strong>Pedido {{ pedido.codigo }}</strong> — {{ pedido.get_situacao_display }} em {{ pedido.criado_em|date:"d/m/Y H:i" }}.
+      {% if pedido.situacao == 'feito' %}A conexão foi desfeita e foram apagados o histórico importado, os comentários lidos e o gasto com anúncios ligados à sua conta.{% else %}Não havia dados ligados à sua conta no PubliBot.{% endif %}
+    </div>
+  {% else %}
+    <div class="aviso alerta">Não encontramos o pedido {{ codigo }}. Confira o código ou escreva para <a href="mailto:{{ c.email }}">{{ c.email }}</a>.</div>
+  {% endif %}
+{% endif %}
+
+<h2>Como pedir</h2>
+<ol>
+  <li><strong>Pelo Facebook ou Instagram:</strong> nas configurações da sua conta, em <em>Apps e sites</em> (Facebook) ou <em>Apps e sites</em> > <em>Ativos</em> (Instagram), remova o PubliBot e peça a exclusão dos dados. O pedido chega aqui sozinho e você recebe um código para acompanhar nesta página.</li>
+  <li><strong>Pelo LinkedIn ou Google:</strong> remova o acesso do PubliBot nas configurações de privacidade da rede (LinkedIn: <em>Dados e privacidade</em> > <em>Serviços permitidos</em>; Google: <em>myaccount.google.com/permissions</em>) e escreva para o e-mail abaixo pedindo a exclusão.</li>
+  <li><strong>Por e-mail:</strong> <a href="mailto:{{ c.email }}?subject=Exclus%C3%A3o%20de%20dados">{{ c.email }}</a>, dizendo qual conta conectou. Respondemos em até 15 dias.</li>
+</ol>
+
+<h2>O que é apagado</h2>
+<ul>
+  <li>o acesso à sua conta (token), na hora;</li>
+  <li>os posts importados da sua conta, os números deles e os comentários lidos;</li>
+  <li>o gasto e o resultado dos anúncios lidos da sua conta de anúncios.</li>
+</ul>
+<p>Os textos que o negócio escreveu no PubliBot continuam com ele (são do negócio), sem o vínculo com a sua conta.</p>
+
+<form method="get" class="acoes">
+  <input type="text" name="codigo" value="{{ codigo }}" placeholder="código do pedido" style="width:auto">
+  <button type="submit" class="botao secundario pequeno">Acompanhar</button>
+</form>
+<p class="ajuda"><a href="{% url 'accounts:privacidade' %}">Política de privacidade</a> · <a href="{% url 'accounts:termos' %}">Termos de serviço</a></p>
+{% endblock %}

@@ -243,8 +243,55 @@ SOCIAL_META_APP_ID=             SOCIAL_META_APP_SECRET=
 SOCIAL_GOOGLE_CLIENT_ID=        SOCIAL_GOOGLE_CLIENT_SECRET=
 ```
 
-Endereço de retorno para cadastrar em cada app:
-`https://<domínio do painel>/redes/conectar/retorno/`.
+### O que preencher em cada app (as páginas já existem no PubliBot)
+
+Troque `<raiz>` pelo `ROOT_DOMAIN` do `.env` (o domínio do PubliBot, sem
+subdomínio de cliente). Antes, preencha no `.env` `OPERADOR_NOME` (seu nome ou
+empresa), `OPERADOR_DOCUMENTO` (CPF/CNPJ, opcional) e `PRIVACIDADE_EMAIL`:
+aparecem nas páginas.
+
+| Campo | Valor |
+|---|---|
+| Domínio do app | `<raiz>` |
+| Site / página inicial | `https://<raiz>/` |
+| Política de privacidade | `https://<raiz>/privacidade/` |
+| Termos de serviço | `https://<raiz>/termos/` |
+| Exclusão de dados (instruções) | `https://<raiz>/exclusao-de-dados/` |
+| **Endereço de retorno (redirect / callback OAuth)** — um só, para todos os clientes | `https://<raiz>/redes/retorno/` |
+
+**Meta (developers.facebook.com)**
+
+- Tipo do app: *Empresa*. Categoria: *Negócios e páginas*.
+- Configurações > Básico: domínio do app, política, termos (tabela acima),
+  ícone 1024×1024 e e-mail de contato.
+- *Exclusão de dados do usuário*: escolha **URL de retorno de chamada de
+  exclusão de dados** e use `https://<raiz>/exclusao-de-dados/meta/`. O
+  PubliBot confere a assinatura do pedido, apaga o que veio da conta da
+  pessoa em todos os clientes e devolve à Meta o código de confirmação e a
+  página de acompanhamento. (A opção "URL de instruções" também serve:
+  `https://<raiz>/exclusao-de-dados/`, mas aí o pedido é manual.)
+- Login do Facebook > Configurações: em *URIs de redirecionamento do OAuth
+  válidos*, `https://<raiz>/redes/retorno/`; em *URL de retorno de chamada
+  de cancelamento de autorização*, `https://<raiz>/desautorizar/meta/`.
+
+**LinkedIn (linkedin.com/developers)**
+
+- O app precisa de uma página de empresa no LinkedIn (a sua), logo e a
+  política de privacidade (tabela acima).
+- Auth > *Authorized redirect URLs for your app*: `https://<raiz>/redes/retorno/`.
+
+**Google (console.cloud.google.com)**
+
+- Tela de consentimento OAuth: página inicial, política, termos; em
+  *Domínios autorizados*, a raiz do seu domínio (o Google pede que ela esteja
+  verificada no Search Console — o mesmo onde está o site).
+- Credenciais > ID do cliente OAuth (Aplicativo da Web) > *URIs de
+  redirecionamento autorizados*: `https://<raiz>/redes/retorno/`.
+
+Por que um endereço só: as redes só devolvem a pessoa para endereços
+cadastrados exatamente. O PubliBot recebe no domínio raiz e segue para o
+cliente certo (o pedido de conexão leva o cliente, assinado), sem você
+cadastrar nada a cada cliente novo.
 
 **Gasto com anúncios (opcional).** Para o PubliBot ler sozinho quanto cada
 cliente gastou em cada anúncio (Meta Ads), o mesmo app da Meta precisa do

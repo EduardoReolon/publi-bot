@@ -26,3 +26,4 @@ class SocialConfig(AppConfig):
     blocos_do_artigo = ["social/_no_artigo.html"]
     pendencias = "apps.social.painel.pendencias"
     alertas = "apps.social.painel.alertas"
+    exclusao_de_dados = "apps.social.privacidade.excluir"

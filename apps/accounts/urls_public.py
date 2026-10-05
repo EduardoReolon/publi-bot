@@ -13,6 +13,14 @@ app_name = "accounts"
 urlpatterns = [
     path("", views.landing, name="landing"),
     path("cadastro/", views.signup, name="signup"),
+    # Exigidas pelas redes (Meta, LinkedIn, Google) para liberar o app.
+    path("privacidade/", views.privacidade, name="privacidade"),
+    path("termos/", views.termos, name="termos"),
+    path("exclusao-de-dados/", views.exclusao_de_dados, name="exclusao_de_dados"),
+    path("exclusao-de-dados/meta/", views.meta_exclusao, name="meta_exclusao"),
+    path("desautorizar/meta/", views.meta_desautorizar, name="meta_desautorizar"),
+    # O retorno unico das conexoes OAuth (core/retorno_oauth.py).
+    path("redes/retorno/", views.retorno_oauth, name="retorno_oauth"),
     path(
         "login/",
         auth_views.LoginView.as_view(

@@ -262,3 +262,27 @@ class TenantMembership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} @ {self.tenant} ({self.role})"
+
+
+class PedidoDeExclusao(models.Model):
+    """Um pedido de exclusao dos dados de alguem que conectou uma rede (a
+    Meta manda quando a pessoa remove o app e pede para apagar). Fica o
+    registro, sem dado pessoal alem do id por app, para o codigo de
+    confirmacao que a rede mostra a pessoa."""
+
+    class Situacao(models.TextChoices):
+        FEITO = "feito", _("Concluido")
+        NADA = "nada", _("Nenhum dado encontrado")
+
+    codigo = models.CharField(max_length=40, unique=True)
+    rede = models.CharField(max_length=20)
+    usuario_remoto = models.CharField(max_length=120)
+    situacao = models.CharField(max_length=10, choices=Situacao.choices)
+    apagados = models.PositiveIntegerField(default=0)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+
+    def __str__(self) -> str:
+        return f"{self.rede}:{self.codigo}"

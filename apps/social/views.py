@@ -32,7 +32,6 @@ from apps.social.redes.base import ErroDaRede
 logger = logging.getLogger("publibot.social")
 
 ABAS = ("revisar", "agenda", "publicados", "comentarios", "funciona", "configurar")
-SAL_DO_OAUTH = "social-oauth"
 
 
 def _voltar(request, aba: str = "revisar") -> HttpResponse:
@@ -127,7 +126,9 @@ def inicio(request: HttpRequest) -> HttpResponse:
         contexto["form_destino"] = DestinoForm()
         contexto["form_abordagem"] = AbordagemForm()
         contexto["abordagens"] = Abordagem.objects.all()
-        contexto["retorno"] = request.build_absolute_uri(reverse("social:retorno"))
+        from core.retorno_oauth import endereco_de_retorno
+
+        contexto["retorno"] = endereco_de_retorno()
         for destino in destinos:
             destino.form = DestinoForm(instance=destino, prefix=str(destino.pk))
             destino.bio = request.build_absolute_uri(
@@ -282,16 +283,18 @@ def salvar_abordagem(request: HttpRequest, pk=None) -> HttpResponse:
 def conectar(request: HttpRequest, pk) -> HttpResponse:
     destino = get_object_or_404(Destino, pk=pk)
     r = rede(destino.rede)
+    from core.retorno_oauth import assinar, endereco_de_retorno
+
     anuncios = destino.rede == "instagram" and request.GET.get("anuncios") == "1"
-    estado = signing.dumps(
-        {"destino": str(destino.pk), "schema": connection.schema_name, "anuncios": anuncios},
-        salt=SAL_DO_OAUTH,
+    estado = assinar(
+        connection.schema_name,
+        reverse("social:retorno"),
+        destino=str(destino.pk),
+        anuncios=anuncios,
     )
     try:
         extra = {"escopos_extras": "ads_read"} if anuncios else {}
-        url = r.oauth().url_de_autorizacao(
-            destino, request.build_absolute_uri(reverse("social:retorno")), estado, **extra
-        )
+        url = r.oauth().url_de_autorizacao(destino, endereco_de_retorno(), estado, **extra)
     except ErroDaRede as exc:
         messages.error(request, str(exc))
         return redirect(f"{reverse('social:inicio')}?aba=configurar")
@@ -301,8 +304,12 @@ def conectar(request: HttpRequest, pk) -> HttpResponse:
 @login_required
 def retorno(request: HttpRequest) -> HttpResponse:
     """A rede devolve aqui, com o codigo. Troca pelo acesso e escolhe a conta."""
+    from core.retorno_oauth import endereco_de_retorno, ler
+
     try:
-        estado = signing.loads(request.GET.get("state", ""), salt=SAL_DO_OAUTH, max_age=900)
+        estado = ler(request.GET.get("state", ""))
+        if estado.get("schema") != connection.schema_name:
+            raise signing.BadSignature("outro cliente")
     except signing.BadSignature:
         messages.error(
             request, _("O pedido de conexao venceu ou nao e deste PubliBot. Tente de novo.")
@@ -319,11 +326,13 @@ def retorno(request: HttpRequest) -> HttpResponse:
     oauth = rede(destino.rede).oauth()
     try:
         credenciais = oauth.trocar_codigo(
-            destino,
-            request.GET.get("code", ""),
-            request.build_absolute_uri(reverse("social:retorno")),
+            destino, request.GET.get("code", ""), endereco_de_retorno()
         )
         oauth.gravar(destino, credenciais)
+        if credenciais.get("usuario_id"):
+            # Quem conectou, na rede (para atender o pedido de exclusao de dados).
+            destino.usuario_remoto = str(credenciais["usuario_id"])[:120]
+            destino.save(update_fields=["usuario_remoto"])
         contas = oauth.contas(destino)
     except ErroDaRede as exc:
         destino.ultimo_erro = str(exc)[:2000]

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Termos de serviço — PubliBot{% endblock %}
+{% block conteudo %}
+<h1>Termos de serviço</h1>
+<p class="sub">Ao usar o PubliBot ({{ c.dominio }}), você concorda com estes termos. Atualizados em outubro de 2026.</p>
+
+<h2>O serviço</h2>
+<p>O PubliBot, operado por <strong>{{ c.operador }}</strong>{% if c.documento %} ({{ c.documento }}){% endif %}, ajuda negócios a produzir conteúdo: pesquisa de pautas, artigos com fontes, publicação no site do cliente e nas redes sociais conectadas, e medição de resultado.</p>
+
+<h2>O que é responsabilidade do cliente</h2>
+<ul>
+  <li><strong>Revisar e aprovar</strong> o que é publicado. O PubliBot sugere e escreve; o cliente decide e responde pelo conteúdo que aprova, inclusive perante o conselho da profissão dele.</li>
+  <li>Ter o direito de usar o que envia (textos, fotos, vídeos), e a <strong>autorização de quem aparece</strong> ou é citado.</li>
+  <li>Conectar só contas que ele administra, e seguir as regras de cada rede.</li>
+  <li>Pagar diretamente às redes o que decidir impulsionar: o PubliBot recomenda, mas nunca gasta em nome do cliente.</li>
+</ul>
+
+<h2>O que não fazemos</h2>
+<ul>
+  <li>Não publicamos nada que o cliente não tenha aprovado, ou que não tenha configurado para sair sozinho.</li>
+  <li>Não garantimos posição no Google, alcance ou resultado em rede social: medimos e mostramos.</li>
+  <li>Não usamos as contas conectadas para nada além do que está na <a href="{% url 'accounts:privacidade' %}">política de privacidade</a>.</li>
+</ul>
+
+<h2>Disponibilidade</h2>
+<p>Trabalhamos para o serviço ficar no ar, mas ele depende de terceiros (as redes, o Google, a hospedagem). Mudanças nas APIs das redes podem suspender uma função até ela ser adaptada.</p>
+
+<h2>Encerramento</h2>
+<p>O cliente pode encerrar quando quiser. Podemos suspender uma conta que viole estes termos, a lei ou as regras das redes. Os dados seguem o que está na política de privacidade.</p>
+
+<h2>Lei e foro</h2>
+<p>Valem as leis do Brasil. Fica eleito o foro do domicílio do operador, salvo o que a lei de defesa do consumidor garantir.</p>
+
+<p>Dúvidas: <a href="mailto:{{ c.email }}">{{ c.email }}</a>.</p>
+<p class="ajuda"><a href="{% url 'accounts:privacidade' %}">Política de privacidade</a> · <a href="{% url 'accounts:exclusao_de_dados' %}">Exclusão de dados</a></p>
+{% endblock %}

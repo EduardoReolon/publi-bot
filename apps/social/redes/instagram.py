@@ -87,9 +87,15 @@ class OAuthInstagram(OAuth):
             ),
             "Meta (token de longa duracao)",
         )
+        # O id de quem conectou (por app): e o que a Meta manda no pedido de
+        # exclusao de dados, para saber de quem apagar.
+        eu = self.http.get(
+            f"{graph()}/me", params={"fields": "id", "access_token": longo["access_token"]}
+        )
         return {
             "access_token": longo["access_token"],
             "expira_em": self.expira(longo.get("expires_in") or 60 * 86400),
+            "usuario_id": eu.json().get("id", "") if eu.status_code < 400 else "",
         }
 
     def contas(self, destino) -> list[tuple[str, str]]:

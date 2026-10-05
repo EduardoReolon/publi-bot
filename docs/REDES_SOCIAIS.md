@@ -351,8 +351,11 @@ ganha (ou perde) credito com dado, conta por conta.
 Sem conectar, tudo funciona no **copiar e colar** — a medicao de cliques
 tambem. Para publicar sozinho, cada rede pede um **app** criado pelo dono do
 PubliBot (uma vez, vale para todos os clientes) e, depois, cada conta conecta
-pela tela (Configurar > Conectar a API). O endereco de retorno que cada app
-pede aparece na tela: `https://<dominio do painel>/redes/conectar/retorno/`.
+pela tela (Configurar > Conectar a API). O endereco de retorno e um so, no
+dominio raiz, para todos os clientes: `https://<ROOT_DOMAIN>/redes/retorno/`
+(`core/retorno_oauth.py`). Politica de privacidade, termos e exclusao de dados
+tambem ja existem: o que preencher em cada app esta em
+[CONTAS_EXTERNAS.md](CONTAS_EXTERNAS.md), secao 8.
 
 | Rede | Onde | O que pedir | Variaveis no `.env` |
 |---|---|---|---|
