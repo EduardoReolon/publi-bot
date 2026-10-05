@@ -94,6 +94,14 @@ imagem têm um comando próprio: `manage.py conferir_worker`.
       - se o *Leia também* aparece.
 - [ ] **Parceiros.** Se marcou algum site como *Pode ser parceiro*, copie a
       proposta para um modelo grande. Leia o e-mail antes de mandar.
+- [ ] **Redes.** Em *Redes › Estratégia*, aprove o primeiro post. Conecte uma
+      conta (o endereço de retorno é `https://<domínio>/redes/retorno/`) e
+      abra *Diagnóstico*: os posts antigos chegaram, e os pontos fazem sentido?
+      Mande um caso em *+ Novo post* e confira os avisos de identificação.
+      Se usar o banco de fotos, suba um lote e veja o que foi descartado.
+- [ ] **Páginas públicas.** Abra `/privacidade/`, `/termos/` e
+      `/exclusao-de-dados/` no domínio raiz: o nome e o e-mail são os do
+      `.env`? O texto vale para o seu negócio?
 
 ## Se algo não bater
 

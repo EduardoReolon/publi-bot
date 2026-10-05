@@ -367,6 +367,10 @@ curl -sI https://publiteste.publibot.ekron.ia.br/ | head -1
 
 O `/healthz/` responde **antes** da resolucao de tenant, de proposito.
 
+O limite de envio e 50 MB (PDFs grandes), com uma excecao: `/redes/novo/` e
+`/redes/fotos/` aceitam ate 250 MB (fotos em lote e video do celular). Esta no
+mesmo `publibot.conf`; o `release.sh` aplica.
+
 ### Passo 3 — Conferir o que subiu
 
 ```bash
@@ -480,6 +484,30 @@ mensagem que aponta para esse arquivo.
 
 **Reordenador da busca** (opcional): `RAG_RERANKER_MODEL=jinaai/jina-reranker-v2-base-multilingual`
 baixa ~1,1 GB na primeira busca. Deixe vazio em maquina com pouca memoria.
+
+### Passo 6c — Redes sociais e paginas publicas (opcionais)
+
+Sem nada disto as redes funcionam no "copiar e postar". Para publicar sozinho,
+cada rede pede um app criado uma vez (vale para todos os clientes): variaveis
+`SOCIAL_*` no `.env` e o passo a passo em
+[`CONTAS_EXTERNAS.md`](CONTAS_EXTERNAS.md), secao 8.
+
+- **Paginas que as redes exigem** ja existem no dominio raiz:
+  `/privacidade/`, `/termos/` e `/exclusao-de-dados/`, mais o callback de
+  exclusao da Meta (`/exclusao-de-dados/meta/`) e o de desautorizacao
+  (`/desautorizar/meta/`). Preencha no `.env` quem responde pelos dados:
+  `OPERADOR_NOME`, `OPERADOR_DOCUMENTO` (opcional) e `PRIVACIDADE_EMAIL`.
+- **Um endereco de retorno so** para cadastrar em todos os apps:
+  `https://<ROOT_DOMAIN>/redes/retorno/` (`core/retorno_oauth.py`). O retorno
+  segue sozinho para o cliente certo; cliente novo nao exige mexer nos apps.
+- **Gasto com anuncios** pela API pede a revisao de `ads_read` na Meta; sem
+  ela, cada cliente manda a planilha do Gerenciador (aba Diagnostico).
+- **Audio de post proprio** usa a mesma rota de transcricao do worker
+  ([`WORKER_TRANSCRICAO.md`](WORKER_TRANSCRICAO.md)); **descrever fotos**
+  (opcional) precisa de uma conexao de inferencia com modelo de visao.
+
+**Conferir:** `curl -sI https://<ROOT_DOMAIN>/privacidade/ | head -1` responde
+200, e a pagina mostra o nome e o e-mail do `.env`.
 
 ### Passo 7 — Primeiro acesso
 

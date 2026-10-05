@@ -13,6 +13,12 @@ o nucleo nao sabe que ele existe, e ele so le o nucleo por `apps/social/fontes.p
    essencial e aprovar o primeiro post (aba Para revisar). O resto (conectar
    a API, hashtags de referencia, orcamento) e opcional e explicado ali.
 3. Nao usa uma das redes? Configurar > a conta > desmarque "ligado".
+4. Conta que ja existe? Conecte-a (Configurar): o PubliBot importa o passado
+   e abre o **Diagnostico** (o que funcionou e o que nao, e o gasto com
+   anuncios).
+5. Negocio que vive de foto real (barbearia, estetica)? Em Configurar, a
+   conta > "posts do banco de fotos (%)", e suba as fotos na aba **Fotos**.
+   Caso real ou novidade: **+ Novo post**.
 
 Sem conectar nenhuma API, tudo funciona: os posts chegam prontos para copiar e
 colar, e os cliques sao medidos pelo link do PubliBot.
