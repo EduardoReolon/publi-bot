@@ -259,6 +259,20 @@ class PublicadorLinkedIn(Publicador):
         )
         return resposta.headers.get("x-restli-id", "")
 
+    def seguidores(self) -> int | None:
+        """So da pagina: o LinkedIn nao informa seguidores de perfil pessoal pela API."""
+        if self.destino.autor != "organizacao":
+            return None
+        dados = self._conferir(
+            self.http.get(
+                f"{API}/rest/networkSizes/{quote(self.destino.conta_id, safe='')}",
+                params={"edgeType": "COMPANY_FOLLOWED_BY_MEMBER"},
+                headers=self._cabecalhos(),
+            ),
+            "LinkedIn (seguidores)",
+        ).json()
+        return dados.get("firstDegreeSize")
+
     def metricas(self, post) -> dict:
         dados = self._conferir(
             self.http.get(

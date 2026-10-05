@@ -138,6 +138,21 @@ def sinais(artigo: ArtigoParaRedes) -> dict:
     return {"quase_la": quase_la, "conversoes": conversoes}
 
 
+def demanda(limite: int = 300) -> list[dict]:
+    """Os grupos de demanda do Radar (o que o publico busca), com volume e o
+    vetor que o Radar ja calculou: [{"rotulo", "volume", "vetor"}]."""
+    from apps.radar.models import GrupoDeDemanda
+
+    grupos = (
+        GrupoDeDemanda.objects.exclude(centroide__isnull=True)
+        .exclude(situacao="descartado")
+        .order_by("-volume_total")[:limite]
+    )
+    return [
+        {"rotulo": g.rotulo, "volume": g.volume_total, "vetor": list(g.centroide)} for g in grupos
+    ]
+
+
 def conversoes_pelas_redes(remote_id: str, desde) -> int:
     """Conversoes que entraram (ou voltaram) por rede social e passaram pelo
     artigo, desde a data: o que o post daquele artigo provavelmente trouxe."""

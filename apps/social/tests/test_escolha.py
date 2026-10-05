@@ -107,7 +107,8 @@ def test_duas_versoes_com_abordagens_diferentes(ambiente, nucleo):
 @pytest.mark.django_db
 def test_sorteio_favorece_quem_funciona_sem_parar_de_testar(ambiente):
     garantir_abordagens()
-    destino = Destino.objects.create(rede="linkedin", nome="Perfil")
+    # Fora do Comeco (no Comeco o sorteio se limita a poucas: teste abaixo).
+    destino = Destino.objects.create(rede="linkedin", nome="Perfil", fase_manual="tracao")
     boa = Abordagem.objects.get(nome="Nossa, que incrivel")
     ruim = Abordagem.objects.get(nome="Mito ou verdade")
     for _ in range(8):
@@ -167,3 +168,17 @@ def test_descartado_nao_volta_sozinho_mas_volta_a_pedido(ambiente, nucleo):
     )
     assert escolha.rodada() == 0
     assert len(escolha.levar_as_redes(ARTIGO.id)) == 1
+
+
+@pytest.mark.django_db
+def test_no_comeco_poucas_abordagens_e_o_coletivo_da_o_ponto_de_partida(ambiente):
+    from apps.social.experimentos import consolidar_coletivo
+
+    garantir_abordagens()
+    destino = Destino.objects.create(rede="instagram", nome="Insta")  # sem seguidores
+    # Em outras contas do PubliBot, "Mito ou verdade" funciona no Instagram.
+    consolidar_coletivo([{"instagram": {"Mito ou verdade": [40, 5]}}, {"linkedin": {"x": [1, 1]}}])
+    rng = random.Random(3)  # noqa: S311 - sorteio de teste
+    vistas = {a.nome for _ in range(200) for a in experimentos.escolher(destino, rng=rng)}
+    assert len(vistas) <= 3 and "Mito ou verdade" in vistas
+    assert experimentos.coletivo("instagram") == {"Mito ou verdade": [40, 5]}

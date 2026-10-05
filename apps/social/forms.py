@@ -52,6 +52,7 @@ class DestinoForm(forms.ModelForm):
             "tom",
             "instrucoes",
             "hashtags_fixas",
+            "hashtags_de_referencia",
             "chamada_final",
         ]
         widgets = {

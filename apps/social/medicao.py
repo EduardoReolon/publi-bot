@@ -18,6 +18,8 @@ from apps.social.redes.base import ErroDaRede
 logger = logging.getLogger("publibot.social")
 
 JANELA = timedelta(days=30)
+# A Meta permite 30 hashtags diferentes por semana por conta: 10 deixa folga.
+LIMITE_DE_HASHTAGS = 10
 
 
 def medir(post: Post, *, http=None) -> dict:
@@ -57,5 +59,61 @@ def rodada(*, http=None) -> int:
             logger.info("Comentarios do post %s nao lidos: %s", post.pk, exc)
         medidos += 1
     for destino in Destino.objects.all():
+        acompanhar_conta(destino, http=http)
         experimentos.avaliar(destino)
     return medidos
+
+
+def acompanhar_conta(destino: Destino, *, http=None) -> None:
+    """Seguidores (todo dia) e referencias do nicho (uma vez por semana)."""
+    from apps.social.estrategia import registrar_seguidores
+
+    r = rede(destino.rede)
+    if r.publicador is None or not destino.conectado:
+        return
+    publicador = r.publicador(destino, http=http)
+    try:
+        n = publicador.seguidores()
+        if n is not None:
+            registrar_seguidores(destino, n)
+    except ErroDaRede as exc:
+        logger.info("Seguidores de %s indisponiveis: %s", destino, exc)
+    if destino.hashtags_de_referencia and (
+        destino.referencias_em is None
+        or destino.referencias_em <= timezone.now() - timedelta(days=7)
+    ):
+        coletar_referencias(destino, publicador)
+
+
+def coletar_referencias(destino: Destino, publicador) -> int:
+    from django.utils.dateparse import parse_datetime
+
+    from apps.social.models import ReferenciaDoNicho
+
+    novas = 0
+    hashtags = [h.strip().lstrip("#") for h in destino.hashtags_de_referencia.split(",")]
+    for hashtag in [h for h in hashtags if h][:LIMITE_DE_HASHTAGS]:
+        try:
+            posts = publicador.referencias(hashtag)
+        except ErroDaRede as exc:
+            logger.info("Referencias de #%s indisponiveis: %s", hashtag, exc)
+            continue
+        for item in posts:
+            _ref, nova = ReferenciaDoNicho.objects.update_or_create(
+                destino=destino,
+                id_remoto=item["id_remoto"][:120],
+                defaults={
+                    "hashtag": hashtag[:80],
+                    "legenda": item["legenda"][:3000],
+                    "formato": item["formato"][:30],
+                    "curtidas": item["curtidas"],
+                    "comentarios": item["comentarios"],
+                    "link": item["link"][:500],
+                    "publicado_em": parse_datetime(item.get("publicado_em") or ""),
+                    "coletado_em": timezone.now(),
+                },
+            )
+            novas += nova
+    destino.referencias_em = timezone.now()
+    destino.save(update_fields=["referencias_em"])
+    return novas

@@ -215,6 +215,28 @@ def conferir(post: Post, texto: str, extras: dict, artigo) -> list[str]:
     return avisos
 
 
+def _do_tema(tema, principal):
+    """Post de tema: o material vem das frases do tema (de varios artigos); a
+    conferencia dos numeros vale contra o texto de TODOS esses artigos; o link
+    e a capa sao do artigo principal."""
+    from dataclasses import replace
+
+    from apps.social.temas import material_do_tema
+
+    textos = [principal.texto]
+    for artigo_id in tema.artigos:
+        if str(artigo_id) != principal.id and (outro := fontes.artigo(artigo_id)):
+            textos.append(outro.texto)
+    titulos = list(dict.fromkeys(f["artigo_titulo"] for f in tema.frases))
+    combinado = replace(
+        principal,
+        titulo=tema.titulo,
+        resumo=f"Tema que aparece em {len(tema.artigos)} artigos: " + "; ".join(titulos),
+        texto="\n".join(textos),
+    )
+    return combinado, material_do_tema(tema)
+
+
 def escrever(post: Post) -> Post:
     """Escreve (ou reescreve) o post. Sem modelo agora: levanta, e quem chamou
     (a tarefa) tenta mais tarde."""
@@ -228,9 +250,12 @@ def escrever(post: Post) -> Post:
         return post
     destino = post.destino
     r = rede(destino.rede)
-    mat = material.montar(
-        artigo, publico=destino.publico or r.publico_padrao, negocio=fontes.negocio()
-    )
+    if post.tema_id:
+        artigo, mat = _do_tema(post.tema, artigo)
+    else:
+        mat = material.montar(
+            artigo, publico=destino.publico or r.publico_padrao, negocio=fontes.negocio()
+        )
     post.situacao = Post.Situacao.GERANDO
     post.save(update_fields=["situacao", "atualizado_em"])
 

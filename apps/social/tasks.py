@@ -55,3 +55,33 @@ def medir_posts() -> int:
     from apps.social.medicao import rodada
 
     return para_cada_tenant(rodada, "medir_posts")
+
+
+@shared_task
+def recalcular_temas() -> int:
+    """Uma vez por dia: os temas que atravessam os artigos, com a nota."""
+    from apps.accounts.varredura import para_cada_tenant
+    from apps.social.temas import recalcular
+
+    return para_cada_tenant(recalcular, "recalcular_temas")
+
+
+@shared_task
+def consolidar_placar_coletivo() -> int:
+    """Uma vez por dia: o placar das abordagens somado entre TODOS os clientes
+    (so contagens por rede e nome de abordagem; nenhum texto sai do cliente).
+    E o ponto de partida de quem esta comecando."""
+    from django_tenants.utils import schema_context
+
+    from apps.accounts.varredura import schemas_ativos
+    from apps.social.experimentos import consolidar_coletivo, placar_deste_cliente
+
+    placares = []
+    for schema in schemas_ativos():
+        with schema_context(schema):
+            try:
+                placares.append(placar_deste_cliente())
+            except Exception:
+                logger.exception("Placar do tenant %s indisponivel.", schema)
+    total = consolidar_coletivo(placares)
+    return sum(s + f for nomes in total.values() for s, f in nomes.values())

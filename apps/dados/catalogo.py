@@ -46,8 +46,9 @@ def vetorizar_pendentes(limite: int = 200) -> int:
     return len(series)
 
 
-def sugerir(texto: str, *, limite: int = 5, excluir=()) -> list[Serie]:
-    """As series aprovadas mais proximas do texto (titulo e orientacao da pauta)."""
+def sugerir(texto: str, *, limite: int = 5, excluir=(), nichos=()) -> list[Serie]:
+    """As series aprovadas mais proximas do texto (titulo e orientacao da pauta).
+    `nichos`: so series desses nichos (da serie ou da instituicao); vazio, todas."""
     from pgvector.django import CosineDistance
 
     from apps.knowledge.embeddings import get_embedding_client
@@ -60,9 +61,16 @@ def sugerir(texto: str, *, limite: int = 5, excluir=()) -> list[Serie]:
     except Exception as exc:
         logger.warning("Sugestao de dados indisponivel: %s", exc)
         return []
+    from django.db.models import Q
+
+    consulta = Serie.objects.filter(situacao=Serie.Situacao.APROVADA, vetor__isnull=False)
+    if nichos:
+        filtro = Q()
+        for nicho in nichos:
+            filtro |= Q(nichos__contains=[nicho]) | Q(instituicao__nichos__contains=[nicho])
+        consulta = consulta.filter(filtro)
     candidatas = (
-        Serie.objects.filter(situacao=Serie.Situacao.APROVADA, vetor__isnull=False)
-        .exclude(pk__in=list(excluir))
+        consulta.exclude(pk__in=list(excluir))
         .select_related("instituicao")
         .annotate(distancia=CosineDistance("vetor", alvo))
         .filter(distancia__lte=DISTANCIA_MAXIMA)

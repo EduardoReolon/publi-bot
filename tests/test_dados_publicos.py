@@ -256,3 +256,25 @@ def test_link_de_instituicao_confiavel_entra_sem_curadoria():
     ibge.save()
     assert _de_instituicao_confiavel("https://www.ibge-teste.gov.br/estatisticas/x")
     assert not _de_instituicao_confiavel("https://outro.org/x")
+
+
+@pytest.mark.django_db
+def test_cada_site_escolhe_os_nichos_de_dados(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.dados_da_pauta import nichos_do_cliente
+    from apps.editorial.models import PerfilDoNegocio
+    from apps.knowledge import embeddings
+
+    monkeypatch.setattr(embeddings, "get_embedding_client", lambda: _MesmoVetor())
+    saude = _serie("Obesidade em adultos")
+    saude.nichos = ["saude"]
+    saude.save()
+    obra = _serie("Custo do metro quadrado da construcao")
+    obra.nichos = ["obras"]
+    obra.save()
+
+    assert {s.pk for s in catalogo.sugerir("qualquer coisa", limite=10)} == {saude.pk, obra.pk}
+    PerfilDoNegocio.objects.update_or_create(pk=1, defaults={"nichos_de_dados": ["saude"]})
+    assert nichos_do_cliente() == ["saude"]
+    assert [s.pk for s in catalogo.sugerir("x", limite=10, nichos=nichos_do_cliente())] == [
+        saude.pk
+    ]

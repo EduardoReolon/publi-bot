@@ -39,6 +39,21 @@ def _voltar(request, aba: str = "revisar") -> HttpResponse:
     return redirect(request.POST.get("voltar") or f"{reverse('social:inicio')}?aba={aba}")
 
 
+def _contagens() -> dict:
+    """Os numeros das abas (pendencias de cada uma)."""
+    return {
+        "revisar": Post.objects.filter(
+            situacao__in=[Post.Situacao.SUGERIDO, Post.Situacao.GERANDO, Post.Situacao.RASCUNHO]
+        ).count(),
+        "agenda": Post.objects.filter(
+            situacao__in=[Post.Situacao.APROVADO, Post.Situacao.PUBLICANDO]
+        ).count(),
+        "comentarios": Comentario.objects.filter(
+            tipo=Comentario.Tipo.PERGUNTA, respondido_em__isnull=True
+        ).count(),
+    }
+
+
 @login_required
 def inicio(request: HttpRequest) -> HttpResponse:
     garantir_abordagens()
@@ -56,17 +71,7 @@ def inicio(request: HttpRequest) -> HttpResponse:
         "filtro": filtro,
         "redes": REDES,
         "config": ConfiguracaoSocial.carregar(),
-        "contagens": {
-            "revisar": Post.objects.filter(
-                situacao__in=[Post.Situacao.SUGERIDO, Post.Situacao.GERANDO, Post.Situacao.RASCUNHO]
-            ).count(),
-            "agenda": Post.objects.filter(
-                situacao__in=[Post.Situacao.APROVADO, Post.Situacao.PUBLICANDO]
-            ).count(),
-            "comentarios": Comentario.objects.filter(
-                tipo=Comentario.Tipo.PERGUNTA, respondido_em__isnull=True
-            ).count(),
-        },
+        "contagens": _contagens(),
     }
     if aba == "revisar":
         contexto["posts"] = posts.filter(
@@ -370,3 +375,94 @@ def bio(request: HttpRequest, chave: str) -> HttpResponse:
     destino = get_object_or_404(Destino, chave_publica=chave)
     posts = destino.posts.filter(situacao=Post.Situacao.PUBLICADO).order_by("-publicado_em")[:12]
     return render(request, "social/bio.html", {"destino": destino, "posts": posts})
+
+
+# -- Estrategia --------------------------------------------------------------------
+@login_required
+def estrategia(request: HttpRequest) -> HttpResponse:
+    from apps.social import estrategia as modulo
+    from apps.social import parametros
+
+    garantir_abordagens()
+    destinos = list(Destino.objects.filter(ligado=True)) or list(Destino.objects.all())
+    escolhido = next(
+        (d for d in destinos if str(d.pk) == request.GET.get("destino")),
+        destinos[0] if destinos else None,
+    )
+    from apps.social.models import Tema
+
+    return render(
+        request,
+        "social/estrategia.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "estrategia",
+            "contagens": _contagens(),
+            "destinos": destinos,
+            "destino": escolhido,
+            "plano": modulo.plano(escolhido) if escolhido else None,
+            "fases": [(c, modulo.FASES[c]["nome"]) for c in modulo.ORDEM],
+            "parametros": parametros.todos(),
+            "temas": Tema.objects.filter(ativo=True).order_by("-nota")[:15],
+        },
+    )
+
+
+@login_required
+@require_POST
+def acao_na_estrategia(request: HttpRequest) -> HttpResponse:
+    from decimal import Decimal, InvalidOperation
+
+    from apps.social import escolha, parametros
+    from apps.social.estrategia import registrar_seguidores
+    from apps.social.models import Tema
+
+    acao = request.POST.get("acao")
+    destino = Destino.objects.filter(pk=request.POST.get("destino") or None).first()
+    voltar = reverse("social:estrategia") + (f"?destino={destino.pk}" if destino else "")
+
+    if acao == "seguidores" and destino is not None:
+        try:
+            registrar_seguidores(destino, int(request.POST.get("seguidores", "")))
+            messages.success(request, _("Seguidores registrados."))
+        except ValueError:
+            messages.error(request, _("Digite um numero."))
+    elif acao == "fase" and destino is not None:
+        destino.fase_manual = request.POST.get("fase_manual", "")[:20]
+        destino.save(update_fields=["fase_manual"])
+    elif acao == "parametros":
+        invalidos = parametros.gravar(ConfiguracaoSocial.carregar(), request.POST)
+        if invalidos:
+            messages.error(request, _("Valores invalidos: %(p)s") % {"p": ", ".join(invalidos)})
+        else:
+            messages.success(request, _("Parametros salvos."))
+    elif acao == "recalcular_temas":
+        from apps.social.temas import recalcular
+
+        try:
+            n = recalcular()
+            messages.success(request, _("%(n)s tema(s) encontrados.") % {"n": n})
+        except Exception as exc:  # sem vetores agora, por exemplo
+            logger.exception("Temas nao recalculados.")
+            messages.error(request, _("Nao deu para recalcular agora: %(e)s") % {"e": exc})
+    elif acao == "gerar_do_tema" and destino is not None:
+        tema = get_object_or_404(Tema, pk=request.POST.get("tema"))
+        par = request.POST.get("par") == "1"
+        criados = escolha.sugerir_tema(destino, tema, versoes=2 if par else None)
+        messages.success(
+            request,
+            _("%(n)s post(s) sendo escritos (aba Para revisar).") % {"n": len(criados)},
+        )
+    elif acao == "impulso":
+        post = get_object_or_404(Post, pk=request.POST.get("post"))
+        try:
+            valor = Decimal(request.POST.get("valor", "").replace(",", "."))
+        except InvalidOperation:
+            messages.error(request, _("Digite o valor pago."))
+            return redirect(request.POST.get("voltar") or voltar)
+        post.impulsionado = True
+        post.custo_impulso = valor
+        post.impulso_em = timezone.now()
+        post.save(update_fields=["impulsionado", "custo_impulso", "impulso_em", "atualizado_em"])
+        messages.success(request, _("Impulso registrado: o resultado passa a contar como pago."))
+    return redirect(request.POST.get("voltar") or voltar)

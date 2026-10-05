@@ -117,6 +117,14 @@ class Publicador:
     def metricas(self, post) -> dict:
         return {}
 
+    def seguidores(self) -> int | None:
+        """Quantos seguem a conta (None: a rede nao informa para este tipo de conta)."""
+        return None
+
+    def referencias(self, hashtag: str, limite: int = 25) -> list[dict]:
+        """Os posts de outras contas que mais engajam numa hashtag."""
+        raise SemSuporte("esta rede nao mostra os posts de uma hashtag pela API.")
+
     def _conferir(self, resposta, contexto: str):
         """Levanta ErroDaRede com a mensagem da rede (sem o token)."""
         if resposta.status_code >= 400:

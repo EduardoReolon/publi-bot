@@ -174,6 +174,9 @@ class PerfilDoNegocio(models.Model):
             "novidade."
         ),
     )
+    # Que nichos do catalogo de dados publicos este cliente usa (saude, ia,
+    # obras, geral). Vazio: todos. O catalogo e global; a escolha e daqui.
+    nichos_de_dados = models.JSONField(_("nichos de dados publicos"), default=list, blank=True)
     valor_da_conversao = models.DecimalField(
         _("valor de uma conversao (R$)"),
         max_digits=10,

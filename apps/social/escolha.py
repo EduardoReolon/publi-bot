@@ -173,14 +173,17 @@ def candidatos(destino: Destino, config: ConfiguracaoSocial, limite: int = 60) -
     return saida
 
 
-def sugerir(destino: Destino, artigo, motivo: str, por_que: str) -> list[Post]:
+def sugerir(
+    destino: Destino, artigo, motivo: str, por_que: str, *, tema=None, versoes: int | None = None
+) -> list[Post]:
     """Cria o(s) post(s) sugerido(s) e pede a redacao. Com 2 versoes, cada uma
-    com uma abordagem diferente, ligadas uma a outra."""
+    com uma abordagem diferente, ligadas uma a outra (o par do teste A/B)."""
     from apps.social import experimentos
     from apps.social.tasks import escrever_post
 
     config = ConfiguracaoSocial.carregar()
-    abordagens = experimentos.escolher(destino, max(config.variantes, 1)) or [None]
+    versoes = versoes or max(config.variantes, 1)
+    abordagens = experimentos.escolher(destino, versoes) or [None]
     posts = []
     with transaction.atomic():
         for abordagem in abordagens:
@@ -190,6 +193,7 @@ def sugerir(destino: Destino, artigo, motivo: str, por_que: str) -> list[Post]:
                 artigo_titulo=artigo.titulo[:300],
                 artigo_url=artigo.url,
                 abordagem=abordagem,
+                tema=tema,
                 motivo=motivo,
                 por_que=por_que,
                 variante_de=posts[0] if posts else None,
@@ -198,6 +202,39 @@ def sugerir(destino: Destino, artigo, motivo: str, por_que: str) -> list[Post]:
         for post in posts:
             transaction.on_commit(lambda pk=str(post.pk): escrever_post.delay(pk))
     return posts
+
+
+# Redes em que o post nasce de um TEMA (varios artigos) quando ha tema bom.
+REDES_DE_TEMA = {"instagram"}
+
+
+def tema_para(destino: Destino, config: ConfiguracaoSocial):
+    """O tema de nota mais alta que a conta ainda nao usou no espacamento."""
+    from apps.social.models import Tema
+
+    recentes = destino.posts.filter(
+        tema__isnull=False,
+        criado_em__gt=timezone.now() - timedelta(days=config.espacamento_dias),
+    ).values_list("tema__titulo", flat=True)
+    return (
+        Tema.objects.filter(ativo=True).exclude(titulo__in=list(recentes)).order_by("-nota").first()
+    )
+
+
+def sugerir_tema(destino: Destino, tema, *, versoes: int | None = None) -> list[Post]:
+    artigo = fontes.artigo(tema.artigo_principal)
+    if artigo is None:
+        return []
+    explicacao = "; ".join(tema.sinais.get("explicacao", []))
+    motivo = Post.Motivo.TESTE if versoes == 2 else Post.Motivo.TEMA
+    return sugerir(
+        destino,
+        artigo,
+        motivo,
+        f"Tema (nota {tema.nota:.2f}): {explicacao}.",
+        tema=tema,
+        versoes=versoes,
+    )
 
 
 def rodada() -> int:
@@ -217,6 +254,12 @@ def rodada() -> int:
         vagas = min(livres - pendentes, 1)
         if vagas <= 0:
             continue
+        if destino.rede in REDES_DE_TEMA:
+            tema = tema_para(destino, config)
+            novos = sugerir_tema(destino, tema) if tema is not None else []
+            if novos:
+                criados += len(novos)
+                continue
         pontuados = []
         for artigo, motivo, detalhe in candidatos(destino, config):
             valor, motivos = nota(artigo, destino, negocio)
