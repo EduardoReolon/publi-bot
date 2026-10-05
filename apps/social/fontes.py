@@ -153,6 +153,12 @@ def demanda(limite: int = 300) -> list[dict]:
     ]
 
 
+def endereco_do_site() -> str:
+    """A pagina inicial do site do cliente (destino de post sem artigo)."""
+    alvo = site()
+    return (getattr(alvo, "base_url", "") or "").strip()
+
+
 def conversoes_pelas_redes(remote_id: str, desde) -> int:
     """Conversoes que entraram (ou voltaram) por rede social e passaram pelo
     artigo, desde a data: o que o post daquele artigo provavelmente trouxe."""
@@ -178,12 +184,52 @@ def modelo_indisponivel() -> tuple[type[Exception], ...]:
     return (SemModeloConfigurado, PassoAdiado, LookupError)
 
 
-def executar(chave: str, variaveis: dict, *, json_schema: dict | None = None) -> str:
+def executar(
+    chave: str,
+    variaveis: dict,
+    *,
+    json_schema: dict | None = None,
+    imagens: list[tuple[str, bytes]] | None = None,
+) -> str:
+    """`imagens`: [(tipo, bytes)] para modelo que enxerga (descrever uma foto)."""
     from apps.content.inference import executar_prompt
 
     return executar_prompt(
-        key=chave, variaveis=variaveis, site=site(), json_schema=json_schema, com_convite=False
+        key=chave,
+        variaveis=variaveis,
+        site=site(),
+        json_schema=json_schema,
+        com_convite=False,
+        imagens=imagens,
     ).texto
+
+
+class TranscricaoAdiada(Exception):
+    """O worker da placa esta ocupado (ou desligado): tentar mais tarde."""
+
+
+class TranscricaoImpossivel(Exception):
+    """Sem worker de transcricao, ou o audio nao serviu."""
+
+
+def transcrever(nome: str, conteudo: bytes, *, dono: str) -> str:
+    """Audio -> texto, pelo mesmo worker (Whisper) que transcreve o acervo."""
+    from apps.knowledge.extraction import (
+        ConversorOcupado,
+        ExtracaoIndisponivel,
+        transcrever_audio,
+    )
+
+    idioma = (getattr(site(), "content_language", "") or "pt")[:2]
+    try:
+        segmentos, _duracao = transcrever_audio(
+            nome, conteudo, idioma=idioma, dono=dono, timeout=600.0
+        )
+    except ConversorOcupado as exc:
+        raise TranscricaoAdiada(str(exc)) from exc
+    except ExtracaoIndisponivel as exc:
+        raise TranscricaoImpossivel(str(exc)) from exc
+    return " ".join(texto.strip() for _inicio, texto in segmentos).strip()
 
 
 def vetores(textos: list[str], *, consulta: bool = False) -> list[list[float]]:

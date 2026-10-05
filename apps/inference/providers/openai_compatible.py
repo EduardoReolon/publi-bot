@@ -51,12 +51,24 @@ class OpenAICompatibleClient(LLMClient):
         temperature: float = 0.2,
         max_tokens: int | None = None,
         json_schema: dict | None = None,
+        imagens: list[tuple[str, bytes]] | None = None,
     ) -> LLMResponse:
+        conteudo: str | list = user
+        if imagens:
+            import base64
+
+            conteudo = [{"type": "text", "text": user}] + [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{tipo};base64,{base64.b64encode(dados).decode()}"},
+                }
+                for tipo, dados in imagens
+            ]
         corpo: dict = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                {"role": "user", "content": conteudo},
             ],
             "temperature": temperature,
             "stream": False,

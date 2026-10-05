@@ -99,3 +99,20 @@ def _semente(rede) -> dict:
 
 
 PROMPTS = {rede.prompt: _semente(rede) for rede in REDES.values()}
+
+# Descrever uma foto do banco (modelo que enxerga imagem; opcional, ver
+# ConfiguracaoSocial.descrever_fotos). A descricao entra no material do post.
+PROMPTS["social_foto"] = {
+    "descricao": "Descreve uma foto do trabalho do negocio, para a legenda do post.",
+    "variaveis": ["tema", "oferta"],
+    "temperatura": 0.2,
+    "sistema": (
+        "Voce descreve uma foto do trabalho de um negocio para quem vai escrever a legenda "
+        "de um post. Descreva so o que se ve sobre o TRABALHO, o servico ou o produto "
+        "(ex.: 'corte degrade com risca lateral', 'prato de massa com molho vermelho'). "
+        "Nunca descreva a pessoa: nada de idade, etnia, corpo, aparencia ou nome. Nao "
+        "invente o que nao da para ver. Uma ou duas frases, em portugues.\n\n"
+        'Responda SOMENTE com JSON: {"descricao": "..."}'
+    ),
+    "usuario": "O negocio: {tema}. O que oferece: {oferta}. Descreva a foto.",
+}

@@ -25,7 +25,7 @@ import numpy as np
 from django.db import transaction
 from django.utils import timezone
 
-from apps.social import fontes
+from apps.social import fontes, proprio
 from apps.social.models import ConfiguracaoSocial, Destino, Post
 from apps.social.redes import rede
 
@@ -182,10 +182,12 @@ def sugerir(
     tema=None,
     versoes: int | None = None,
     ideia: str = "",
+    entrada=None,
 ) -> list[Post]:
     """Cria o(s) post(s) sugerido(s) e pede a redacao. Com 2 versoes, cada uma
     com uma abordagem diferente, ligadas uma a outra (o par do teste A/B).
-    `ideia`: um angulo sugerido (pela outra IA) que vai para quem escreve."""
+    `ideia`: um angulo sugerido (pela outra IA) que vai para quem escreve.
+    `entrada`: o material proprio (caso, fotos) quando o post nao e de artigo."""
     from apps.social import experimentos
     from apps.social.tasks import escrever_post
 
@@ -202,6 +204,7 @@ def sugerir(
                 artigo_url=artigo.url,
                 abordagem=abordagem,
                 tema=tema,
+                entrada=entrada,
                 motivo=motivo,
                 por_que=por_que,
                 variante_de=posts[0] if posts else None,
@@ -272,6 +275,12 @@ def rodada() -> int:
         vagas = min(livres - pendentes, 1)
         if vagas <= 0:
             continue
+        # Conta que vive de foto real: a vez e do banco de fotos (na proporcao dela).
+        if proprio.tipo_da_vez(destino) == "fotos":
+            novos = proprio.sugerir_do_banco(destino)
+            if novos or destino.fotos_por_cento >= 100:
+                criados += len(novos)
+                continue
         if destino.rede in REDES_DE_TEMA:
             tema = tema_para(destino, config)
             novos = sugerir_tema(destino, tema) if tema is not None else []
@@ -286,6 +295,9 @@ def rodada() -> int:
         pontuados.sort(key=lambda x: -x[0])
         for _valor, artigo, motivo, motivos in pontuados[:vagas]:
             criados += len(sugerir(destino, artigo, motivo, "; ".join(motivos).capitalize() + "."))
+        if not pontuados and destino.fotos_por_cento > 0:
+            # Sem artigo para levar hoje: o banco de fotos cobre a vaga.
+            criados += len(proprio.sugerir_do_banco(destino))
     return criados
 
 

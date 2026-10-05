@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Novo post" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+  <h2>{% translate "Novo post: um caso real ou uma novidade" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Conte o que aconteceu do seu jeito, como contaria a alguem — por escrito ou num audio.
+      O PubliBot escreve a versao de cada rede, so com o que voce contou (numero ou resultado
+      que voce nao disse e barrado), usa as suas fotos ou video, e leva para um artigo
+      relacionado ou para o link que voce der. Tudo passa pela sua revisao.
+    {% endblocktranslate %}
+  </p>
+  <form method="post" enctype="multipart/form-data" class="secao">
+    {% csrf_token %}
+    <div class="campo">
+      <label>{% translate "O que e" %}</label>
+      {% for valor, rotulo in tipos %}<label style="display:inline-block; margin-right:1rem"><input type="radio" name="tipo" value="{{ valor }}" {% if forloop.first %}checked{% endif %} style="width:auto"> {{ rotulo }}</label>{% endfor %}
+    </div>
+    <div class="campo">
+      <label for="texto">{% translate "O que aconteceu" %}</label>
+      <textarea id="texto" name="texto" class="curto" rows="7" placeholder="{% translate 'Ex.: Um cliente chegou com o estoque parado ha 6 meses. Em 3 semanas, mudamos X e Y, e ele voltou a vender.' %}"></textarea>
+      <div class="ajuda">{% translate "Sem nome, idade ou detalhe que identifique alguem: o PubliBot avisa se encontrar." %}</div>
+    </div>
+    <div class="campo">
+      <label for="audio">{% translate "Ou grave um audio (opcional)" %}</label>
+      <input type="file" id="audio" name="audio" accept="audio/*" capture>
+      <div class="ajuda">{% translate "Transcrito no worker da placa; os posts aparecem quando terminar." %}</div>
+    </div>
+    <div class="campo">
+      <label for="arquivos">{% translate "Fotos ou video (opcional)" %}</label>
+      <input type="file" id="arquivos" name="arquivos" accept="image/*,video/*" multiple>
+      <div class="ajuda">{% translate "Instagram: carrossel com ate 10 fotos, ou reels com o video. LinkedIn e Google: a primeira foto (video nessas redes fica para copiar e postar). Sem foto, o Instagram ganha laminas com o texto." %}</div>
+    </div>
+    <div class="campo">
+      <label for="artigo">{% translate "Para onde o post leva" %}</label>
+      <select id="artigo" name="artigo">
+        <option value="auto">{% translate "O PubliBot escolhe o artigo mais proximo (se houver)" %}</option>
+        <option value="">{% translate "Nenhum artigo (use o link abaixo, ou a pagina inicial do site)" %}</option>
+        {% for a in artigos %}<option value="{{ a.id }}">{{ a.titulo|truncatechars:90 }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="link">{% translate "Link (opcional)" %}</label>
+      <input type="url" id="link" name="link" placeholder="https://... (pagina de contato, WhatsApp)">
+    </div>
+    <div class="campo">
+      <label>{% translate "Contas" %}</label>
+      {% for d in destinos %}<label style="display:inline-block; margin-right:1rem"><input type="checkbox" name="destinos" value="{{ d.pk }}" checked style="width:auto"> {{ d.nome }}</label>{% empty %}<p class="aviso">{% translate "Nenhuma conta ligada (Configurar)." %}</p>{% endfor %}
+    </div>
+    <label style="display:block; margin:.6rem 0"><input type="checkbox" name="autorizado" value="1" style="width:auto"> <strong>{% translate "Quem aparece ou e citado autorizou o uso (ou nao aparece ninguem)." %}</strong> <span class="ajuda">{% translate "Obrigatorio para caso real e para fotos." %}</span></label>
+    <div class="acoes"><button type="submit" class="botao">{% translate "Escrever os posts" %}</button></div>
+  </form>
+{% endblock %}

@@ -170,7 +170,16 @@ class PublicadorInstagram(Publicador):
         if not imagens:
             raise ErroDaRede("Instagram precisa de pelo menos uma imagem.")
         conta = self.destino.conta_id
-        if len(imagens) == 1:
+        tem_video = any(i.video for i in imagens)
+        if len(imagens) == 1 and imagens[0].video:
+            container = self._post(
+                f"{conta}/media",
+                "Instagram (reels)",
+                media_type="REELS",
+                video_url=imagens[0].url,
+                caption=texto,
+            )["id"]
+        elif len(imagens) == 1:
             container = self._post(
                 f"{conta}/media", "Instagram (imagem)", image_url=imagens[0].url, caption=texto
             )["id"]
@@ -179,7 +188,11 @@ class PublicadorInstagram(Publicador):
                 self._post(
                     f"{conta}/media",
                     "Instagram (lamina)",
-                    image_url=imagem.url,
+                    **(
+                        {"media_type": "VIDEO", "video_url": imagem.url}
+                        if imagem.video
+                        else {"image_url": imagem.url}
+                    ),
                     is_carousel_item="true",
                 )["id"]
                 for imagem in imagens[:10]
@@ -191,7 +204,8 @@ class PublicadorInstagram(Publicador):
                 children=",".join(filhos),
                 caption=texto,
             )["id"]
-        for _tentativa in range(self.TENTATIVAS):
+        # Video demora a processar na Meta: espera mais.
+        for _tentativa in range(self.TENTATIVAS * (6 if tem_video else 1)):
             estado = self._get(container, "Instagram (preparo)", fields="status_code")
             if estado.get("status_code") == "FINISHED":
                 break

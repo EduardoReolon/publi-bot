@@ -182,7 +182,11 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     return texto, extras
 
 
-def conferir(post: Post, texto: str, extras: dict, artigo) -> list[str]:
+def _textos_das_laminas(extras: dict) -> list[str]:
+    return [f"{l_['titulo']} {l_['texto']}" for l_ in extras.get("laminas", [])]
+
+
+def conferir(post: Post, texto: str, extras: dict, artigo, *, com_fotos: bool = False) -> list[str]:
     r = rede(post.destino.rede)
     f = r.formato
     avisos = []
@@ -201,7 +205,7 @@ def conferir(post: Post, texto: str, extras: dict, artigo) -> list[str]:
             f"a primeira linha tem {len(extras['gancho'])} caracteres; so {f.dobra} aparecem "
             "antes do 'ver mais'"
         )
-    if f.max_laminas:
+    if f.max_laminas and not com_fotos:
         n = len(extras.get("laminas", []))
         if n < f.min_laminas:
             avisos.append(
@@ -240,9 +244,10 @@ def _do_tema(tema, principal):
 def escrever(post: Post) -> Post:
     """Escreve (ou reescreve) o post. Sem modelo agora: levanta, e quem chamou
     (a tarefa) tenta mais tarde."""
-    from apps.social import laminas
+    from apps.social import laminas, proprio
 
-    artigo = fontes.artigo(post.artigo_id)
+    entrada = post.entrada if post.entrada_id else None
+    artigo = proprio.como_artigo(entrada) if entrada else fontes.artigo(post.artigo_id)
     if artigo is None:
         post.situacao = Post.Situacao.FALHOU
         post.erro = "o artigo nao existe mais."
@@ -263,6 +268,9 @@ def escrever(post: Post) -> Post:
     # o material continua sendo o limite do que se afirma.
     ideia = (post.extras or {}).get("ideia", "")
     base = f"IDEIA SUGERIDA (use se couber no material): {ideia}\n" if ideia else ""
+    if entrada is not None:
+        base = proprio.instrucao_para_quem_escreve(entrada, artigo) + "\n" + base
+    com_fotos = entrada is not None and entrada.midias.exists()
     ajuste, avisos, texto, extras = base, [], "", {}
     for _tentativa in range(2):
         try:
@@ -275,8 +283,15 @@ def escrever(post: Post) -> Post:
             avisos = [f"o modelo devolveu algo que nao e JSON: {exc}"]
             ajuste = base + "A resposta anterior nao era um JSON valido. Responda SOMENTE o JSON."
             continue
+        if com_fotos:
+            dados["laminas"] = []  # as imagens sao as fotos reais
         texto, extras = montar(post, dados)
-        avisos = conferir(post, texto, extras, artigo)
+        avisos = conferir(post, texto, extras, artigo, com_fotos=com_fotos)
+        if entrada is not None:
+            avisos += [
+                f"pode identificar alguem: {a}"
+                for a in proprio.identificacao(" ".join([texto, *_textos_das_laminas(extras)]))
+            ]
         if not avisos:
             break
         ajuste = base + (

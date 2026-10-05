@@ -178,6 +178,14 @@
     {% else %}
       <p class="pre-visualizacao">{% translate "Ainda sem posts com alcance medido (precisa da conta conectada). Ate la, a medida e o clique no link." %}</p>
     {% endif %}
+    {% if p.por_tipo %}
+      <p>{% translate "Funcionou, por tipo de post:" %}
+        {% for tipo, t in p.por_tipo.items %}<span class="selo">{% if tipo == 'fotos' %}{% translate "fotos" %}{% elif tipo == 'casos' %}{% translate "casos e novidades" %}{% else %}{% translate "artigos" %}{% endif %}: {{ t.taxa }}% ({{ t.n }})</span> {% endfor %}
+      </p>
+    {% endif %}
+    {% if p.estoque %}
+      <p class="ajuda">{% blocktranslate trimmed with f=destino.fotos_por_cento g=p.estoque.grupos %}{{ f }}% dos posts vem do banco de fotos; {{ g }} atendimento(s) ainda nao postado(s).{% endblocktranslate %} <a href="{% url 'social:banco_de_fotos' %}">{% translate "Banco de fotos" %}</a></p>
+    {% endif %}
     {% if p.inconclusivos %}<p class="ajuda">{% blocktranslate trimmed with n=p.inconclusivos %}{{ n }} post(s) com alcance abaixo do minimo: ficaram como inconclusivos (nem bons nem ruins).{% endblocktranslate %}</p>{% endif %}
     <div class="rolagem"><table>
       <thead><tr><th>{% translate "Abordagem" %}</th><th class="numero">{% translate "Nesta conta" %}</th><th class="numero">{% translate "Em todas as contas do PubliBot" %}</th></tr></thead>

@@ -58,10 +58,17 @@ def rodada(*, http=None) -> int:
         except ErroDaRede as exc:
             logger.info("Comentarios do post %s nao lidos: %s", post.pk, exc)
         medidos += 1
+    from apps.social import proprio
+
     for destino in Destino.objects.all():
         acompanhar_conta(destino, http=http)
         _historico_e_anuncios(destino, http=http)
         experimentos.avaliar(destino)
+        proprio.ajustar_mistura(destino)
+    try:
+        proprio.descrever_pendentes()  # as que ficaram para tras (modelo ocupado)
+    except Exception:
+        logger.exception("Descricao das fotos falhou.")
     return medidos
 
 

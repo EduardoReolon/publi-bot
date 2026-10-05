@@ -120,3 +120,34 @@ def importar_historico(schema: str, destino_id: str) -> dict:
         if destino.anuncios_conta_id:
             feito["anuncios"] = anuncios.sincronizar(destino)
         return feito
+
+
+@shared_task(bind=True, max_retries=24)
+def transcrever_entrada(self, schema: str, entrada_id: str) -> str:
+    """O audio de um post proprio vira texto (worker da placa) e os posts sao
+    criados. Placa ocupada: tenta de novo em 10 minutos, por ate 4 horas."""
+    from django_tenants.utils import schema_context
+
+    from apps.social import fontes, proprio
+    from apps.social.models import Entrada
+
+    with schema_context(schema):
+        entrada = Entrada.objects.filter(pk=entrada_id).first()
+        if entrada is None or entrada.situacao_do_audio != Entrada.Transcricao.ESPERANDO:
+            return "nada a fazer"
+        try:
+            proprio.transcrever(entrada)
+        except fontes.TranscricaoAdiada as exc:
+            raise self.retry(exc=exc, countdown=600) from exc
+        return entrada.situacao_do_audio
+
+
+@shared_task
+def descrever_fotos(schema: str) -> int:
+    """Fotos do banco sem nota ganham descricao (modelo de visao, opcional)."""
+    from django_tenants.utils import schema_context
+
+    from apps.social.proprio import descrever_pendentes
+
+    with schema_context(schema):
+        return descrever_pendentes()

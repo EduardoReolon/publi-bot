@@ -29,6 +29,8 @@ no formato de fila das ferramentas do mercado (Buffer, Hootsuite, Later):
 | Para revisar | Os posts escritos, com **o porque** (como nas pautas), a abordagem, os avisos da conferencia e "de onde saiu" (o material do artigo). Editar, aprovar (no proximo horario livre ou numa data), reescrever com outra abordagem, descartar. |
 | Agenda | Os aprovados, por horario. Conta conectada: sai sozinho. Sem API: "Copiar texto", "Copiar comentario com o link", baixar as laminas, postar e colar o endereco ("Ja postei"). |
 | Publicados | Cliques, conversoes provaveis, curtidas, comentarios, alcance; se "funcionou". |
+| + Novo post | Caso real ou novidade: texto ou audio, fotos ou video. |
+| Fotos | O banco de fotos: subir em lote, o que foi descartado e por que, estoque por conta. |
 | Diagnostico | O que funcionou e o que nao na conta (inclusive antes do PubliBot), o gasto com anuncios e o aviso de leitura parada. |
 | Comentarios | Perguntas viram Perguntas do PubliBot; a resposta aprovada volta no proprio comentario. |
 | O que funciona | O placar das abordagens em cada conta. |
@@ -198,6 +200,69 @@ resposta, o PubliBot responde no comentario com o comeco dela e o link.
   de resultado ou cura, sem urgencia falsa, sem antes e depois, sem preco como
   chamariz, so o que o artigo afirma. Editavel por negocio.
 
+## Material proprio: caso real, novidade e fotos — `proprio.py`, `fotos.py`
+
+Nem todo post nasce de artigo. Uma consultoria quer contar um caso; uma
+barbearia vive de foto real. O "artigo" desses posts e a **Entrada** — o que a
+pessoa mandou —, e o resto (abordagem com placar, conferencia, agenda,
+publicacao, medicao, diagnostico) segue igual.
+
+**+ Novo post** (caso real ou novidade):
+
+- o que aconteceu por escrito, **ou um audio** (transcrito no mesmo worker que
+  transcreve o acervo; os posts nascem quando termina, e placa ocupada so
+  adia);
+- fotos ou video (opcional): Instagram em carrossel (ate 10) ou **reels**;
+  LinkedIn e Google, a primeira foto. Video nessas duas redes nao sai pela
+  API: o post fica marcado "copiar e postar" (sem contar como falha);
+- para onde leva: o artigo mais proximo (escolhido por vetor, so se for bem
+  proximo), um artigo escolhido, ou um link (contato, WhatsApp); sem nada, a
+  pagina inicial do site;
+- caixa obrigatoria "quem aparece ou e citado autorizou" para caso real e para
+  fotos.
+
+A redacao recebe a instrucao "este post nao e de um artigo: e um caso real",
+com o relato como unico material. A conferencia barra numero que a pessoa nao
+contou e **avisa o que pode identificar alguem** (nome com Sr./Dona/paciente,
+idade, telefone, e-mail, CPF, @). Sem foto, o Instagram ganha laminas com o
+texto, como num artigo.
+
+**Fotos** (banco de fotos, para quem vive de foto real):
+
+1. A pessoa sobe as fotos quando tiver, do celular, em lote (com a mesma
+   autorizacao). Nota opcional ("degrade navalhado").
+2. Por algoritmo, sem IA: gira pela orientacao da camera, reduz, **apaga os
+   metadados** (inclusive a localizacao), descarta tremida (variancia do
+   Laplaciano), escura ou estourada (brilho) e quase iguais (dHash: fica a
+   mais nitida). Descartada pode ser usada mesmo assim.
+3. Fotos tiradas com ate 20 minutos de diferenca sao do mesmo atendimento e
+   viram um carrossel; video vai sozinho (reels).
+4. Cada conta tem "posts do banco de fotos (%)" (Configurar). A rodada diaria
+   ve o que falta para a proporcao (ultimos 30 dias) e tira o proximo
+   atendimento do banco; sem artigo para levar, o banco cobre a vaga. O mesmo
+   atendimento pode ir para o Instagram e para o Google; a mesma conta nao
+   repete.
+5. Recorte na proporcao de cada rede (Instagram 4:5 a 1,91:1, carrossel todo
+   em 4:5; Google 3:4 a 16:9).
+6. Estoque: a tela Fotos e o painel avisam quando o banco da para menos de 7
+   dias de posts.
+
+**A mistura aprende**: a Estrategia mostra quanto funcionou por tipo de post
+(artigos, casos, fotos). Com a conta entre 1% e 99% de fotos, a cada 30 dias,
+se um tipo ganhar do outro por 20 pontos (5 posts julgados de cada), a
+proporcao anda 10 pontos para ele, entre 10% e 90% (parametro "ajustar a
+mistura"; 0 desliga).
+
+**Descrever a foto (opcional)** — Configurar > "descrever as fotos com o
+modelo": foto sem nota ganha uma descricao do trabalho mostrado (nunca da
+pessoa) por um modelo que enxerga imagem, e ela entra no material. Precisa de
+uma conexao de inferencia com modelo de visao (o pedido vai com a imagem no
+formato da OpenAI ou da Anthropic); modelo sem visao recusa, e a foto segue
+so com a nota. Prompt `social_foto`, editavel.
+
+Parametros novos (Estrategia > parametros > "Fotos e mistura"): nitidez
+minima, brilho minimo e maximo, ajustar a mistura.
+
 ## Conta que ja existe: historico e diagnostico — `historico.py`, `diagnostico.py`
 
 Ao conectar um Instagram que ja tem vida (cliente que veio de outra agencia,
@@ -326,7 +391,7 @@ em cada rede e o teste que falta** — faca com um post de teste e confira.
 |---|---|---|
 | `sugerir-posts` | 1x/dia | escolha do dia (com "sugerir sozinho") |
 | `publicar-posts` | 5 em 5 min | publica os aprovados vencidos (contas conectadas) e responde comentarios com resposta aprovada |
-| `medir-posts` | 1x/dia | resultado, comentarios, seguidores, referencias do nicho (semanal), proximo lote do historico, gasto com anuncios (API) e placar |
+| `medir-posts` | 1x/dia | resultado, comentarios, seguidores, referencias do nicho (semanal), proximo lote do historico, gasto com anuncios (API), placar, mistura artigos x fotos e fotos que faltam descrever |
 | `recalcular-temas` | 1x/dia | temas entre os artigos, com a nota |
 | `placar-coletivo` | 1x/dia | soma do placar das abordagens entre todos os clientes |
 

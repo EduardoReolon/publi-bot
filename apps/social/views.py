@@ -54,7 +54,18 @@ def _contagens() -> dict:
         .exclude(post__motivo=Post.Motivo.HISTORICO)
         .count(),
         "diagnostico": sum(1 for d in Destino.objects.filter(ligado=True) if _leitura_parada(d)),
+        "estoque_baixo": sum(
+            1
+            for d in Destino.objects.filter(ligado=True, fotos_por_cento__gt=0)
+            if _estoque_baixo(d)
+        ),
     }
+
+
+def _estoque_baixo(destino: Destino) -> bool:
+    from apps.social.proprio import estoque
+
+    return estoque(destino)["baixo"]
 
 
 def _leitura_parada(destino: Destino) -> bool:
@@ -160,7 +171,9 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         post.extras = extras
         post.save(update_fields=["texto", "extras", "atualizado_em"])
         if "laminas" in request.POST:
-            artigo = fontes.artigo(post.artigo_id)
+            from apps.social.proprio import como_artigo
+
+            artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
             if artigo is not None:
                 laminas.preparar_imagens(post, artigo)
         messages.success(request, _("Post salvo."))
@@ -420,13 +433,20 @@ def clique(request: HttpRequest, chave: str) -> HttpResponse:
 def imagem(request: HttpRequest, chave: str, n: int) -> HttpResponse:
     """Uma lamina do post, para a rede buscar (Instagram, Google). So de post
     que existe; a chave e aleatoria, entao nao ha como listar."""
+    import mimetypes
+
     from apps.social.laminas import caminho_da_imagem
 
     post = Post.objects.filter(chave_publica=chave).first()
-    caminho = caminho_da_imagem(post, n) if post else ""
+    caminho = ""
+    if post is not None:
+        imagens = post.imagens or []
+        caminho = imagens[n - 1].get("caminho", "") if 0 < n <= len(imagens) else ""
+        caminho = caminho or caminho_da_imagem(post, n)
     if not caminho or not default_storage.exists(caminho):
         raise Http404
-    return FileResponse(default_storage.open(caminho, "rb"), content_type="image/png")
+    tipo = mimetypes.guess_type(caminho)[0] or "application/octet-stream"
+    return FileResponse(default_storage.open(caminho, "rb"), content_type=tipo)
 
 
 def bio(request: HttpRequest, chave: str) -> HttpResponse:
@@ -710,3 +730,153 @@ def acao_no_diagnostico(request: HttpRequest) -> HttpResponse:
             except anuncios.PlanilhaInvalida as exc:
                 messages.error(request, str(exc))
     return redirect(voltar)
+
+
+# -- Material proprio: post novo e banco de fotos -------------------------------------
+@login_required
+def novo_post(request: HttpRequest) -> HttpResponse:
+    """Caso real ou novidade: texto (ou audio), fotos ou video, e as contas."""
+    from apps.social import fontes, proprio
+    from apps.social.models import Entrada
+
+    garantir_abordagens()
+    destinos = list(Destino.objects.filter(ligado=True)) or list(Destino.objects.all())
+    if request.method == "POST":
+        try:
+            entrada = proprio.criar(
+                tipo=request.POST.get("tipo") or Entrada.Tipo.CASO,
+                texto=request.POST.get("texto", ""),
+                arquivos=request.FILES.getlist("arquivos"),
+                audio=request.FILES.get("audio"),
+                artigo=request.POST.get("artigo", "auto"),
+                link=request.POST.get("link", "").strip(),
+                autorizado=request.POST.get("autorizado") == "1",
+                destinos=request.POST.getlist("destinos"),
+                por=request.user,
+            )
+        except (proprio.EntradaInvalida, ValueError) as exc:
+            messages.error(request, str(exc))
+            return redirect(reverse("social:novo_post"))
+        if entrada.situacao_do_audio == Entrada.Transcricao.ESPERANDO:
+            messages.info(
+                request,
+                _("Transcrevendo o audio: os posts aparecem em Para revisar quando terminar."),
+            )
+        else:
+            messages.success(request, _("Os posts estao sendo escritos (Para revisar)."))
+        return redirect(f"{reverse('social:inicio')}?aba=revisar")
+    artigos = [
+        a for i in fontes.artigos_no_ar()[:60] if (a := fontes.artigo(i)) is not None and a.url
+    ]
+    return render(
+        request,
+        "social/novo.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "novo",
+            "contagens": _contagens(),
+            "destinos": destinos,
+            "artigos": artigos,
+            "tipos": [
+                (Entrada.Tipo.CASO, _("Caso real")),
+                (Entrada.Tipo.NOVIDADE, _("Novidade ou bastidor")),
+            ],
+        },
+    )
+
+
+@login_required
+def banco_de_fotos(request: HttpRequest) -> HttpResponse:
+    from apps.social import proprio
+    from apps.social.models import Midia
+
+    voltar = reverse("social:banco_de_fotos")
+    if request.method == "POST":
+        acao = request.POST.get("acao", "enviar")
+        if acao == "enviar":
+            arquivos = request.FILES.getlist("fotos")
+            if not arquivos:
+                messages.error(request, _("Escolha as fotos (ou videos)."))
+            elif request.POST.get("autorizada") != "1":
+                messages.error(
+                    request,
+                    _("Confirme que quem aparece autorizou (ou que nao aparece ninguem)."),
+                )
+            else:
+                feito = proprio.receber_no_banco(
+                    arquivos, nota=request.POST.get("nota", ""), autorizada=True
+                )
+                messages.success(
+                    request,
+                    _(
+                        "%(r)s recebida(s): %(b)s descartada(s) por qualidade e %(q)s quase "
+                        "igual(is) a outra."
+                    )
+                    % {"r": feito["recebidas"], "b": feito["ruins"], "q": feito["repetidas"]},
+                )
+                for erro in feito["erros"]:
+                    messages.error(request, erro)
+        elif acao in ("descartar", "usar"):
+            midia = get_object_or_404(Midia, pk=request.POST.get("midia"))
+            if acao == "descartar":
+                midia.situacao, midia.motivo = Midia.Situacao.DESCARTADA, "descartada por voce"
+            else:
+                midia.situacao, midia.motivo = Midia.Situacao.NOVA, ""
+            midia.save(update_fields=["situacao", "motivo"])
+        elif acao == "nota":
+            Midia.objects.filter(grupo=request.POST.get("grupo") or None).update(
+                nota=request.POST.get("nota", "")[:2000]
+            )
+            messages.success(request, _("Nota salva: entra na legenda do post."))
+        elif acao == "postar_agora":
+            destino = get_object_or_404(Destino, pk=request.POST.get("destino"))
+            grupo = request.POST.get("grupo")
+            disponiveis = [
+                g for g in proprio.grupos_disponiveis(destino) if str(g[0].grupo) == grupo
+            ]
+            if disponiveis:
+                # O grupo escolhido passa na frente e vira post desta conta.
+                from apps.social.models import Entrada
+
+                entrada = Entrada.objects.create(
+                    tipo=Entrada.Tipo.FOTOS,
+                    autorizado=all(m.autorizada for m in disponiveis[0]),
+                    destinos=[str(destino.pk)],
+                )
+                entrada.midias.set(disponiveis[0])
+                Midia.objects.filter(grupo=grupo).update(situacao=Midia.Situacao.USADA)
+                proprio.levar(entrada)
+                messages.success(request, _("Post sendo escrito (Para revisar)."))
+            else:
+                messages.info(request, _("Esta conta ja postou estas fotos."))
+        return redirect(voltar)
+
+    grupos: dict = {}
+    for midia in Midia.objects.filter(banco=True).order_by("-criada_em")[:300]:
+        grupos.setdefault(midia.grupo or midia.pk, []).append(midia)
+    destinos = list(Destino.objects.filter(ligado=True))
+    return render(
+        request,
+        "social/fotos.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "fotos",
+            "contagens": _contagens(),
+            "grupos": list(grupos.items()),
+            "destinos": destinos,
+            "estoques": [(d, proprio.estoque(d)) for d in destinos if d.fotos_por_cento],
+            "config": ConfiguracaoSocial.carregar(),
+        },
+    )
+
+
+@login_required
+def midia_privada(request: HttpRequest, pk) -> HttpResponse:
+    """A foto ou video do banco, para a tela (com login)."""
+    import mimetypes
+
+    from apps.social.models import Midia
+
+    midia = get_object_or_404(Midia, pk=pk)
+    tipo = mimetypes.guess_type(midia.arquivo.name)[0] or "application/octet-stream"
+    return FileResponse(midia.arquivo.open("rb"), content_type=tipo)

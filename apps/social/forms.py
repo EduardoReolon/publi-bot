@@ -48,6 +48,7 @@ class DestinoForm(forms.ModelForm):
             "ligado",
             "aprovacao",
             "teto_semanal",
+            "fotos_por_cento",
             "publico",
             "tom",
             "instrucoes",
@@ -66,6 +67,7 @@ class DestinoForm(forms.ModelForm):
         autores = [("", "—")]
         for r in REDES.values():
             autores += [(c, f"{r.nome}: {rotulo}") for c, rotulo in r.autores]
+        self.fields["fotos_por_cento"].required = False  # vazio: so artigos
         self.fields["autor"] = forms.ChoiceField(
             label=_("quem posta"), choices=autores, required=False
         )
@@ -86,6 +88,9 @@ class DestinoForm(forms.ModelForm):
                 _("Horario invalido: %(h)s (use 08:30).") % {"h": ", ".join(ruins)}
             )
         return [f"{int(h.split(':')[0]):02d}:{h.split(':')[1]}" for h in horarios]
+
+    def clean_fotos_por_cento(self):
+        return min(self.cleaned_data.get("fotos_por_cento") or 0, 100)
 
     def save(self, commit=True):
         destino = super().save(commit=False)
@@ -127,6 +132,7 @@ class ConfiguracaoForm(forms.ModelForm):
             "espacamento_dias",
             "instrucoes",
             "regras",
+            "descrever_fotos",
         ]
         widgets = {
             "instrucoes": forms.Textarea(attrs={"rows": 3}),

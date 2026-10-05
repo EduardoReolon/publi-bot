@@ -16,7 +16,7 @@ from django.utils import timezone
 from apps.social.escolha import proximo_horario
 from apps.social.models import Post
 from apps.social.redes import rede
-from apps.social.redes.base import ErroDaRede, ImagemPublica, NaoConectado
+from apps.social.redes.base import ErroDaRede, ImagemPublica, NaoConectado, SemSuporte
 
 logger = logging.getLogger("publibot.social")
 
@@ -75,11 +75,20 @@ def publicar(post: Post, *, http=None) -> Post:
         raise NaoConectado("esta rede ainda nao publica pela API.")
     publicador = r.publicador(post.destino, http=http)
     imagens = [
-        ImagemPublica(url=i.get("url", ""), caminho=i.get("caminho", "")) for i in post.imagens
+        ImagemPublica(
+            url=i.get("url", ""), caminho=i.get("caminho", ""), video=i.get("tipo") == "video"
+        )
+        for i in post.imagens
     ]
     try:
         publicado = publicador.publicar(post, texto_para_copiar(post), imagens)
     except NaoConectado:
+        _voltar(post, Post.Situacao.APROVADO, contar=False)
+        raise
+    except SemSuporte as exc:
+        # Ex.: video no LinkedIn. Nao e falha: o post fica para copiar e postar.
+        post.extras = {**(post.extras or {}), "so_copiar": str(exc)[:300]}
+        post.save(update_fields=["extras", "atualizado_em"])
         _voltar(post, Post.Situacao.APROVADO, contar=False)
         raise
     except ErroDaRede as exc:
@@ -136,7 +145,7 @@ def publicar_vencidos(*, http=None) -> int:
         situacao=Post.Situacao.APROVADO, agendado_para__lte=timezone.now()
     ).select_related("destino", "abordagem")
     for post in vencidos:
-        if not post.destino.conectado:
+        if not post.destino.conectado or (post.extras or {}).get("so_copiar"):
             continue  # fica para copiar: a tela mostra "na hora de postar"
         reservado = Post.objects.filter(pk=post.pk, situacao=Post.Situacao.APROVADO).update(
             situacao=Post.Situacao.PUBLICANDO
@@ -147,6 +156,8 @@ def publicar_vencidos(*, http=None) -> int:
         try:
             publicar(post, http=http)
             feitos += 1
+        except SemSuporte as exc:
+            logger.info("Post %s fica para copiar: %s", post.pk, exc)
         except NaoConectado as exc:
             post.destino.ultimo_erro = str(exc)[:2000]
             post.destino.save(update_fields=["ultimo_erro"])

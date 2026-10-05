@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
-from apps.social.redes.base import ErroDaRede, Formato, Publicado, Publicador, Rede
+from apps.social.redes.base import ErroDaRede, Formato, Publicado, Publicador, Rede, SemSuporte
 from apps.social.redes.oauth import OAuth, acesso_valido
 
 ENDERECO_DE_ACESSO = "https://oauth2.googleapis.com/token"
@@ -116,6 +116,10 @@ class OAuthGoogle(OAuth):
 
 class PublicadorGoogle(Publicador):
     def publicar(self, post, texto: str, imagens) -> Publicado:
+        if any(i.video for i in imagens):
+            raise SemSuporte(
+                "o Perfil do Google nao recebe video por post: use 'copiar para postar'."
+            )
         token = acesso_valido(self.destino, OAuthGoogle(http=self.http))["access_token"]
         corpo = {
             "languageCode": "pt-BR",

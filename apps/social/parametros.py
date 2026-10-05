@@ -165,6 +165,43 @@ PARAMETROS = [
         "Depois do Comeco: so o que ja foi bem no organico ganha impulso.",
         "Impulso pago",
     ),
+    # -- Fotos e mistura -------------------------------------------------------------------------
+    Parametro(
+        "nitidez_minima",
+        "Nitidez minima de uma foto",
+        30,
+        "Abaixo disto a foto e descartada como tremida (variancia do Laplaciano). Fundo liso "
+        "e foto de produto em estudio tem pouca borda: se boas fotos estao sendo "
+        "descartadas, baixe.",
+        "Fotos e mistura",
+    ),
+    Parametro(
+        "brilho_minimo",
+        "Brilho minimo (0 a 255)",
+        35,
+        "Foto mais escura que isto e descartada. Ambiente escuro de proposito (bar, "
+        "estudio): baixe.",
+        "Fotos e mistura",
+        inteiro=True,
+    ),
+    Parametro(
+        "brilho_maximo",
+        "Brilho maximo (0 a 255)",
+        235,
+        "Foto mais clara que isto (estourada) e descartada.",
+        "Fotos e mistura",
+        inteiro=True,
+    ),
+    Parametro(
+        "ajustar_mistura",
+        "Ajustar sozinho a mistura artigos x fotos (1 = sim, 0 = nao)",
+        1,
+        "Com a conta entre 1% e 99% de fotos: a cada 30 dias, se um tipo funcionar bem "
+        "mais que o outro (5 posts julgados de cada, 20 pontos de diferenca), a mistura "
+        "anda 10 pontos para ele, entre 10% e 90%.",
+        "Fotos e mistura",
+        inteiro=True,
+    ),
 ]
 
 POR_NOME = {p.nome: p for p in PARAMETROS}

@@ -143,11 +143,49 @@ def caminho_da_imagem(post, n: int) -> str:
     return f"social/{post.pk}/{n}.png"
 
 
+# Quantas fotos cada rede leva num post (o LinkedIn e o Google, uma; o resto
+# segue no Instagram, em carrossel).
+FOTOS_POR_REDE = {"instagram": 10, "linkedin": 1, "gmn": 1}
+
+
+def _endereco(post, n: int) -> str:
+    return fontes.endereco_publico(reverse("social:midia_publica", args=[post.chave_publica, n]))
+
+
+def _fotos_reais(post) -> list[dict]:
+    """As fotos (ou o video) do material proprio, na proporcao da rede."""
+    from apps.social import fotos
+    from apps.social.models import Midia
+
+    midias = list(post.entrada.midias.order_by("tirada_em", "criada_em"))
+    if not midias:
+        return []
+    rede_ = post.destino.rede
+    videos = [m for m in midias if m.tipo == Midia.Tipo.VIDEO]
+    so_fotos = [m for m in midias if m.tipo == Midia.Tipo.FOTO]
+    if videos and (rede_ == "instagram" or not so_fotos):
+        # Video vai sozinho (reels no Instagram; nas outras, so para copiar).
+        return [{"caminho": videos[0].arquivo.name, "url": _endereco(post, 1), "tipo": "video"}]
+    escolhidas = so_fotos[: FOTOS_POR_REDE.get(rede_, 1)]
+    saida = []
+    for n, midia in enumerate(escolhidas, start=1):
+        caminho = f"social/{post.pk}/{n}.jpg"
+        if default_storage.exists(caminho):
+            default_storage.delete(caminho)
+        default_storage.save(
+            caminho, ContentFile(fotos.versao_para(midia, rede_, carrossel=len(escolhidas) > 1))
+        )
+        saida.append({"caminho": caminho, "url": _endereco(post, n), "tipo": "foto"})
+    return saida
+
+
 def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
     """Grava as imagens do post e o endereco publico de cada uma."""
     r = rede(post.destino.rede)
     imagens = []
-    if r.formato.imagem == "capa" and artigo.capa:
+    if post.entrada_id and (reais := _fotos_reais(post)):
+        imagens = reais
+    elif r.formato.imagem == "capa" and artigo.capa:
         imagens = [{"caminho": artigo.capa, "url": artigo.capa_url}]
     elif r.formato.imagem == "laminas":
         laminas = (post.extras or {}).get("laminas") or []
