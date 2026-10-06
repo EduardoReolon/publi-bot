@@ -232,6 +232,38 @@ def transcrever(nome: str, conteudo: bytes, *, dono: str) -> str:
     return " ".join(texto.strip() for _inicio, texto in segmentos).strip()
 
 
+class LinkIlegivel(Exception):
+    """A pagina nao abriu, nao e publica ou nao tem texto aproveitavel."""
+
+
+def ler_link(url: str) -> dict:
+    """O texto principal de uma pagina de terceiros (noticia, estudo), com
+    titulo e nome do site. Mesma busca protegida do acervo (so endereco
+    publico, redirecionamentos conferidos)."""
+    from apps.knowledge.web import PaginaIndisponivel, baixar, extrair_pagina
+
+    try:
+        conteudo, final, tipo = baixar(url)
+        if "pdf" in (tipo or "").lower():
+            raise LinkIlegivel("e um PDF: cole o trecho que importa no texto.")
+        pagina = extrair_pagina(conteudo, url=final)
+    except PaginaIndisponivel as exc:
+        raise LinkIlegivel(str(exc)) from exc
+    texto = _texto_limpo(pagina.markdown)
+    if len(texto.split()) < 80:
+        raise LinkIlegivel(
+            "quase sem texto (pagina com login, paywall ou feita so de imagem): cole o "
+            "trecho que importa no texto."
+        )
+    return {
+        "url": final,
+        "titulo": (pagina.titulo or "")[:300],
+        "site": (pagina.site or "")[:120],
+        "data": pagina.data.isoformat() if pagina.data else "",
+        "texto": texto[:12000],
+    }
+
+
 def vetores(textos: list[str], *, consulta: bool = False) -> list[list[float]]:
     from apps.knowledge.embeddings import get_embedding_client
 

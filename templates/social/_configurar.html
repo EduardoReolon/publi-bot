@@ -95,3 +95,33 @@
     </form>
   </details>
 </section>
+
+<section class="secao">
+  <h2>{% translate "Recados de posicionamento (em teste)" %}</h2>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Uma ideia que entra so em parte dos posts, para medir se ajuda — por exemplo, "aqui o
+      conteudo e checado em estudos, sem sensacionalismo". Escreva a ideia, nao a frase: o
+      PubliBot a passa uma vez, com as palavras do post. No maximo um recado por post; os
+      posts sem recado servem de comparacao, e o resultado aparece em "O que funciona".
+    {% endblocktranslate %}
+  </p>
+  {% for r, form in recados %}
+    <details class="secao">
+      <summary><strong>{{ r.nome }}</strong> <span class="ajuda">{{ r.por_cento }}%</span>{% if not r.ativo %} <span class="selo">{% translate "desligado" %}</span>{% endif %}</summary>
+      <form method="post" action="{% url 'social:salvar_recado' r.pk %}">
+        {% csrf_token %}
+        {% for campo in form %}{% include "_campo.html" %}{% endfor %}
+        <div class="acoes"><button type="submit" class="botao secundario">{% translate "Salvar recado" %}</button></div>
+      </form>
+    </details>
+  {% endfor %}
+  <details class="secao" {% if not recados %}open{% endif %}>
+    <summary><strong>{% translate "Novo recado" %}</strong></summary>
+    <form method="post" action="{% url 'social:novo_recado' %}">
+      {% csrf_token %}
+      {% for campo in form_recado %}{% include "_campo.html" %}{% endfor %}
+      <div class="acoes"><button type="submit" class="botao">{% translate "Criar" %}</button></div>
+    </form>
+  </details>
+</section>

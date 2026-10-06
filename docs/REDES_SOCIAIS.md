@@ -35,7 +35,7 @@ no formato de fila das ferramentas do mercado (Buffer, Hootsuite, Later):
 | Para revisar | Os posts escritos, com **o porque** (como nas pautas), a abordagem, os avisos da conferencia e "de onde saiu" (o material do artigo). Editar, aprovar (no proximo horario livre ou numa data), reescrever com outra abordagem, descartar. |
 | Agenda | Os aprovados, por horario. Conta conectada: sai sozinho. Sem API: "Copiar texto", "Copiar comentario com o link", baixar as laminas, postar e colar o endereco ("Ja postei"). |
 | Publicados | Cliques, conversoes provaveis, curtidas, comentarios, alcance; se "funcionou". |
-| + Novo post | Caso real ou novidade: texto ou audio, fotos ou video. |
+| + Novo post | Caso real, novidade ou noticia/estudo comentado: texto ou audio, links, fotos ou video. |
 | Fotos | O banco de fotos: subir em lote, o que foi descartado e por que, estoque por conta. |
 | Diagnostico | O que funcionou e o que nao na conta (inclusive antes do PubliBot), o gasto com anuncios e o aviso de leitura parada. |
 | Comentarios | Perguntas viram Perguntas do PubliBot; a resposta aprovada volta no proprio comentario. |
@@ -227,6 +227,19 @@ publicacao, medicao, diagnostico) segue igual.
 - caixa obrigatoria "quem aparece ou e citado autorizou" para caso real e para
   fotos.
 
+**Noticia ou estudo comentado** (terceiro tipo do Novo post): ate 5 links,
+um por linha. Em segundo plano (`tasks.ler_links`) o PubliBot le cada pagina
+com a mesma busca protegida do acervo (so endereco publico, redirecionamentos
+conferidos; `fontes.ler_link`) e guarda titulo, site e texto na Entrada
+(`referencias`). O texto das paginas entra no MATERIAL como "REFERENCIA n
+(site — titulo; link)", e a redacao e instruida a dizer de onde vem cada
+informacao, nao atribuir a fonte o que ela nao disse e separar o que a fonte
+afirma da leitura do negocio (o texto da pessoa). Numero da referencia passa
+na conferencia; numero que nao esta em lugar nenhum continua barrado. Link que
+nao abre (paywall, login, PDF) vira aviso no post ("link nao lido: ..."), e o
+resto do material segue. Os links tambem servem nos outros tipos (caso real,
+novidade). Depois dos links vem o audio, se houver.
+
 A redacao recebe a instrucao "este post nao e de um artigo: e um caso real",
 com o relato como unico material. A conferencia barra numero que a pessoa nao
 contou e **avisa o que pode identificar alguem** (nome com Sr./Dona/paciente,
@@ -268,6 +281,25 @@ so com a nota. Prompt `social_foto`, editavel.
 
 Parametros novos (Estrategia > parametros > "Fotos e mistura"): nitidez
 minima, brilho minimo e maximo, ajustar a mistura.
+
+## Recados de posicionamento (em teste) — `models.Recado`, `experimentos.py`
+
+Uma ideia de posicionamento ("aqui o conteudo e checado em estudos", "sem
+sensacionalismo") que entra so em **parte** dos posts, para medir se ajuda.
+Configurar > Recados: nome, a ideia (nao a frase pronta), em quantos posts
+(%, padrao 20) e redes. A cada sugestao, no maximo um recado e sorteado (cada
+um com a sua chance); as duas versoes de um teste A/B recebem o mesmo, para o
+A/B continuar medindo so a abordagem. A redacao recebe "RECADO DE
+POSICIONAMENTO: passe esta ideia uma vez, numa frase curta, sem tom de
+propaganda nem ataque a ninguem". O post guarda o recado (`extras.recado`).
+
+Em "O que funciona", cada conta mostra, por recado, a mediana da medida
+escolhida (taxa, cliques...) nos posts **com** o recado x os posts **sem
+nenhum** recado, publicados desde que o recado existe (historico importado
+fica de fora). So conclui com 5 posts medidos de cada lado; abaixo de 15% de
+diferenca, "sem diferenca clara". E indicio: tema e epoca tambem mudam.
+Seguidores ganhos por post nao entram (as redes nao dao esse numero por post
+de forma confiavel).
 
 ## Conta que ja existe: historico e diagnostico — `historico.py`, `diagnostico.py`
 

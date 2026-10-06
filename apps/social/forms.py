@@ -5,7 +5,7 @@ import re
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from apps.social.models import Abordagem, ConfiguracaoSocial, Destino
+from apps.social.models import Abordagem, ConfiguracaoSocial, Destino, Recado
 from apps.social.redes import REDES, escolhas
 
 DIAS = [
@@ -119,6 +119,15 @@ class AbordagemForm(forms.ModelForm):
         model = Abordagem
         fields = ["nome", "instrucao", "redes", "ativa"]
         widgets = {"instrucao": forms.Textarea(attrs={"rows": 4})}
+
+
+class RecadoForm(forms.ModelForm):
+    redes = AbordagemForm.base_fields["redes"]
+
+    class Meta:
+        model = Recado
+        fields = ["nome", "instrucao", "por_cento", "redes", "ativo"]
+        widgets = {"instrucao": forms.Textarea(attrs={"rows": 3})}
 
 
 class ConfiguracaoForm(forms.ModelForm):

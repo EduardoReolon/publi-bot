@@ -87,10 +87,23 @@ def como_artigo(entrada: Entrada) -> fontes.ArtigoParaRedes:
         palavra_chave="",
         secoes=[],
         frases=frases,
-        texto="\n".join(x for x in [relato, relacionado.texto if relacionado else ""] if x),
+        texto="\n".join(
+            x
+            for x in [relato, relacionado.texto if relacionado else "", _referencias(entrada)]
+            if x
+        ),
         capa=relacionado.capa if relacionado else "",
         capa_url=relacionado.capa_url if relacionado else "",
     )
+
+
+def _referencias(entrada: Entrada) -> str:
+    """As paginas de terceiros lidas, com a origem de cada uma."""
+    blocos = []
+    for i, ref in enumerate(r for r in entrada.referencias or [] if r.get("texto")):
+        origem = " — ".join(x for x in [ref.get("site"), ref.get("titulo")] if x) or ref["url"]
+        blocos.append(f"REFERENCIA {i + 1} ({origem}; {ref['url']}):\n{ref['texto']}")
+    return "\n\n".join(blocos)
 
 
 def instrucao_para_quem_escreve(entrada: Entrada, artigo: fontes.ArtigoParaRedes) -> str:
@@ -98,6 +111,10 @@ def instrucao_para_quem_escreve(entrada: Entrada, artigo: fontes.ArtigoParaRedes
     o_que = {
         Entrada.Tipo.CASO: "um CASO REAL do negocio, contado pela propria pessoa",
         Entrada.Tipo.NOVIDADE: "uma NOVIDADE ou bastidor do negocio",
+        Entrada.Tipo.COMENTARIO: (
+            "um COMENTARIO do negocio sobre material de terceiros (noticia, estudo, "
+            "publicacao) que esta nas REFERENCIAS do MATERIAL"
+        ),
         Entrada.Tipo.FOTOS: "FOTOS do trabalho do negocio (o post acompanha as fotos)",
     }[entrada.tipo]
     partes = [
@@ -109,6 +126,13 @@ def instrucao_para_quem_escreve(entrada: Entrada, artigo: fontes.ArtigoParaRedes
         partes.append(
             "Nao identifique ninguem (nome, idade, empresa, cidade pequena): diga 'um cliente', "
             "'uma paciente'."
+        )
+    if any(r.get("texto") for r in entrada.referencias or []):
+        partes.append(
+            "Diga de onde vem cada informacao das REFERENCIAS (nome do veiculo, da "
+            "instituicao ou dos autores). Nao atribua a uma fonte o que ela nao disse, nao "
+            "aumente nem diminua o que ela diz, e separe o que a fonte afirma do que e "
+            "a leitura do negocio (o relato da pessoa)."
         )
     if entrada.midias.exists():
         partes.append(
@@ -159,14 +183,19 @@ def criar(
     audio=None,
     artigo: str = "auto",
     link: str = "",
+    links: list[str] | None = None,
     autorizado: bool = False,
     destinos: list[str],
     por=None,
 ) -> Entrada:
-    """Cria a Entrada e os posts (ou espera a transcricao do audio)."""
+    """Cria a Entrada e os posts (ou espera a leitura dos links e a transcricao
+    do audio, nesta ordem, em segundo plano)."""
     texto = (texto or "").strip()
-    if not (texto or arquivos or audio):
-        raise EntradaInvalida("Escreva o que aconteceu, grave um audio ou mande fotos.")
+    links = _links(links or [])
+    if not (texto or arquivos or audio or links):
+        raise EntradaInvalida(
+            "Escreva o que aconteceu, grave um audio, mande fotos ou cole um link."
+        )
     if (arquivos or tipo == Entrada.Tipo.CASO) and not autorizado:
         raise EntradaInvalida(
             "Confirme que quem aparece ou e citado autorizou (ou que nao aparece ninguem)."
@@ -184,6 +213,7 @@ def criar(
         texto=texto[:10000],
         artigo_id=artigo_id,
         link=link[:500],
+        referencias=[{"url": u} for u in links],
         autorizado=autorizado,
         destinos=[str(d) for d in destinos],
         criada_por=por,
@@ -195,13 +225,62 @@ def criar(
         entrada.audio.save(audio.name[-80:], ContentFile(audio.read()), save=False)
         entrada.situacao_do_audio = Entrada.Transcricao.ESPERANDO
         entrada.save(update_fields=["audio", "situacao_do_audio"])
+    from apps.social.tasks import ler_links, transcrever_entrada
+
+    schema = connection.schema_name
+    if links:
+        transaction.on_commit(lambda: ler_links.delay(schema, str(entrada.pk)))
+    elif audio is not None:
+        transaction.on_commit(lambda: transcrever_entrada.delay(schema, str(entrada.pk)))
+    else:
+        levar(entrada)
+    return entrada
+
+
+MAXIMO_DE_LINKS = 5
+
+
+def _links(linhas: list[str]) -> list[str]:
+    """Os enderecos colados (um por linha), sem repetir, ate `MAXIMO_DE_LINKS`."""
+    saida: list[str] = []
+    for linha in linhas:
+        for pedaco in (linha or "").split():
+            if not pedaco.startswith(("http://", "https://")):
+                raise EntradaInvalida(f"Link invalido: {pedaco[:80]} (comece com https://).")
+            if pedaco not in saida:
+                saida.append(pedaco[:500])
+    if len(saida) > MAXIMO_DE_LINKS:
+        raise EntradaInvalida(f"No maximo {MAXIMO_DE_LINKS} links por post.")
+    return saida
+
+
+def ler_referencias(entrada: Entrada) -> None:
+    """Le cada link (o que falhar fica com o motivo, para a revisao) e segue:
+    transcricao do audio, se houver; senao, os posts."""
+    lidas = []
+    for ref in entrada.referencias or []:
+        if ref.get("texto") or ref.get("erro"):
+            lidas.append(ref)
+            continue
+        try:
+            lidas.append(fontes.ler_link(ref["url"]))
+        except fontes.LinkIlegivel as exc:
+            lidas.append({"url": ref["url"], "erro": str(exc)[:300]})
+    entrada.referencias = lidas
+    entrada.save(update_fields=["referencias"])
+    if entrada.situacao_do_audio == Entrada.Transcricao.ESPERANDO:
         from apps.social.tasks import transcrever_entrada
 
-        schema = connection.schema_name
-        transaction.on_commit(lambda: transcrever_entrada.delay(schema, str(entrada.pk)))
-        return entrada
-    levar(entrada)
-    return entrada
+        transcrever_entrada.delay(connection.schema_name, str(entrada.pk))
+        return
+    if entrada.relato.strip() or entrada.midias.exists() or _referencias(entrada):
+        levar(entrada)
+    else:
+        logger.warning("Entrada %s sem material: nenhum link abriu.", entrada.pk)
+
+
+def links_que_falharam(entrada: Entrada) -> list[str]:
+    return [f"{r['url']}: {r['erro']}" for r in entrada.referencias or [] if r.get("erro")]
 
 
 def levar(entrada: Entrada) -> list[Post]:
@@ -213,6 +292,7 @@ def levar(entrada: Entrada) -> list[Post]:
     por_que = {
         Entrada.Tipo.CASO: "Caso real que voce mandou.",
         Entrada.Tipo.NOVIDADE: "Novidade que voce mandou.",
+        Entrada.Tipo.COMENTARIO: "Noticia ou estudo que voce mandou comentar.",
         Entrada.Tipo.FOTOS: f"Fotos do banco ({entrada.midias.count()}).",
     }[entrada.tipo]
     posts = []
@@ -235,7 +315,7 @@ def transcrever(entrada: Entrada) -> None:
         entrada.transcricao = ""
         entrada.save(update_fields=["situacao_do_audio", "transcricao"])
         logger.warning("Audio da entrada %s nao transcrito: %s", entrada.pk, exc)
-        if entrada.texto.strip() or entrada.midias.exists():
+        if entrada.texto.strip() or entrada.midias.exists() or _referencias(entrada):
             levar(entrada)  # o resto do material ainda serve
         return
     entrada.transcricao = texto[:20000]

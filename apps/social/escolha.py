@@ -194,6 +194,17 @@ def sugerir(
     config = ConfiguracaoSocial.carregar()
     versoes = versoes or max(config.variantes, 1)
     abordagens = experimentos.escolher(destino, versoes) or [None]
+    # O recado em teste vale para as versoes do par por igual: o A/B continua
+    # comparando so a abordagem.
+    recado = experimentos.sortear_recado(destino)
+    extras = {
+        **({"ideia": ideia[:500]} if ideia else {}),
+        **(
+            {"recado": {"id": str(recado.pk), "nome": recado.nome, "instrucao": recado.instrucao}}
+            if recado
+            else {}
+        ),
+    }
     posts = []
     with transaction.atomic():
         for abordagem in abordagens:
@@ -208,7 +219,7 @@ def sugerir(
                 motivo=motivo,
                 por_que=por_que,
                 variante_de=posts[0] if posts else None,
-                extras={"ideia": ideia[:500]} if ideia else {},
+                extras=dict(extras),
             )
             posts.append(post)
         for post in posts:

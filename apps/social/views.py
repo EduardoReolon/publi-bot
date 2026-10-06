@@ -24,8 +24,8 @@ from django.views.decorators.http import require_POST
 
 from apps.social import experimentos
 from apps.social.abordagens import garantir_abordagens
-from apps.social.forms import AbordagemForm, ConfiguracaoForm, DestinoForm
-from apps.social.models import Abordagem, Comentario, ConfiguracaoSocial, Destino, Post
+from apps.social.forms import AbordagemForm, ConfiguracaoForm, DestinoForm, RecadoForm
+from apps.social.models import Abordagem, Comentario, ConfiguracaoSocial, Destino, Post, Recado
 from apps.social.redes import REDES, rede
 from apps.social.redes.base import ErroDaRede
 
@@ -119,13 +119,19 @@ def inicio(request: HttpRequest) -> HttpResponse:
             F("respondido_em").asc(nulls_first=True), "-escrito_em"
         )[:200]
     elif aba == "funciona":
-        contexto["quadros"] = [(d, experimentos.quadro(d)) for d in destinos]
+        contexto["quadros"] = [
+            (d, experimentos.quadro(d), experimentos.quadro_de_recados(d)) for d in destinos
+        ]
         contexto["metrica"] = contexto["config"].get_metrica_display()
     else:
         contexto["form_config"] = ConfiguracaoForm(instance=contexto["config"])
         contexto["form_destino"] = DestinoForm()
         contexto["form_abordagem"] = AbordagemForm()
         contexto["abordagens"] = Abordagem.objects.all()
+        contexto["recados"] = [
+            (r, RecadoForm(instance=r, auto_id=f"r{r.pk}_%s")) for r in Recado.objects.all()
+        ]
+        contexto["form_recado"] = RecadoForm(auto_id="recado_%s")
         from core.retorno_oauth import endereco_de_retorno
 
         contexto["retorno"] = endereco_de_retorno()
@@ -268,11 +274,21 @@ def salvar_destino(request: HttpRequest, pk=None) -> HttpResponse:
 @login_required
 @require_POST
 def salvar_abordagem(request: HttpRequest, pk=None) -> HttpResponse:
-    instancia = get_object_or_404(Abordagem, pk=pk) if pk else None
-    form = AbordagemForm(request.POST, instance=instancia)
+    return _salvar(request, Abordagem, AbordagemForm, pk, _("Abordagem salva."))
+
+
+@login_required
+@require_POST
+def salvar_recado(request: HttpRequest, pk=None) -> HttpResponse:
+    return _salvar(request, Recado, RecadoForm, pk, _("Recado salvo."))
+
+
+def _salvar(request, modelo, formulario, pk, sucesso) -> HttpResponse:
+    instancia = get_object_or_404(modelo, pk=pk) if pk else None
+    form = formulario(request.POST, instance=instancia)
     if form.is_valid():
         form.save()
-        messages.success(request, _("Abordagem salva."))
+        messages.success(request, sucesso)
     else:
         messages.error(request, _("Confira os campos: %(e)s") % {"e": form.errors.as_text()})
     return _voltar(request, "configurar")
@@ -780,6 +796,7 @@ def novo_post(request: HttpRequest) -> HttpResponse:
                 audio=request.FILES.get("audio"),
                 artigo=request.POST.get("artigo", "auto"),
                 link=request.POST.get("link", "").strip(),
+                links=request.POST.get("links", "").splitlines(),
                 autorizado=request.POST.get("autorizado") == "1",
                 destinos=request.POST.getlist("destinos"),
                 por=request.user,
@@ -787,7 +804,15 @@ def novo_post(request: HttpRequest) -> HttpResponse:
         except (proprio.EntradaInvalida, ValueError) as exc:
             messages.error(request, str(exc))
             return redirect(reverse("social:novo_post"))
-        if entrada.situacao_do_audio == Entrada.Transcricao.ESPERANDO:
+        if entrada.referencias:
+            messages.info(
+                request,
+                _(
+                    "Lendo os links: os posts aparecem em Para revisar em instantes (link que "
+                    "nao abrir fica avisado no post)."
+                ),
+            )
+        elif entrada.situacao_do_audio == Entrada.Transcricao.ESPERANDO:
             messages.info(
                 request,
                 _("Transcrevendo o audio: os posts aparecem em Para revisar quando terminar."),
@@ -810,6 +835,7 @@ def novo_post(request: HttpRequest) -> HttpResponse:
             "tipos": [
                 (Entrada.Tipo.CASO, _("Caso real")),
                 (Entrada.Tipo.NOVIDADE, _("Novidade ou bastidor")),
+                (Entrada.Tipo.COMENTARIO, _("Noticia ou estudo comentado")),
             ],
         },
     )

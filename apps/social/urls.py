@@ -26,6 +26,8 @@ urlpatterns = [
     path("conectar/retorno/", views.retorno, name="retorno"),
     path("abordagens/nova/", views.salvar_abordagem, name="nova_abordagem"),
     path("abordagens/<uuid:pk>/", views.salvar_abordagem, name="salvar_abordagem"),
+    path("recados/novo/", views.salvar_recado, name="novo_recado"),
+    path("recados/<uuid:pk>/", views.salvar_recado, name="salvar_recado"),
     # Publicos, sem login.
     path("r/<str:chave>/", views.clique, name="clique"),
     path("m/<str:chave>/<int:n>.png", views.imagem, name="imagem"),

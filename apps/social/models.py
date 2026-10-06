@@ -13,6 +13,7 @@ import secrets
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -259,6 +260,41 @@ class Abordagem(models.Model):
         ordering = ["nome"]
         verbose_name = _("abordagem")
         verbose_name_plural = _("abordagens")
+
+    def __str__(self) -> str:
+        return self.nome
+
+    def vale_para(self, rede: str) -> bool:
+        return not self.redes or rede in self.redes
+
+
+class Recado(models.Model):
+    """Uma frase de posicionamento que entra em PARTE dos posts ("aqui tudo tem
+    fonte", "sem sensacionalismo"), para medir se ajuda: o PubliBot compara os
+    posts com e sem o recado na mesma conta. Dado, nao codigo: a pessoa cria,
+    edita e desliga pela tela."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nome = models.CharField(_("nome"), max_length=80, unique=True)
+    instrucao = models.TextField(
+        _("a ideia a passar"),
+        help_text=_(
+            "A ideia, nao a frase pronta: o PubliBot escreve com as palavras do post. "
+            "Ex.: 'aqui o conteudo e checado em estudos, sem sensacionalismo'."
+        ),
+    )
+    por_cento = models.PositiveSmallIntegerField(
+        _("em quantos posts (%)"),
+        default=20,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text=_("Em parte dos posts, para comparar com os que ficam sem."),
+    )
+    redes = models.JSONField(_("redes"), default=list, blank=True)
+    ativo = models.BooleanField(_("ativo"), default=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["nome"]
 
     def __str__(self) -> str:
         return self.nome
@@ -557,6 +593,7 @@ class Entrada(models.Model):
     class Tipo(models.TextChoices):
         CASO = "caso", _("Caso real")
         NOVIDADE = "novidade", _("Novidade ou bastidor")
+        COMENTARIO = "comentario", _("Noticia ou estudo comentado")
         FOTOS = "fotos", _("Fotos do trabalho")
 
     class Transcricao(models.TextChoices):
@@ -577,6 +614,9 @@ class Entrada(models.Model):
     # Para onde o post leva: um artigo relacionado (id do nucleo) ou um endereco.
     artigo_id = models.UUIDField(null=True, blank=True)
     link = models.URLField(_("link"), max_length=500, blank=True)
+    # Paginas de terceiros que o PubliBot le (noticia, estudo): [{"url", "titulo",
+    # "site", "texto"} ou {"url", "erro"}]. Sem "texto" nem "erro": ainda lendo.
+    referencias = models.JSONField(default=list, blank=True)
     autorizado = models.BooleanField(default=False)
     # As contas que recebem o post (esperando a transcricao, quando ha audio).
     destinos = models.JSONField(default=list, blank=True)

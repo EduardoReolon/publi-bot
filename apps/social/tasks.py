@@ -143,6 +143,23 @@ def transcrever_entrada(self, schema: str, entrada_id: str) -> str:
 
 
 @shared_task
+def ler_links(schema: str, entrada_id: str) -> int:
+    """As paginas coladas num post proprio (noticia, estudo) sao lidas; depois
+    vem a transcricao do audio (se houver) e os posts."""
+    from django_tenants.utils import schema_context
+
+    from apps.social import proprio
+    from apps.social.models import Entrada
+
+    with schema_context(schema):
+        entrada = Entrada.objects.filter(pk=entrada_id).first()
+        if entrada is None:
+            return 0
+        proprio.ler_referencias(entrada)
+        return sum(1 for r in entrada.referencias if r.get("texto"))
+
+
+@shared_task
 def descrever_fotos(schema: str) -> int:
     """Fotos do banco sem nota ganham descricao (modelo de visao, opcional)."""
     from django_tenants.utils import schema_context
