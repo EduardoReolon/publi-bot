@@ -48,18 +48,29 @@ class OAuthInstagram(OAuth):
         self, destino, redirect_uri: str, state: str, *, escopos_extras: str = ""
     ) -> str:
         """`escopos_extras`: "ads_read" no "Conectar anuncios" (revisao propria
-        da Meta; pedido a parte para nao travar a conexao da conta)."""
+        da Meta; pedido a parte para nao travar a conexao da conta).
+
+        App do tipo Empresa usa o "Login do Facebook para Empresas": as
+        permissoes nao vao em `scope`, e sim numa CONFIGURACAO criada no painel
+        do app, mandada pelo id (`config_id`). Com SOCIAL_META_CONFIG_ID no
+        .env, vai o id (e SOCIAL_META_CONFIG_ID_ANUNCIOS no "Conectar
+        anuncios"); sem, vale o `scope` do Login do Facebook classico."""
         cliente, _segredo = self.app()
         versao = graph().rsplit("/", 1)[-1]
-        return f"https://www.facebook.com/{versao}/dialog/oauth?" + urlencode(
-            {
-                "client_id": cliente,
-                "redirect_uri": redirect_uri,
-                "state": state,
-                "scope": ",".join(x for x in [self.ESCOPOS, escopos_extras] if x),
-                "response_type": "code",
-            }
-        )
+        configuracao = getattr(settings, "SOCIAL_META_CONFIG_ID", "") or ""
+        if escopos_extras:
+            configuracao = getattr(settings, "SOCIAL_META_CONFIG_ID_ANUNCIOS", "") or configuracao
+        parametros = {
+            "client_id": cliente,
+            "redirect_uri": redirect_uri,
+            "state": state,
+            "response_type": "code",
+        }
+        if configuracao:
+            parametros["config_id"] = configuracao
+        else:
+            parametros["scope"] = ",".join(x for x in [self.ESCOPOS, escopos_extras] if x)
+        return f"https://www.facebook.com/{versao}/dialog/oauth?" + urlencode(parametros)
 
     def trocar_codigo(self, destino, codigo: str, redirect_uri: str) -> dict:
         cliente, segredo = self.app()

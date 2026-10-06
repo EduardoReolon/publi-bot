@@ -273,6 +273,31 @@ aparecem nas páginas.
 - Login do Facebook > Configurações: em *URIs de redirecionamento do OAuth
   válidos*, `https://<raiz>/redes/retorno/`; em *URL de retorno de chamada
   de cancelamento de autorização*, `https://<raiz>/desautorizar/meta/`.
+  Clique em *Salvar alterações* antes de usar o "Verificar URI".
+
+**App do tipo Empresa → "Login do Facebook para Empresas"** (o que a Meta
+oferece hoje para app de empresa):
+
+1. *Início rápido* > Web > *Site URL*: `https://<raiz>/` > Save. Os passos
+   seguintes do início rápido (SDK de JavaScript, botão) **não se aplicam**:
+   o PubliBot conecta pelo servidor. Pode fechar.
+2. *Configurações* (a primeira, das definições): ligue *Login do OAuth do
+   cliente* e *Login do OAuth na Web*, ponha a URI de retorno acima e salve.
+3. *Configurações* (a segunda, as "configurações de login") > *Criar
+   configuração*:
+   - nome: `PubliBot - Instagram`;
+   - tipo de token: **Token de acesso do usuário**;
+   - ativos: **Páginas** e **Contas do Instagram**;
+   - permissões: `instagram_basic`, `instagram_content_publish`,
+     `instagram_manage_comments`, `instagram_manage_insights`,
+     `pages_show_list`, `pages_read_engagement`, `business_management`.
+   Copie o **ID da configuração** para `SOCIAL_META_CONFIG_ID` no `.env`.
+4. Opcional (gasto com anúncios): outra configuração igual, mais o ativo
+   **Contas de anúncios** e a permissão `ads_read`; o ID vai em
+   `SOCIAL_META_CONFIG_ID_ANUNCIOS`.
+
+Com o `SOCIAL_META_CONFIG_ID` preenchido, o PubliBot pede o login por essa
+configuração; vazio, usa o Login do Facebook clássico (lista de permissões).
 
 **LinkedIn (linkedin.com/developers)**
 

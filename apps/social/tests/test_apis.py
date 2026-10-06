@@ -326,3 +326,17 @@ def test_erro_da_rede_mostra_a_mensagem_dela():
 
     with pytest.raises(ErroDaRede, match="HTTP 401"):
         Publicador._conferir(None, httpx.Response(401, json={"error": "token"}), "LinkedIn")
+
+
+def test_app_de_empresa_manda_a_configuracao_e_nao_o_scope(settings):
+    settings.SOCIAL_META_APP_ID, settings.SOCIAL_META_APP_SECRET = "app", "seg"
+    settings.SOCIAL_META_CONFIG_ID = "111"
+    settings.SOCIAL_META_CONFIG_ID_ANUNCIOS = "222"
+    oauth = OAuthInstagram()
+    destino = Destino(rede="instagram", nome="Insta")
+    url = oauth.url_de_autorizacao(destino, "https://raiz/redes/retorno/", "e")
+    assert "config_id=111" in url and "scope=" not in url
+    anuncios = oauth.url_de_autorizacao(
+        destino, "https://raiz/redes/retorno/", "e", escopos_extras="ads_read"
+    )
+    assert "config_id=222" in anuncios
