@@ -217,17 +217,68 @@ sudo systemctl enable --quiet publibot.socket publibot.service \
 
 echo "==> Nginx"
 DOMINIO="${ROOT_DOMAIN:?ROOT_DOMAIN vazio no .env}"
-if [[ -f "/etc/letsencrypt/live/$DOMINIO/fullchain.pem" ]]; then
+LIVE="${LETSENCRYPT_LIVE:-/etc/letsencrypt/live}"
+
+# O certificado cobre o nome? Exato, ou por curinga de um nivel
+# (`*.ekron.ia.br` cobre `publibot.ekron.ia.br`). A pasta live e so do root.
+cobre() {
+    sudo openssl x509 -in "$1" -noout -ext subjectAltName 2>/dev/null \
+        | tr ',' '\n' | sed -e 's/^ *DNS://' -e 's/ *$//' \
+        | grep -qxF -e "$2" -e "*.${2#*.}"
+}
+
+# O dominio raiz pode estar num certificado diferente do dos subdominios:
+# `*.$DOMINIO` nao cobre o proprio $DOMINIO. CERTIFICADO_DA_RAIZ (nome da pasta
+# em /etc/letsencrypt/live) fixa; vazio, procura o que cobre a raiz.
+certificado_da_raiz() {
+    if [[ -n "${CERTIFICADO_DA_RAIZ:-}" ]]; then
+        echo "$CERTIFICADO_DA_RAIZ"
+        return
+    fi
+    if cobre "$LIVE/$DOMINIO/fullchain.pem" "$DOMINIO"; then
+        echo "$DOMINIO"
+        return
+    fi
+    local cert
+    while IFS= read -r cert; do
+        if cobre "$cert" "$DOMINIO"; then
+            basename "$(dirname "$cert")"
+            return
+        fi
+    done < <(sudo find "$LIVE" -mindepth 2 -maxdepth 2 -name fullchain.pem | sort)
+    echo "$DOMINIO"
+}
+
+if [[ -f "$LIVE/$DOMINIO/fullchain.pem" ]] \
+    || sudo test -f "$LIVE/$DOMINIO/fullchain.pem"; then
     # O Nginx (www-data) precisa atravessar /home/ubuntu para servir estaticos
     # e midia. So atravessar (x), sem listar.
     sudo chmod o+x "$(dirname "$RAIZ")"
+    CERT_RAIZ="$(certificado_da_raiz)"
+    if [[ "$CERT_RAIZ" == "$DOMINIO" ]] && ! cobre "$LIVE/$DOMINIO/fullchain.pem" "$DOMINIO"; then
+        echo "  AVISO: nenhum certificado cobre $DOMINIO (so os subdominios). Inclua-o"
+        echo "  no certificado (docs/OPERACAO.md, passo 2): a raiz atende privacidade,"
+        echo "  termos e o retorno das conexoes com as redes."
+    elif [[ "$CERT_RAIZ" != "$DOMINIO" ]]; then
+        echo "  dominio raiz com o certificado de $LIVE/$CERT_RAIZ"
+    fi
+    trocar() {
+        sed -e "s|__DOMINIO__|$DOMINIO|g" -e "s|__CERT_RAIZ__|$CERT_RAIZ|g" \
+            -e "s|__RAIZ__|$RAIZ|g" -e "s|__MIDIA__|${MIDIA%/}|g" "$1"
+    }
     novo="$(mktemp)"
-    sed -e "s|__DOMINIO__|$DOMINIO|g" -e "s|__RAIZ__|$RAIZ|g" -e "s|__MIDIA__|${MIDIA%/}|g" \
-        "$RAIZ/deploy/nginx/publibot.conf" > "$novo"
+    novo_comum="$(mktemp)"
+    trocar "$RAIZ/deploy/nginx/publibot.conf" > "$novo"
+    trocar "$RAIZ/deploy/nginx/publibot-comum.conf" > "$novo_comum"
     destino=/etc/nginx/sites-available/publibot
-    if ! sudo cmp -s "$novo" "$destino"; then
+    comum=/etc/nginx/snippets/publibot-comum.conf
+    if ! sudo cmp -s "$novo" "$destino" || ! sudo cmp -s "$novo_comum" "$comum"; then
         anterior="$(mktemp)"
+        anterior_comum="$(mktemp)"
         sudo cp "$destino" "$anterior" 2>/dev/null || true
+        sudo cp "$comum" "$anterior_comum" 2>/dev/null || true
+        sudo mkdir -p /etc/nginx/snippets
+        sudo install -m 0644 "$novo_comum" "$comum"
         sudo install -m 0644 "$novo" "$destino"
         sudo ln -sf "$destino" /etc/nginx/sites-enabled/publibot
         # O Nginx atende outros projetos: config invalida aqui derrubaria todos.
@@ -240,14 +291,18 @@ if [[ -f "/etc/letsencrypt/live/$DOMINIO/fullchain.pem" ]]; then
             else
                 sudo rm -f "$destino" /etc/nginx/sites-enabled/publibot
             fi
+            if [[ -s "$anterior_comum" ]]; then
+                sudo install -m 0644 "$anterior_comum" "$comum"
+            fi
             echo "ERRO: a config do Nginx nao passou no nginx -t; a anterior foi mantida." >&2
+            sudo nginx -t >&2 || true
             exit 1
         fi
     else
         echo "  site ja esta em dia"
     fi
 else
-    echo "  AVISO: sem certificado em /etc/letsencrypt/live/$DOMINIO/. O site do"
+    echo "  AVISO: sem certificado em $LIVE/$DOMINIO/. O site do"
     echo "  Nginx entra na primeira implantacao depois de emiti-lo (docs/OPERACAO.md)."
 fi
 

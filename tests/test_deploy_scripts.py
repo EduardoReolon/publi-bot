@@ -239,11 +239,15 @@ def test_o_molde_do_nginx_so_tem_marcadores_que_o_release_troca():
     """Um marcador esquecido vira `server_name __DOMINIO__` no servidor, e o
     `nginx -t` nao reclama: o site so nao responde."""
     molde = (RAIZ / "deploy" / "nginx" / "publibot.conf").read_text(encoding="utf-8")
-    marcadores = set(re.findall(r"__[A-Z]+__", molde))
+    comum = (RAIZ / "deploy" / "nginx" / "publibot-comum.conf").read_text(encoding="utf-8")
+    marcadores = set(re.findall(r"__[A-Z_]+__", molde + comum))
 
-    assert marcadores == {"__DOMINIO__", "__RAIZ__", "__MIDIA__"}
+    assert marcadores == {"__DOMINIO__", "__CERT_RAIZ__", "__RAIZ__", "__MIDIA__"}
     for marcador in marcadores:
         assert f"s|{marcador}|" in _release()
+    # Os dois blocos HTTPS incluem o mesmo miolo, que o release instala.
+    assert molde.count("include /etc/nginx/snippets/publibot-comum.conf;") == 2
+    assert "server_name __DOMINIO__;" in molde and "server_name *.__DOMINIO__;" in molde
 
 
 def test_as_units_apontam_para_a_raiz_do_release():
@@ -362,3 +366,68 @@ def test_o_release_confere_a_versao_nova_e_reinicia_se_preciso():
     assert 'echo "$IMPLANTACAO" > "$RAIZ/.release"' in texto
     assert texto.index("systemctl reload publibot") < texto.index("esperar_versao 15")
     assert texto.index("esperar_versao 15") < texto.index("systemctl restart publibot.service")
+
+
+def _certificado(pasta: Path, nomes: list[str]) -> None:
+    pasta.mkdir(parents=True)
+    san = ",".join(f"DNS:{n}" for n in nomes)
+    subprocess.run(  # noqa: S603 - openssl local, so para o teste
+        [
+            shutil.which("openssl") or "/usr/bin/openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            f"/CN={nomes[0]}",
+            "-addext",
+            f"subjectAltName={san}",
+            "-keyout",
+            str(pasta / "privkey.pem"),
+            "-out",
+            str(pasta / "fullchain.pem"),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.skipif(not shutil.which("openssl"), reason="sem openssl")
+@pytest.mark.parametrize(
+    ("certificados", "esperado"),
+    [
+        # So o curinga dos subdominios, e o curinga do dominio pai cobre a raiz.
+        (
+            {"publibot.ekron.ia.br": ["*.publibot.ekron.ia.br"], "ekron.ia.br": ["*.ekron.ia.br"]},
+            "ekron.ia.br",
+        ),
+        # O proprio certificado ja tem a raiz.
+        (
+            {"publibot.ekron.ia.br": ["publibot.ekron.ia.br", "*.publibot.ekron.ia.br"]},
+            "publibot.ekron.ia.br",
+        ),
+        # Nenhum cobre: fica o proprio (e o release avisa).
+        ({"publibot.ekron.ia.br": ["*.publibot.ekron.ia.br"]}, "publibot.ekron.ia.br"),
+    ],
+)
+def test_o_release_acha_o_certificado_que_cobre_a_raiz(tmp_path, certificados, esperado):
+    for pasta, nomes in certificados.items():
+        _certificado(tmp_path / pasta, nomes)
+    texto = _release()
+    funcoes = texto[texto.index("cobre() {") : texto.index('if [[ -f "$LIVE/$DOMINIO')]
+    script = (
+        "set -euo pipefail\n"
+        'sudo() { "$@"; }\n'
+        f"LIVE={tmp_path}\nDOMINIO=publibot.ekron.ia.br\n" + funcoes + "certificado_da_raiz\n"
+    )
+    resultado = subprocess.run(  # noqa: S603 - o alvo e um trecho do proprio release.sh
+        [shutil.which("bash") or "/bin/bash", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    assert resultado.stdout.strip() == esperado
