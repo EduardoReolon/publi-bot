@@ -553,6 +553,10 @@ SOCIAL_LINKEDIN_VERSAO = env.get("SOCIAL_LINKEDIN_VERSAO", "202509")
 SOCIAL_META_APP_ID = env.get("SOCIAL_META_APP_ID", "")
 SOCIAL_META_APP_SECRET = env.get("SOCIAL_META_APP_SECRET", "")
 SOCIAL_META_VERSAO = env.get("SOCIAL_META_VERSAO", "v21.0")
+# App do tipo Empresa (Login do Facebook para Empresas): o id da configuracao
+# de login criada no painel do app, e o da que inclui ads_read (opcional).
+SOCIAL_META_CONFIG_ID = env.get("SOCIAL_META_CONFIG_ID", "")
+SOCIAL_META_CONFIG_ID_ANUNCIOS = env.get("SOCIAL_META_CONFIG_ID_ANUNCIOS", "")
 SOCIAL_GOOGLE_CLIENT_ID = env.get("SOCIAL_GOOGLE_CLIENT_ID", "")
 SOCIAL_GOOGLE_CLIENT_SECRET = env.get("SOCIAL_GOOGLE_CLIENT_SECRET", "")
 
