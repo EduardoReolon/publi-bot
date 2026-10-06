@@ -11,7 +11,9 @@ ARQUIVO="${1:?informe o caminho do dump}"
 
 # shellcheck disable=SC1091
 RAIZ="${PUBLIBOT_ROOT:-/home/ubuntu/publi-bot}"
-set -a; source <(grep -E '^[A-Z_][A-Z0-9_]*=' "$RAIZ/.env"); set +a
+# shellcheck source=deploy/scripts/ler_env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/ler_env.sh"
+carregar_env "$RAIZ/.env"
 
 echo "Isto vai SOBRESCREVER o banco '$POSTGRES_DB'."
 read -r -p "Digite o nome do banco para confirmar: " confirmacao

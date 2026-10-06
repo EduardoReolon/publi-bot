@@ -15,7 +15,9 @@ mkdir -p "$DESTINO"
 
 # shellcheck disable=SC1091
 RAIZ="${PUBLIBOT_ROOT:-/home/ubuntu/publi-bot}"
-set -a; source <(grep -E '^[A-Z_][A-Z0-9_]*=' "$RAIZ/.env"); set +a
+# shellcheck source=deploy/scripts/ler_env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/ler_env.sh"
+carregar_env "$RAIZ/.env"
 
 echo "==> Banco"
 PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \

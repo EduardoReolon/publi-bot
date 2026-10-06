@@ -160,6 +160,7 @@ def _prologo_em(envio: Path) -> Path:
         "\n".join(linhas[: fim + 1]) + '\necho "$DJANGO_SECRET_KEY|$ROOT_DOMAIN|$MIDIA"\n',
         encoding="utf-8",
     )
+    shutil.copy(RAIZ / "deploy" / "scripts" / "ler_env.sh", copia.parent / "ler_env.sh")
     return copia
 
 
@@ -194,6 +195,33 @@ def test_o_release_instala_o_env_enviado_e_o_carrega(tmp_path):
     assert resultado.stdout.strip() == "segredo-do-servidor|publibot.com.br|/dados/midia"
     assert (raiz / ".env").stat().st_mode & 0o777 == 0o600
     assert not (envio / ".env").exists()
+
+
+def test_valor_com_espaco_sem_aspas_nao_derruba_o_release(tmp_path):
+    """O systemd aceita `OPERADOR_NOME=Ekron Consultoria` (valor ate o fim da
+    linha). Com `source`, o bash rodaria "Consultoria" como comando e o
+    release pararia em 2 segundos, antes de implantar."""
+    envio, raiz = tmp_path / "envio", tmp_path / "raiz"
+    copia = _prologo_em(envio)
+    (envio / ".env").write_text(
+        "DJANGO_SECRET_KEY=a$b`c`;d\n"
+        "OPERADOR_NOME=Ekron Consultoria em IA\n"
+        'ROOT_DOMAIN="publibot.com.br"\n'
+        "MEDIA_ROOT=/dados/midia\r\n",
+        encoding="utf-8",
+    )
+
+    resultado = _rodar(copia, raiz)
+
+    assert resultado.returncode == 0, resultado.stderr
+    assert resultado.stdout.strip() == "a$b`c`;d|publibot.com.br|/dados/midia"
+
+
+def test_os_scripts_nunca_dao_source_no_env():
+    for script in ("release.sh", "backup.sh", "restore.sh"):
+        texto = (RAIZ / "deploy" / "scripts" / script).read_text(encoding="utf-8")
+        assert 'carregar_env "$RAIZ/.env"' in texto, script
+        assert "source <(" not in texto, script
 
 
 def test_o_release_para_sem_env(tmp_path):
