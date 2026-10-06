@@ -324,6 +324,20 @@ app*, `https://<raiz>/redes/retorno/` (exato, com a barra final).
   verificada no Search Console — o mesmo onde está o site).
 - Credenciais > ID do cliente OAuth (Aplicativo da Web) > *URIs de
   redirecionamento autorizados*: `https://<raiz>/redes/retorno/`.
+- Escopo: *Google Auth Platform* > **Acesso a dados** > *Adicionar ou remover
+  escopos* > *Adicionar escopos manualmente*:
+  `https://www.googleapis.com/auth/business.manage`. Enquanto o app estiver
+  em teste, ponha seu e-mail em *Usuários de teste*.
+- APIs (Biblioteca): My Business Account Management, My Business Business
+  Information e Google My Business.
+- **Pedido de acesso à API do Perfil da Empresa** (formulário "Applying for
+  Google Business Profile API access"): sem ele a cota é zero. Escolha um
+  perfil **verificado há mais de 60 dias** e informe o **site que está nesse
+  perfil** (não o endereço do PubliBot); o e-mail considerado é o da conta
+  Google logada (de preferência no domínio do site). Pedido certo abre um
+  chamado de suporte, com análise em ~7 a 10 dias úteis; pedido fora dos
+  critérios é recusado na hora. Até sair, a conta do Google fica cadastrada
+  sem conectar: o post aprovado aparece para copiar e colar.
 
 Por que um endereço só: as redes só devolvem a pessoa para endereços
 cadastrados exatamente. O PubliBot recebe no domínio raiz e segue para o
