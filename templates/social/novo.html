@@ -4,7 +4,7 @@
 {% block conteudo %}
   <h1>{% translate "Redes sociais" %}</h1>
   {% include "social/_abas.html" %}
-  <h2>{% translate "Novo post: um caso real ou uma novidade" %}</h2>
+  <h2>{% translate "Novo post: um caso real, uma novidade ou um comentario" %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
       Conte o que aconteceu do seu jeito, como contaria a alguem — por escrito ou num audio.
@@ -23,6 +23,11 @@
       <label for="texto">{% translate "O que aconteceu" %}</label>
       <textarea id="texto" name="texto" class="curto" rows="7" placeholder="{% translate 'Ex.: Um cliente chegou com o estoque parado ha 6 meses. Em 3 semanas, mudamos X e Y, e ele voltou a vender.' %}"></textarea>
       <div class="ajuda">{% translate "Sem nome, idade ou detalhe que identifique alguem: o PubliBot avisa se encontrar." %}</div>
+    </div>
+    <div class="campo">
+      <label for="links">{% translate "Links para o PubliBot ler (opcional, um por linha, ate 5)" %}</label>
+      <textarea id="links" name="links" class="curto" rows="3" placeholder="https://..."></textarea>
+      <div class="ajuda">{% translate "Uma noticia, um estudo, uma materia: o PubliBot le o texto da pagina e o post diz de onde veio cada informacao. Em 'O que aconteceu', escreva o seu olhar sobre isso (ex.: o que a manchete exagerou, o que o estudo de fato mostra). Pagina com login ou paywall nao abre: cole o trecho no texto." %}</div>
     </div>
     <div class="campo">
       <label for="audio">{% translate "Ou grave um audio (opcional)" %}</label>

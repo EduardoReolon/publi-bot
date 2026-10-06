@@ -88,7 +88,7 @@
         funcionam, sem parar de testar as outras — abordagem nova tem a mesma chance.
       {% endblocktranslate %}
     </p>
-    {% for destino, linhas in quadros %}
+    {% for destino, linhas, recados in quadros %}
       <section class="secao">
         <h2>{{ destino.nome }} <span class="selo">{{ destino.rede_nome }}</span></h2>
         <div class="rolagem"><table>
@@ -104,6 +104,22 @@
             {% endfor %}
           </tbody>
         </table></div>
+        {% if recados %}
+          <h3>{% translate "Recados de posicionamento" %}</h3>
+          <div class="rolagem"><table>
+            <thead><tr><th>{% translate "Recado" %}</th><th class="numero">{% translate "Posts com" %}</th><th class="numero">{% translate "Posts sem" %}</th><th>{% translate "Resultado" %}</th></tr></thead>
+            <tbody>
+              {% for l in recados %}
+                <tr>
+                  <td>{{ l.recado.nome }}{% if not l.recado.ativo %} <span class="selo">{% translate "desligado" %}</span>{% endif %}</td>
+                  <td class="numero">{{ l.com }}</td>
+                  <td class="numero">{{ l.sem }}</td>
+                  <td>{% if l.conclusao %}{{ l.conclusao }} <span class="ajuda">({% if l.diferenca > 0 %}+{% endif %}{{ l.diferenca }}% {% translate "na mediana; indicio, nao prova" %})</span>{% else %}<span class="ajuda">{% translate "cedo para dizer (5 posts medidos de cada lado)" %}</span>{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table></div>
+        {% endif %}
       </section>
     {% empty %}
       <p class="pre-visualizacao">{% translate "Cadastre uma conta para comecar a medir." %}</p>

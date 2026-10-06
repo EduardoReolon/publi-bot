@@ -725,9 +725,17 @@ def test_parceiro_ganha_proposta_sem_troca_de_links(ambiente):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_virar_pauta_na_tela_vale_para_grupo_so_de_sementes(ambiente, settings):  # noqa: F811
+def test_virar_pauta_na_tela_vale_para_grupo_so_de_sementes(
+    ambiente,  # noqa: F811
+    settings,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
     from apps.content.models import Topic
+    from apps.radar import tasks
     from apps.radar.models import SinalDeDemanda
+
+    monkeypatch.setattr(tasks.virar_pauta, "delay", tasks.virar_pauta)
 
     settings.EMBEDDING_CLIENT = "tests.test_radar.EmbeddingPorPalavras"
     from apps.knowledge.embeddings import get_embedding_client
@@ -737,7 +745,12 @@ def test_virar_pauta_na_tela_vale_para_grupo_so_de_sementes(ambiente, settings):
     grupo = GrupoDeDemanda.objects.create(rotulo="Up-sell", centroide=[0.0] * 1023 + [1.0])
     SinalDeDemanda.objects.create(texto="Up-sell", fonte=SinalDeDemanda.Fonte.SEMENTE, grupo=grupo)
 
-    client.post(reverse("radar:grupo_para_pauta", args=[grupo.pk], urlconf="core.urls_tenants"))
+    with django_capture_on_commit_callbacks(execute=True):
+        resposta = client.post(
+            reverse("radar:grupo_para_pauta", args=[grupo.pk], urlconf="core.urls_tenants"),
+            follow=True,
+        )
+    assert "Virando pauta" in resposta.content.decode()  # o clique volta na hora
 
     assert Topic.objects.filter(origin=Topic.Origin.RADAR, title="Up-sell").exists()
     get_embedding_client.cache_clear()

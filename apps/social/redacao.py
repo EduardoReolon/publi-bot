@@ -267,7 +267,14 @@ def escrever(post: Post) -> Post:
     # O angulo sugerido (outra IA, evento) vai como sugestao, nao como ordem:
     # o material continua sendo o limite do que se afirma.
     ideia = (post.extras or {}).get("ideia", "")
+    recado = (post.extras or {}).get("recado") or {}
     base = f"IDEIA SUGERIDA (use se couber no material): {ideia}\n" if ideia else ""
+    if recado.get("instrucao"):
+        base += (
+            "RECADO DE POSICIONAMENTO (passe esta ideia uma vez, numa frase curta e com "
+            "as palavras do post, sem tom de propaganda nem ataque a ninguem; o resto do "
+            f"post segue o material): {recado['instrucao']}\n"
+        )
     if entrada is not None:
         base = proprio.instrucao_para_quem_escreve(entrada, artigo) + "\n" + base
     com_fotos = entrada is not None and entrada.midias.exists()
@@ -301,8 +308,15 @@ def escrever(post: Post) -> Post:
         )
 
     post.texto = texto
-    post.extras = {**extras, "ideia": ideia} if ideia else extras
-    post.avisos = avisos
+    # O que veio da sugestao (ideia, recado em teste) continua no post.
+    post.extras = {
+        **extras,
+        **({"ideia": ideia} if ideia else {}),
+        **({"recado": recado} if recado else {}),
+    }
+    post.avisos = avisos + (
+        [f"link nao lido: {x}" for x in proprio.links_que_falharam(entrada)] if entrada else []
+    )
     post.material = mat
     post.erro = ""
     post.situacao = Post.Situacao.RASCUNHO if texto else Post.Situacao.FALHOU

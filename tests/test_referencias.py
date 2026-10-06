@@ -313,8 +313,16 @@ def test_capa_de_download_nao_engana_o_cabecalho_com_doi(monkeypatch):
     assert certo["fonte"] == "openalex"
 
 
-def test_gerar_busca_videos_uma_vez_e_depois_segue(ambiente, monkeypatch):  # noqa: F811
+def test_gerar_busca_videos_uma_vez_e_depois_segue(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.content import tasks
     from apps.knowledge import referencias as ref
+
+    fila = []
+    monkeypatch.setattr(tasks.gerar_a_depois_dos_videos, "delay", fila.append)
 
     _, _, client = ambiente
     pauta = Topic.objects.create(title="Retencao", status=Topic.Status.APPROVED)
@@ -334,9 +342,13 @@ def test_gerar_busca_videos_uma_vez_e_depois_segue(ambiente, monkeypatch):  # no
     )
     url = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
 
-    resposta = client.post(url, follow=True)
-    assert "achei 2 video(s)" in resposta.content.decode() and not gerados
-    assert achados == [3]
+    # O clique so dispara: a busca no YouTube vai para a fila.
+    with django_capture_on_commit_callbacks(execute=True):
+        resposta = client.post(url, follow=True)
+    assert "procurando videos" in resposta.content.decode() and not achados
+    assert fila == [str(pauta.pk)]
+    assert tasks.gerar_a_depois_dos_videos(str(pauta.pk)) is False  # achou: para
+    assert achados == [3] and not gerados
     # Segunda vez: segue sem buscar de novo.
     client.post(url)
     assert gerados and achados == [3]

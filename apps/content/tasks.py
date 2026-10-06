@@ -83,6 +83,26 @@ def answer_pending_questions(limite: int = 20) -> int:
     return total
 
 
+@shared_task
+def gerar_a_depois_dos_videos(topic_id: str) -> bool:
+    """Fluxo A pedido na tela: a busca de videos (YouTube) roda aqui, fora do
+    clique. Achou videos: para, e a pauta mostra em Fontes sugeridas. Nao
+    achou: gera. Despachada de dentro do tenant."""
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.knowledge.referencias import videos_antes_de_gerar
+
+    pauta = Topic.objects.filter(pk=topic_id).first()
+    if pauta is None or fluxos.em_andamento(pauta, fluxos.A):
+        return False
+    if fluxos.artigo_do_fluxo(pauta, fluxos.A) is not None:
+        return False
+    if videos_antes_de_gerar(pauta):
+        return False
+    gerar_artigo(pauta)
+    return True
+
+
 @shared_task(bind=True, max_retries=20)
 def gerar_b_quando_pronta(self, topic_id: str) -> bool:
     """Fluxo B pedido antes da pesquisa terminar: gera quando ela fica pronta

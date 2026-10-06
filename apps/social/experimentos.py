@@ -214,6 +214,64 @@ def escolher(destino: Destino, n: int = 1, *, rng: random.Random | None = None) 
     return [abordagem for _nota, abordagem in sorteio[:n]]
 
 
+# -- Recados de posicionamento ------------------------------------------------------------
+MINIMO_PARA_O_RECADO = 5
+
+
+def sortear_recado(destino: Destino, *, rng: random.Random | None = None):
+    """No maximo um recado por post: cada um ativo tem a sua chance (`por_cento`)."""
+    from apps.social.models import Recado
+
+    rng = rng or random.Random()  # noqa: S311 - sorteio de recado, nao segredo
+    recados = [r for r in Recado.objects.filter(ativo=True) if r.vale_para(destino.rede)]
+    rng.shuffle(recados)
+    return next((r for r in recados if rng.random() * 100 < r.por_cento), None)
+
+
+def quadro_de_recados(destino: Destino) -> list[dict]:
+    """Cada recado: a medida mediana dos posts com ele x os sem nenhum recado,
+    na mesma conta e desde que o recado existe. So conclui com
+    `MINIMO_PARA_O_RECADO` posts medidos em cada lado (e diz que e indicio)."""
+    import statistics
+
+    from apps.social.models import Recado
+
+    config = ConfiguracaoSocial.carregar()
+    minimo = parametros.valor("alcance_minimo", config)
+    linhas = []
+    for recado in Recado.objects.all():
+        if not recado.vale_para(destino.rede):
+            continue
+        posts = destino.posts.filter(
+            situacao=Post.Situacao.PUBLICADO, publicado_em__gte=recado.criado_em
+        ).exclude(motivo=Post.Motivo.HISTORICO)
+        com, sem = [], []
+        for post in posts:
+            v = valor(post, config.metrica, alcance_minimo=minimo)
+            if v is None:
+                continue
+            marcado = ((post.extras or {}).get("recado") or {}).get("id")
+            if marcado == str(recado.pk):
+                com.append(v)
+            elif not marcado:
+                sem.append(v)
+        linha = {"recado": recado, "com": len(com), "sem": len(sem), "conclusao": ""}
+        if len(com) >= MINIMO_PARA_O_RECADO and len(sem) >= MINIMO_PARA_O_RECADO:
+            a, b = statistics.median(com), statistics.median(sem)
+            if b > 0:
+                diferenca = round(100 * (a - b) / b)
+                linha["diferenca"] = diferenca
+                linha["conclusao"] = (
+                    "sem diferenca clara"
+                    if abs(diferenca) < 15
+                    else (
+                        "rende mais com o recado" if diferenca > 0 else "rende menos com o recado"
+                    )
+                )
+        linhas.append(linha)
+    return linhas
+
+
 def quadro(destino: Destino) -> list[dict]:
     """Para a tela: cada abordagem, com placar da conta e o coletivo."""
     pontos = placar(destino)

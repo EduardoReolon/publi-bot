@@ -172,3 +172,16 @@ def conferir_indexacao() -> int:
     from apps.radar.indexacao import conferir_pendentes
 
     return para_cada_tenant(conferir_pendentes, "conferir_indexacao")
+
+
+@shared_task
+def virar_pauta(grupo_id: str) -> str:
+    """O "Virar pauta" da tela: recalcula a nota do grupo e cria a pauta
+    sugerida (pedido da pessoa: sem nota minima; a trava de canibalizacao
+    continua). Despachada de dentro do tenant."""
+    from apps.radar.coleta import propor_pautas
+
+    criadas = propor_pautas({grupo_id}, limite=1, nota_minima=0, pedido_pela_pessoa=True)
+    if not criadas:
+        logger.info("Grupo %s nao virou pauta (perto do que ja foi escrito).", grupo_id)
+    return criadas[0] if criadas else ""
