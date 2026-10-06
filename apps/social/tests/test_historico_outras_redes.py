@@ -354,3 +354,20 @@ def test_colunas_e_datas_das_planilhas():
     assert planilhas.momento("03/10/2025 14:30").hour == 14
     assert planilhas.mes_primeiro(["3/2/2026", "3/14/2026"], False) is True
     assert planilhas.mes_primeiro(["14/3/2026"], True) is False
+
+
+@pytest.mark.django_db
+def test_google_sem_cota_explica_que_falta_a_aprovacao(ambiente):
+    from apps.social.redes.base import ErroDaRede
+    from apps.social.redes.gmn import OAuthGoogle
+
+    destino = _conectado("gmn", "", autor="local")
+    erro = {
+        "error": {
+            "code": 429,
+            "details": [{"metadata": {"quota_limit_value": "0"}}],
+        }
+    }
+    rede = Rede({"GET mybusinessaccountmanagement": httpx.Response(429, json=erro)})
+    with pytest.raises(ErroDaRede, match="ainda nao aprovou"):
+        OAuthGoogle(http=rede.cliente()).contas(destino)

@@ -19,6 +19,12 @@ from apps.social.redes.base import ErroDaRede, Formato, Publicado, Publicador, R
 from apps.social.redes.oauth import OAuth, acesso_valido
 
 ENDERECO_DE_ACESSO = "https://oauth2.googleapis.com/token"
+# Cota zero: o login deu certo, mas o Google ainda nao aprovou o acesso a API.
+SEM_COTA = (
+    "o login no Google deu certo, mas a API do Perfil da Empresa ainda esta com cota zero "
+    "neste projeto: o Google ainda nao aprovou o pedido de acesso. Quando aprovar, clique "
+    "em Conectar de novo. Ate la, os posts ficam para copiar e colar."
+)
 
 
 class OAuthGoogle(OAuth):
@@ -90,6 +96,14 @@ class OAuthGoogle(OAuth):
         return True
 
     def contas(self, destino) -> list[tuple[str, str]]:
+        try:
+            return self._contas(destino)
+        except ErroDaRede as exc:
+            if "HTTP 429" in str(exc) and "'quota_limit_value': '0'" in str(exc):
+                raise ErroDaRede(SEM_COTA) from exc
+            raise
+
+    def _contas(self, destino) -> list[tuple[str, str]]:
         token = destino.ler_credenciais()["access_token"]
         cabecalho = {"Authorization": f"Bearer {token}"}
         contas = self._json(
