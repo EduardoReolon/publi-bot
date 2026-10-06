@@ -47,9 +47,11 @@ if [[ ! -f "$RAIZ/.env" ]]; then
     echo "ERRO: $RAIZ/.env nao existe. Cadastre o secret PRODUCTION_ENV_FILE." >&2
     exit 1
 fi
-# Lido como dados, e nao executado: comentarios e linhas soltas ficam de fora.
-# shellcheck disable=SC1090
-set -a; source <(grep -E '^[A-Z_][A-Z0-9_]*=' "$RAIZ/.env"); set +a
+# Lido como dados, e nao executado (ver ler_env.sh): valor com espaco sem
+# aspas, como o systemd aceita, nao derruba a implantacao.
+# shellcheck source=deploy/scripts/ler_env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/ler_env.sh"
+carregar_env "$RAIZ/.env"
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-core.settings.prod}"
 
 MIDIA="${MEDIA_ROOT:-$RAIZ/media}"
