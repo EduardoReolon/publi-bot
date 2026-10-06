@@ -5,30 +5,33 @@ anuncios depende de uma revisao da Meta que pode nao sair (ou ser retirada):
 
 * **API** — com "Conectar anuncios" feito, uma vez por dia o PubliBot le o
   gasto de cada anuncio (periodo maximo) e o post que ele impulsiona;
-* **planilha** — o relatorio que o Gerenciador de Anuncios exporta (.csv ou
-  .xlsx salvo como .csv), em portugues ou ingles. O passo a passo esta na
-  tela (`COMO_EXPORTAR`).
+* **planilha** — o relatorio exportado (.csv ou .xlsx), em portugues ou
+  ingles: do Gerenciador da Meta, do Campaign Manager do LinkedIn ou do
+  Google Ads. O passo a passo de cada um esta na tela (`como_exportar`).
+  LinkedIn e Google Ads so pela planilha: as APIs de anuncio deles pedem
+  aprovacao a parte (Advertising API; token de desenvolvedor do Google Ads)
+  que nao compensa para ler o gasto de uma conta pequena.
 
 Depois de qualquer um, `vincular` liga cada anuncio ao post: pelo id do post
 do Instagram (API) ou, na planilha, pelo comeco da legenda — o nome que a
-Meta da ao impulso e "Publicacao do Instagram: <comeco da legenda>". O post
-ligado fica como impulsionado, com o valor somado.
+Meta da ao impulso e "Publicacao do Instagram: <comeco da legenda>"; no
+LinkedIn, o texto do anuncio patrocinado e o do post. O post ligado fica
+como impulsionado, com o valor somado. Campanha do Google Ads nao e de um
+post (anuncio de busca ou do mapa): entra no gasto da conta, sem post.
 """
 
 from __future__ import annotations
 
-import csv
-import io
 import logging
 import re
-import unicodedata
-from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from datetime import datetime
+from decimal import Decimal
 
 from django.db.models import Min, Sum
 from django.utils import timezone
 
 from apps.social.models import Anuncio, Destino, Post
+from apps.social.planilhas import PlanilhaInvalida, campo, chave, data, inteiro, numero
 
 logger = logging.getLogger("publibot.social")
 
@@ -43,50 +46,35 @@ COMO_EXPORTAR = [
     "Quando: uma vez por mes basta, ou quando o aviso de 'gasto sem atualizar' aparecer. "
     "Enviar de novo o mesmo periodo nao duplica: o anuncio e atualizado.",
 ]
+_DE_NOVO = (
+    "Quando: uma vez por mes basta. Enviar de novo o mesmo periodo nao duplica: o anuncio "
+    "e atualizado."
+)
+COMO_EXPORTAR_POR_REDE = {
+    "instagram": COMO_EXPORTAR,
+    "linkedin": [
+        "Abra o Campaign Manager do LinkedIn (linkedin.com/campaignmanager), na conta de "
+        "anuncios da empresa.",
+        "Va na aba 'Anuncios' (Ads), para o PubliBot ligar cada anuncio ao post pelo texto.",
+        "No periodo, escolha o maior possivel (desde o primeiro anuncio).",
+        "Clique em 'Exportar' > 'Desempenho do anuncio' (Ad performance) > .csv ou .xlsx.",
+        "Envie o arquivo aqui. Colunas usadas: nome ou id do anuncio, campanha, texto de "
+        "introducao, valor gasto (Total Spent), impressoes, cliques e data de inicio.",
+        _DE_NOVO,
+    ],
+    "gmn": [
+        "Abra o Google Ads (ads.google.com), na conta que anuncia a empresa.",
+        "Va em 'Campanhas' e, no periodo, escolha 'Todo o periodo'.",
+        "Clique no icone de download (Fazer download) > .csv.",
+        "Envie o arquivo aqui. Colunas usadas: campanha, custo, impressoes, cliques e "
+        "conversoes. Campanha do Google nao e de um post: entra como gasto da conta.",
+        _DE_NOVO,
+    ],
+}
 
 
-# -- Numeros e textos ---------------------------------------------------------------
-def _sem_acento(texto: str) -> str:
-    return "".join(
-        c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c)
-    )
-
-
-def _chave(texto: str) -> str:
-    return " ".join(re.sub(r"[^a-z0-9 ]", " ", _sem_acento(texto).lower()).split())
-
-
-def numero(texto) -> Decimal | None:
-    """1.234,56 · 1,234.56 · 1234.56 · R$ 12,00 · 12 -> Decimal."""
-    texto = re.sub(r"[^\d,.\-]", "", str(texto or ""))
-    if not texto or texto in {"-", ".", ","}:
-        return None
-    if "," in texto and "." in texto:
-        if texto.rfind(",") > texto.rfind("."):
-            texto = texto.replace(".", "").replace(",", ".")
-        else:
-            texto = texto.replace(",", "")
-    elif "," in texto:
-        texto = texto.replace(",", ".")
-    try:
-        return Decimal(texto)
-    except InvalidOperation:
-        return None
-
-
-def _inteiro(texto) -> int | None:
-    n = numero(texto)
-    return int(n) if n is not None else None
-
-
-def _data(texto) -> date | None:
-    texto = str(texto or "").strip()
-    for formato in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d/%m/%y"):
-        try:
-            return datetime.strptime(texto[:10], formato).date()
-        except ValueError:
-            continue
-    return None
+def como_exportar(rede: str) -> list[str]:
+    return COMO_EXPORTAR_POR_REDE.get(rede, COMO_EXPORTAR)
 
 
 # -- API ---------------------------------------------------------------------------------
@@ -127,12 +115,12 @@ def sincronizar(destino: Destino, *, http=None) -> int:
                 "campanha": str(linha.get("campaign_name") or "")[:300],
                 "objetivo": str(linha.get("objective") or "")[:60],
                 "gasto": numero(linha.get("spend")) or Decimal("0"),
-                "alcance": _inteiro(linha.get("reach")),
-                "impressoes": _inteiro(linha.get("impressions")),
-                "cliques": _inteiro(linha.get("inline_link_clicks")),
+                "alcance": inteiro(linha.get("reach")),
+                "impressoes": inteiro(linha.get("impressions")),
+                "cliques": inteiro(linha.get("inline_link_clicks")),
                 "resultados": _resultados(linha.get("actions")),
-                "inicio": _data(linha.get("date_start")),
-                "fim": _data(linha.get("date_stop")),
+                "inicio": data(linha.get("date_start")),
+                "fim": data(linha.get("date_stop")),
                 "media_id": criativo.get("media_id", "")[:120],
                 "link": criativo.get("link", "")[:500],
                 "imagem": criativo.get("imagem", "")[:1000],
@@ -148,89 +136,79 @@ def sincronizar(destino: Destino, *, http=None) -> int:
 
 
 # -- Planilha ------------------------------------------------------------------------------
-# Colunas do relatorio da Meta, em portugues e ingles (sem acento, minusculo, comeco).
+# Colunas dos relatorios (Meta, LinkedIn Campaign Manager, Google Ads), em
+# portugues e ingles, sem acento e minusculas: nome igual, ou que comeca igual.
 COLUNAS = {
-    "id": ("identificacao do anuncio", "id do anuncio", "ad id"),
-    "nome": ("nome do anuncio", "ad name"),
-    "campanha": ("nome da campanha", "campaign name"),
-    "gasto": ("valor usado", "valor gasto", "amount spent"),
+    "id": ("identificacao do anuncio", "id do anuncio", "ad id", "creative id"),
+    "nome": ("nome do anuncio", "ad name", "creative name", "anuncio"),
+    "campanha": ("nome da campanha", "campaign name", "campanha", "campaign"),
+    "texto": ("ad introduction text", "texto principal", "primary text", "texto do anuncio"),
+    "gasto": ("valor usado", "valor gasto", "amount spent", "total spent", "custo", "cost"),
     "alcance": ("alcance", "reach"),
-    "impressoes": ("impressoes", "impressions"),
-    "cliques": ("cliques no link", "link clicks"),
-    "resultados": ("resultados", "results"),
-    "inicio": ("inicio dos relatorios", "inicio", "reporting starts", "starts"),
-    "fim": ("termino dos relatorios", "termino", "reporting ends", "ends"),
+    "impressoes": ("impressoes", "impressions", "impr"),
+    "cliques": ("cliques no link", "link clicks", "cliques", "clicks"),
+    "resultados": ("resultados", "results", "conversoes", "conversions"),
+    "inicio": (
+        "inicio dos relatorios",
+        "reporting starts",
+        "start date in utc",
+        "start date",
+        "inicio",
+        "starts",
+        "dia",
+        "day",
+    ),
+    "fim": ("termino dos relatorios", "reporting ends", "end date", "termino", "ends"),
 }
 
 
-def _mapear(cabecalho: list[str]) -> dict[str, int]:
-    chaves = [_chave(c) for c in cabecalho]
-    saida = {}
-    for campo, nomes in COLUNAS.items():
-        for i, chave in enumerate(chaves):
-            if any(chave.startswith(nome) for nome in nomes):
-                saida.setdefault(campo, i)
-                break
-    return saida
-
-
-class PlanilhaInvalida(ValueError):
-    pass
+def _aceita(mapa: dict) -> bool:
+    return "gasto" in mapa and bool({"nome", "id", "campanha"} & set(mapa))
 
 
 def importar_planilha(destino: Destino, conteudo: bytes) -> dict:
-    """Le o .csv exportado do Gerenciador de Anuncios. Devolve as contagens."""
-    for codificacao in ("utf-8-sig", "utf-16", "latin-1"):
-        try:
-            texto = conteudo.decode(codificacao)
-            break
-        except UnicodeDecodeError:
-            continue
-    else:
-        raise PlanilhaInvalida("nao consegui ler o arquivo (use o .csv do Gerenciador).")
-    try:
-        dialeto = csv.Sniffer().sniff(texto[:4000], delimiters=",;\t")
-    except csv.Error:
-        dialeto = csv.excel
-    linhas = list(csv.reader(io.StringIO(texto), dialeto))
-    if not linhas:
-        raise PlanilhaInvalida("o arquivo esta vazio.")
-    colunas = _mapear(linhas[0])
-    if "gasto" not in colunas or not ({"nome", "id"} & set(colunas)):
+    """Le o relatorio exportado (.csv ou .xlsx) do Gerenciador da Meta, do
+    Campaign Manager do LinkedIn ou do Google Ads. Devolve as contagens."""
+    from apps.social.planilhas import em_ingles, ler, mapear, mes_primeiro, tabelas
+
+    achadas = tabelas(ler(conteudo), COLUNAS, _aceita)
+    if not achadas:
         raise PlanilhaInvalida(
-            "nao achei as colunas 'Nome do anuncio' e 'Valor usado'. Exporte pela aba "
-            "'Anuncios' do Gerenciador."
+            "nao achei as colunas do anuncio (ex.: 'Nome do anuncio' e 'Valor usado'; "
+            "'Campaign Name' e 'Total Spent'; 'Campanha' e 'Custo'). Siga o passo a passo "
+            "da tela."
         )
-
-    def campo(linha, nome):
-        i = colunas.get(nome)
-        return linha[i].strip() if i is not None and i < len(linha) else ""
-
     lidos = 0
-    for linha in linhas[1:]:
-        nome = campo(linha, "nome")
-        gasto = numero(campo(linha, "gasto"))
-        if gasto is None or not (nome or campo(linha, "id")):
-            continue  # linha de total ou vazia
-        inicio = _data(campo(linha, "inicio"))
-        id_remoto = campo(linha, "id") or f"planilha:{_chave(nome)[:120]}:{inicio or ''}"
-        Anuncio.objects.update_or_create(
-            destino=destino,
-            id_remoto=id_remoto[:200],
-            defaults={
-                "nome": nome[:300],
-                "campanha": campo(linha, "campanha")[:300],
-                "gasto": gasto,
-                "alcance": _inteiro(campo(linha, "alcance")),
-                "impressoes": _inteiro(campo(linha, "impressoes")),
-                "cliques": _inteiro(campo(linha, "cliques")),
-                "resultados": _inteiro(campo(linha, "resultados")),
-                "inicio": inicio,
-                "fim": _data(campo(linha, "fim")),
-                "origem": Anuncio.Origem.PLANILHA,
-            },
-        )
-        lidos += 1
+    for cabecalho, linhas in achadas:
+        mapa = mapear(cabecalho, COLUNAS)
+        ordem = mes_primeiro([campo(x, mapa, "inicio") for x in linhas], em_ingles(cabecalho))
+        for linha in linhas:
+            nome = campo(linha, mapa, "nome") or campo(linha, mapa, "campanha")
+            gasto = numero(campo(linha, mapa, "gasto"))
+            if gasto is None or not (nome or campo(linha, mapa, "id")):
+                continue  # linha vazia
+            if chave(nome).startswith("total"):
+                continue  # linha de total (Google Ads: "Total: conta")
+            inicio = data(campo(linha, mapa, "inicio"), mes_primeiro=ordem)
+            id_remoto = campo(linha, mapa, "id") or f"planilha:{chave(nome)[:120]}:{inicio or ''}"
+            Anuncio.objects.update_or_create(
+                destino=destino,
+                id_remoto=id_remoto[:200],
+                defaults={
+                    "nome": nome[:300],
+                    "campanha": campo(linha, mapa, "campanha")[:300],
+                    "texto": campo(linha, mapa, "texto")[:3000],
+                    "gasto": gasto,
+                    "alcance": inteiro(campo(linha, mapa, "alcance")),
+                    "impressoes": inteiro(campo(linha, mapa, "impressoes")),
+                    "cliques": inteiro(campo(linha, mapa, "cliques")),
+                    "resultados": inteiro(campo(linha, mapa, "resultados")),
+                    "inicio": inicio,
+                    "fim": data(campo(linha, mapa, "fim"), mes_primeiro=ordem),
+                    "origem": Anuncio.Origem.PLANILHA,
+                },
+            )
+            lidos += 1
     destino.anuncios_planilha_em = timezone.now()
     destino.save(update_fields=["anuncios_planilha_em"])
     ligados = vincular(destino)
@@ -245,8 +223,7 @@ _PREFIXO_DO_IMPULSO = re.compile(
 
 def _legenda_do_nome(nome: str) -> str:
     """'Publicacao do Instagram: Voce sente dor...' -> 'voce sente dor ...'."""
-    chave = _chave(nome)
-    return _PREFIXO_DO_IMPULSO.sub("", chave).strip()
+    return _PREFIXO_DO_IMPULSO.sub("", chave(nome)).strip()
 
 
 def _parecidos(a: str, b: str) -> bool:
@@ -263,12 +240,12 @@ def vincular(destino: Destino) -> int:
     """Liga anuncios sem post ao post certo e recalcula o gasto de cada post."""
     posts = list(destino.posts.filter(situacao=Post.Situacao.PUBLICADO))
     por_id = {p.id_remoto: p for p in posts if p.id_remoto}
-    legendas = [(p, _chave(p.texto)) for p in posts]
+    legendas = [(p, chave(p.texto)) for p in posts]
     ligados = 0
     for anuncio in destino.anuncios.filter(post__isnull=True):
         post = por_id.get(anuncio.media_id) if anuncio.media_id else None
         if post is None:
-            alvo = _chave(anuncio.texto) or _legenda_do_nome(anuncio.nome)
+            alvo = chave(anuncio.texto) or _legenda_do_nome(anuncio.nome)
             candidatos = [p for p, legenda in legendas if _parecidos(alvo, legenda)]
             post = candidatos[0] if len(candidatos) == 1 else None
         if post is not None:

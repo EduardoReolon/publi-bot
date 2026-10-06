@@ -349,10 +349,11 @@ def test_leitura_parada_vira_aviso_no_painel_e_nas_redes(ambiente):
 
 
 @pytest.mark.django_db
-def test_so_o_instagram_entrega_o_passado_e_ja_postei_nao_duplica(ambiente):
+def test_quem_entrega_o_passado_e_ja_postei_nao_duplica(ambiente):
     assert historico.suporta(Destino(rede="instagram", nome="i"))
-    assert not historico.suporta(Destino(rede="linkedin", nome="l"))
-    assert not historico.suporta(Destino(rede="gmn", nome="g"))
+    assert not historico.suporta(Destino(rede="linkedin", nome="l", autor="pessoa"))
+    assert historico.suporta(Destino(rede="linkedin", nome="l", autor="organizacao"))
+    assert historico.suporta(Destino(rede="gmn", nome="g"))
 
     destino = _conectado("instagram", "ig1", conta_nome="@clinica")
     # Postado pelo "Ja postei" (sem id na rede), com o link que o app copia.

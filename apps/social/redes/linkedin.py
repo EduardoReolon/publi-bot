@@ -18,12 +18,14 @@ pede para reconectar.
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from urllib.parse import quote, urlencode
 
 from django.conf import settings
 
 from apps.social.redes.base import (
     ComentarioLido,
+    ErroDaRede,
     Formato,
     Publicado,
     Publicador,
@@ -286,7 +288,81 @@ class PublicadorLinkedIn(Publicador):
         ).json()
         return dados.get("firstDegreeSize")
 
+    # -- Passado e resultado (so da pagina: o perfil pessoal nao tem leitura) --
+    @classmethod
+    def entrega_historico(cls, destino) -> bool:
+        return destino.autor == "organizacao"
+
+    def historico(self, limite: int = 500) -> list[dict]:
+        """Os posts da pagina (Posts API, finder por autor), mais novos primeiro."""
+        if self.destino.autor != "organizacao":
+            raise SemSuporte("o LinkedIn nao entrega os posts do perfil pessoal pela API.")
+        autor = quote(self.destino.conta_id, safe="")
+        saida: list[dict] = []
+        inicio, lote = 0, 50
+        while len(saida) < limite:
+            dados = self._conferir(
+                self.http.get(
+                    f"{API}/rest/posts?q=author&author={autor}&count={lote}&start={inicio}"
+                    "&sortBy=CREATED",
+                    headers=self._cabecalhos(),
+                ),
+                "LinkedIn (posts antigos)",
+            ).json()
+            elementos = dados.get("elements", [])
+            for item in elementos:
+                if item.get("lifecycleState", "PUBLISHED") != "PUBLISHED":
+                    continue
+                urn = item.get("id", "")
+                quando = item.get("publishedAt") or item.get("createdAt")
+                saida.append(
+                    {
+                        "id_remoto": urn,
+                        "legenda": _sem_escape(item.get("commentary", "")),
+                        "formato": _formato(item.get("content") or {}),
+                        "link": f"https://www.linkedin.com/feed/update/{urn}/",
+                        "publicado_em": datetime.fromtimestamp(quando / 1000, tz=UTC).isoformat()
+                        if quando
+                        else "",
+                    }
+                )
+            if len(elementos) < lote:
+                break
+            inicio += lote
+        return saida[:limite]
+
+    def _estatisticas(self, post) -> dict:
+        """Alcance, impressoes, cliques e compartilhamentos do post da pagina."""
+        tipo = "ugcPosts" if ":ugcPost:" in post.id_remoto else "shares"
+        dados = self._conferir(
+            self.http.get(
+                f"{API}/rest/organizationalEntityShareStatistics?q=organizationalEntity"
+                f"&organizationalEntity={quote(self.destino.conta_id, safe='')}"
+                f"&{tipo}=List({quote(post.id_remoto, safe='')})",
+                headers=self._cabecalhos(),
+            ),
+            "LinkedIn (estatisticas)",
+        ).json()
+        elementos = dados.get("elements") or [{}]
+        total = elementos[0].get("totalShareStatistics") or {}
+        nomes = {
+            "uniqueImpressionsCount": "alcance",
+            "impressionCount": "impressoes",
+            "likeCount": "curtidas",
+            "commentCount": "comentarios",
+            "shareCount": "compartilhamentos",
+            "clickCount": "cliques_na_rede",
+        }
+        return {nosso: total[deles] for deles, nosso in nomes.items() if deles in total}
+
     def metricas(self, post) -> dict:
+        if self.destino.autor == "organizacao":
+            try:
+                estatisticas = self._estatisticas(post)
+                if estatisticas:
+                    return estatisticas
+            except ErroDaRede:
+                pass  # sem a permissao de administrador: ao menos reacoes e comentarios
         dados = self._conferir(
             self.http.get(
                 f"{API}/rest/socialActions/{quote(post.id_remoto, safe='')}",
@@ -298,6 +374,29 @@ class PublicadorLinkedIn(Publicador):
             "curtidas": (dados.get("likesSummary") or {}).get("totalLikes", 0),
             "comentarios": (dados.get("commentsSummary") or {}).get("aggregatedTotalComments", 0),
         }
+
+
+def _formato(conteudo: dict) -> str:
+    """O tipo do post, no codigo que o diagnostico usa."""
+    if "multiImage" in conteudo:
+        return "CAROUSEL_ALBUM"
+    if "article" in conteudo:
+        return "ARTICLE"
+    media = (conteudo.get("media") or {}).get("id", "")
+    if ":video:" in media:
+        return "VIDEO"
+    if ":document:" in media:
+        return "DOCUMENT"
+    if ":image:" in media:
+        return "IMAGE"
+    return "TEXT" if not conteudo else ""
+
+
+def _sem_escape(texto: str) -> str:
+    """O texto do post sem as barras e marcacoes do 'little text'."""
+    texto = re.sub(r"\{hashtag\|\\?#\|([^}]*)\}", r"#\1", texto or "")
+    texto = re.sub(r"@\[([^\]]*)\]\([^)]*\)", r"\1", texto)
+    return re.sub(r"\\([\\|{}@\[\]()<>#*_~])", r"\1", texto)
 
 
 REDE = Rede(

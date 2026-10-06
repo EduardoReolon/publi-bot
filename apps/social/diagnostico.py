@@ -37,6 +37,9 @@ FORMATOS = {
     "IMAGE": "imagem unica",
     "VIDEO": "video/reels",
     "REELS": "video/reels",
+    "DOCUMENT": "documento (PDF)",
+    "ARTICLE": "link/artigo",
+    "TEXT": "so texto",
 }
 _HASHTAG = re.compile(r"#\w+")
 
@@ -61,6 +64,7 @@ class Diagnostico:
     piores: list = field(default_factory=list)
     anuncios: dict = field(default_factory=dict)
     comentarios: dict = field(default_factory=dict)
+    conta: dict = field(default_factory=dict)  # resultado da conta mes a mes (Google)
 
 
 def _pct(x: float) -> str:
@@ -79,10 +83,7 @@ def _medida(post: Post, minimo: int) -> float | None:
 
 
 def _interacoes(post: Post) -> float | None:
-    m = post.metricas or {}
-    partes = [m.get(k) for k in ("curtidas", "comentarios", "compartilhamentos", "salvos")]
-    partes = [p for p in partes if isinstance(p, int | float)]
-    return float(sum(partes)) if partes else None
+    return experimentos.interacoes(post.metricas)
 
 
 def _comparar(nome: str, grupos: dict[str, list[float]], formato) -> tuple[dict, Ponto | None]:
@@ -153,6 +154,7 @@ def montar(destino: Destino) -> Diagnostico:
         "ate": posts[-1].publicado_em if posts else None,
         "seguidores": destino.seguidores,
     }
+    _conta(d, destino, posts)
     if len(posts) < MINIMO_DE_POSTS:
         _anuncios(d, destino, {})
         return d
@@ -419,6 +421,68 @@ def _anuncios(d: Diagnostico, destino: Destino, valores: dict, mediana: float = 
                 )
 
 
+ROTULOS_DA_CONTA = {
+    "visualizacoes": "visualizacoes",
+    "ligacoes": "ligacoes",
+    "rotas": "pedidos de rota",
+    "site": "cliques no site",
+    "conversas": "conversas",
+}
+
+
+def _conta(d: Diagnostico, destino: Destino, posts: list[Post]) -> None:
+    """Rede que mede a conta, e nao o post (Google): os ultimos 12 meses, ao
+    lado de quantos posts houve em cada um, e se os meses com post rendem mais."""
+    desempenho = destino.desempenho or {}
+    meses = list(desempenho.get("meses") or [])[-12:]
+    avaliacoes = desempenho.get("avaliacoes") or {}
+    if not meses and not avaliacoes:
+        return
+    por_mes: dict[str, int] = {}
+    for p in posts:
+        mes = f"{timezone.localtime(p.publicado_em):%Y-%m}"
+        por_mes[mes] = por_mes.get(mes, 0) + 1
+    linhas = [{**m, "posts": por_mes.get(m["mes"], 0)} for m in meses]
+    # Os pontos da conta ficam a parte: aparecem mesmo com poucos posts.
+    bons: list[Ponto] = []
+    ruins: list[Ponto] = []
+    fazer: list[str] = []
+    d.conta = {
+        "meses": linhas,
+        "avaliacoes": avaliacoes,
+        "bons": bons,
+        "ruins": ruins,
+        "fazer": fazer,
+    }
+
+    # Meses com post x sem post, na acao que mais importa (ligacao + rota + site).
+    def acoes(m: dict) -> float:
+        return float(sum(m.get(k, 0) for k in ("ligacoes", "rotas", "site", "conversas")))
+
+    grupos: dict[str, list[float]] = {}
+    for m in linhas[:-1]:  # o mes corrente esta pela metade
+        grupos.setdefault("meses com post" if m["posts"] else "meses sem post", []).append(acoes(m))
+    _tabela, ponto = _comparar("Contatos pelo Google", grupos, lambda x: f"{x:.0f}")
+    if ponto is not None:
+        (bons if "meses com post rende" in ponto.texto else ruins).append(ponto)
+
+    if avaliacoes.get("baixas_sem_resposta"):
+        ruins.append(
+            Ponto(
+                "Ha avaliacoes de 1 a 3 estrelas sem resposta no Google.",
+                f"{avaliacoes['baixas_sem_resposta']} de {avaliacoes.get('lidas', 0)} lidas",
+            )
+        )
+        fazer.append(
+            "Responder as avaliacoes negativas com calma e sem expor o cliente: quem procura "
+            "le a resposta mais do que a reclamacao."
+        )
+    elif avaliacoes.get("lidas") and not avaliacoes.get("sem_resposta"):
+        bons.append(
+            Ponto("Todas as avaliacoes do Google tem resposta.", f"{avaliacoes['lidas']} lidas")
+        )
+
+
 def como_texto(d: Diagnostico) -> str:
     """O diagnostico em texto corrido, para mandar ao dono da conta."""
     linhas = [f"Diagnostico da conta {d.destino.nome} ({d.destino.rede_nome})"]
@@ -435,6 +499,23 @@ def como_texto(d: Diagnostico) -> str:
         linhas += ["", "O que melhorar:"] + [f"- {p.texto} ({p.evidencia})" for p in d.ruins]
     if d.fazer:
         linhas += ["", "O que fazer:"] + [f"- {x}" for x in dict.fromkeys(d.fazer)]
+    if d.conta:
+        linhas += (
+            [""]
+            + [f"- {p.texto} ({p.evidencia})" for p in d.conta["bons"] + d.conta["ruins"]]
+            + [f"- {x}" for x in d.conta["fazer"]]
+        )
+    if d.conta.get("meses"):
+        ultimo = d.conta["meses"][-1]
+        linhas += [
+            f"No Google ({ultimo['mes']}): "
+            + ", ".join(
+                f"{ultimo.get(k, 0)} {rotulo}"
+                for k, rotulo in ROTULOS_DA_CONTA.items()
+                if k in ultimo
+            )
+            + ".",
+        ]
     if d.anuncios.get("tem"):
         linhas += [
             "",
