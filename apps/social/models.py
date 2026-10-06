@@ -175,6 +175,10 @@ class Destino(models.Model):
     sincronizado_em = models.DateTimeField(null=True, blank=True)
     erro_de_sincronia = models.TextField(blank=True)
     historico_importado_em = models.DateTimeField(null=True, blank=True)
+    # O resultado da conta, quando a rede so mede assim (Google: mes a mes):
+    # {"meses": [{"mes": "2026-09", "visualizacoes": 900, ...}], "avaliacoes": {...}}.
+    desempenho = models.JSONField(default=dict, blank=True)
+    historico_planilha_em = models.DateTimeField(null=True, blank=True)
     # Meta Ads: a conta de anuncios (act_...) lida pela API, ou a planilha.
     anuncios_conta_id = models.CharField(_("conta de anuncios"), max_length=60, blank=True)
     anuncios_conta_nome = models.CharField(max_length=200, blank=True)

@@ -7,6 +7,8 @@ precisa ser PEDIDO ao Google (cota zero ate aprovarem): ate la, o destino fica
 no "Copiar para postar".
 
 Nao ha comentario em post do Perfil da Empresa: so publica e mede pelo link.
+O passado: os posts (texto e data) e o resultado da conta mes a mes
+(visualizacoes, ligacoes, rotas, cliques no site) mais o resumo das avaliacoes.
 """
 
 from __future__ import annotations
@@ -142,6 +144,133 @@ class PublicadorGoogle(Publicador):
         if not resposta.get("name"):
             raise ErroDaRede(f"Google nao devolveu o post: {resposta}")
         return Publicado(id_remoto=resposta["name"], url=resposta.get("searchUrl", ""))
+
+    # -- Passado e resultado ----------------------------------------------------
+    # O Google nao mede cada post (a leitura por post foi desligada): mede a
+    # CONTA, dia a dia. O PubliBot importa os posts (texto e data) e o resultado
+    # da conta mes a mes, e o diagnostico compara meses com e sem post.
+    def _get(self, url: str, contexto: str, params=None) -> dict:
+        token = acesso_valido(self.destino, OAuthGoogle(http=self.http))["access_token"]
+        return self._conferir(
+            self.http.get(url, params=params, headers={"Authorization": f"Bearer {token}"}),
+            contexto,
+        ).json()
+
+    def historico(self, limite: int = 500) -> list[dict]:
+        url = f"https://mybusiness.googleapis.com/v4/{self.destino.conta_id}/localPosts"
+        saida: list[dict] = []
+        pagina = ""
+        while len(saida) < limite:
+            dados = self._get(
+                url,
+                "Google (posts antigos)",
+                {"pageSize": 100, **({"pageToken": pagina} if pagina else {})},
+            )
+            for item in dados.get("localPosts", []):
+                if item.get("state", "LIVE") not in ("LIVE", "PROCESSING"):
+                    continue
+                saida.append(
+                    {
+                        "id_remoto": item.get("name", ""),
+                        "legenda": item.get("summary", "") or "",
+                        "formato": "IMAGE" if item.get("media") else "TEXT",
+                        "link": item.get("searchUrl", ""),
+                        "publicado_em": item.get("createTime", ""),
+                    }
+                )
+            pagina = dados.get("nextPageToken", "")
+            if not pagina:
+                break
+        return saida[:limite]
+
+    def desempenho(self) -> dict | None:
+        """Cada parte por si: sem a permissao de uma, a outra ainda vem."""
+        saida, erro = {}, None
+        for nome, ler in (("meses", self._meses), ("avaliacoes", self._avaliacoes)):
+            try:
+                saida[nome] = ler()
+            except ErroDaRede as exc:
+                erro = exc
+        if not saida and erro is not None:
+            raise erro
+        return saida
+
+    def _meses(self, dias: int = 540) -> list[dict]:
+        """Visualizacoes, ligacoes, rotas, cliques no site e conversas por mes
+        (Business Profile Performance API; guarda ate 18 meses)."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        fim = timezone.localdate() - timedelta(days=1)
+        inicio = fim - timedelta(days=dias)
+        params: list[tuple[str, str | int]] = [("dailyMetrics", m) for m in METRICAS_DA_CONTA]
+        for nome, dia in (("startDate", inicio), ("endDate", fim)):
+            params += [
+                (f"dailyRange.{nome}.year", dia.year),
+                (f"dailyRange.{nome}.month", dia.month),
+                (f"dailyRange.{nome}.day", dia.day),
+            ]
+        local = "locations/" + self.destino.conta_id.rsplit("locations/", 1)[-1]
+        dados = self._get(
+            f"https://businessprofileperformance.googleapis.com/v1/{local}"
+            ":fetchMultiDailyMetricsTimeSeries",
+            "Google (desempenho)",
+            params,
+        )
+        meses: dict[str, dict] = {}
+        for grupo in dados.get("multiDailyMetricTimeSeries", []):
+            for serie in grupo.get("dailyMetricTimeSeries", []):
+                nosso = METRICAS_DA_CONTA.get(serie.get("dailyMetric", ""))
+                if not nosso:
+                    continue
+                for valor in (serie.get("timeSeries") or {}).get("datedValues", []):
+                    d = valor.get("date") or {}
+                    mes = f"{d.get('year', 0):04d}-{d.get('month', 0):02d}"
+                    linha = meses.setdefault(mes, {"mes": mes})
+                    linha[nosso] = linha.get(nosso, 0) + int(valor.get("value") or 0)
+        return [meses[m] for m in sorted(meses)]
+
+    def _avaliacoes(self, paginas: int = 10) -> dict:
+        """Quantas avaliacoes, a nota media e quantas estao sem resposta."""
+        url = f"https://mybusiness.googleapis.com/v4/{self.destino.conta_id}/reviews"
+        notas = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5}
+        lidas: list[dict] = []
+        pagina, dados = "", {}
+        for _ in range(paginas):
+            dados_da_pagina = self._get(
+                url,
+                "Google (avaliacoes)",
+                {"pageSize": 50, **({"pageToken": pagina} if pagina else {})},
+            )
+            dados = dados or dados_da_pagina
+            lidas += dados_da_pagina.get("reviews", [])
+            pagina = dados_da_pagina.get("nextPageToken", "")
+            if not pagina:
+                break
+        sem_resposta = [r for r in lidas if not r.get("reviewReply")]
+        return {
+            "total": dados.get("totalReviewCount", len(lidas)),
+            "media": dados.get("averageRating"),
+            "lidas": len(lidas),
+            "sem_resposta": len(sem_resposta),
+            "baixas_sem_resposta": sum(
+                1 for r in sem_resposta if notas.get(r.get("starRating", ""), 5) <= 3
+            ),
+        }
+
+
+# Metrica diaria do Google -> nome no PubliBot (as 4 de impressao somam).
+METRICAS_DA_CONTA = {
+    "BUSINESS_IMPRESSIONS_DESKTOP_MAPS": "visualizacoes",
+    "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH": "visualizacoes",
+    "BUSINESS_IMPRESSIONS_MOBILE_MAPS": "visualizacoes",
+    "BUSINESS_IMPRESSIONS_MOBILE_SEARCH": "visualizacoes",
+    "CALL_CLICKS": "ligacoes",
+    "BUSINESS_DIRECTION_REQUESTS": "rotas",
+    "WEBSITE_CLICKS": "site",
+    "BUSINESS_CONVERSATIONS": "conversas",
+}
 
 
 REDE = Rede(

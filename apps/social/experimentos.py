@@ -58,9 +58,19 @@ def valor(post: Post, metrica: str, *, alcance_minimo: int = 0) -> float | None:
             return None
         interacoes = sum(m.get(k, 0) or 0 for k in INTERACOES) + post.cliques
         return interacoes / alcance
+    return interacoes(m)
+
+
+def interacoes(metricas: dict) -> float | None:
+    """Curtidas + comentarios + compartilhamentos + salvos; sem nenhum deles,
+    o total de engajamentos que a rede da pronto (planilha do LinkedIn)."""
+    m = metricas or {}
     partes = [m.get(k) for k in ("curtidas", "comentarios", "compartilhamentos", "salvos")]
     partes = [p for p in partes if isinstance(p, int | float)]
-    return float(sum(partes)) if partes else None
+    if partes:
+        return float(sum(partes))
+    total = m.get("engajamentos")
+    return float(total) if isinstance(total, int | float) else None
 
 
 def avaliar(destino: Destino) -> int:

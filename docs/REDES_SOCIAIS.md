@@ -286,9 +286,24 @@ A importacao anda em lotes de 60 posts (as APIs limitam chamadas por hora); a
 medicao diaria continua o resto, e depois traz todo dia os posts feitos direto
 na rede, fora do PubliBot (o que ja esta no PubliBot — publicado pela API ou
 marcado com "Ja postei" — nao duplica). Comentarios antigos **nao** viram Perguntas
-(a fila nao e inundada de perguntas de anos atras). LinkedIn de perfil pessoal
-e Perfil do Google nao entregam o passado pela API: o diagnostico usa os posts
-do PubliBot.
+(a fila nao e inundada de perguntas de anos atras).
+
+**Nas outras redes** (`redes/linkedin.py`, `redes/gmn.py`):
+
+| Rede | Vem sozinho (API) | Nao vem / como suprir |
+|---|---|---|
+| LinkedIn, **pagina** | Posts (texto, formato, data, link); por post: alcance (pessoas unicas), impressoes, reacoes, comentarios, compartilhamentos, cliques; comentarios; seguidores | Precisa da Community Management API aprovada. Ate la: a planilha de Analytics da pagina |
+| LinkedIn, **perfil pessoal** | Nada (o LinkedIn fechou a leitura do perfil pessoal) | **Planilha**: Analytics > Exportar (.xlsx com os 50 posts de mais engajamento e os 50 de mais impressoes, ate 365 dias) + Shares.csv da copia dos dados (o texto de todos os posts). O PubliBot junta os dois |
+| Perfil da Empresa no Google | Posts (texto, data, link); o resultado **da conta** mes a mes, ate 18 meses (visualizacoes na busca e no mapa, ligacoes, rotas, cliques no site, conversas); avaliacoes (total, nota, sem resposta) | O Google nao mede cada post. O diagnostico compara **meses com post x meses sem post** (3+ meses em cada grupo, 30% de distancia) e aponta avaliacoes de 1 a 3 estrelas sem resposta |
+
+**Planilha de posts** (Diagnostico > "Pelo arquivo exportado da rede",
+`historico.importar_planilha`): .csv ou .xlsx, em portugues ou ingles, de
+qualquer rede (LinkedIn pessoal e pagina, Meta Business Suite). O cabecalho e
+procurado nas primeiras linhas de cada aba, e tabelas lado a lado (a aba TOP
+POSTS do LinkedIn) sao lidas uma a uma. O mesmo post em dois arquivos (texto
+num, numeros no outro) e juntado pelo link ou, sem link igual, pelo dia
+quando so ha um post naquele dia. Mandar de novo atualiza, nao duplica. Sem
+curtidas separadas, o total de engajamentos da planilha mede o post.
 
 O historico tambem calibra a conta: "funcionou" e contra a mediana dela, e a
 mediana passa a ter historia desde o primeiro dia (na medida "taxa"; nas
@@ -305,10 +320,11 @@ clique, o mais caro x o mais barato e **quanto do impulso foi em post que ja
 ia mal no organico** (o desperdicio mais comum). "Copiar o diagnostico" da o
 texto corrido para mandar ao dono da conta.
 
-## Gasto com anuncios — `anuncios.py`, `redes/meta_anuncios.py`
+## Gasto com anuncios — `anuncios.py`, `redes/meta_anuncios.py`, `planilhas.py`
 
-Dois caminhos para o mesmo lugar, porque a permissao de ler anuncios depende
-de uma revisao da Meta que pode nao sair (ou ser retirada um dia):
+Meta (Instagram): dois caminhos para o mesmo lugar, porque a permissao de ler
+anuncios depende de uma revisao da Meta que pode nao sair (ou ser retirada um
+dia):
 
 1. **Automatico** — Diagnostico > "Conectar anuncios": a conexao da Meta e
    refeita pedindo tambem `ads_read`. Com a permissao, o PubliBot acha a conta
@@ -320,6 +336,18 @@ de uma revisao da Meta que pode nao sair (ou ser retirada um dia):
    Portugues ou ingles; o anuncio e ligado ao post pelo comeco da legenda (a
    Meta nomeia o impulso "Publicacao do Instagram: <legenda>"). Mandar de novo
    nao duplica. O passo a passo esta na tela.
+
+**LinkedIn Ads e Google Ads: so pela planilha.** As APIs de anuncio deles
+pedem aprovacao a parte (Advertising API do LinkedIn; token de desenvolvedor
+do Google Ads, com analise), que nao compensa para ler o gasto de uma conta
+pequena. A mesma tela de envio aceita:
+
+- **Campaign Manager do LinkedIn** > aba *Anuncios* > *Exportar* > *Desempenho
+  do anuncio* (.csv/.xlsx; as linhas de titulo antes do cabecalho sao
+  puladas). O anuncio patrocinado e ligado ao post pelo texto de introducao.
+- **Google Ads** > *Campanhas* > *Todo o periodo* > *Fazer download* (.csv).
+  Campanha do Google nao e de um post (busca, mapa): entra no gasto da conta,
+  sem post; a linha "Total" fica de fora.
 
 E o impulso de um post so continua valendo pela Estrategia ("Registrei o
 impulso").

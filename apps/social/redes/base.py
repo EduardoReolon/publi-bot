@@ -125,6 +125,17 @@ class Publicador:
         "formato", "link", "publicado_em", "curtidas", "comentarios"}]."""
         raise SemSuporte("esta rede nao entrega os posts antigos pela API.")
 
+    @classmethod
+    def entrega_historico(cls, destino) -> bool:
+        """Se `historico` funciona para este destino (a rede pode entregar so
+        para um tipo de conta: o LinkedIn, so para a pagina)."""
+        return cls.historico is not Publicador.historico
+
+    def desempenho(self) -> dict | None:
+        """O resultado da CONTA (nao de cada post), quando a rede so mede assim
+        (Perfil da Empresa no Google: visualizacoes, ligacoes, rotas por mes)."""
+        return None
+
     def seguidores(self) -> int | None:
         """Quantos seguem a conta (None: a rede nao informa para este tipo de conta)."""
         return None

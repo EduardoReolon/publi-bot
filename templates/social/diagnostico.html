@@ -28,10 +28,10 @@
   {# --- Historico ---------------------------------------------------------------- #}
   <section class="secao">
     <h2>{% translate "Historico da conta" %}</h2>
-    {% if not destino.conectado %}
-      <p>{% translate "Conecte a conta para o PubliBot importar os posts antigos, com o resultado e os comentarios de cada um." %} <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Conectar" %}</a></p>
-    {% elif not suporta_historico %}
-      <p class="pre-visualizacao">{% translate "Esta rede nao entrega os posts antigos pela API (LinkedIn de perfil pessoal e Perfil da Empresa no Google). O diagnostico usa os posts feitos pelo PubliBot." %}</p>
+    {% if not suporta_historico %}
+      <p class="pre-visualizacao">{% translate "Esta conta nao entrega os posts antigos pela API (o LinkedIn so libera a leitura para pagina de empresa). Envie o arquivo que a propria rede exporta, abaixo." %}</p>
+    {% elif not destino.conectado %}
+      <p>{% translate "Conecte a conta para o PubliBot importar os posts antigos, com o resultado e os comentarios de cada um." %} <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Conectar" %}</a> {% translate "Ou envie o arquivo exportado da rede, abaixo." %}</p>
     {% else %}
       <p>
         {% if destino.historico_importado_em %}
@@ -44,10 +44,42 @@
       <form method="post" action="{% url 'social:acao_no_diagnostico' %}" class="acoes">
         {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="importar">
         <button type="submit" class="botao secundario pequeno">{% if destino.historico_importado_em %}{% translate "Atualizar agora" %}{% else %}{% translate "Importar agora" %}{% endif %}</button>
-        <span class="ajuda">{% translate "Posts, alcance, salvos, compartilhamentos e comentarios. Comentarios antigos nao viram perguntas na fila." %}</span>
+        <span class="ajuda">{% if destino.rede == 'gmn' %}{% translate "Posts (texto e data), o resultado da conta mes a mes (visualizacoes, ligacoes, rotas, cliques no site) e as avaliacoes. O Google nao mede cada post." %}{% else %}{% translate "Posts, alcance, salvos, compartilhamentos e comentarios. Comentarios antigos nao viram perguntas na fila." %}{% endif %}</span>
       </form>
     {% endif %}
+    {% if destino.rede != 'gmn' %}
+    <details {% if not suporta_historico or not destino.conectado %}open{% endif %}>
+      <summary>{% translate "Pelo arquivo exportado da rede" %}{% if destino.historico_planilha_em %} <span class="ajuda">({% translate "ultimo:" %} {{ destino.historico_planilha_em|date:"d/m/Y" }})</span>{% endif %}</summary>
+      <ol class="ajuda">{% for passo in como_exportar_posts %}<li>{{ passo }}</li>{% endfor %}</ol>
+      <form method="post" action="{% url 'social:acao_no_diagnostico' %}" enctype="multipart/form-data" class="acoes">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="planilha_de_posts">
+        <input type="file" name="planilha" accept=".csv,.xlsx,text/csv" required style="width:auto">
+        <button type="submit" class="botao secundario pequeno">{% translate "Enviar arquivo" %}</button>
+      </form>
+    </details>
+    {% endif %}
   </section>
+
+  {% if d.conta %}
+  <section class="secao">
+    <h2>{% translate "A conta no Google, mes a mes" %}</h2>
+    {% if d.conta.meses %}
+      <div class="rolagem"><table>
+        <thead><tr><th>{% translate "Mes" %}</th><th class="numero">{% translate "Visualizacoes" %}</th><th class="numero">{% translate "Ligacoes" %}</th><th class="numero">{% translate "Rotas" %}</th><th class="numero">{% translate "Cliques no site" %}</th><th class="numero">{% translate "Conversas" %}</th><th class="numero">{% translate "Posts" %}</th></tr></thead>
+        <tbody>{% for m in d.conta.meses %}<tr><td>{{ m.mes }}</td><td class="numero">{{ m.visualizacoes|default:0 }}</td><td class="numero">{{ m.ligacoes|default:0 }}</td><td class="numero">{{ m.rotas|default:0 }}</td><td class="numero">{{ m.site|default:0 }}</td><td class="numero">{{ m.conversas|default:0 }}</td><td class="numero">{{ m.posts }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    {% endif %}
+    {% with a=d.conta.avaliacoes %}{% if a.lidas %}
+      <p>{% blocktranslate trimmed with t=a.total m=a.media s=a.sem_resposta b=a.baixas_sem_resposta %}Avaliacoes: {{ t }}, nota media {{ m }}; {{ s }} sem resposta ({{ b }} de 1 a 3 estrelas).{% endblocktranslate %}</p>
+    {% endif %}{% endwith %}
+    <ul>
+      {% for p in d.conta.bons %}<li><span class="selo ok">{% translate "bom" %}</span> {{ p.texto }} <span class="ajuda">({{ p.evidencia }})</span></li>{% endfor %}
+      {% for p in d.conta.ruins %}<li><span class="selo ruim">{% translate "melhorar" %}</span> {{ p.texto }} <span class="ajuda">({{ p.evidencia }})</span></li>{% endfor %}
+      {% for x in d.conta.fazer %}<li>{{ x }}</li>{% endfor %}
+    </ul>
+    <p class="ajuda">{% translate "Meses com e sem post sao comparados so com 3 meses ou mais em cada grupo; e indicio (epoca do ano tambem conta), nao causa." %}</p>
+  </section>
+  {% endif %}
 
   {% if not d.suficiente %}
     <div class="aviso">{% blocktranslate trimmed with n=d.resumo.posts %}Poucos posts para um diagnostico ({{ n }}; precisa de pelo menos 6 publicados).{% endblocktranslate %}</div>
@@ -113,9 +145,8 @@
   {% endif %}
 
   {# --- Anuncios ----------------------------------------------------------------- #}
-  {% if destino.rede == 'instagram' %}
   <section class="secao" id="anuncios">
-    <h2>{% translate "Gasto com anuncios (Meta Ads)" %}</h2>
+    <h2>{% if destino.rede == 'instagram' %}{% translate "Gasto com anuncios (Meta Ads)" %}{% elif destino.rede == 'linkedin' %}{% translate "Gasto com anuncios (LinkedIn Ads)" %}{% elif destino.rede == 'gmn' %}{% translate "Gasto com anuncios (Google Ads)" %}{% else %}{% translate "Gasto com anuncios" %}{% endif %}</h2>
     {% if d.anuncios.tem %}
       <p>
         {% blocktranslate trimmed with n=d.anuncios.n g=d.anuncios.gasto %}{{ n }} anuncio(s), {{ g }} no total.{% endblocktranslate %}
@@ -133,6 +164,7 @@
       </table></div>
     {% endif %}
 
+    {% if destino.rede == 'instagram' %}
     <h3>{% translate "Automatico (recomendado)" %}</h3>
     {% if destino.anuncios_conta_id %}
       <p>
@@ -165,17 +197,18 @@
     {% else %}
       <p class="pre-visualizacao">{% translate "Conecte a conta do Instagram primeiro (Configurar)." %}</p>
     {% endif %}
-
     <h3>{% translate "Pela planilha (sem permissao, ou se a leitura automatica parar)" %}</h3>
+    {% else %}
+    <p class="pre-visualizacao">{% translate "Pela planilha exportada da plataforma de anuncios: ler sozinho pediria uma aprovacao a parte, que nao compensa para o gasto de uma conta pequena." %}</p>
+    {% endif %}
     <ol class="ajuda">{% for passo in como_exportar %}<li>{{ passo }}</li>{% endfor %}</ol>
     <form method="post" action="{% url 'social:acao_no_diagnostico' %}" enctype="multipart/form-data" class="acoes">
       {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="acao" value="planilha">
-      <input type="file" name="planilha" accept=".csv,text/csv" required style="width:auto">
+      <input type="file" name="planilha" accept=".csv,.xlsx,text/csv" required style="width:auto">
       <button type="submit" class="botao secundario pequeno">{% translate "Enviar planilha" %}</button>
       {% if destino.anuncios_planilha_em %}<span class="ajuda">{% translate "ultima:" %} {{ destino.anuncios_planilha_em|date:"d/m/Y" }}</span>{% endif %}
     </form>
     <p class="ajuda">{% translate "Um impulso isolado tambem pode ser registrado no proprio post, na pagina Estrategia ('Registrei o impulso')." %}</p>
   </section>
-  {% endif %}
   {% endif %}
 {% endblock %}

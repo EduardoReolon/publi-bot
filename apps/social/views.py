@@ -644,7 +644,7 @@ def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
 def diagnostico(request: HttpRequest) -> HttpResponse:
     from apps.social import diagnostico as modulo
     from apps.social import historico
-    from apps.social.anuncios import COMO_EXPORTAR
+    from apps.social.anuncios import como_exportar
     from apps.social.painel import leitura_parada
 
     destinos = list(Destino.objects.all())
@@ -658,7 +658,6 @@ def diagnostico(request: HttpRequest) -> HttpResponse:
         "contagens": _contagens(),
         "destinos": destinos,
         "destino": escolhido,
-        "como_exportar": COMO_EXPORTAR,
     }
     if escolhido is not None:
         d = modulo.montar(escolhido)
@@ -667,6 +666,8 @@ def diagnostico(request: HttpRequest) -> HttpResponse:
                 "d": d,
                 "texto": modulo.como_texto(d),
                 "suporta_historico": historico.suporta(escolhido),
+                "como_exportar": como_exportar(escolhido.rede),
+                "como_exportar_posts": historico.como_exportar(escolhido),
                 "faltam": escolhido.posts.filter(
                     motivo=Post.Motivo.HISTORICO, extras__detalhado__isnull=True
                 ).count(),
@@ -695,7 +696,7 @@ def _contas_de_anuncio(destino: Destino) -> list:
 @login_required
 @require_POST
 def acao_no_diagnostico(request: HttpRequest) -> HttpResponse:
-    from apps.social import anuncios
+    from apps.social import anuncios, historico
     from apps.social.tasks import importar_historico
 
     destino = get_object_or_404(Destino, pk=request.POST.get("destino"))
@@ -723,15 +724,23 @@ def acao_no_diagnostico(request: HttpRequest) -> HttpResponse:
         messages.info(
             request, _("Leitura automatica de anuncios desligada (a planilha segue valendo).")
         )
-    elif acao == "planilha":
-        arquivo = request.FILES.get("planilha")
-        if arquivo is None:
-            messages.error(request, _("Escolha o arquivo .csv exportado do Gerenciador."))
-        elif arquivo.size > 10 * 1024 * 1024:
-            messages.error(request, _("Arquivo grande demais (maximo 10 MB)."))
-        else:
+    elif acao == "planilha_de_posts":
+        conteudo = _arquivo_da_planilha(request)
+        if conteudo is not None:
             try:
-                feito = anuncios.importar_planilha(destino, arquivo.read())
+                feito = historico.importar_planilha(destino, conteudo)
+                messages.success(
+                    request,
+                    _("%(l)s post(s) no arquivo: %(n)s novos, %(a)s completados.")
+                    % {"l": feito["linhas"], "n": feito["novos"], "a": feito["atualizados"]},
+                )
+            except anuncios.PlanilhaInvalida as exc:
+                messages.error(request, str(exc))
+    elif acao == "planilha":
+        conteudo = _arquivo_da_planilha(request)
+        if conteudo is not None:
+            try:
+                feito = anuncios.importar_planilha(destino, conteudo)
                 messages.success(
                     request,
                     _("%(a)s anuncio(s) lidos; %(l)s ligados a posts.")
@@ -740,6 +749,17 @@ def acao_no_diagnostico(request: HttpRequest) -> HttpResponse:
             except anuncios.PlanilhaInvalida as exc:
                 messages.error(request, str(exc))
     return redirect(voltar)
+
+
+def _arquivo_da_planilha(request) -> bytes | None:
+    arquivo = request.FILES.get("planilha")
+    if arquivo is None:
+        messages.error(request, _("Escolha o arquivo (.csv ou .xlsx) exportado."))
+        return None
+    if arquivo.size > 10 * 1024 * 1024:
+        messages.error(request, _("Arquivo grande demais (maximo 10 MB)."))
+        return None
+    return arquivo.read()
 
 
 # -- Material proprio: post novo e banco de fotos -------------------------------------
