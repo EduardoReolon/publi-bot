@@ -296,6 +296,10 @@ oferece hoje para app de empresa):
    **Contas de anúncios** e a permissão `ads_read`; o ID vai em
    `SOCIAL_META_CONFIG_ID_ANUNCIOS`.
 
+Para publicar o app (contas de clientes): [ANALISE_DA_META.md](ANALISE_DA_META.md)
+tem os textos de cada permissao, o tratamento de dados e as instrucoes para os
+analistas.
+
 Com o `SOCIAL_META_CONFIG_ID` preenchido, o PubliBot pede o login por essa
 configuração; vazio, usa o Login do Facebook clássico (lista de permissões).
 
