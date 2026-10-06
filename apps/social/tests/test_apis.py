@@ -356,3 +356,25 @@ def test_sem_instagram_ligado_a_tela_diz_quais_paginas_viu(ambiente, settings):
     oauth = OAuthInstagram(http=rede.cliente())
     assert oauth.contas(destino) == []
     assert "Ekron, PubliBot" in oauth.sem_contas and "Contas vinculadas" in oauth.sem_contas
+
+
+@pytest.mark.django_db
+def test_instagram_ligado_pelo_campo_da_experiencia_nova(ambiente, settings):
+    settings.SOCIAL_META_APP_ID, settings.SOCIAL_META_APP_SECRET = "app", "seg"
+    rede = Rede(
+        {
+            "GET graph.facebook.com/v21.0/me/accounts": httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "name": "Ekron",
+                            "connected_instagram_account": {"id": "179", "username": "ekron.ia"},
+                        }
+                    ]
+                },
+            )
+        }
+    )
+    destino = _conectado("instagram", "")
+    assert OAuthInstagram(http=rede.cliente()).contas(destino) == [("179", "@ekron.ia (Ekron)")]

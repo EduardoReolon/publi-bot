@@ -115,7 +115,10 @@ class OAuthInstagram(OAuth):
             self.http.get(
                 f"{graph()}/me/accounts",
                 params={
-                    "fields": "name,instagram_business_account{id,username}",
+                    "fields": (
+                        "name,instagram_business_account{id,username},"
+                        "connected_instagram_account{id,username}"
+                    ),
                     "access_token": token,
                 },
             ),
@@ -125,7 +128,13 @@ class OAuthInstagram(OAuth):
         paginas = []
         for pagina in dados.get("data", []):
             paginas.append(pagina.get("name", "") or "?")
-            conta = pagina.get("instagram_business_account") or {}
+            # O campo de sempre; e o que a Meta preenche em algumas Paginas da
+            # experiencia nova, quando o primeiro vem vazio.
+            conta = (
+                pagina.get("instagram_business_account")
+                or pagina.get("connected_instagram_account")
+                or {}
+            )
             if conta.get("id"):
                 contas.append(
                     (conta["id"], f"@{conta.get('username', '')} ({pagina.get('name', '')})")
@@ -133,10 +142,13 @@ class OAuthInstagram(OAuth):
         if not contas:
             # Para a tela dizer o que falta, e nao so "nenhuma conta".
             self.sem_contas = (
-                f"A Meta mostrou a(s) Pagina(s) {', '.join(paginas)}, mas nenhuma tem um "
-                "Instagram profissional ligado. Ligue o Instagram a Pagina (no Facebook, "
-                "entrando como a Pagina: Configuracoes > Contas vinculadas > Instagram) e "
-                "conecte de novo."
+                f"A Meta mostrou a(s) Pagina(s) {', '.join(paginas)}, mas sem nenhum "
+                "Instagram dentro. Confira: (1) a conta do Instagram e PROFISSIONAL "
+                "(Configuracoes > Tipo de conta e ferramentas); (2) ela esta ligada a "
+                "Pagina (no Facebook, como a Pagina: Configuracoes > Contas vinculadas > "
+                "Instagram); (3) na tela de login da Meta, em 'Editar acesso anterior', a "
+                "conta do Instagram esta marcada (ou remova o app em Configuracoes > "
+                "Integracoes comerciais e conecte do zero)."
                 if paginas
                 else "A Meta nao mostrou nenhuma Pagina: na tela de permissoes, marque a "
                 "Pagina da empresa e a conta do Instagram ligada a ela."
