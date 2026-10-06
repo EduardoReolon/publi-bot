@@ -340,3 +340,19 @@ def test_app_de_empresa_manda_a_configuracao_e_nao_o_scope(settings):
         destino, "https://raiz/redes/retorno/", "e", escopos_extras="ads_read"
     )
     assert "config_id=222" in anuncios
+
+
+@pytest.mark.django_db
+def test_sem_instagram_ligado_a_tela_diz_quais_paginas_viu(ambiente, settings):
+    settings.SOCIAL_META_APP_ID, settings.SOCIAL_META_APP_SECRET = "app", "seg"
+    rede = Rede(
+        {
+            "GET graph.facebook.com/v21.0/me/accounts": httpx.Response(
+                200, json={"data": [{"name": "Ekron"}, {"name": "PubliBot"}]}
+            )
+        }
+    )
+    destino = _conectado("instagram", "")
+    oauth = OAuthInstagram(http=rede.cliente())
+    assert oauth.contas(destino) == []
+    assert "Ekron, PubliBot" in oauth.sem_contas and "Contas vinculadas" in oauth.sem_contas

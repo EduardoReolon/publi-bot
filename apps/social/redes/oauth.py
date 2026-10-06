@@ -24,6 +24,9 @@ class OAuth:
     # Com quanta antecedencia renovar o acesso (onde a rede deixa renovar).
     RENOVAR_ANTES = timedelta(minutes=5)
 
+    # Quando `contas()` nao acha nenhuma: o que a rede mostrou e o que falta.
+    sem_contas = ""
+
     def __init__(self, *, http=None):
         import httpx
 

@@ -353,7 +353,8 @@ def retorno(request: HttpRequest) -> HttpResponse:
             _(
                 "Conectou, mas a rede nao mostrou nenhuma conta "
                 "(pagina, perfil profissional ou local)."
-            ),
+            )
+            + (f" {oauth.sem_contas}" if oauth.sem_contas else ""),
         )
         return redirect(f"{reverse('social:inicio')}?aba=configurar")
     return render(

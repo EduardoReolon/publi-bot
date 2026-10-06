@@ -122,12 +122,25 @@ class OAuthInstagram(OAuth):
             "Meta (paginas)",
         )
         contas = []
+        paginas = []
         for pagina in dados.get("data", []):
+            paginas.append(pagina.get("name", "") or "?")
             conta = pagina.get("instagram_business_account") or {}
             if conta.get("id"):
                 contas.append(
                     (conta["id"], f"@{conta.get('username', '')} ({pagina.get('name', '')})")
                 )
+        if not contas:
+            # Para a tela dizer o que falta, e nao so "nenhuma conta".
+            self.sem_contas = (
+                f"A Meta mostrou a(s) Pagina(s) {', '.join(paginas)}, mas nenhuma tem um "
+                "Instagram profissional ligado. Ligue o Instagram a Pagina (no Facebook, "
+                "entrando como a Pagina: Configuracoes > Contas vinculadas > Instagram) e "
+                "conecte de novo."
+                if paginas
+                else "A Meta nao mostrou nenhuma Pagina: na tela de permissoes, marque a "
+                "Pagina da empresa e a conta do Instagram ligada a ela."
+            )
         return contas
 
     def renovar(self, destino) -> bool:
