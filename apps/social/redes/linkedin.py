@@ -66,13 +66,24 @@ class OAuthLinkedIn(OAuth):
     AUTORIZAR = "https://www.linkedin.com/oauth/v2/authorization"
     ENDERECO_DE_ACESSO = "https://www.linkedin.com/oauth/v2/accessToken"
 
+    def _app_de(self, destino) -> tuple[str, str]:
+        """O LinkedIn exige que a Community Management API (paginas) fique
+        SOZINHA num app: o perfil pessoal (login + compartilhar) usa outro.
+        Pagina usa SOCIAL_LINKEDIN_PAGINA_CLIENT_ID/SECRET, se definidos."""
+        if destino.autor == "organizacao":
+            cliente = getattr(settings, "SOCIAL_LINKEDIN_PAGINA_CLIENT_ID", "") or ""
+            segredo = getattr(settings, "SOCIAL_LINKEDIN_PAGINA_CLIENT_SECRET", "") or ""
+            if cliente and segredo:
+                return cliente, segredo
+        return self.app()
+
     def escopos(self, destino) -> list[str]:
         if destino.autor == "organizacao":
             return ["w_organization_social", "r_organization_social", "rw_organization_admin"]
         return ["openid", "profile", "w_member_social"]
 
     def url_de_autorizacao(self, destino, redirect_uri: str, state: str) -> str:
-        cliente, _segredo = self.app()
+        cliente, _segredo = self._app_de(destino)
         return f"{self.AUTORIZAR}?" + urlencode(
             {
                 "response_type": "code",
@@ -84,7 +95,7 @@ class OAuthLinkedIn(OAuth):
         )
 
     def trocar_codigo(self, destino, codigo: str, redirect_uri: str) -> dict:
-        cliente, segredo = self.app()
+        cliente, segredo = self._app_de(destino)
         dados = self._json(
             self.http.post(
                 self.ENDERECO_DE_ACESSO,

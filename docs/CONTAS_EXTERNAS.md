@@ -303,11 +303,19 @@ analistas.
 Com o `SOCIAL_META_CONFIG_ID` preenchido, o PubliBot pede o login por essa
 configuração; vazio, usa o Login do Facebook clássico (lista de permissões).
 
-**LinkedIn (linkedin.com/developers)**
+**LinkedIn (linkedin.com/developers)** — dois apps, porque o LinkedIn exige
+que a *Community Management API* (páginas de empresa) fique sozinha num app:
 
-- O app precisa de uma página de empresa no LinkedIn (a sua), logo e a
-  política de privacidade (tabela acima).
-- Auth > *Authorized redirect URLs for your app*: `https://<raiz>/redes/retorno/`.
+1. **App do perfil pessoal** (o essencial): produtos *Sign In with LinkedIn
+   using OpenID Connect* e *Share on LinkedIn* (liberados na hora). Chaves em
+   `SOCIAL_LINKEDIN_CLIENT_ID` / `SOCIAL_LINKEDIN_CLIENT_SECRET`.
+2. **App da página de empresa** (opcional, com revisão do LinkedIn): só o
+   produto *Community Management API*. Chaves em
+   `SOCIAL_LINKEDIN_PAGINA_CLIENT_ID` / `SOCIAL_LINKEDIN_PAGINA_CLIENT_SECRET`.
+
+Nos dois: ligados a uma página de empresa sua no LinkedIn, logo, a política
+de privacidade (tabela acima) e, em Auth > *Authorized redirect URLs for your
+app*, `https://<raiz>/redes/retorno/` (exato, com a barra final).
 
 **Google (console.cloud.google.com)**
 
