@@ -351,6 +351,14 @@ O certificado precisa cobrir os subdominios dos tenants. Duas saidas:
   Na primeira vez, sem o site do PubliBot no Nginx, use `--nginx` ou
   `--standalone` no lugar de `--webroot`.
 
+**O dominio raiz tambem precisa de certificado**: `*.publibot.ekron.ia.br` nao
+cobre `publibot.ekron.ia.br` (e la ficam o login, a privacidade e o retorno
+das conexoes com as redes). Ou inclua os dois nomes no certificado (o comando
+acima), ou use um que ja cubra a raiz, como o curinga do dominio pai
+(`*.ekron.ia.br`): o `release.sh` procura sozinho em `/etc/letsencrypt/live`
+o certificado que cobre a raiz e usa esse so nela (`CERTIFICADO_DA_RAIZ` no
+`.env` fixa a pasta, se precisar). Sem nenhum, o release avisa.
+
 O nome da pasta do certificado precisa ser o `ROOT_DOMAIN`
 (`/etc/letsencrypt/live/publibot.ekron.ia.br/`). Com ele la, o proximo
 `release.sh` instala o site do Nginx sozinho (`deploy/nginx/publibot.conf`,
