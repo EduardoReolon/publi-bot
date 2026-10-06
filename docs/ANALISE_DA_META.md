@@ -1,132 +1,162 @@
-# Análise do app na Meta (App Review) — o que preencher
+# Análise do app na Meta (App Review)
 
-Textos prontos para colar em *Analisar > Análise do app*. Os campos de texto
-vão **em inglês** (os analistas leem em inglês; resposta em português costuma
-voltar com pedido de esclarecimento).
+**Não precisa agora.** Com o app "Não publicado", quem tem função no app
+(você, como administrador) usa todas as permissões nas próprias contas, sem
+análise. A análise só libera contas de **clientes**. Use o sistema, veja
+funcionando, e só então siga este roteiro. Até lá, um cliente pode ser
+adicionado como **Testador** (Funções do app) e conectar normalmente.
 
-## Antes de enviar (a ordem que evita recusa)
+## Permissões: o que manter e o que tirar
 
-1. **Teste em modo de desenvolvimento.** Com o app "Não publicado", quem tem
-   função no app (administrador, desenvolvedor, testador) já usa todas as
-   permissões, sem análise. Conecte o seu Instagram em *Redes › Configurar*,
-   publique um post de teste, deixe um comentário nele e veja o
-   *Diagnóstico*. Isso prova que tudo funciona e vira o vídeo.
-2. **Grave um vídeo por permissão** (ou um só cobrindo todas, com cortes): a
-   tela do PubliBot, o login da Meta pedindo a permissão, e a função usando
-   o dado. Em inglês ou com legenda em inglês; mostre o idioma da interface.
-3. **Crie um acesso para os analistas**: um cliente de teste no PubliBot
-   (`provision_tenant`) com um usuário e senha só para eles, e uma conta de
-   Instagram de teste ligada a uma página. Os dados vão em *Instruções da
-   análise*.
-4. **Verificação da empresa** (Configurações do app > Básico) precisa estar
-   concluída para o acesso avançado.
+| Permissão | Manter? | Por quê |
+|---|---|---|
+| instagram_basic | **sim** (confira que está na lista) | ler perfil e posts da conta |
+| instagram_content_publish | sim | publicar |
+| instagram_manage_comments | sim | ler e responder comentários |
+| instagram_manage_insights | sim | alcance, salvos, seguidores |
+| pages_show_list | sim | achar o Instagram ligado à página |
+| pages_read_engagement | sim | idem (ler o campo do Instagram na página) |
+| business_management | sim | página dentro de um portfólio empresarial |
+| public_profile | sim | padrão de todo login; nada a fazer |
+| ads_read | sim | gasto com anúncios (só leitura) |
+| Marketing API Access Tier | sim | sem ele, a API de anúncios só lê contas de anúncio suas; para as dos clientes precisa do acesso padrão |
+| **ads_management** | **tirar** | serve para criar e editar anúncios; o PubliBot só lê. Pedir sem usar é motivo comum de recusa |
 
-Enquanto a análise não sai, um cliente pode ser adicionado como **Testador**
-(Funções do app) e conectar normalmente.
+## Um vídeo só, para todas as permissões
 
-## 1. Uso permitido — o que dizer de cada permissão
+Grave a tela uma vez, seguindo os passos abaixo em ordem. Na hora de enviar,
+use **o mesmo vídeo** em todas as permissões. Narração não é obrigatória:
+basta uma legenda (pode ser escrita na tela, ou no editor de vídeo) com o
+texto entre aspas de cada passo.
 
-Para cada uma, a Meta pede "como o app usa" e a confirmação de que o uso
-beneficia o usuário. Cole o texto correspondente.
+Antes de gravar: tenha um post de artigo **em "Para revisar"** na conta do
+Instagram e saia da sua conta do Facebook no navegador (para o login
+aparecer no vídeo).
+
+1. Abra `https://<seu cliente>.<raiz>/redes/` já logado no PubliBot.
+   Legenda: *"PubliBot, a content tool for small businesses."*
+2. Vá em **Configurar**, na conta Instagram clique **Conectar a API**.
+   Faça login no Facebook, escolha a página e a conta do Instagram, e
+   aceite as permissões (mostre a tela de permissões por 2 ou 3 segundos).
+   Legenda: *"The owner connects their own Instagram professional account
+   (pages_show_list, pages_read_engagement, business_management,
+   public_profile)."*
+3. Você volta ao PubliBot, na aba **Diagnóstico**: aparecem os posts antigos,
+   o alcance e os comentários. Role a página devagar.
+   Legenda: *"Past posts, reach and comments are imported to show the owner
+   what worked (instagram_basic, instagram_manage_insights,
+   instagram_manage_comments)."*
+4. Vá em **Para revisar**, abra o post, clique **Aprovar**; na **Agenda**,
+   clique **Publicar agora**. Depois abra o Instagram (outra aba ou o
+   celular) e mostre o post publicado.
+   Legenda: *"Nothing is published without the owner's approval. The
+   approved post is published to the owner's account
+   (instagram_content_publish)."*
+5. Comente uma pergunta nesse post com outra conta (pode ser pelo celular).
+   No PubliBot, aba **Comentários**, mostre a pergunta; em **Perguntas**,
+   aprove a resposta; mostre a resposta no Instagram.
+   Legenda: *"Questions in comments are answered after the owner approves
+   the reply (instagram_manage_comments)."*
+6. Aba **Diagnóstico** > **Conectar anúncios** > login aceitando a leitura
+   de anúncios. Mostre a lista de gasto por anúncio.
+   Legenda: *"Read-only: spend per ad and which post each ad promoted
+   (ads_read, Marketing API standard access)."*
+
+Se o passo 5 demorar (a resposta passa pela fila de Perguntas), pode cortar
+a espera no editor.
+
+## Textos de cada permissão (colar em "Uso permitido")
 
 **instagram_basic**
-> PubliBot is a content tool for small businesses. After the business owner
-> connects their Instagram professional account, we read the account's
-> profile (username, follower count) and its media list so the owner can see
-> their posts and results inside PubliBot and so we can measure the posts we
-> publish on their behalf.
+> After the business owner connects their Instagram professional account, we
+> read its profile (username, follower count) and media list so the owner sees
+> their posts and results inside PubliBot, and to measure the posts we publish
+> on their behalf.
 
 **instagram_content_publish**
-> The business owner writes or approves each post inside PubliBot (caption and
-> images, usually a carousel generated from an article they published on their
-> own website). At the time the owner scheduled, PubliBot publishes that
-> approved post to the owner's own Instagram professional account. Nothing is
-> published without the owner's approval.
+> The owner writes or approves each post inside PubliBot (caption and images,
+> usually a carousel made from an article published on their own website). At
+> the time the owner scheduled, PubliBot publishes that approved post to the
+> owner's own account. Nothing is published without approval.
 
 **instagram_manage_comments**
-> We read comments on the posts PubliBot published so the business owner can
-> see questions from their audience. When the owner approves an answer inside
-> PubliBot, we post it as a reply to that comment. We store only the comment
-> text, date and the commenter's first name, for 90 days.
+> We read comments on the owner's posts so they see their audience's
+> questions. When the owner approves an answer inside PubliBot, we post it as
+> a reply. We keep only the comment text, date and the commenter's first name.
 
 **instagram_manage_insights**
-> We read reach, likes, comments, saves and shares of the owner's posts and the
-> account's follower count to show the owner which posts performed better and
-> to recommend what to post next. Insights are shown only to the owner of the
-> account.
+> We read reach, likes, comments, saves, shares and follower count to show the
+> owner which posts performed better and recommend what to post next. Shown
+> only to the account owner.
 
 **pages_show_list**
 > Instagram professional accounts are linked to a Facebook Page. We list the
-> Pages the owner manages only to find the Instagram account linked to the
-> Page they choose to connect.
+> owner's Pages only to find the Instagram account linked to the Page they
+> choose.
 
 **pages_read_engagement**
-> Required together with pages_show_list to read the Instagram business
-> account linked to the owner's Page (instagram_business_account field). We do
-> not read or store Page posts.
+> Used with pages_show_list to read the Instagram business account linked to
+> the owner's Page. We do not read or store Page posts.
 
 **business_management**
-> Many small businesses keep their Page and Instagram account inside a Meta
-> Business portfolio. This permission lets the owner connect an Instagram
-> account whose Page belongs to their business portfolio. We do not create or
-> change anything in the portfolio.
+> Many small businesses keep their Page and Instagram inside a Meta Business
+> portfolio. This lets the owner connect an account whose Page belongs to that
+> portfolio. We do not create or change anything in the portfolio.
 
-**ads_read** (só se pediu; é a configuração `SOCIAL_META_CONFIG_ID_ANUNCIOS`)
+**public_profile**
+> Standard login data (name and app-scoped id) used to identify who connected
+> the account and to honor data deletion requests.
+
+**ads_read**
 > Optional, enabled by the owner with a separate "Connect ads" button. We read
 > spend, reach, impressions and link clicks per ad, and which Instagram post
-> each ad promoted, from the owner's own ad account, to show the owner how much
-> they spent per post and which boosts were worth it. Read-only; we never
-> create, edit or pay for ads.
+> each ad promoted, from the owner's ad account, to show how much was spent
+> per post. Read-only: we never create, edit or pay for ads.
 
-## 2. Tratamento de dados
+**Marketing API Access Tier (acesso padrão)**
+> Our clients are small businesses whose ad accounts are not owned by the app
+> developer. Standard access lets PubliBot read (read-only, ads_read) the
+> spend report of each client's own ad account once a day, after the client
+> connects it.
 
-Respostas para as perguntas do formulário (ajuste o que for diferente no seu
-caso, como o provedor de hospedagem):
+## Tratamento de dados (já contando com modelo externo)
 
-- **Responsável pelos dados:** o mesmo `OPERADOR_NOME` / `OPERADOR_DOCUMENTO`
-  do `.env` (aparece em `/privacidade/`).
-- **Há operadores (processadores) com acesso aos dados da Meta?** Sim:
-  - o provedor de hospedagem do servidor e do banco (diga qual);
-  - se você usa um modelo de linguagem pago (não a sua placa local): o
-    provedor dele, que recebe o texto dos comentários para redigir a
-    resposta que o dono aprova. Com o modelo só na sua placa, responda que
-    não há.
-- **País onde os dados ficam:** o do servidor (ex.: Brasil, ou o país da
-  região da hospedagem).
-- **Pedidos de autoridades públicas nos últimos 12 meses:** não.
-- **Políticas para pedidos de autoridades:** "We only disclose data when
-  legally required, after reviewing the legality of the request, and disclose
-  the minimum necessary. Requests are documented."
-- **Exclusão de dados:** callback já configurado
-  (`https://<raiz>/exclusao-de-dados/meta/`).
+Declarar agora os provedores externos não cria burocracia extra: é uma lista
+de quem processa os dados, e evita refazer a declaração quando trocar a placa
+local por uma API paga. A política de privacidade (`/privacidade/`) já diz o
+mesmo.
 
-## 3. Instruções da análise
+- **Responsável:** o `OPERADOR_NOME` (e `OPERADOR_DOCUMENTO`) do `.env`.
+- **Operadores (processadores):** sim.
+  - Hospedagem do servidor e do banco: `<seu provedor>` — `<país>`.
+  - Provedores de modelo de linguagem (ex.: Anthropic, OpenAI, Google) —
+    Estados Unidos. Recebem o texto dos comentários e das legendas para
+    redigir respostas e posts que o dono aprova; não recebem tokens de
+    acesso.
+- **Pedidos de autoridades nos últimos 12 meses:** não.
+- **Política para pedidos de autoridades:**
+  > We only disclose data when legally required, after reviewing the legality
+  > of each request, and disclose the minimum necessary. Requests are
+  > documented.
+- **Exclusão de dados:** `https://<raiz>/exclusao-de-dados/meta/` (já
+  configurado).
 
-Cole e preencha os `<...>`:
+## Instruções da análise (colar e preencher os `<...>`)
 
-> **How to test**
->
-> 1. Go to `https://<test-tenant>.<raiz>/` and log in with
->    user `<email>` / password `<senha>`.
-> 2. Open **Redes › Configurar**. On the "Instagram" account, click
->    **Conectar a API** and log in with the test Instagram account
->    `<@conta>` (Facebook user `<email>` / `<senha>`). Choose the Page
->    `<pagina>`. This uses pages_show_list, pages_read_engagement,
->    business_management and instagram_basic.
-> 3. Open **Redes › Diagnóstico**: the account's past posts, reach and
->    comments are imported (instagram_basic, instagram_manage_insights,
->    instagram_manage_comments).
-> 4. Open **Redes › Para revisar**, edit any draft post and click
->    **Aprovar**, then **Publicar agora** in **Agenda**. The post appears on
->    the Instagram account (instagram_content_publish).
-> 5. Comment a question on that post from another account. In **Redes ›
->    Comentários** the question appears; after the answer is approved in
->    **Perguntas**, PubliBot replies to the comment (instagram_manage_comments).
-> 6. (ads_read) In **Redes › Diagnóstico › Gasto com anúncios**, click
->    **Conectar anúncios**; spend per ad is listed.
->
-> The interface is in Portuguese; the video shows each step with English
+> The interface is in Portuguese; the video shows every step with English
 > captions.
+>
+> 1. Go to `https://<cliente-de-teste>.<raiz>/redes/` and log in with
+>    `<email>` / `<senha>`.
+> 2. **Configurar** › Instagram › **Conectar a API**: log in with the test
+>    Facebook user `<email>` / `<senha>`, choose the Page `<pagina>`.
+> 3. **Diagnóstico**: imported posts, reach and comments.
+> 4. **Para revisar** › **Aprovar**, then **Agenda** › **Publicar agora**:
+>    the post appears on `<@conta>`.
+> 5. Comment a question on that post; it appears in **Comentários**; the
+>    approved answer is posted as a reply.
+> 6. **Diagnóstico** › **Conectar anúncios**: spend per ad.
 
-Depois de enviar, a Meta responde em alguns dias. Se ela pedir mais
-informação, a resposta chega na *Caixa de Entrada de alertas* do app.
+Para isso, crie antes um cliente de teste no PubliBot com um usuário só para
+os analistas (`provision_tenant`) e deixe uma conta de Instagram de teste
+ligada a uma página.
