@@ -140,7 +140,18 @@ class OAuthInstagram(OAuth):
                     (conta["id"], f"@{conta.get('username', '')} ({pagina.get('name', '')})")
                 )
         if not contas:
-            # Para a tela dizer o que falta, e nao so "nenhuma conta".
+            # Para a tela dizer o que falta, e nao so "nenhuma conta". Primeiro
+            # o mais certeiro: as permissoes que a Meta de fato concedeu.
+            faltam = self._permissoes_que_faltam(token)
+            if faltam:
+                self.sem_contas = (
+                    f"A Meta nao concedeu: {', '.join(faltam)}. Sem elas, o Instagram da "
+                    "Pagina nao aparece. Acrescente na configuracao de login do app "
+                    "(Login do Facebook para Empresas > Configuracoes > a configuracao do "
+                    "SOCIAL_META_CONFIG_ID > Editar > Permissoes) e conecte de novo, em "
+                    "'Editar acesso anterior'."
+                )
+                return contas
             self.sem_contas = (
                 f"A Meta mostrou a(s) Pagina(s) {', '.join(paginas)}, mas sem nenhum "
                 "Instagram dentro. Confira: (1) a conta do Instagram e PROFISSIONAL "
@@ -154,6 +165,24 @@ class OAuthInstagram(OAuth):
                 "Pagina da empresa e a conta do Instagram ligada a ela."
             )
         return contas
+
+    PERMISSOES_NECESSARIAS = (
+        "instagram_basic",
+        "pages_show_list",
+        "pages_read_engagement",
+        "instagram_content_publish",
+    )
+
+    def _permissoes_que_faltam(self, token: str) -> list[str]:
+        resposta = self.http.get(f"{graph()}/me/permissions", params={"access_token": token})
+        if resposta.status_code >= 400:
+            return []
+        concedidas = {
+            p.get("permission")
+            for p in resposta.json().get("data", [])
+            if p.get("status") == "granted"
+        }
+        return [p for p in self.PERMISSOES_NECESSARIAS if p not in concedidas]
 
     def renovar(self, destino) -> bool:
         """O token longo da Meta pode ser trocado por outro longo antes de vencer."""

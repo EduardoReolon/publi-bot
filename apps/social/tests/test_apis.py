@@ -378,3 +378,30 @@ def test_instagram_ligado_pelo_campo_da_experiencia_nova(ambiente, settings):
     )
     destino = _conectado("instagram", "")
     assert OAuthInstagram(http=rede.cliente()).contas(destino) == [("179", "@ekron.ia (Ekron)")]
+
+
+@pytest.mark.django_db
+def test_sem_instagram_por_falta_de_permissao_a_tela_diz_qual(ambiente, settings):
+    settings.SOCIAL_META_APP_ID, settings.SOCIAL_META_APP_SECRET = "app", "seg"
+    rede = Rede(
+        {
+            "GET graph.facebook.com/v21.0/me/accounts": httpx.Response(
+                200, json={"data": [{"name": "Ekron"}]}
+            ),
+            "GET graph.facebook.com/v21.0/me/permissions": httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"permission": "pages_show_list", "status": "granted"},
+                        {"permission": "pages_read_engagement", "status": "granted"},
+                        {"permission": "instagram_content_publish", "status": "granted"},
+                        {"permission": "instagram_basic", "status": "declined"},
+                    ]
+                },
+            ),
+        }
+    )
+    destino = _conectado("instagram", "")
+    oauth = OAuthInstagram(http=rede.cliente())
+    assert oauth.contas(destino) == []
+    assert "nao concedeu: instagram_basic" in oauth.sem_contas
