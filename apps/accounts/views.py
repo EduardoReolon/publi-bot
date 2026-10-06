@@ -319,6 +319,17 @@ def retorno_oauth(request: HttpRequest) -> HttpResponse:
     from apps.accounts.models import Domain
     from core.retorno_oauth import ler
 
+    if not request.GET.get("state"):
+        # Aberto direto no navegador (ou na verificacao do app da rede): nao e
+        # erro, so nao ha conexao em andamento.
+        messages.info(
+            request,
+            _(
+                "Este e o endereco de retorno das conexoes com as redes. Ele funciona "
+                "sozinho quando voce conecta uma conta em Redes > Configurar."
+            ),
+        )
+        return redirect("accounts:landing")
     try:
         estado = ler(request.GET.get("state", ""))
     except signing.BadSignature:
