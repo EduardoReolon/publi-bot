@@ -405,3 +405,17 @@ def test_sem_instagram_por_falta_de_permissao_a_tela_diz_qual(ambiente, settings
     oauth = OAuthInstagram(http=rede.cliente())
     assert oauth.contas(destino) == []
     assert "nao concedeu: instagram_basic" in oauth.sem_contas
+
+
+def test_linkedin_pagina_usa_o_app_proprio_quando_ha(settings):
+    settings.SOCIAL_LINKEDIN_CLIENT_ID, settings.SOCIAL_LINKEDIN_CLIENT_SECRET = "perfil", "s1"
+    settings.SOCIAL_LINKEDIN_PAGINA_CLIENT_ID = "pagina"
+    settings.SOCIAL_LINKEDIN_PAGINA_CLIENT_SECRET = "s2"
+    oauth = OAuthLinkedIn()
+    pessoal = Destino(rede="linkedin", nome="Eu", autor="pessoa")
+    pagina = Destino(rede="linkedin", nome="Empresa", autor="organizacao")
+    assert "client_id=perfil" in oauth.url_de_autorizacao(pessoal, "https://r/", "e")
+    url = oauth.url_de_autorizacao(pagina, "https://r/", "e")
+    assert "client_id=pagina" in url and "w_organization_social" in url
+    settings.SOCIAL_LINKEDIN_PAGINA_CLIENT_ID = ""
+    assert "client_id=perfil" in oauth.url_de_autorizacao(pagina, "https://r/", "e")
