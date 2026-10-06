@@ -20,7 +20,7 @@ adicionado como **Testador** (Funções do app) e conectar normalmente.
 | public_profile | sim | padrão de todo login; nada a fazer |
 | ads_read | sim | gasto com anúncios (só leitura) |
 | Marketing API Access Tier | sim | sem ele, a API de anúncios só lê contas de anúncio suas; para as dos clientes precisa do acesso padrão |
-| **ads_management** | **tirar** | serve para criar e editar anúncios; o PubliBot só lê. Pedir sem usar é motivo comum de recusa |
+| **ads_management** | fica no app, mas **não pedir na análise** enquanto o PubliBot não impulsionar sozinho | serve para criar e editar anúncios; hoje o PubliBot só lê. O caso de uso da Marketing API não deixa removê-la, e tudo bem: na análise cada permissão é pedida separadamente, e esta fica sem pedir. Se um dia o PubliBot passar a impulsionar, ela entra no mesmo pedido, com um passo a mais no vídeo |
 
 ## Um vídeo só, para todas as permissões
 
