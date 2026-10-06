@@ -101,15 +101,21 @@ def disparar(pauta, fluxo: str) -> tuple[str, str]:
         return _disparar_b(pauta)
 
     # A: poucos videos perto da pauta, a primeira tentativa busca no YouTube e
-    # para, para a pessoa olhar. Gerar de novo segue.
-    from apps.knowledge.referencias import videos_antes_de_gerar
+    # para, para a pessoa olhar. Gerar de novo segue. A busca demora: vai para
+    # a fila, e o clique volta na hora.
+    from django.db import transaction
 
-    achados = videos_antes_de_gerar(pauta)
-    if achados:
-        return "warning", _(
-            "%(f)s: achei %(n)s video(s) para a pauta, em Fontes sugeridas. Gere de novo "
-            "para seguir sem eles (ou depois de aprova-los)."
-        ) % {"f": nome, "n": achados}
+    from apps.content.tasks import gerar_a_depois_dos_videos
+    from apps.knowledge.referencias import falta_buscar_videos
+
+    if falta_buscar_videos(pauta):
+        pk = str(pauta.pk)
+        transaction.on_commit(lambda: gerar_a_depois_dos_videos.delay(pk))
+        return "info", _(
+            "%(f)s: procurando videos sobre a pauta no YouTube antes de gerar. Se achar, eles "
+            "ficam em Fontes sugeridas para voce olhar (gere de novo depois); se nao, a "
+            "geracao comeca sozinha. Recarregue em instantes."
+        ) % {"f": nome}
     trabalho = gerar_artigo(pauta)
     return "success", _("%(f)s: geracao iniciada (trabalho %(id)s).") % {
         "f": nome,

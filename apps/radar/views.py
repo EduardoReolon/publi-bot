@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -378,18 +379,27 @@ def decidir_busca(request: HttpRequest, pk) -> HttpResponse:
 @login_required
 @require_POST
 def grupo_para_pauta(request: HttpRequest, pk) -> HttpResponse:
-    """Transforma um grupo em pauta sugerida, sem esperar a proxima rodada."""
-    from apps.radar.coleta import propor_pautas
+    """Transforma um grupo em pauta sugerida, sem esperar a proxima rodada. A
+    nota e recalculada (vetores do que ja foi escrito, dificuldade) na fila:
+    o clique volta na hora."""
+    from apps.radar.tasks import virar_pauta
 
     grupo = get_object_or_404(GrupoDeDemanda, pk=pk, situacao=GrupoDeDemanda.Situacao.NOVO)
-    # Pedido pela pessoa: sem nota minima. A trava de canibalizacao continua.
-    criadas = propor_pautas({grupo.pk}, limite=1, nota_minima=0, pedido_pela_pessoa=True)
-    if criadas:
-        messages.success(request, _("Pauta sugerida criada: %(t)s") % {"t": criadas[0]})
-    else:
+    if grupo.parcelas.get("canibalizacao", 0) >= 0.8:
         messages.error(
             request, _("Nao virou pauta: o tema esta perto demais do que ja foi escrito.")
         )
+        return redirect("radar:radar")
+    pk_do_grupo = str(grupo.pk)
+    transaction.on_commit(lambda: virar_pauta.delay(pk_do_grupo))
+    messages.success(
+        request,
+        _(
+            "Virando pauta: '%(t)s' aparece em Pautas (sugeridas) em instantes. Se ficar perto "
+            "demais do que ja foi escrito, continua aqui no Radar."
+        )
+        % {"t": grupo.rotulo[:120]},
+    )
     return redirect("radar:radar")
 
 

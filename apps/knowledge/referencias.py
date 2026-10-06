@@ -338,11 +338,16 @@ def buscar_videos_da_pauta(pauta, acervo: dict) -> list:
     return novos
 
 
+def falta_buscar_videos(pauta) -> bool:
+    """Primeira tentativa de gerar, com o YouTube ligado e a falta nao ignorada."""
+    busca = (pauta.busca_de_fontes or {}).get("videos") or {}
+    return not (busca.get("em") or busca.get("ignorado")) and youtube_ligado()
+
+
 def videos_antes_de_gerar(pauta) -> int:
     """Na primeira tentativa de gerar: poucos videos no acervo, busca no YouTube
     e devolve quantos achou — a tela para uma vez, para a pessoa olhar. Da
     segunda em diante (ou com a falta ignorada), segue sem videos."""
-    busca = (pauta.busca_de_fontes or {}).get("videos") or {}
-    if busca.get("em") or busca.get("ignorado") or not youtube_ligado():
+    if not falta_buscar_videos(pauta):
         return 0
     return len(buscar_videos_da_pauta(pauta, conferir(pauta)))
