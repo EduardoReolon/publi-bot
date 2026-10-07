@@ -332,6 +332,10 @@ def criar_pauta(ideia: Ideia):
         ]
     )
     if ideia.pauta_id:
+        # O que a pauta ja guarda alem da leitura (o ultimo veredito, os codigos
+        # do dossie) continua.
+        anterior = Topic.objects.filter(pk=ideia.pauta_id).values_list("debate", flat=True).first()
+        debate = {**(anterior or {}), **debate}
         Topic.objects.filter(pk=ideia.pauta_id).update(debate=debate, briefing=briefing)
         ideia.pauta.refresh_from_db()
         return ideia.pauta

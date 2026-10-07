@@ -69,3 +69,20 @@ def capturar_textos_da_pauta(pauta_id: str) -> int:
 
     pauta = Topic.objects.filter(pk=pauta_id).first()
     return capturar_textos(pauta) if pauta else 0
+
+
+@shared_task
+def depois_do_veredito(ideia_id: str, capturar: list[str]) -> str:
+    """O refinamento do veredito: o texto completo das fontes pedidas e a busca
+    das frentes novas (e das marcadas para buscar de novo)."""
+    from apps.ideias.investigacao import buscar
+    from apps.ideias.models import Ideia
+    from apps.ideias.veredito import capturar_fontes
+
+    ideia = Ideia.objects.filter(pk=ideia_id).first()
+    if ideia is None:
+        return "nada a fazer"
+    if capturar:
+        capturar_fontes(capturar)
+    buscar(ideia)
+    return ideia.situacao
