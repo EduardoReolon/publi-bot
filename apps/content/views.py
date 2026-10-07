@@ -83,7 +83,7 @@ def pautas(request: HttpRequest) -> HttpResponse:
 
     lista = list(
         consulta.select_related("artigo_parecido").prefetch_related(
-            "articles", "grupos_de_demanda"
+            "articles", "grupos_de_demanda", "links_quebrados"
         )[:200]
     )
     _preparar_pautas(lista, config, completo=False)
@@ -110,7 +110,7 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
     config = ConfiguracaoDoRadar.carregar()
     alvo = get_object_or_404(
         Topic.objects.select_related("artigo_parecido").prefetch_related(
-            "articles", "grupos_de_demanda"
+            "articles", "grupos_de_demanda", "links_quebrados"
         ),
         pk=pk,
     )

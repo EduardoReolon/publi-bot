@@ -1203,6 +1203,10 @@ class LinkQuebrado(models.Model):
         verbose_name=_("artigo parecido"),
     )
     parecido_proximidade = models.FloatField(_("proximidade do parecido"), null=True, blank=True)
+    # Artigos que a pessoa disse que nao servem para este link: nao voltam.
+    artigos_recusados = models.JSONField(_("artigos que nao servem"), default=list, blank=True)
+    # Ultima comparacao com os artigos publicados pela descricao completa.
+    comparado_em = models.DateTimeField(_("comparado em"), null=True, blank=True)
     # O paragrafo do artigo onde o link esta: o que o autor quis citar.
     contexto = models.TextField(_("trecho do artigo"), blank=True)
     # A pagina que sumiu, pela ultima copia boa no Internet Archive.

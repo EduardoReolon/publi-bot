@@ -30,9 +30,10 @@ TIMEOUT = 10.0
 # de robo, instabilidade) e nao contam.
 QUEBRADO = {404, 410}
 PERTO_DO_ARTIGO = 0.35  # distancia de cosseno do texto do link ao titulo
-# Entre PERTO e QUASE: o artigo nao cobre sozinho, mas revisado (titulo mais
-# perto do da pagina que sumiu) pode servir. Vira sugestao, nao ligacao.
+# Ate QUASE, com um termo do assunto em comum, o artigo vira sugestao; sem
+# termo em comum, so ate SEM_TERMO_EM_COMUM. Sempre sugestao: quem liga e a pessoa.
 QUASE_O_ARTIGO = 0.45
+SEM_TERMO_EM_COMUM = 0.25
 PERTO_DO_TEMA = 0.3  # proximidade com o negocio (0 a 1), sem artigo
 
 
@@ -271,6 +272,8 @@ def verificar_pagina(url: str, artigos: list) -> int:
         codigo = situacao_do_link(link)
         if codigo is None:
             continue
+        # Perto de um artigo seu ou do tema: guarda. Qual artigo serve sai
+        # depois, com a descricao completa (`completar`), como sugestao.
         artigo, proximidade = _relacionar(texto, link, artigos)
         if artigo is None and (proximidade or 0) < PERTO_DO_TEMA:
             continue
@@ -283,7 +286,6 @@ def verificar_pagina(url: str, artigos: list) -> int:
                 "texto": texto,
                 "contexto": contexto,
                 "status_http": codigo,
-                "artigo": artigo,
                 "proximidade": proximidade,
             },
         )
@@ -410,6 +412,7 @@ def verificar_um_lote() -> int:
     completar_historicos()
     conferir_conquistas()
     rechecar_links()
+    recomparar_links()
     paginas = paginas_para_verificar()
     if not paginas:
         return 0
@@ -556,42 +559,148 @@ def descricao_do_link(link) -> str:
     return " ".join(p for p in (link.arquivo_titulo, link.texto, link.contexto[:300]) if p)
 
 
-def comparar_com_artigos(link, artigos: list | None = None) -> None:
-    """Procura, entre os publicados, o artigo que cobre o link, agora com a
-    descricao completa (e nao so o texto do link, como na descoberta).
+def _termos(texto: str) -> set[str]:
+    """Os termos que dizem o assunto, pelo comeco (5 letras): "obesidade" e
+    "obesos" nao casam, "precificacao" e "precificar" sim. Simples de proposito."""
+    from apps.knowledge.services import _PALAVRAS_VAZIAS, normalizar_para_impressao
 
-    Perto: o link passa a apontar o artigo. Quase: fica como sugestao, com a
-    proximidade, e a pessoa decide se revisa o artigo e o usa.
+    return {
+        t[:5]
+        for t in re.findall(r"[a-z0-9]+", normalizar_para_impressao(texto or ""))
+        if len(t) >= 4 and t not in _PALAVRAS_VAZIAS and t not in TERMOS_GENERICOS
+    }
+
+
+# Palavras de link que nao dizem o assunto ("clique aqui", "saiba mais").
+TERMOS_GENERICOS = frozenset(
+    "aqui clique saiba mais veja leia confira acesse link pagina site artigo post "
+    "blog guia texto materia sobre neste nesta este esta isso essa esse".split()
+)
+
+
+def _texto_do_artigo_para_termos(artigo) -> str:
+    """Titulo, palavra-chave e intertitulos: o que o artigo diz que cobre."""
+    intertitulos = [
+        linha.lstrip("# ")
+        for linha in (artigo.body_markdown or "").splitlines()
+        if linha.startswith("#")
+    ]
+    return " ".join([artigo.title, artigo.focus_keyword or "", *intertitulos])
+
+
+def termos_em_comum(link, artigo) -> list[str]:
+    """Os termos que o assunto do link (titulo da pagina que sumiu e texto do
+    link) divide com o artigo. Vazio: o artigo e so do mesmo tema geral."""
+    do_link = _termos(f"{link.arquivo_titulo} {link.texto}")
+    return sorted(do_link & _termos(_texto_do_artigo_para_termos(artigo)))
+
+
+def _serve(link, artigo, distancia: float) -> bool:
+    """Proximidade de texto sozinha engana: com um artigo so publicado, ele e o
+    "mais perto" de tudo. Para sugerir, alem de perto, o artigo precisa dividir
+    um termo do assunto com a pagina que sumiu; sem termo nenhum em comum, so
+    se for muito perto."""
+    if distancia <= SEM_TERMO_EM_COMUM:
+        return True
+    return distancia <= QUASE_O_ARTIGO and bool(termos_em_comum(link, artigo))
+
+
+def assunto_do_link(link) -> str:
+    """O assunto da pagina que sumiu, para achar o artigo que a substitui: o
+    titulo e o comeco dela (Internet Archive) e o texto do link. O paragrafo do
+    site que cita fala de muita coisa; entra so quando nao ha mais nada."""
+    assunto = " ".join(
+        p for p in (link.arquivo_titulo, link.texto, (link.arquivo_trecho or "")[:300]) if p
+    )
+    if len(assunto.split()) < 3:
+        assunto = f"{assunto} {(link.contexto or '')[:300]}".strip()
+    return assunto
+
+
+def comparar_com_artigos(link, artigos: list | None = None, *, so_melhorar: bool = False) -> None:
+    """Procura, entre os publicados, o artigo que pode entrar no lugar do link,
+    com a descricao completa (titulo da pagina que sumiu, texto e trecho).
+
+    Fica sempre como SUGESTAO (`artigo_parecido`, com a proximidade): quem liga
+    o artigo ao link e a pessoa ("Serve"). Os que ela disse que nao servem nao
+    voltam. `so_melhorar`: comparando so com um artigo novo, troca a sugestao
+    apenas se ele for melhor.
     """
     from apps.radar.agrupamento import _vetor
     from apps.radar.models import LinkQuebrado
 
     if link.artigo_id or link.pauta_id or link.situacao != LinkQuebrado.Situacao.NOVO:
         return
-    descricao = descricao_do_link(link)
+    link.comparado_em = timezone.now()
+    campos = ["artigo_parecido", "parecido_proximidade", "comparado_em"]
+    descricao = assunto_do_link(link)
     if len(descricao.split()) < 2:
+        link.save(update_fields=["comparado_em"])
         return
     if artigos is None:
         artigos = _artigos_publicados()
-    melhor, menor = _mais_perto(_vetor(descricao), artigos)
-    if melhor is None or menor > QUASE_O_ARTIGO:
-        return
-    if menor <= PERTO_DO_ARTIGO:
-        link.artigo, link.artigo_parecido, link.parecido_proximidade = melhor, None, None
-    elif link.parecido_proximidade is None or 1 - menor > link.parecido_proximidade:
-        link.artigo_parecido, link.parecido_proximidade = melhor, round(1 - menor, 2)
-    else:
-        return
-    link.save(update_fields=["artigo", "artigo_parecido", "parecido_proximidade"])
+    recusados = {str(x) for x in link.artigos_recusados or []}
+    vetor = _vetor(descricao)
+    melhor, menor = _mais_perto(vetor, [(a, v) for a, v in artigos if str(a.pk) not in recusados])
+    if melhor is not None and _serve(link, melhor, menor):
+        proximidade = round(1 - menor, 2)
+        if (
+            not so_melhorar
+            or link.parecido_proximidade is None
+            or (proximidade > link.parecido_proximidade)
+        ):
+            link.artigo_parecido, link.parecido_proximidade = melhor, proximidade
+    elif not so_melhorar:
+        link.artigo_parecido, link.parecido_proximidade = None, None
+    link.save(update_fields=campos)
 
 
 def usar_artigo_parecido(link) -> None:
+    """A pessoa confirmou: o artigo sugerido entra no lugar do link."""
     link.artigo, link.artigo_parecido, link.parecido_proximidade = (
         link.artigo_parecido,
         None,
         None,
     )
     link.save(update_fields=["artigo", "artigo_parecido", "parecido_proximidade"])
+
+
+def nao_serve(link) -> None:
+    """O artigo sugerido (ou ligado) nao serve para este link: nao volta a ser
+    sugerido aqui, e o proximo mais perto que sirva vira a sugestao."""
+    artigo = link.artigo_parecido or link.artigo
+    if artigo is None:
+        return
+    link.artigos_recusados = [*(link.artigos_recusados or []), str(artigo.pk)]
+    link.artigo = link.artigo_parecido = None
+    link.parecido_proximidade = None
+    link.save(
+        update_fields=["artigos_recusados", "artigo", "artigo_parecido", "parecido_proximidade"]
+    )
+    comparar_com_artigos(link)
+
+
+RECOMPARACOES_POR_VEZ = 20
+
+
+def recomparar_links(limite: int = RECOMPARACOES_POR_VEZ) -> int:
+    """Os links em aberto ainda nao comparados com a descricao completa (os
+    antigos, de quando o artigo era ligado sozinho pelo texto do link)."""
+    from apps.radar.models import LinkQuebrado
+
+    pendentes = list(
+        LinkQuebrado.objects.filter(
+            situacao=LinkQuebrado.Situacao.NOVO,
+            artigo__isnull=True,
+            pauta__isnull=True,
+            comparado_em__isnull=True,
+        )[:limite]
+    )
+    if pendentes:
+        artigos = _artigos_publicados()
+        for link in pendentes:
+            comparar_com_artigos(link, artigos)
+    return len(pendentes)
 
 
 def reavaliar_aderencia(link) -> None:
@@ -811,7 +920,7 @@ def cobertura_do_artigo(artigo) -> list[dict]:
 
 def comparar_com_o_publicado(artigo) -> int:
     """Artigo recem-publicado: os links ainda sem artigo sao comparados com ele.
-    Devolve quantos ganharam artigo ou sugestao."""
+    Devolve quantos ganharam sugestao (ou trocaram por uma melhor)."""
     from apps.radar.models import LinkQuebrado
 
     if artigo.status != artigo.Status.PUBLISHED or not artigo.published_url:
@@ -822,7 +931,7 @@ def comparar_com_o_publicado(artigo) -> int:
         situacao=LinkQuebrado.Situacao.NOVO, artigo__isnull=True, pauta__isnull=True
     ):
         antes = (link.artigo_id, link.artigo_parecido_id)
-        comparar_com_artigos(link, so_ele)
+        comparar_com_artigos(link, so_ele, so_melhorar=True)
         mudaram += antes != (link.artigo_id, link.artigo_parecido_id)
     return mudaram
 
@@ -844,3 +953,77 @@ def ofertas_do_artigo() -> dict:
         item["conquistado"] += link.situacao == LinkQuebrado.Situacao.CONQUISTADO
         item["links"].add(link.pk)
     return contagem
+
+
+# Enviado ha mais que isto sem a troca: provavelmente nao vai acontecer.
+PARADO_EM_DIAS = 45
+
+
+def grupos() -> list[tuple[str, str, str]]:
+    """(chave, titulo, explicacao) dos grupos da tela, na ordem de acao."""
+    from django.utils.translation import gettext as _
+
+    return [
+        (
+            "prontos",
+            _("Prontos para enviar"),
+            _("Seu artigo publicado entra no lugar: copie o e-mail e marque como enviado."),
+        ),
+        (
+            "confirmar",
+            _("Artigo candidato: confira"),
+            _(
+                "Um artigo seu parece cobrir o assunto. Diga se serve (vai para Prontos para "
+                "enviar) ou nao serve (aparece o proximo candidato, se houver)."
+            ),
+        ),
+        (
+            "pauta",
+            _("Viraram pauta: artigo a caminho"),
+            _(
+                "A pauta foi criada para o link; o e-mail fica pronto quando o artigo dela for "
+                "publicado."
+            ),
+        ),
+        (
+            "sem_artigo",
+            _("Sem artigo seu"),
+            _("Nenhum artigo seu cobre o assunto. Vire pauta se valer a pena."),
+        ),
+        (
+            "enviados",
+            _("Enviados: esperando a troca"),
+            _(
+                "O PubliBot confere a pagina de semana em semana; quando o link do seu artigo "
+                "aparece, vira conquistado."
+            ),
+        ),
+        (
+            "parados",
+            _("Enviados ha mais de %(n)s dias sem troca") % {"n": PARADO_EM_DIAS},
+            _(
+                "Provavelmente nao vai acontecer. Tente outro contato (e marque de novo a data) "
+                "ou descarte."
+            ),
+        ),
+        ("conquistados", _("Links conquistados"), _("O site trocou o link pelo do seu artigo.")),
+    ]
+
+
+def grupo_do_link(link, hoje=None) -> str:
+    """Em qual grupo da tela o link fica (`link.meu_artigo` ja calculado)."""
+    from apps.radar.models import LinkQuebrado
+
+    if link.situacao == LinkQuebrado.Situacao.CONQUISTADO:
+        return "conquistados"
+    if link.situacao == LinkQuebrado.Situacao.CONTATADO:
+        hoje = hoje or timezone.localdate()
+        parado = link.contatado_em and (hoje - link.contatado_em).days > PARADO_EM_DIAS
+        return "parados" if parado else "enviados"
+    if link.meu_artigo is not None:
+        return "prontos"
+    if link.pauta_id:
+        return "pauta"
+    if link.artigo_parecido_id:
+        return "confirmar"
+    return "sem_artigo"

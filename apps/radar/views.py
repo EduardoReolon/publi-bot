@@ -852,7 +852,14 @@ def decidir_atualizacao(request: HttpRequest, pk) -> HttpResponse:
 def imprensa(request: HttpRequest) -> HttpResponse:
     """Painel de imprensa (um e-mail por veiculo) e links quebrados do assunto."""
     from apps.content.imprensa import painel, pedido_de_email
-    from apps.radar.links_quebrados import artigo_do_link, email, ofertas_do_artigo
+    from apps.radar.links_quebrados import (
+        artigo_do_link,
+        email,
+        grupo_do_link,
+        grupos,
+        ofertas_do_artigo,
+        termos_em_comum,
+    )
     from apps.radar.models import LinkQuebrado
 
     veiculos = painel()
@@ -867,7 +874,7 @@ def imprensa(request: HttpRequest) -> HttpResponse:
     links = list(
         LinkQuebrado.objects.filter(situacao__in=ativos)
         .select_related("artigo", "artigo_parecido", "pauta")
-        .prefetch_related("pauta__articles")[:100]
+        .prefetch_related("pauta__articles")[:300]
     )
     ofertas = ofertas_do_artigo()
     for link in links:
@@ -886,12 +893,20 @@ def imprensa(request: HttpRequest) -> HttpResponse:
             else None
         )
         link.email = email(link)
-    # Os que pedem acao primeiro; entre eles, os mais perto do seu negocio (os que
-    # ja tem artigo seu contam como perto de tudo).
-    ordem = {"novo": 0, "pauta": 1, "contatado": 2, "conquistado": 3}
-    links.sort(
-        key=lambda lk: (ordem[lk.situacao], -(1.0 if lk.artigo_id else (lk.proximidade or 0)))
-    )
+        link.em_comum = (
+            termos_em_comum(link, link.artigo_parecido) if link.artigo_parecido_id else []
+        )
+    # Um grupo por momento do link, na ordem de acao; dentro dele, os mais perto
+    # do seu negocio (ou do artigo candidato) primeiro.
+    hoje = timezone.localdate()
+    por_grupo: dict[str, list] = {}
+    for link in sorted(links, key=lambda lk: -(lk.parecido_proximidade or lk.proximidade or 0)):
+        por_grupo.setdefault(grupo_do_link(link, hoje), []).append(link)
+    grupos_de_links = [
+        {"chave": chave, "titulo": titulo, "explica": explica, "links": por_grupo[chave]}
+        for chave, titulo, explica in grupos()
+        if por_grupo.get(chave)
+    ]
     return render(
         request,
         "radar/imprensa.html",
@@ -900,6 +915,7 @@ def imprensa(request: HttpRequest) -> HttpResponse:
             "subaba": "imprensa",
             "veiculos": veiculos,
             "links": links,
+            "grupos_de_links": grupos_de_links,
             "links_contatados": LinkQuebrado.objects.filter(
                 situacao=LinkQuebrado.Situacao.CONTATADO
             ).count(),
@@ -942,6 +958,19 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
         usar_artigo_parecido(link)
         messages.success(request, _("Artigo ligado ao link. Confira o titulo antes do e-mail."))
         return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
+    if decisao == "nao_serve":
+        from apps.radar.links_quebrados import nao_serve
+
+        nao_serve(link)
+        if link.artigo_parecido_id:
+            messages.info(
+                request, _("Proximo candidato: %(t)s") % {"t": link.artigo_parecido.title}
+            )
+        else:
+            messages.info(
+                request, _("Nenhum outro artigo seu serve: o link foi para Sem artigo seu.")
+            )
+        return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
     if decisao == "pauta" and link.pauta_id:
         messages.info(request, _("Este link ja virou pauta."))
         return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
@@ -971,4 +1000,6 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
     else:
         link.situacao = LinkQuebrado.Situacao.DESCARTADO
     link.save(update_fields=["situacao", "pauta", "contatado_em"])
-    return redirect(reverse("radar:imprensa") + "#links-quebrados")
+    if link.situacao == LinkQuebrado.Situacao.DESCARTADO:
+        return redirect(reverse("radar:imprensa") + "#links-quebrados")
+    return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
