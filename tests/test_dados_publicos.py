@@ -152,6 +152,14 @@ def test_da_pauta_ao_artigo(ambiente, monkeypatch):  # noqa: F811
     dado = DadoDaPauta.objects.get(topic=pauta, serie=serie)
     assert dado.automatico
 
+    # Pre-visualizar: o bloco que vai ao modelo, carregado so ao abrir.
+    url_da_previa = reverse("content:previa_dos_dados", args=[pauta.pk], urlconf=U)
+    assert url_da_previa in pagina and 'id="dados"' in pagina
+    previa = client.get(url_da_previa)
+    assert previa["Content-Type"].startswith("text/plain")
+    texto = previa.content.decode()
+    assert "OPCIONAIS" in texto and "24,1" in texto
+
     # Tirado nao volta sozinho; "Usar" traz de volta.
     acao = reverse("content:dados_da_pauta", args=[pauta.pk], urlconf=U)
     client.post(acao, {"acao": "tirar", "dado": dado.pk})

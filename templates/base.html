@@ -259,6 +259,15 @@
     .cartao strong { font-size: 1.3rem; display: block; }
     .cartao.atencao { border-top-color: var(--erro); }
     .cartao.acao { border-top-color: var(--ok); }
+    /* Telas em arvore (a pauta): cada ramo recolhido, com o resumo numa linha. */
+    details.ramo {
+      border: 1px solid var(--borda); border-radius: .7rem; padding: .5rem 1rem;
+      background: var(--superficie); box-shadow: var(--sombra); margin: .8rem 0;
+    }
+    details.ramo > summary { color: var(--texto); font-size: 1rem; margin: .2rem 0; }
+    details.ramo > summary strong { font-size: 1.08rem; }
+    details.ramo[open] > summary { margin-bottom: .6rem; }
+    details.ramo details.secao { border-left: 3px solid var(--borda); padding-left: .8rem; margin: .5rem 0; }
     .barra-de-uso { height: .45rem; border-radius: 1rem; background: var(--superficie-2); overflow: hidden; margin-top: .4rem; }
     .barra-de-uso > div { height: 100%; background: var(--ok); }
     .barra-de-uso.alto > div { background: var(--alerta); }
@@ -455,6 +464,28 @@
       botoes.forEach(function (b, i) { b.disabled = false; b.textContent = rotulos[i]; b.title = "Nao deu certo: tente de novo"; });
     });
   });
+
+  /* <details data-carregar="url">: o conteudo (texto) so e buscado ao abrir, uma vez. */
+  document.querySelectorAll("details[data-carregar]").forEach(function (caixa) {
+    caixa.addEventListener("toggle", function () {
+      if (!caixa.open || caixa.dataset.carregado) return;
+      caixa.dataset.carregado = "1";
+      var alvo = caixa.querySelector("pre");
+      fetch(caixa.getAttribute("data-carregar"), { credentials: "same-origin" })
+        .then(function (r) { return r.text(); })
+        .then(function (texto) { if (alvo) alvo.textContent = texto; })
+        .catch(function () { if (alvo) alvo.textContent = "Nao deu para carregar: tente de novo."; caixa.dataset.carregado = ""; });
+    });
+  });
+
+  /* Link para #ancora dentro de um ramo recolhido: abre o caminho ate ela. */
+  function abrirAncora() {
+    if (!location.hash) return;
+    var alvo = document.getElementById(location.hash.slice(1));
+    for (var no = alvo; no; no = no.parentElement) { if (no.tagName === "DETAILS") no.open = true; }
+  }
+  abrirAncora();
+  window.addEventListener("hashchange", abrirAncora);
 
   /* Botao de copiar: <button data-copiar="id-do-campo">. Sem HTTPS (desenvolvimento)
      nao ha API de area de transferencia; o campo fica selecionado para Ctrl+C. */

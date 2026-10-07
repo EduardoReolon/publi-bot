@@ -1,23 +1,65 @@
-{% load i18n %}{% comment %}Comum a pauta e a revisao: `p` (a pauta) e `alvo` (o artigo ou falso).{% endcomment %}{% if p %}
-{% with ideia=p.ideias.all.0 %}
-<section class="cartao" id="investigar">
-  <h2>{% translate "Modo investigativo" %}{% if ideia %} <span class="selo {% if ideia.situacao == 'curadoria' %}alerta{% elif ideia.situacao == 'erro' %}ruim{% endif %}">{{ ideia.get_situacao_display }}</span>{% endif %}</h2>
-  {% if alvo and alvo.consensus != 'high' %}
-    <div class="aviso alerta">{% translate "As fontes deste artigo nao concordam por inteiro: e o caso tipico para investigar cada versao de forma organizada." %}</div>
-  {% endif %}
-  {% if p.debate.frentes %}
+{% load i18n ideias %}{% comment %}Comum a pauta e a revisao: `p` (a pauta) e `alvo` (o artigo ou falso).{% endcomment %}{% if p %}
+{% with ideia=p.ideias.all.0 %}{% frentes_da_pauta p as inv %}
+<details class="ramo" id="investigar" {% if alvo and alvo.consensus == 'conflict' and not p.debate.frentes %}open{% endif %}>
+  <summary>
+    <strong>{% translate "Investigacao" %}</strong>
+    <span class="ajuda">{% translate "(vale para A e B)" %}</span>
+    {% if ideia %} <span class="selo {% if ideia.situacao == 'curadoria' %}alerta{% elif ideia.situacao == 'erro' %}ruim{% endif %}">{{ ideia.get_situacao_display }}</span>{% endif %}
+    {% if p.debate.frentes %}
+      <span class="ajuda">· {% blocktranslate trimmed count n=inv.frentes|length %}{{ n }} frente{% plural %}{{ n }} frentes{% endblocktranslate %}{% if inv.esperando %} · <strong>{% blocktranslate trimmed count n=inv.esperando %}{{ n }} fonte esperando voce{% plural %}{{ n }} fontes esperando voce{% endblocktranslate %}</strong>{% endif %}</span>
+    {% else %}
+      <span class="ajuda">· {% translate "desligada" %}</span>
+    {% endif %}
+    {% if alvo and alvo.consensus != 'high' %} <span class="selo alerta">{% translate "as fontes divergem" %}</span>{% endif %}
+  </summary>
+
+  <p class="ajuda">
+    {% translate "Nao e um terceiro modo de gerar: a investigacao alimenta o A e o B." %}
+  </p>
+  <details class="ajuda">
+    <summary>{% translate "Como o resultado entra em cada geracao" %}</summary>
     <ul>
-      {% for f in p.debate.frentes %}<li><strong>{{ f.nome }}</strong> <span class="ajuda">({% if f.papel == 'discurso' %}{% translate "o que se diz" %}{% elif f.papel == 'a_favor' %}{% translate "a favor" %}{% elif f.papel == 'contra' %}{% translate "contra" %}{% else %}{% translate "outra explicacao" %}{% endif %})</span> {{ f.descricao }}</li>{% endfor %}
+      <li>{% blocktranslate trimmed %}<strong>As frentes</strong> separam as versoes do tema: o que se diz (discurso), o que sustenta a sua suspeita (a favor), a melhor evidencia contra, e outras explicacoes. Cada uma busca as proprias fontes, que voce decide aqui embaixo.{% endblocktranslate %}</li>
+      <li>{% blocktranslate trimmed %}<strong>No A (acervo)</strong>: a fonte de evidencia que voce aprova vai para o acervo, como qualquer fonte. A busca do A a encontra pela proximidade com a pauta, e o artigo a cita com o numero [n]. Alem disso, o planejamento, cada secao e o fecho recebem o debate (o que se diz, a suspeita, as frentes) e a regra: a conclusao sai da evidencia.{% endblocktranslate %}</li>
+      <li>{% blocktranslate trimmed %}<strong>No B (pesquisa)</strong>: o B escreve so com os artigos cientificos da pesquisa dele; das frentes ele recebe o debate e os exemplos do discurso. As paginas aprovadas nas frentes nao entram no B.{% endblocktranslate %}</li>
+      <li>{% blocktranslate trimmed %}<strong>O discurso</strong> (o que se diz) nunca vira evidencia: nao entra no acervo, e chega ao A e ao B so como "o que se diz", citado pelo nome do veiculo e analisado, sem numero de fonte.{% endblocktranslate %}</li>
+      <li>{% blocktranslate trimmed %}<strong>Exemplo</strong>: frente "O que a imprensa diz" com uma materia aprovada como discurso; frente "Falta mesmo habilidade em IA" com um relatorio aprovado. O artigo abre com "segundo reportagem do jornal X, o gargalo e a falta de mao de obra", mostra o relatorio com citacao [2] e conclui pelo que a evidencia sustenta — pode ate ser que o jornal estivesse certo.{% endblocktranslate %}</li>
+      <li>{% blocktranslate trimmed %}<strong>Artigo ja escrito</strong> nao muda sozinho: a investigacao entra na proxima geracao ("Gerar de novo do zero").{% endblocktranslate %}</li>
     </ul>
-    <div class="acoes">
-      <a class="botao secundario pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ p.pk }}">{% translate "Fazer a curadoria das frentes" %}</a>
-      <a class="botao discreto pequeno" href="{% url 'ideias:inicio' %}{% if ideia %}#ideia-{{ ideia.pk }}{% endif %}">{% translate "Ver em Ideias" %}</a>
-    </div>
-    {% if alvo %}<p class="ajuda">{% translate "O artigo ja escrito nao muda sozinho: as frentes entram na proxima geracao ('Gerar de novo do zero')." %}</p>{% endif %}
-  {% else %}
-    <p class="pre-visualizacao">{% translate "Quando o tema tem versoes diferentes, o PubliBot separa as frentes (o que se diz, a favor, contra, outras explicacoes) e busca as fontes de cada uma para a sua curadoria. O que se diz entra como discurso: citado e analisado, nunca prova." %}</p>
+  </details>
+
+  {% if p.debate.afirmacao or p.debate.tese %}
+    <ul>
+      {% if p.debate.afirmacao %}<li><strong>{% translate "O que se diz:" %}</strong> {{ p.debate.afirmacao }}</li>{% endif %}
+      {% if p.debate.tese %}<li><strong>{% translate "A suspeita:" %}</strong> {{ p.debate.tese }}</li>{% endif %}
+    </ul>
   {% endif %}
-  <details {% if not p.debate.frentes and alvo and alvo.consensus == 'conflict' %}open{% endif %}>
+
+  {% for f in inv.frentes %}
+    <details class="secao" id="{{ f.ancora }}">
+      <summary>
+        <strong>{{ f.nome }}</strong>
+        {% if f.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso (o que se diz)" %}</span>{% elif f.papel == 'a_favor' %}<span class="selo ok">{% translate "a favor" %}</span>{% elif f.papel == 'contra' %}<span class="selo ruim">{% translate "contra" %}</span>{% else %}<span class="selo">{% translate "outra explicacao" %}</span>{% endif %}
+        <span class="ajuda">{{ f.pendentes|length }} {% translate "esperando" %} · {{ f.aprovadas|length }} {% translate "aprovadas" %}{% if f.recusadas %} · {{ f.recusadas }} {% translate "recusadas" %}{% endif %}</span>
+      </summary>
+      {% if f.descricao %}<p class="ajuda">{{ f.descricao }}</p>{% endif %}
+      {% for candidato in f.pendentes %}
+        {% include "knowledge/_candidato.html" with categorias=inv.categorias niveis=inv.niveis aviso=inv.aviso ancora_de_volta=f.ancora %}
+      {% empty %}
+        <p class="vazio">{% translate "Nenhuma fonte esperando decisao nesta frente." %}</p>
+      {% endfor %}
+      {% if f.aprovadas %}
+        <p class="ajuda"><strong>{% translate "Aprovadas" %}:</strong></p>
+        <ul class="ajuda">
+          {% for c in f.aprovadas %}<li><a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">{{ c.titulo|default:c.url|truncatechars:90 }}</a> {% if c.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso" %}</span>{% else %}<span class="selo ok">{% translate "evidencia" %}</span>{% endif %}{% if c.metricas.citada_por %} <span class="ajuda">({% translate "fonte primaria citada pelo discurso" %})</span>{% endif %}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      <div class="acoes"><a class="botao discreto pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ p.pk }}&frente={{ f.nome|urlencode }}">{% translate "Abrir na tela de curadoria" %}</a></div>
+    </details>
+  {% endfor %}
+
+  {% if ideia %}<p class="ajuda"><a href="{% url 'ideias:inicio' %}#ideia-{{ ideia.pk }}">{% translate "Ver em Ideias" %}</a></p>{% endif %}
+  <details>
     <summary>{% if p.debate.frentes %}{% translate "Investigar de novo" %}{% else %}{% translate "Ligar o modo investigativo" %}{% endif %}</summary>
     <form method="post" action="{% url 'ideias:investigar_pauta' p.pk %}">
       {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
@@ -28,6 +70,6 @@
       <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Investigar as frentes" %}</button></div>
     </form>
   </details>
-</section>
+</details>
 {% endwith %}
 {% endif %}

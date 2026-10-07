@@ -42,11 +42,37 @@ modelo inventar e descartado (so valem os que voce colou).
    as redes**: um post de "noticia ou estudo comentado" com as fontes
    aprovadas, cada uma com o seu papel.
 
+## Preparar com outra IA
+
+"Preparar com outra IA" (ao mandar a ideia, ou depois, na propria ideia) nao
+chama o modelo daqui: monta o pedido (o mesmo prompt `ideia_leitura`, com a
+licenca para pesquisar na web e trazer links reais) para colar numa IA grande.
+A resposta colada de volta (JSON, pode vir dentro de texto ou bloco de codigo)
+passa pelas mesmas regras da leitura daqui (frente "contra" garantida, papeis
+validos, limites); os links que a outra IA achou entram como sugestoes,
+marcadas "achado pela outra IA (confira)", e passam pela curadoria como
+qualquer fonte. Depois a tarefa `buscar_ideia` cria a pauta e busca as frentes.
+"Deixar o modelo daqui ler" volta ao caminho normal.
+
+## A tela da pauta (arvore)
+
+Tudo recolhido, um ramo por assunto: **Sobre a pauta** (no topo), **Artigo A**
+e **Artigo B** (o status no titulo; abre sozinho se falhou; as referencias do
+acervo e a pesquisa de artigos ficam dentro de cada um), **Investigacao** e
+**Dados publicos**. Na Investigacao, uma linha cinza explica que ela nao e um
+terceiro modo de gerar, e "Como o resultado entra em cada geracao" expande com
+exemplos. Cada frente e um ramo com os mesmos cartoes da curadoria (abrir o
+site, enviar PDF, aprovar como evidencia ou discurso, recusar); a decisao volta
+para a mesma frente (`#frente-N`). "Abrir na tela de curadoria" leva as Fontes
+sugeridas filtradas por pauta **e** frente, com as duas no topo. Em Dados
+publicos, "Pre-visualizar o que vai para o modelo" carrega (so ao abrir) o
+bloco exato que o modelo recebe.
+
 ## Modo investigativo em qualquer pauta
 
 Uma ideia e uma pauta com a leitura por frentes. O mesmo vale para a pauta que
-ja existe: na tela da pauta e na revisao do artigo, o cartao **Modo
-investigativo** > "Investigar as frentes" (com um campo opcional: "dizem X, eu
+ja existe: na tela da pauta e na revisao do artigo, o ramo **Investigacao** >
+"Ligar o modo investigativo" (com um campo opcional: "dizem X, eu
 acho Y, considere a frente Z como...", links tambem). Em segundo plano, a
 mesma leitura e as mesmas buscas por frente; a pauta ganha o debate (o titulo
 nao muda) e as fontes vao para a curadoria dela. Aparece tambem em Ideias.

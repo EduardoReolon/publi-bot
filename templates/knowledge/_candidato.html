@@ -1,0 +1,109 @@
+{% load i18n radar %}{% comment %}O cartao de uma fonte sugerida, com as acoes da curadoria. Usado na
+tela de Fontes sugeridas e nas frentes da pauta. Precisa de: candidato, categorias,
+niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
+<div class="aviso" id="candidato-{{ candidato.pk }}">
+  <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
+  {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %} · {{ candidato.canal_nome }}</span>
+    {% with m=candidato.metricas %}{% if m %}
+      <div class="ajuda">
+        {% if candidato.publicado_em %}{{ candidato.publicado_em|date:"d/m/Y" }}{% endif %}
+        {% if m.visualizacoes is not None %} · {{ m.visualizacoes|numero_curto }} {% translate "visualizacoes" %}{% endif %}
+        {% if m.curtidas is not None %} · {{ m.curtidas|numero_curto }} {% translate "curtidas" %}{% if m.visualizacoes %} ({{ m.curtidas|porcentagem_de:m.visualizacoes }}){% endif %}{% endif %}
+        {% if m.comentarios is not None %} · {{ m.comentarios|numero_curto }} {% translate "comentarios" %}{% endif %}
+        {% if m.duracao_segundos %} · {{ m.duracao_segundos|duracao }}{% endif %}
+        {% if m.inscritos_do_canal is not None %} · {% translate "canal com" %} {{ m.inscritos_do_canal|numero_curto }} {% translate "inscritos" %}{% endif %}
+        {% if m.perguntas_nos_comentarios %} · {% blocktranslate with r=m.perguntas_respondidas_pelo_canal p=m.perguntas_nos_comentarios %}o canal respondeu {{ r }} de {{ p }} perguntas{% endblocktranslate %}{% endif %}
+      </div>
+    {% endif %}{% endwith %}
+  {% endif %}
+  {% if candidato.tipo == 'artigo' %}
+    <span class="selo ok">{% translate "artigo cientifico" %}</span>
+    {% if candidato.pdf_url %}<span class="selo ok">{% translate "PDF aberto" %}</span>{% else %}<span class="selo alerta" title="{% translate 'Ao aprovar, voce envia o PDF' %}">{% translate "sem PDF aberto" %}</span>{% endif %}
+    <div class="ajuda">
+      {% if candidato.autores %}{{ candidato.autores|truncatechars:120 }}{% endif %}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}{% if candidato.revista %} · {{ candidato.revista }}{% endif %}{% if candidato.citacoes is not None %} · {% blocktranslate trimmed count n=candidato.citacoes %}{{ n }} citacao{% plural %}{{ n }} citacoes{% endblocktranslate %}{% endif %}{% if candidato.metricas.top_10_por_cento %} · <span title="{% translate 'Entre os 10% mais citados da mesma area e ano' %}">{% translate "top 10% em citacoes" %}</span>{% endif %}
+    </div>
+  {% endif %}
+  {% if candidato.preferido %}<span class="selo ok">{% if candidato.tipo == 'video' %}{% translate "canal preferido" %}{% else %}{% translate "caminho preferido" %}{% endif %}</span>{% endif %}
+  <div class="pre-visualizacao">{{ candidato.url }}</div>
+  {% if candidato.trecho %}<div class="pre-visualizacao">{{ candidato.trecho|truncatechars:300 }}</div>{% endif %}
+  {% if candidato.tipo == 'pagina' %}
+    {% if candidato.texto_extraido %}
+      <details>
+        <summary>{% blocktranslate trimmed with n=candidato.texto_extraido|wordcount %}Ver o texto capturado ({{ n }} palavras){% endblocktranslate %}</summary>
+        <div class="ajuda">{% translate "E este texto que vai para o acervo. Se aparecer menu, rodape, propaganda ou comentarios no meio, recuse ou corte na curadoria." %}</div>
+        <pre class="texto-capturado">{{ candidato.texto_extraido }}</pre>
+      </details>
+    {% else %}
+      <form method="post" action="{% url 'knowledge:capturar_texto_do_candidato' candidato.pk %}">
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}<button type="submit" class="botao discreto pequeno">{% translate "Ver o texto que seria capturado" %}</button>
+      </form>
+    {% endif %}
+  {% endif %}
+  {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
+
+  {% if candidato.papel == 'discurso' %}
+    <div class="aviso alerta">
+      <strong>{% translate "Sugerida como DISCURSO" %}</strong> —
+      {% translate "o 'o que se diz' sobre o tema. Aprovada assim, o artigo da pauta a cita como opiniao a analisar; ela NAO entra no acervo e NAO serve de prova para nada. Os links de fonte primaria que ela cita viram sugestao de evidencia." %}
+    </div>
+    <form method="post" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
+      {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}
+      <button type="submit" name="decisao" value="discurso">{% translate "Aprovar como discurso" %}</button>
+      <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+      <button type="submit" name="decisao" value="evidencia" class="botao discreto" title="{% translate 'Quando a pagina e, na verdade, uma boa fonte de informacao' %}">{% translate "E evidencia, na verdade" %}</button>
+    </form>
+  {% else %}
+  <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
+    {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}
+    {% if candidato.tipo == 'artigo' and not candidato.pdf_url %}
+      <label class="ajuda" style="width:100%">{% translate "Ja baixou o PDF? Envie junto (opcional). Sem ele, o artigo aprovado vai para 'Artigos aguardando o PDF', no topo desta pagina." %}
+        <input type="file" name="pdf" accept="application/pdf,.pdf">
+      </label>
+    {% endif %}
+    <select name="categoria" style="width:auto">
+      {% for categoria in categorias %}
+        <option value="{{ categoria.pk }}" {% if categoria.source_class == candidato.natureza_padrao %}selected{% endif %}>{{ categoria.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" name="decisao" value="aprovar">{% translate "Aprovar e enviar para a curadoria" %}</button>
+    <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+    <button type="submit" name="decisao" value="bloquear_caminho" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere paginas desta pasta do site' %}">{% translate "Recusar esta area do site" %}</button>
+    <button type="submit" name="decisao" value="bloquear_site" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere nada deste site' %}">{% translate "Recusar o site inteiro" %}</button>
+    {% if candidato.pauta.debate %}<button type="submit" name="decisao" value="discurso" class="botao discreto" title="{% translate 'O que se diz sobre o tema: citado e analisado no artigo, nunca usado como prova' %}">{% translate "Usar como discurso" %}</button>{% endif %}
+  </form>
+  {% endif %}
+  {% if candidato.origem == 'radar' %}<div class="ajuda">{% translate "Achada nas buscas do radar" %}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}{% if candidato.classificacao %} · {{ candidato.classificacao }}{% endif %}</div>
+  {% elif candidato.origem == 'openalex' or candidato.origem == 'scholar' %}<div class="ajuda">{{ candidato.get_origem_display }}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}</div>{% endif %}
+
+  <details>
+    <summary>{% if candidato.tipo == 'video' %}{% translate "Confiar neste canal" %}{% else %}{% translate "Confiar neste caminho" %}{% endif %}</summary>
+    <form method="post" action="{% url 'knowledge:caminhos' %}">
+      {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}
+      <div class="campo">
+        <label>{% translate "Caminho" %}</label>
+        <input type="text" name="prefixo" value="{{ candidato.dominio }}">
+        <div class="ajuda">{% translate "Encurte ate o trecho em que voce confia por inteiro." %}</div>
+      </div>
+      <div class="campo">
+        <label>{% translate "Nivel" %}</label>
+        <select name="nivel">
+          {% for valor, rotulo in niveis %}<option value="{{ valor }}">{{ rotulo }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label>{% translate "Categoria" %}</label>
+        <select name="categoria">
+          {% for categoria in categorias %}<option value="{{ categoria.pk }}">{{ categoria.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="aviso ruim">
+        <strong>{{ aviso }}</strong>
+        <label style="display:flex; gap:.5rem; align-items:center; margin-top:.4rem">
+          <input type="checkbox" name="confirmo" value="1" style="width:auto">
+          <span>{% translate "Li o aviso (obrigatorio para aprovar automaticamente)" %}</span>
+        </label>
+      </div>
+      <button type="submit" class="botao secundario">{% translate "Salvar caminho" %}</button>
+    </form>
+  </details>
+</div>

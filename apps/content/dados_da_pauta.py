@@ -75,13 +75,10 @@ def escolhidos(pauta) -> list:
     return itens
 
 
-def fatos_do_artigo(article) -> list[dict]:
-    """Os fatos do artigo, numerados. Congela na primeira vez: a revisao
-    confere contra o numero que o modelo recebeu, mesmo que saia um novo."""
-    if article.dados_usados or article.topic_id is None:
-        return article.dados_usados
+def fatos_da_pauta(pauta) -> list[dict]:
+    """Os fatos numerados que a pauta daria ao modelo hoje (sem congelar)."""
     fatos = []
-    for item in escolhidos(article.topic):
+    for item in escolhidos(pauta):
         for valor in item["valores"]:
             if len(fatos) >= MAXIMO_DE_FATOS:
                 break
@@ -93,6 +90,21 @@ def fatos_do_artigo(article) -> list[dict]:
                     "automatico": item["dado"].automatico,
                 }
             )
+    return fatos
+
+
+def previa(pauta) -> str:
+    """O bloco de dados como o modelo recebe (o de cada secao e um recorte dele,
+    pelos mais proximos do trecho)."""
+    return bloco_para_o_prompt(fatos_da_pauta(pauta))
+
+
+def fatos_do_artigo(article) -> list[dict]:
+    """Os fatos do artigo, numerados. Congela na primeira vez: a revisao
+    confere contra o numero que o modelo recebeu, mesmo que saia um novo."""
+    if article.dados_usados or article.topic_id is None:
+        return article.dados_usados
+    fatos = fatos_da_pauta(article.topic)
     if fatos:
         article.dados_usados = fatos
         article.save(update_fields=["dados_usados"])

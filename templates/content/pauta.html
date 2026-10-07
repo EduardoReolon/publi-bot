@@ -13,35 +13,14 @@
   </p>
   {% with g=pauta.grupo_avaliado %}{% if g %}<p class="pre-visualizacao">{{ g.motivo_ia }}</p>{% endif %}{% endwith %}
 
-  <section class="cartao">
-    <h2>{% translate "Artigos" %}</h2>
-    {% include "content/_fluxos_da_pauta.html" with completo=True %}
-    {% if pauta.status != 'rejected' and pauta.faltam_os_dois %}{% include "content/_gerar_os_dois.html" %}{% endif %}
-  </section>
+  {% if pauta.status != 'rejected' and pauta.faltam_os_dois %}<div class="acoes">{% include "content/_gerar_os_dois.html" %}</div>{% endif %}
+  <p class="ajuda">{% translate "Cada parte abaixo abre com um clique; o resumo ao lado do titulo diz o essencial." %}</p>
 
-  {% comment %}Blocos de modulos opcionais (ver apps/ops/extensoes.py).{% endcomment %}
-  {% for bloco in blocos_da_pauta %}{% include bloco %}{% endfor %}
-
-  {% if pauta.referencias and config.fluxo_do_acervo %}
-    <section class="cartao">
-      <h2>{% translate "Referencias (A)" %}</h2>
-      {% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}
-    </section>
-  {% endif %}
-  {% if pauta.busca_de_fontes.pesquisa and config.fluxo_da_pesquisa %}
-    <section class="cartao">
-      <h2>{% translate "Pesquisa de artigos (B)" %}</h2>
-      {% include "content/_pesquisa_da_pauta.html" with p=pauta.busca_de_fontes.pesquisa %}
-    </section>
-  {% endif %}
-
-  <section class="cartao" id="dados">
-    <h2>{% translate "Dados publicos" %}</h2>
-    {% include "content/_dados_da_pauta.html" %}
-  </section>
-
-  <section class="cartao">
-    <h2>{% translate "Sobre a pauta" %}</h2>
+  {# --- Sobre a pauta: os dados basicos, para entender a importancia dela --- #}
+  <details class="ramo" id="sobre">
+    <summary><strong>{% translate "Sobre a pauta" %}</strong>
+      <span class="ajuda">· {{ pauta.get_origin_display }}{% if pauta.demand_score %} · {% translate "nota" %} {{ pauta.demand_score|floatformat:0 }}{% endif %}{% if pauta.de_peso %} · {% translate "vale o modelo grande" %}{% endif %}{% if pauta.imprensa.tem_angulo %} · {% translate "angulo de imprensa" %}{% endif %}</span>
+    </summary>
     {% include "content/_sobre_a_pauta.html" %}
     {% if pauta.de_peso %}<div class="ajuda"><span class="selo ok">{% translate "vale o modelo grande" %}</span> {{ pauta.de_peso|join:", " }}</div>{% endif %}
     {% if pauta.imprensa.tem_angulo %}<div class="ajuda"><span class="selo ok">{% translate "angulo de imprensa" %}</span>
@@ -56,5 +35,44 @@
         </form>
       </div>
     {% endif %}
-  </section>
+  </details>
+
+  {# --- A e B: cada modo com o seu artigo, o que esta em curso e as fontes dele --- #}
+  {% for f in pauta.fluxos %}
+    <details class="ramo" id="fluxo-{% if f.fluxo %}b{% else %}a{% endif %}" {% if f.falhou and not f.trabalho %}open{% endif %}>
+      <summary><strong>{{ f.nome }}</strong>
+        <span class="ajuda">·
+          {% if f.trabalho %}<span class="selo espera">{% translate "gerando" %}</span>
+          {% elif f.falhou %}<span class="selo ruim">{% translate "a ultima geracao falhou" %}</span>
+          {% elif f.artigos %}{% with a=f.artigos|last %}<span class="selo {% if a.status == 'published' %}ok{% elif a.status == 'rejected' %}ruim{% endif %}">{% if a.status == 'published' %}{% translate "no ar" %}{% else %}{{ a.get_status_display }}{% endif %}</span>{% endwith %}
+          {% elif f.pesquisa.rodando %}<span class="selo espera">{% translate "pesquisando artigos" %}</span>
+          {% elif not f.fluxo and pauta.status == 'waiting_sources' %}<span class="selo alerta">{% translate "aguardando fontes" %}</span>
+          {% else %}{% translate "sem artigo" %}{% endif %}
+        </span>
+      </summary>
+      {% include "content/_fluxo.html" with completo=True %}
+      {% if not f.fluxo and pauta.referencias %}
+        <details class="secao">
+          <summary>{% translate "Referencias do acervo" %}</summary>
+          {% include "content/_referencias_da_pauta.html" with r=pauta.referencias %}
+        </details>
+      {% elif f.fluxo and pauta.busca_de_fontes.pesquisa %}
+        <details class="secao">
+          <summary>{% translate "Pesquisa de artigos" %}</summary>
+          {% include "content/_pesquisa_da_pauta.html" with p=pauta.busca_de_fontes.pesquisa %}
+        </details>
+      {% endif %}
+    </details>
+  {% endfor %}
+
+  {% comment %}Blocos de modulos opcionais (ver apps/ops/extensoes.py): a investigacao.{% endcomment %}
+  {% for bloco in blocos_da_pauta %}{% include bloco %}{% endfor %}
+
+  {# --- Dados publicos --- #}
+  <details class="ramo" id="dados">
+    <summary><strong>{% translate "Dados publicos" %}</strong>
+      <span class="ajuda">· {% blocktranslate trimmed count n=dados_escolhidos|length %}{{ n }} entra no artigo{% plural %}{{ n }} entram no artigo{% endblocktranslate %}{% if dados_sugeridos %} · {% blocktranslate trimmed count n=dados_sugeridos|length %}{{ n }} sugerido{% plural %}{{ n }} sugeridos{% endblocktranslate %}{% endif %}</span>
+    </summary>
+    {% include "content/_dados_da_pauta.html" %}
+  </details>
 {% endblock %}

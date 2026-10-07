@@ -13,6 +13,7 @@ from django.utils.translation import gettext_lazy as _
 class Ideia(models.Model):
     class Situacao(models.TextChoices):
         NOVA = "nova", _("Na fila")
+        OUTRA_IA = "outra_ia", _("Esperando a resposta da outra IA")
         TRANSCREVENDO = "audio", _("Transcrevendo o audio")
         LENDO = "lendo", _("O modelo esta lendo")
         BUSCANDO = "buscando", _("Buscando fontes")
