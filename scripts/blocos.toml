@@ -140,6 +140,7 @@ padroes = [
   "apps/content/rendering.py",
   "apps/content/tasks.py",
   "apps/content/outra_ia.py",
+  "apps/content/debate.py",
   "templates/content/outra_ia.html",
   "docs/adr/ADR-0018-embasamento-da-ideia-central.md",
   "tests/test_flows.py",
@@ -288,6 +289,28 @@ padroes = [
   "templates/social/**",
   "docs/REDES_SOCIAIS.md",
   "docs/PLATEIA_SIMULADA.md",
+]
+
+
+# ---------------------------------------------------------------------------
+# apps/ideias — caixa de ideias (modulo a parte, ligado por extensoes)
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "caixa-de-ideias"
+titulo = "Caixa de ideias: dizem X, eu acho Y — pauta investigada dos dois lados"
+resumo = """
+A ideia (texto ou audio) e lida por um modelo (afirmacao, tese, outras
+explicacoes, consultas), vira pauta com Topic.debate e busca discurso, a favor
+e contra (mais esforco no contra). Discurso aprovado nunca vira documento
+(fontes_web.aprovar_como_discurso): chega ao artigo so pelo bloco do debate
+(content/debate.py), rotulado como o que se diz.
+"""
+entrada = ["apps/ideias/investigacao.py"]
+relacionados = ["acervo-busca", "geracao-texto"]
+padroes = [
+  "apps/ideias/**",
+  "templates/ideias/**",
+  "docs/CAIXA_DE_IDEIAS.md",
 ]
 
 

@@ -97,6 +97,7 @@ TENANT_APPS = [
     # Redes sociais: modulo a parte, ligado ao nucleo so por extensoes
     # (apps/ops/extensoes.py). Tirar esta linha tira o modulo inteiro.
     "apps.social",
+    "apps.ideias",
     #   "apps.integrations",
     #   "apps.ops",
 ]

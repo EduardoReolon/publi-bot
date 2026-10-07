@@ -903,6 +903,26 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
             messages.success(request, _("Recusado. Esta pagina nao sera sugerida de novo."))
         return _voltar_as_fontes(request)
 
+    # O papel: "discurso" (o que se diz, nunca prova) ou "evidencia".
+    if request.POST.get("decisao") == "discurso":
+        from apps.knowledge.fontes_web import aprovar_como_discurso
+
+        aprovar_como_discurso(candidato, por=request.user)
+        messages.success(
+            request,
+            _(
+                "Guardado como DISCURSO: o artigo da pauta cita como 'o que se diz', e ele "
+                "nao entra no acervo nem serve de prova. Links de fonte primaria que a "
+                "pagina cita viraram sugestao de evidencia."
+            ),
+        )
+        return _voltar_as_fontes(request)
+    if request.POST.get("decisao") == "evidencia":
+        candidato.papel = CandidatoDeFonte.Papel.EVIDENCIA
+        candidato.save(update_fields=["papel"])
+        messages.info(request, _("Agora e sugestao de evidencia: aprove com a categoria."))
+        return _voltar_as_fontes(request)
+
     categoria = DocumentCategory.objects.filter(pk=request.POST.get("categoria")).first()
     if categoria is None:
         messages.error(request, _("Escolha a categoria da fonte."))

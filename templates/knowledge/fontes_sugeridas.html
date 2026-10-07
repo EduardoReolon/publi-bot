@@ -121,6 +121,18 @@
       {% endif %}
       {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
 
+      {% if candidato.papel == 'discurso' %}
+        <div class="aviso alerta">
+          <strong>{% translate "Sugerida como DISCURSO" %}</strong> —
+          {% translate "o 'o que se diz' sobre o tema. Aprovada assim, o artigo da pauta a cita como opiniao a analisar; ela NAO entra no acervo e NAO serve de prova para nada. Os links de fonte primaria que ela cita viram sugestao de evidencia." %}
+        </div>
+        <form method="post" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
+          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+          <button type="submit" name="decisao" value="discurso">{% translate "Aprovar como discurso" %}</button>
+          <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+          <button type="submit" name="decisao" value="evidencia" class="botao discreto" title="{% translate 'Quando a pagina e, na verdade, uma boa fonte de informacao' %}">{% translate "E evidencia, na verdade" %}</button>
+        </form>
+      {% else %}
       <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
         {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
         {% if candidato.tipo == 'artigo' and not candidato.pdf_url %}
@@ -137,7 +149,9 @@
         <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
         <button type="submit" name="decisao" value="bloquear_caminho" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere paginas desta pasta do site' %}">{% translate "Recusar esta area do site" %}</button>
         <button type="submit" name="decisao" value="bloquear_site" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere nada deste site' %}">{% translate "Recusar o site inteiro" %}</button>
+        {% if candidato.pauta.debate %}<button type="submit" name="decisao" value="discurso" class="botao discreto" title="{% translate 'O que se diz sobre o tema: citado e analisado no artigo, nunca usado como prova' %}">{% translate "Usar como discurso" %}</button>{% endif %}
       </form>
+      {% endif %}
       {% if candidato.origem == 'radar' %}<div class="ajuda">{% translate "Achada nas buscas do radar" %}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}{% if candidato.classificacao %} · {{ candidato.classificacao }}{% endif %}</div>
       {% elif candidato.origem == 'openalex' or candidato.origem == 'scholar' %}<div class="ajuda">{{ candidato.get_origem_display }}{% if candidato.consulta %} ({{ candidato.consulta }}){% endif %}</div>{% endif %}
 

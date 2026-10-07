@@ -87,8 +87,9 @@ def _chunks_do_payload(job: GenerationJob, passo: str) -> list[SuperChunk]:
 # Artigo pilar
 # ---------------------------------------------------------------------------
 def _tese_com_angulos(job, article) -> str:
-    """No fluxo B, a tese leva junto os angulos e as sinteses da pesquisa."""
-    tese = _tese_do_job(job, article)
+    """No fluxo B, a tese leva junto os angulos e as sinteses da pesquisa. Na
+    pauta que discute uma afirmacao, o bloco do debate (`debate.py`)."""
+    tese = _com_debate(_tese_do_job(job, article), article)
     if article.fluxo == "pesquisa" and article.topic_id:
         from apps.knowledge.pesquisa import orientacao_dos_angulos
 
@@ -96,6 +97,14 @@ def _tese_com_angulos(job, article) -> str:
         if angulos:
             return f"{tese}\n\n{angulos}"
     return tese
+
+
+def _com_debate(texto: str, article) -> str:
+    """O texto com o bloco do debate da pauta, se ela tiver um."""
+    from apps.content.debate import bloco
+
+    extra = bloco(article.topic) if article.topic_id else ""
+    return f"{texto}\n\n{extra}" if extra else texto
 
 
 def fluxo_do_job(job: GenerationJob) -> str:
@@ -352,7 +361,7 @@ def passo_redigir_secoes(job: GenerationJob):
                 montar_contexto_das_fontes(trechos), article, f"{secao.heading}. {secao.intent}"
             ),
             "idioma": _idioma(site),
-            "aviso_da_ideia_central": _aviso_da_ideia_central(article, secao),
+            "aviso_da_ideia_central": _com_debate(_aviso_da_ideia_central(article, secao), article),
         },
         site=site,
         job=job,
@@ -451,7 +460,7 @@ def passo_abertura_e_fecho(job: GenerationJob) -> dict:
         key="article_framing",
         variaveis={
             "titulo": article.title,
-            "tese": _tese_do_job(job, article),
+            "tese": _com_debate(_tese_do_job(job, article), article),
             "esqueleto": esqueleto_do_artigo(article),
             "palavra_chave": article.focus_keyword or article.title,
             "idioma": _idioma(site),
@@ -753,7 +762,7 @@ def passo_redigir(job: GenerationJob) -> dict:
         key="seo_draft",
         variaveis={
             "titulo": article.title,
-            "tese": payload.get("tese", ""),
+            "tese": _com_debate(payload.get("tese", ""), article),
             "fontes": com_dados(montar_contexto_das_fontes(trechos), article),
             "palavra_chave": article.focus_keyword or article.title,
             "idioma": getattr(site, "content_language", "pt-BR") or "pt-BR",

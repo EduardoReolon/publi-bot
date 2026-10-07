@@ -848,6 +848,18 @@ class CandidatoDeFonte(models.Model):
     situacao = models.CharField(
         _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.PENDENTE
     )
+
+    class Papel(models.TextChoices):
+        EVIDENCIA = "", _("Evidencia")
+        DISCURSO = "discurso", _("Discurso")
+
+    # Evidencia: sustenta o texto (vai para o acervo, e a busca a usa). Discurso:
+    # "o que se diz" sobre um tema, para ser citado e analisado, NUNCA usado como
+    # prova. O discurso aprovado nao vira documento: fica so aqui, com o texto, e
+    # chega ao artigo pelo bloco do debate da pauta (`content/debate.py`).
+    papel = models.CharField(
+        _("papel"), max_length=10, choices=Papel.choices, default=Papel.EVIDENCIA, blank=True
+    )
     documento = models.ForeignKey(
         Document,
         on_delete=models.SET_NULL,

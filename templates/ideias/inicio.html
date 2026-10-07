@@ -1,0 +1,89 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Ideias" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Caixa de ideias" %}</h1>
+  <p class="pre-visualizacao">
+    {% blocktranslate trimmed %}
+      Ouviu algo e tem uma opiniao? Mande do jeito que vier, por escrito ou num audio
+      ("dizem X, eu acho Y"; pode juntar dicas: "pesquise nas noticias", "veja influencers").
+      Em segundo plano, o PubliBot separa o que se diz da sua suspeita, monta a pauta e busca
+      tres coisas para a sua curadoria: o <strong>discurso</strong> (quem defende o que se
+      diz), a evidencia <strong>a favor</strong> e — com mais esforco — a evidencia
+      <strong>contra</strong> a sua ideia. A conclusao do texto sai da evidencia, nao da
+      vontade.
+    {% endblocktranslate %}
+  </p>
+
+  <form method="post" enctype="multipart/form-data" class="secao">
+    {% csrf_token %}
+    <div class="campo">
+      <label for="texto">{% translate "A ideia" %}</label>
+      <textarea id="texto" name="texto" class="curto" rows="5" placeholder="{% translate 'Ex.: Vi no jornal que o problema da IA agora e falta de mao de obra. Eu acho que...' %}"></textarea>
+    </div>
+    <div class="campo">
+      <label for="audio">{% translate "Ou grave um audio" %}</label>
+      <input type="file" id="audio" name="audio" accept="audio/*" capture>
+    </div>
+    <div class="campo">
+      <label for="links">{% translate "Links que voce ja tem (opcional, um por linha)" %}</label>
+      <textarea id="links" name="links" class="curto" rows="2" placeholder="https://..."></textarea>
+      <div class="ajuda">{% translate "A materia que voce viu, um post: entram como sugestao de discurso. Instagram e TikTok nao deixam o PubliBot procurar perfis de terceiros; cole o link aqui." %}</div>
+    </div>
+    <div class="acoes"><button type="submit" class="botao">{% translate "Guardar a ideia" %}</button></div>
+  </form>
+
+  <section class="secao">
+    <h2>{% translate "Os dois tipos de fonte" %}</h2>
+    <ul class="ajuda">
+      <li>{% blocktranslate trimmed %}<strong>Evidencia</strong>: sustenta o que o texto afirma. Vai para o acervo, com citacao, como qualquer fonte.{% endblocktranslate %}</li>
+      <li>{% blocktranslate trimmed %}<strong>Discurso</strong>: o "o que se diz" em debate (materia, post, video). Aprovada como discurso, ela NAO entra no acervo e NAO serve de prova para nada: o artigo da pauta a cita como opiniao a analisar ("segundo a materia X"). Os links de fonte primaria que ela cita (a pesquisa por tras da materia) viram sugestao de evidencia, para conferir se a materia leu certo.{% endblocktranslate %}</li>
+    </ul>
+  </section>
+
+  {% for ideia in ideias %}
+    <section class="secao" id="ideia-{{ ideia.pk }}">
+      <h2>{{ ideia.titulo }} <span class="selo {% if ideia.situacao == 'erro' %}ruim{% elif ideia.situacao == 'curadoria' %}alerta{% elif ideia.situacao == 'pauta' %}ok{% endif %}">{{ ideia.get_situacao_display }}</span>{% if ideia.onde %} <span class="selo">{{ ideia.get_onde_display }}</span>{% endif %}</h2>
+      <p class="ajuda">{{ ideia.criada_em|date:"d/m/Y H:i" }}{% if ideia.audio %} · {% translate "por audio" %}{% endif %}</p>
+      {% if ideia.erro %}<div class="aviso ruim">{{ ideia.erro }}</div>{% endif %}
+      {% if ideia.leitura.afirmacao %}
+        <ul>
+          <li><strong>{% translate "O que se diz:" %}</strong> {{ ideia.leitura.afirmacao }}</li>
+          <li><strong>{% translate "O que voce suspeita:" %}</strong> {{ ideia.leitura.tese }}</li>
+          {% for linha in ideia.leitura.linhas %}<li><strong>{% translate "Outra explicacao possivel:" %}</strong> {{ linha }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      {% if ideia.pauta %}
+        <div class="rolagem"><table>
+          <thead><tr><th>{% translate "Fontes" %}</th><th class="numero">{% translate "Esperando voce" %}</th><th class="numero">{% translate "Aprovadas" %}</th></tr></thead>
+          <tbody>
+            <tr><td>{% translate "Discurso (o que se diz)" %}</td><td class="numero">{{ ideia.fontes.discurso.esperando }}</td><td class="numero">{{ ideia.fontes.discurso.aprovadas }}</td></tr>
+            <tr><td>{% translate "Evidencia a favor da sua ideia" %}</td><td class="numero">{{ ideia.fontes.a_favor.esperando }}</td><td class="numero">{{ ideia.fontes.a_favor.aprovadas }}</td></tr>
+            <tr><td>{% translate "Evidencia contra a sua ideia" %}</td><td class="numero">{{ ideia.fontes.contra.esperando }}</td><td class="numero">{{ ideia.fontes.contra.aprovadas }}</td></tr>
+          </tbody>
+        </table></div>
+        {% if ideia.buscas.erros %}<p class="ajuda">{% translate "Buscas que falharam:" %} {{ ideia.buscas.erros|join:"; " }}</p>{% endif %}
+        <div class="acoes">
+          <a class="botao secundario pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ ideia.pauta.pk }}">{% translate "Fazer a curadoria" %}</a>
+          <a class="botao discreto pequeno" href="{% url 'content:pauta' ideia.pauta.pk %}">{% translate "Abrir a pauta" %}</a>
+        </div>
+      {% endif %}
+      <details>
+        <summary>{% translate "O que voce mandou" %}</summary>
+        <p class="pre-visualizacao">{{ ideia.relato|linebreaksbr }}</p>
+        {% for link in ideia.links %}<div class="ajuda">{{ link }}</div>{% endfor %}
+      </details>
+      <form method="post" action="{% url 'ideias:acao' ideia.pk %}" class="acoes">
+        {% csrf_token %}
+        {% if redes and ideia.pauta %}
+          {% for d in redes %}<label style="display:inline-block; margin-right:.6rem"><input type="checkbox" name="destinos" value="{{ d.pk }}" style="width:auto"> {{ d.nome }}</label>{% endfor %}
+          <button type="submit" name="acao" value="redes" class="botao secundario pequeno">{% translate "Levar as redes (com as fontes aprovadas)" %}</button>
+        {% endif %}
+        <button type="submit" name="acao" value="de_novo" class="botao discreto pequeno">{% translate "Ler e buscar de novo" %}</button>
+        {% if ideia.situacao != 'descartada' %}<button type="submit" name="acao" value="descartar" class="botao discreto pequeno">{% translate "Descartar" %}</button>{% endif %}
+      </form>
+    </section>
+  {% empty %}
+    <p class="vazio">{% translate "Nenhuma ideia ainda." %}</p>
+  {% endfor %}
+{% endblock %}

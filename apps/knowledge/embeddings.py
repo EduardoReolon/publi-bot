@@ -41,6 +41,11 @@ class EmbeddingClient(ABC):
     def embed_passage(self, textos: list[str]) -> list[list[float]]:
         """Vetoriza PASSAGENS (o que esta no corpus)."""
 
+    def embed_queries(self, textos: list[str]) -> list[list[float]]:
+        """Varias CONSULTAS de uma vez. Por padrao, uma a uma; os clientes reais
+        mandam em lote (centenas de titulos numa chamada so, e nao centenas)."""
+        return [self.embed_query(t) for t in textos]
+
     @abstractmethod
     def contar_tokens(self, texto: str) -> int:
         """Conta tokens com o tokenizador real do modelo."""
@@ -99,6 +104,9 @@ class FastEmbedClient(EmbeddingClient):
         # O `query_embed` do fastembed, para este modelo, e o mesmo `embed` sem
         # prefixo nenhum — e o limiar `RAG_MAX_COSINE_DISTANCE` foi medido assim.
         return self.vetorizar_preparados([texto])[0]
+
+    def embed_queries(self, textos: list[str]) -> list[list[float]]:
+        return self.vetorizar_preparados(list(textos)) if textos else []
 
     def embed_passage(self, textos: list[str]) -> list[list[float]]:
         if not textos:
@@ -203,6 +211,12 @@ class ServicoDeVetoresClient(FastEmbedClient):
 
     def embed_query(self, texto: str) -> list[float]:
         return self._pedir([texto], prazo=60)[0]
+
+    def embed_queries(self, textos: list[str]) -> list[list[float]]:
+        vetores = []
+        for inicio in range(0, len(textos), self.LOTE):
+            vetores += self._pedir(list(textos[inicio : inicio + self.LOTE]), prazo=120)
+        return vetores
 
     def embed_passage(self, textos: list[str]) -> list[list[float]]:
         vetores = []

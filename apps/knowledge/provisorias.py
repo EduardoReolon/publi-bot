@@ -117,6 +117,8 @@ def acolher(candidato: CandidatoDeFonte, *, local: bool = False) -> bool:
     """
     if candidato.situacao != CandidatoDeFonte.Situacao.PENDENTE:
         return False
+    if candidato.papel == CandidatoDeFonte.Papel.DISCURSO:
+        return False  # discurso nunca entra no indice, nem provisorio
     if candidato.tipo == CandidatoDeFonte.Tipo.ARTIGO:
         documento = documento_do_resumo(candidato)
         return documento is not None and indexar(documento, local=local)
