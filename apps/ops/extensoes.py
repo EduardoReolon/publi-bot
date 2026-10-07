@@ -14,6 +14,8 @@ le essas declaracoes daqui:
         pendencias = "apps.meu.painel.pendencias"         # () -> {"chave": numero}
         alertas = "apps.meu.painel.alertas"               # () -> ["texto", ...] no painel
         exclusao_de_dados = "apps.meu.privacidade.excluir"  # (rede, usuario, apagar) -> n
+        contas_das_redes = "apps.meu.x.contas"            # () -> [(id, nome)]
+        comentar_nas_redes = "apps.meu.x.comentar"        # (texto, referencias, destinos, por)
 
 Tirar o modulo de INSTALLED_APPS tira tudo junto: o nucleo continua igual.
 """
@@ -100,3 +102,23 @@ def excluir_dados(rede: str, usuario: str, *, apagar: bool) -> int:
     for caminho in _declaracoes("exclusao_de_dados"):
         total += int(import_string(caminho)(rede, usuario, apagar=apagar) or 0)
     return total
+
+
+def contas_das_redes() -> list[tuple[str, str]]:
+    """As contas de redes onde um modulo de redes publica (vazio sem modulo)."""
+    saida: list[tuple[str, str]] = []
+    for caminho in _declaracoes("contas_das_redes"):
+        saida += list(import_string(caminho)() or [])
+    return saida
+
+
+def comentar_nas_redes(*, texto: str, referencias: list[dict], destinos: list[str], por=None):
+    """Pede ao modulo de redes um post de "noticia ou estudo comentado" com o
+    material ja lido. Sem modulo de redes: LookupError. Material ou conta
+    faltando: ValueError, com a mensagem para a tela."""
+    caminhos = _declaracoes("comentar_nas_redes")
+    if not caminhos:
+        raise LookupError("nenhum modulo de redes instalado.")
+    return import_string(caminhos[0])(
+        texto=texto, referencias=referencias, destinos=destinos, por=por
+    )

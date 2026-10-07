@@ -270,8 +270,11 @@ def estatisticas(videos: list[dict], *, contas: ContasExternas) -> dict[str, dic
     return saida
 
 
-def _registrar_candidato(video: dict, *, consulta: str, metricas: dict | None = None, pauta=None):
-    """O video como candidato a fonte. Canal confiavel (APROVAR) ja aprova."""
+def _registrar_candidato(
+    video: dict, *, consulta: str, metricas: dict | None = None, pauta=None, papel: str = ""
+):
+    """O video como candidato a fonte. Canal confiavel (APROVAR) ja aprova —
+    menos como DISCURSO ("o que se diz", caixa de ideias): ai so a pessoa decide."""
     from apps.knowledge.fontes_web import _ja_conhecida, aprovar, caminho_do_canal
     from apps.knowledge.models import CandidatoDeFonte
     from apps.knowledge.videos import data_do_youtube, url_do_video
@@ -280,7 +283,8 @@ def _registrar_candidato(video: dict, *, consulta: str, metricas: dict | None = 
     if _ja_conhecida(url):
         return None
     caminho = caminho_do_canal(video["canal_id"])
-    if caminho is not None and caminho.nivel == "bloquear":
+    discurso = papel == CandidatoDeFonte.Papel.DISCURSO
+    if caminho is not None and caminho.nivel == "bloquear" and not discurso:
         return None
     candidato = CandidatoDeFonte.objects.create(
         url=url,
@@ -295,8 +299,9 @@ def _registrar_candidato(video: dict, *, consulta: str, metricas: dict | None = 
         preferido=caminho is not None,
         metricas=metricas or {},
         pauta=pauta,
+        papel=papel,
     )
-    if caminho is not None and caminho.nivel == "aprovar":
+    if caminho is not None and caminho.nivel == "aprovar" and not discurso:
         aprovar(candidato, categoria=caminho.categoria, automatico=True)
     return candidato
 
@@ -369,7 +374,7 @@ def colher_sinais(
     return novos
 
 
-def buscar_para_pauta(pauta, *, falta: int) -> list:
+def buscar_para_pauta(pauta, *, falta: int, consulta: str = "", papel: str = "") -> list:
     """Videos para a pauta, como sugestao de fonte (a pessoa confere).
 
     Uma busca (100 unidades da cota) e as estatisticas (2). Levanta
@@ -380,7 +385,7 @@ def buscar_para_pauta(pauta, *, falta: int) -> list:
     contas = ContasExternas.carregar()
     if COTA_DIARIA - FOLGA_DA_COTA - unidades_nas_ultimas_24h() < UNIDADES_DA_BUSCA + 2:
         raise ProvedorIndisponivel("a cota diaria do YouTube esta quase no fim.")
-    consulta = pauta.target_keyword or pauta.title
+    consulta = consulta or pauta.target_keyword or pauta.title
     achados = buscar_videos(
         consulta,
         quantos=min(25, falta * 3),
@@ -393,7 +398,11 @@ def buscar_para_pauta(pauta, *, falta: int) -> list:
         if len(novos) >= falta:
             break
         candidato = _registrar_candidato(
-            video, consulta=consulta, metricas=numeros.get(video["id"], {}), pauta=pauta
+            video,
+            consulta=consulta,
+            metricas=numeros.get(video["id"], {}),
+            pauta=pauta,
+            papel=papel,
         )
         if candidato is not None:
             novos.append(candidato)

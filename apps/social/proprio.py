@@ -102,7 +102,16 @@ def _referencias(entrada: Entrada) -> str:
     blocos = []
     for i, ref in enumerate(r for r in entrada.referencias or [] if r.get("texto")):
         origem = " — ".join(x for x in [ref.get("site"), ref.get("titulo")] if x) or ref["url"]
-        blocos.append(f"REFERENCIA {i + 1} ({origem}; {ref['url']}):\n{ref['texto']}")
+        if ref.get("frente"):
+            origem = f"{origem}; frente '{ref['frente']}'"
+        if ref.get("papel") == "discurso":
+            # O "o que se diz" (caixa de ideias): citado e analisado, nunca prova.
+            rotulo = "DISCURSO, NAO E EVIDENCIA: cite como o que se diz, sem tirar conclusao dele"
+            blocos.append(
+                f"REFERENCIA {i + 1} — {rotulo} ({origem}; {ref['url']}):\n{ref['texto']}"
+            )
+        else:
+            blocos.append(f"REFERENCIA {i + 1} ({origem}; {ref['url']}):\n{ref['texto']}")
     return "\n\n".join(blocos)
 
 
@@ -133,6 +142,12 @@ def instrucao_para_quem_escreve(entrada: Entrada, artigo: fontes.ArtigoParaRedes
             "instituicao ou dos autores). Nao atribua a uma fonte o que ela nao disse, nao "
             "aumente nem diminua o que ela diz, e separe o que a fonte afirma do que e "
             "a leitura do negocio (o relato da pessoa)."
+        )
+    if any(r.get("papel") == "discurso" for r in entrada.referencias or []):
+        partes.append(
+            "Ha REFERENCIAS marcadas como DISCURSO: sao o 'o que se diz' em debate. Cite-as "
+            "como opiniao a analisar ('segundo a materia X'), nunca como prova; a conclusao "
+            "sai das outras referencias. Critique a afirmacao, nunca as pessoas."
         )
     if entrada.midias.exists():
         partes.append(
@@ -277,6 +292,31 @@ def ler_referencias(entrada: Entrada) -> None:
         levar(entrada)
     else:
         logger.warning("Entrada %s sem material: nenhum link abriu.", entrada.pk)
+
+
+def criar_comentario(
+    *, texto: str, referencias: list[dict], destinos: list[str], por=None
+) -> Entrada:
+    """Post de "noticia ou estudo comentado" com o material ja lido (vem da
+    caixa de ideias, com o papel de cada referencia: discurso ou evidencia)."""
+    if not destinos:
+        raise EntradaInvalida("Escolha pelo menos uma conta.")
+    if not referencias:
+        raise EntradaInvalida("Nenhuma fonte aprovada ainda: faca a curadoria primeiro.")
+    entrada = Entrada.objects.create(
+        tipo=Entrada.Tipo.COMENTARIO,
+        texto=texto[:10000],
+        referencias=referencias,
+        destinos=[str(d) for d in destinos],
+        criada_por=por,
+    )
+    levar(entrada)
+    return entrada
+
+
+def contas_para_comentar() -> list[tuple[str, str]]:
+    destinos = list(Destino.objects.filter(ligado=True)) or list(Destino.objects.all())
+    return [(str(d.pk), d.nome) for d in destinos]
 
 
 def links_que_falharam(entrada: Entrada) -> list[str]:

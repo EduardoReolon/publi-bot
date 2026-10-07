@@ -13,6 +13,7 @@ antes da consulta aberta.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from urllib.parse import urlparse
 
@@ -254,11 +255,18 @@ def _buscar_artigos(pauta, acervo: dict, consultas: list[str]) -> list:
     return novos
 
 
-def _buscar_paginas(pauta, consultas: list[str], limite: int) -> list[CandidatoDeFonte]:
+def _buscar_paginas(
+    pauta, consultas: list[str], limite: int, *, papel: str = ""
+) -> list[CandidatoDeFonte]:
+    """`papel` DISCURSO: a busca do "o que se diz" (caixa de ideias). Ai nada
+    entra sozinho no acervo (nem caminho APROVAR, nem provisoria), e o site
+    bloqueado como fonte aparece mesmo assim: o discurso e justamente o que se
+    diz por ai."""
     from apps.knowledge.provisorias import acolher_se_ligado
     from apps.radar.models import ChamadaExterna
     from apps.radar.provedores import buscar
 
+    discurso = papel == CandidatoDeFonte.Papel.DISCURSO
     novos: list[CandidatoDeFonte] = []
     for consulta in consultas:
         if len(novos) >= limite:
@@ -268,7 +276,7 @@ def _buscar_paginas(pauta, consultas: list[str], limite: int) -> list[CandidatoD
             if len(novos) >= limite:
                 break
             url = item.url[:500]
-            if _ja_conhecida(url) or bloqueada(url):
+            if _ja_conhecida(url) or (bloqueada(url) and not discurso):
                 continue
             caminho = caminho_de(url)
             candidato = CandidatoDeFonte.objects.create(
@@ -279,8 +287,11 @@ def _buscar_paginas(pauta, consultas: list[str], limite: int) -> list[CandidatoD
                 consulta=consulta[:500],
                 pauta=pauta,
                 preferido=confiavel(caminho),
+                papel=papel,
             )
-            if caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
+            if discurso:
+                pass  # so a pessoa decide (ver `aprovar_como_discurso`)
+            elif caminho is not None and caminho.nivel == CaminhoConfiavel.Nivel.APROVAR:
                 aprovar(candidato, categoria=caminho.categoria, automatico=True)
             elif caminho is None and _de_instituicao_confiavel(url):
                 # Instituicao de dados publicos marcada confiavel no catalogo
@@ -311,6 +322,10 @@ def aprovar(
     from apps.knowledge.tasks import iniciar_ingestao
     from apps.knowledge.web import PaginaIndisponivel
 
+    if candidato.papel == CandidatoDeFonte.Papel.DISCURSO:
+        # A trava: discurso nunca vira documento (e a busca do acervo so le
+        # documentos). Para usar como evidencia, a pessoa troca o papel antes.
+        return aprovar_como_discurso(candidato, por=por)
     if candidato.tipo == CandidatoDeFonte.Tipo.VIDEO:
         from apps.knowledge.videos import aprovar_video
 
@@ -349,6 +364,96 @@ def aprovar(
     candidato.motivo = "aprovado por caminho confiavel" if automatico else ""
     candidato.save()
     return candidato
+
+
+def aprovar_como_discurso(candidato: CandidatoDeFonte, *, por=None) -> CandidatoDeFonte:
+    """O "o que se diz": guarda o texto da pagina NO CANDIDATO, sem criar
+    documento — fica fora do acervo e da busca, e so chega ao artigo da pauta
+    dele, no bloco do debate, marcado como discurso. Video: titulo e descricao.
+    Depois segue as citacoes da pagina (`seguir_citacoes`): a fonte primaria
+    que ela cita vira sugestao de EVIDENCIA."""
+    from apps.knowledge.web import PaginaIndisponivel, baixar, extrair_pagina
+
+    candidato.papel = CandidatoDeFonte.Papel.DISCURSO
+    html = b""
+    if candidato.tipo == CandidatoDeFonte.Tipo.PAGINA and not candidato.texto_extraido:
+        try:
+            html, final, _tipo = baixar(candidato.url)
+            candidato.texto_extraido = extrair_pagina(html, url=final).markdown[:20000]
+        except PaginaIndisponivel as exc:
+            candidato.motivo = f"texto nao capturado: {exc}"[:2000]
+    if not candidato.texto_extraido:
+        candidato.texto_extraido = "\n".join(x for x in [candidato.titulo, candidato.trecho] if x)
+    candidato.situacao = CandidatoDeFonte.Situacao.APROVADO
+    candidato.documento = None
+    candidato.decidido_por = por
+    candidato.decidido_em = timezone.now()
+    candidato.save()
+    if html:
+        seguir_citacoes(candidato, html)
+    return candidato
+
+
+# Links que costumam ser a fonte primaria por tras de uma materia.
+_PRIMARIA = re.compile(
+    r"\.pdf($|\?)|doi\.org/|/(estudo|pesquisa|relatorio|report|study|research|publicac|"
+    r"survey|paper|dados|indicadores)",
+    re.I,
+)
+MAXIMO_DE_CITACOES = 5
+
+
+def seguir_citacoes(candidato: CandidatoDeFonte, html: bytes | str) -> list[CandidatoDeFonte]:
+    """A investigacao mais barata que existe: a materia diz "segundo pesquisa
+    X" e quase sempre linka a pesquisa. Os links do texto que parecem fonte
+    primaria (PDF, DOI, pagina de estudo/relatorio, site de governo, de
+    universidade ou de instituicao confiavel) viram sugestao de EVIDENCIA para
+    a mesma pauta — para conferir se a materia leu certo. So algoritmo."""
+    from urllib.parse import urljoin, urlparse
+
+    if isinstance(html, bytes):
+        html = html.decode("utf-8", errors="replace")
+    origem = urlparse(candidato.url).hostname or ""
+    achados: list[CandidatoDeFonte] = []
+    vistos: set[str] = set()
+    for href, rotulo in re.findall(r'<a\s[^>]*href="([^"#]+)"[^>]*>(.*?)</a>', html, re.I | re.S):
+        url = urljoin(candidato.url, href.strip())[:500]
+        anfitriao = urlparse(url).hostname or ""
+        if not url.startswith("http") or anfitriao == origem or url in vistos:
+            continue
+        vistos.add(url)
+        oficial = re.search(
+            r"\.(gov|edu|ac|org)(\.[a-z]{2})?$", anfitriao
+        ) or _de_instituicao_confiavel(url)
+        if not (_PRIMARIA.search(url) or oficial):
+            continue
+        if _ja_conhecida(url) or bloqueada(url):
+            continue
+        texto = re.sub(r"<[^>]+>|\s+", " ", rotulo).strip()
+        achados.append(
+            CandidatoDeFonte.objects.create(
+                url=url,
+                titulo=(texto or url)[:500],
+                trecho=f"Citada por {candidato.dominio or origem}: {candidato.titulo}"[:1000],
+                dominio=normalizar_caminho(url).split("/", 1)[0][:200],
+                consulta=f"citada em {candidato.url}"[:500],
+                pauta=candidato.pauta,
+                preferido=confiavel(caminho_de(url)),
+                # Na caixa de ideias, a fonte primaria fica na frente do discurso que a citou.
+                metricas={
+                    k: v
+                    for k, v in {
+                        "frente": (candidato.metricas or {}).get("frente"),
+                        "lado": "citada",
+                        "citada_por": candidato.url,
+                    }.items()
+                    if v
+                },
+            )
+        )
+        if len(achados) >= MAXIMO_DE_CITACOES:
+            break
+    return achados
 
 
 def voltar_a_sugestao(candidato: CandidatoDeFonte) -> CandidatoDeFonte:

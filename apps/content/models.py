@@ -343,6 +343,9 @@ class Topic(models.Model):
     # feita (quando, com que palavras, quantas novas) e se a falta de artigos
     # foi ignorada. Ver apps/knowledge/referencias.py.
     busca_de_fontes = models.JSONField(_("busca de fontes"), default=dict, blank=True)
+    # Pauta que discute uma afirmacao ("dizem X; o autor suspeita Y"): {"afirmacao",
+    # "tese", "linhas": [...]}. Vazio na pauta comum. Ver content/debate.py.
+    debate = models.JSONField(_("debate"), default=dict, blank=True)
 
     # Artigo publicado DEPOIS da pauta nascer e que ja cobre o mesmo assunto.
     # Aviso, nao descarte: a pessoa decide se muda o angulo ou desiste.
@@ -359,6 +362,7 @@ class Topic(models.Model):
         MANUAL = "manual", _("Criada a mao")
         RADAR = "radar", _("Sugerida pelo radar")
         LINK_QUEBRADO = "link", _("Link quebrado de outro site")
+        IDEIA = "ideia", _("Da caixa de ideias")
 
     origin = models.CharField(
         _("origem"), max_length=8, choices=Origin.choices, default=Origin.MANUAL

@@ -151,7 +151,10 @@ def vetores_do_que_ja_foi_escrito() -> np.ndarray | None:
     titulos = list(dict.fromkeys(t for t in titulos if t))
     if not titulos:
         return None
-    return np.vstack([_vetor(t) for t in titulos])
+    from apps.knowledge.embeddings import get_embedding_client
+
+    # Em lote: com o servico de vetores, ~25 chamadas em vez de ~700.
+    return np.asarray(get_embedding_client().embed_queries(titulos), dtype=np.float32)
 
 
 def _menor_distancia(vetor: np.ndarray, matriz: np.ndarray | None) -> float:
