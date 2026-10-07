@@ -63,8 +63,10 @@ def inicio(request: HttpRequest) -> HttpResponse:
         )
         return redirect("ideias:inicio")
     ideias = list(Ideia.objects.select_related("pauta")[:100])
+    from apps.ideias.investigacao import fontes_por_frente
+
     for ideia in ideias:
-        ideia.fontes = _fontes(ideia)
+        ideia.frentes = fontes_por_frente(ideia)
     return render(
         request,
         "ideias/inicio.html",
@@ -74,30 +76,6 @@ def inicio(request: HttpRequest) -> HttpResponse:
             "redes": _destinos_das_redes(),
         },
     )
-
-
-def _fontes(ideia: Ideia) -> dict:
-    """Por lado (discurso, a favor, contra): quantas esperam e quantas aprovadas."""
-    from apps.knowledge.models import CandidatoDeFonte
-
-    saida = {lado: {"esperando": 0, "aprovadas": 0} for lado in ("discurso", "a_favor", "contra")}
-    if not ideia.pauta_id:
-        return saida
-    for candidato in CandidatoDeFonte.objects.filter(pauta_id=ideia.pauta_id).only(
-        "papel", "situacao", "metricas"
-    ):
-        lado = (
-            "discurso"
-            if candidato.papel == CandidatoDeFonte.Papel.DISCURSO
-            else (candidato.metricas or {}).get("lado") or "a_favor"
-        )
-        if lado not in saida:
-            continue
-        if candidato.situacao == CandidatoDeFonte.Situacao.PENDENTE:
-            saida[lado]["esperando"] += 1
-        elif candidato.situacao == CandidatoDeFonte.Situacao.APROVADO:
-            saida[lado]["aprovadas"] += 1
-    return saida
 
 
 def _destinos_das_redes() -> list:

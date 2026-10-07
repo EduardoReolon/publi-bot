@@ -22,14 +22,29 @@ LEITURA = {
     "titulo": "Falta mao de obra para usar IA?",
     "afirmacao": "O que trava a IA agora e a falta de mao de obra para usa-la.",
     "tese": "Falta profissional da area que saiba conferir a saida, nao operador de IA.",
-    "linhas": ["A produtividade subiu e a demanda por especialistas cresceu."],
-    "buscas": {
-        "discurso": ["falta mao de obra ia"],
-        "a_favor": ["especialista conferir saida ia"],
-        "contra": ["escassez habilidades ia estudo", "ia substitui especialista"],
-    },
-    "estudos": True,
-    "videos": False,
+    "frentes": [
+        {
+            "nome": "O que o jornal diz",
+            "papel": "discurso",
+            "descricao": "Falta mao de obra para IA.",
+            "buscas": ["falta mao de obra ia"],
+            "links": ["https://g1.exemplo.com/ia-mao-de-obra", "https://inventado.com/x"],
+        },
+        {
+            "nome": "Especialista confere",
+            "papel": "a_favor",
+            "buscas": ["especialista conferir saida ia"],
+            "estudos": True,
+        },
+        {
+            "nome": "Produtividade",
+            "papel": "alternativa",
+            "descricao": "A produtividade subiu e a demanda por especialistas cresceu.",
+            "buscas": ["produtividade ia demanda especialistas"],
+            "estudos": False,
+            "links": ["https://estudo.org/produtividade"],
+        },
+    ],
     "onde": "os_dois",
 }
 
@@ -93,17 +108,33 @@ def test_ideia_vira_pauta_com_debate_e_busca_os_dois_lados(ambiente, modelo, bus
     assert pauta.origin == Topic.Origin.IDEIA and pauta.status == Topic.Status.SUGGESTED
     assert pauta.debate["tese"].startswith("Falta profissional")
 
+    # Sem frente "contra" na leitura, o PubliBot acrescenta uma.
+    frentes = {f["nome"]: f for f in ideia.leitura["frentes"]}
+    assert frentes["Contra a tese"]["papel"] == "contra"
+    assert frentes["O que o jornal diz"]["links"] == ["https://g1.exemplo.com/ia-mao-de-obra"]
+    assert [f["nome"] for f in pauta.debate["frentes"]][:3] == [
+        "O que o jornal diz",
+        "Especialista confere",
+        "Produtividade",
+    ]
+
     candidatos = CandidatoDeFonte.objects.filter(pauta=pauta)
     discurso = candidatos.filter(papel=CandidatoDeFonte.Papel.DISCURSO)
-    # O link colado e a busca do discurso; a favor e contra como evidencia.
+    # O link do jornal (atribuido ao discurso) e a busca do discurso; o link do
+    # estudo foi para a frente alternativa, como EVIDENCIA.
     assert {c.url for c in discurso} >= {"https://g1.exemplo.com/ia-mao-de-obra"}
-    assert discurso.count() == 2
-    lados = sorted(c.metricas["lado"] for c in candidatos.exclude(papel="discurso"))
-    assert lados == ["a_favor", "contra", "contra"]  # o contra tem mais consultas
-    assert ideia.buscas["contra"] == 2
+    assert discurso.count() == 2 and not candidatos.filter(url__contains="inventado")
+    estudo = candidatos.get(url="https://estudo.org/produtividade")
+    assert estudo.papel == "" and estudo.metricas == {
+        "frente": "Produtividade",
+        "lado": "alternativa",
+    }
+    assert all(c.metricas.get("frente") for c in candidatos)
+    assert ideia.buscas["frentes"]["Contra a tese"] == 1
 
     pagina = client.get(reverse("ideias:inicio", urlconf=U)).content.decode()
-    assert "Evidencia contra a sua ideia" in pagina and "Fazer a curadoria" in pagina
+    assert "Produtividade" in pagina and "contra a sua ideia" in pagina
+    assert "Fazer a curadoria" in pagina
 
 
 @pytest.mark.django_db
@@ -173,11 +204,17 @@ def test_geracao_recebe_o_debate(ambiente):
     from apps.content.models import Article
 
     pauta = Topic.objects.create(
-        title="T", debate={"afirmacao": "Dizem X.", "tese": "Acho Y.", "linhas": ["Ou Z."]}
+        title="T",
+        debate={
+            "afirmacao": "Dizem X.",
+            "tese": "Acho Y.",
+            "frentes": [{"nome": "Ou Z", "papel": "alternativa", "descricao": "Ou Z."}],
+        },
     )
     artigo = Article.objects.create(title="T", topic=pauta)
     texto = _com_debate("Tese das fontes.", artigo)
-    assert texto.startswith("Tese das fontes.") and "Dizem X." in texto and "Ou Z." in texto
+    assert texto.startswith("Tese das fontes.") and "Dizem X." in texto
+    assert "Frente 'Ou Z' — outra explicacao: Ou Z." in texto
     assert "conclusao sai das FONTES" in texto
 
 

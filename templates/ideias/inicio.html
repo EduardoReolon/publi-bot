@@ -19,7 +19,8 @@
     {% csrf_token %}
     <div class="campo">
       <label for="texto">{% translate "A ideia" %}</label>
-      <textarea id="texto" name="texto" class="curto" rows="5" placeholder="{% translate 'Ex.: Vi no jornal que o problema da IA agora e falta de mao de obra. Eu acho que...' %}"></textarea>
+      <textarea id="texto" name="texto" class="curto" rows="5" placeholder="{% translate 'Ex.: Vi no jornal que o problema da IA agora e falta de mao de obra. Eu acho que... Considere a frente Produtividade como outra explicacao; o link do g1 e da frente O que o jornal diz.' %}"></textarea>
+      <div class="ajuda">{% translate "O PubliBot monta FRENTES (linhas de raciocinio), cada uma com as proprias fontes. Voce pode nomear e classificar as frentes no texto: 'considere a frente X como contraria', 'a frente Y e outra explicacao', 'o link tal e da frente Z'." %}</div>
     </div>
     <div class="campo">
       <label for="audio">{% translate "Ou grave um audio" %}</label>
@@ -50,16 +51,20 @@
         <ul>
           <li><strong>{% translate "O que se diz:" %}</strong> {{ ideia.leitura.afirmacao }}</li>
           <li><strong>{% translate "O que voce suspeita:" %}</strong> {{ ideia.leitura.tese }}</li>
-          {% for linha in ideia.leitura.linhas %}<li><strong>{% translate "Outra explicacao possivel:" %}</strong> {{ linha }}</li>{% endfor %}
         </ul>
       {% endif %}
       {% if ideia.pauta %}
         <div class="rolagem"><table>
-          <thead><tr><th>{% translate "Fontes" %}</th><th class="numero">{% translate "Esperando voce" %}</th><th class="numero">{% translate "Aprovadas" %}</th></tr></thead>
+          <thead><tr><th>{% translate "Frente" %}</th><th>{% translate "Papel" %}</th><th class="numero">{% translate "Esperando voce" %}</th><th class="numero">{% translate "Aprovadas" %}</th></tr></thead>
           <tbody>
-            <tr><td>{% translate "Discurso (o que se diz)" %}</td><td class="numero">{{ ideia.fontes.discurso.esperando }}</td><td class="numero">{{ ideia.fontes.discurso.aprovadas }}</td></tr>
-            <tr><td>{% translate "Evidencia a favor da sua ideia" %}</td><td class="numero">{{ ideia.fontes.a_favor.esperando }}</td><td class="numero">{{ ideia.fontes.a_favor.aprovadas }}</td></tr>
-            <tr><td>{% translate "Evidencia contra a sua ideia" %}</td><td class="numero">{{ ideia.fontes.contra.esperando }}</td><td class="numero">{{ ideia.fontes.contra.aprovadas }}</td></tr>
+            {% for f in ideia.frentes %}
+              <tr>
+                <td><strong>{{ f.nome }}</strong>{% if f.descricao %}<div class="ajuda">{{ f.descricao }}</div>{% endif %}</td>
+                <td>{% if f.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso (o que se diz)" %}</span>{% elif f.papel == 'a_favor' %}<span class="selo ok">{% translate "a favor da sua ideia" %}</span>{% elif f.papel == 'contra' %}<span class="selo ruim">{% translate "contra a sua ideia" %}</span>{% else %}<span class="selo">{% translate "outra explicacao" %}</span>{% endif %}</td>
+                <td class="numero">{{ f.esperando }}</td>
+                <td class="numero">{{ f.aprovadas }}</td>
+              </tr>
+            {% endfor %}
           </tbody>
         </table></div>
         {% if ideia.buscas.erros %}<p class="ajuda">{% translate "Buscas que falharam:" %} {{ ideia.buscas.erros|join:"; " }}</p>{% endif %}

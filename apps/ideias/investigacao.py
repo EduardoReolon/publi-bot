@@ -1,19 +1,29 @@
-"""Da ideia solta a pauta investigada.
+"""Da ideia solta a pauta investigada, por FRENTES.
 
-1. **Ler** (`ler`): o modelo separa a afirmacao que circula, a tese do autor,
-   outras explicacoes possiveis e as buscas de cada lado. Uma chamada.
-2. **Pauta** (`criar_pauta`): nasce sugerida, com o debate gravado
-   (`Topic.debate`), que a geracao le (`content/debate.py`).
-3. **Buscar** (`buscar`), tudo como sugestao para a curadoria da pauta:
-   * DISCURSO — o que se diz (paginas, videos, os links que a pessoa colou):
-     papel DISCURSO, que nunca entra no acervo nem serve de prova;
-   * A FAVOR — evidencia que sustentaria a tese;
-   * CONTRA — mais consultas e mais vagas que o a favor: a melhor evidencia
-     contra a tese e a favor das outras explicacoes. A ideia so vale se
-     sobreviver a isso.
-   Ao aprovar um discurso, os links de fonte primaria que ele cita viram
-   sugestao de evidencia (`fontes_web.seguir_citacoes`): a investigacao mais
-   barata que existe, sem modelo.
+Uma frente e uma linha de raciocinio com as proprias fontes: "o que o jornal
+diz", "a minha suspeita", "quem acha que e produtividade". Cada uma tem um
+papel:
+
+* **discurso** — o que se diz: as fontes dela tem papel DISCURSO, que nunca
+  entra no acervo nem serve de prova;
+* **a_favor** — sustentaria a tese do autor;
+* **contra** — a melhor evidencia contra a tese (mais vagas: a ideia so vale se
+  sobreviver a isso);
+* **alternativa** — outra explicacao, que nem a afirmacao nem a tese
+  consideram.
+
+A pessoa pode nomear e classificar as frentes no proprio texto ("considere a
+frente X como contraria"); o modelo segue, e completa com as que faltarem.
+Os links colados vao para a frente que o texto indicar (ou para o discurso).
+
+1. **Ler** (`ler`): afirmacao, tese e frentes, com as buscas de cada uma.
+2. **Pauta** (`criar_pauta`): sugerida, com o debate e as frentes em
+   `Topic.debate`, que a geracao le (`content/debate.py`).
+3. **Buscar** (`buscar`): cada frente na web, no OpenAlex e no YouTube (se for
+   o caso); tudo como sugestao para a curadoria, marcado com a frente
+   (`metricas["frente"]`) e o papel (`metricas["lado"]`). Ao aprovar um
+   discurso, os links de fonte primaria que ele cita viram sugestao de
+   evidencia (`fontes_web.seguir_citacoes`).
 """
 
 from __future__ import annotations
@@ -26,10 +36,12 @@ from apps.ideias.models import Ideia
 
 logger = logging.getLogger("publibot.ideias")
 
-# Vagas por lado: o contra tem mais, de proposito.
-VAGAS = {"discurso": 4, "a_favor": 3, "contra": 5}
-ESTUDOS = {"a_favor": 2, "contra": 3}
-VIDEOS_DO_DISCURSO = 2
+PAPEIS = ("discurso", "a_favor", "contra", "alternativa")
+# Vagas de paginas e de estudos por frente, conforme o papel. O contra tem mais.
+VAGAS = {"discurso": 4, "a_favor": 3, "contra": 5, "alternativa": 3}
+ESTUDOS = {"discurso": 0, "a_favor": 2, "contra": 3, "alternativa": 2}
+VIDEOS = 2
+MAXIMO_DE_FRENTES = 6
 
 ESQUEMA = {
     "type": "object",
@@ -37,21 +49,25 @@ ESQUEMA = {
         "titulo": {"type": "string"},
         "afirmacao": {"type": "string"},
         "tese": {"type": "string"},
-        "linhas": {"type": "array", "items": {"type": "string"}},
-        "buscas": {
-            "type": "object",
-            "properties": {
-                "discurso": {"type": "array", "items": {"type": "string"}},
-                "a_favor": {"type": "array", "items": {"type": "string"}},
-                "contra": {"type": "array", "items": {"type": "string"}},
+        "frentes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "nome": {"type": "string"},
+                    "papel": {"type": "string", "enum": list(PAPEIS)},
+                    "descricao": {"type": "string"},
+                    "buscas": {"type": "array", "items": {"type": "string"}},
+                    "estudos": {"type": "boolean"},
+                    "videos": {"type": "boolean"},
+                    "links": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["nome", "papel", "buscas"],
             },
-            "required": ["discurso", "a_favor", "contra"],
         },
-        "estudos": {"type": "boolean"},
-        "videos": {"type": "boolean"},
         "onde": {"type": "string", "enum": ["site", "redes", "os_dois"]},
     },
-    "required": ["titulo", "afirmacao", "tese", "buscas", "onde"],
+    "required": ["titulo", "afirmacao", "tese", "frentes", "onde"],
 }
 
 
@@ -76,18 +92,69 @@ def _lista(valor, maximo: int) -> list[str]:
     return [str(x).strip()[:200] for x in (valor or []) if str(x).strip()][:maximo]
 
 
+def _frentes(dados: dict, links_da_ideia: list[str]) -> list[dict]:
+    """As frentes limpas. Sem discurso nem contra, a leitura nao serve para
+    investigar: garante as duas. Link que o modelo inventou fica de fora (so os
+    que a pessoa colou)."""
+    frentes = []
+    for item in dados.get("frentes") or []:
+        if not isinstance(item, dict) or not str(item.get("nome", "")).strip():
+            continue
+        papel = item.get("papel") if item.get("papel") in PAPEIS else "alternativa"
+        frentes.append(
+            {
+                "nome": str(item["nome"]).strip()[:80],
+                "papel": papel,
+                "descricao": str(item.get("descricao") or "").strip()[:300],
+                "buscas": _lista(item.get("buscas"), 3),
+                "estudos": bool(item.get("estudos", papel != "discurso")),
+                "videos": bool(item.get("videos", False)),
+                "links": [u for u in (item.get("links") or []) if u in links_da_ideia],
+            }
+        )
+    frentes = frentes[:MAXIMO_DE_FRENTES]
+    papeis = {f["papel"] for f in frentes}
+    if "discurso" not in papeis:
+        frentes.insert(
+            0,
+            {
+                "nome": "O que se diz",
+                "papel": "discurso",
+                "descricao": dados.get("afirmacao", ""),
+                "buscas": [str(dados.get("afirmacao", ""))[:120]],
+                "estudos": False,
+                "videos": False,
+                "links": [],
+            },
+        )
+    if "contra" not in papeis:
+        frentes.append(
+            {
+                "nome": "Contra a tese",
+                "papel": "contra",
+                "descricao": f"A melhor evidencia contra: {dados.get('tese', '')}"[:300],
+                "buscas": [str(dados.get("tese", ""))[:120]],
+                "estudos": True,
+                "videos": False,
+                "links": [],
+            }
+        )
+    return frentes
+
+
 def ler(ideia: Ideia) -> dict:
     """A leitura do modelo, limpa e guardada na ideia."""
     from apps.content.inference import executar_prompt
     from apps.integrations.models import Site
 
     site = Site.objects.first()
-    negocio = _negocio()
+    links = "\n".join(ideia.links or []) or "(nenhum)"
     resultado = executar_prompt(
         key="ideia_leitura",
         variaveis={
             "ideia": ideia.relato,
-            "negocio": negocio or "(nao informado)",
+            "links": links,
+            "negocio": _negocio() or "(nao informado)",
             "idioma": getattr(site, "content_language", "") or "pt-BR",
         },
         site=site,
@@ -95,19 +162,11 @@ def ler(ideia: Ideia) -> dict:
         com_convite=False,
     )
     dados = _json(resultado.texto)
-    buscas = dados.get("buscas") or {}
     leitura = {
         "titulo": str(dados.get("titulo") or "")[:300],
         "afirmacao": str(dados["afirmacao"])[:500],
         "tese": str(dados["tese"])[:500],
-        "linhas": _lista(dados.get("linhas"), 3),
-        "buscas": {
-            "discurso": _lista(buscas.get("discurso"), 3),
-            "a_favor": _lista(buscas.get("a_favor"), 2),
-            "contra": _lista(buscas.get("contra"), 4),
-        },
-        "estudos": bool(dados.get("estudos", True)),
-        "videos": bool(dados.get("videos", False)),
+        "frentes": _frentes(dados, ideia.links or []),
     }
     ideia.leitura = leitura
     ideia.onde = dados.get("onde") if dados.get("onde") in Ideia.Onde.values else Ideia.Onde.SITE
@@ -125,21 +184,25 @@ def _negocio() -> str:
 
 
 def criar_pauta(ideia: Ideia):
-    """A pauta sugerida, com o debate. Ja existindo, so atualiza o debate."""
+    """A pauta sugerida, com o debate e as frentes. Ja existindo, atualiza."""
     from apps.content.models import Topic
 
     leitura = ideia.leitura
+    frentes = [
+        {"nome": f["nome"], "papel": f["papel"], "descricao": f.get("descricao", "")}
+        for f in leitura.get("frentes", [])
+    ]
     debate = {
         "afirmacao": leitura.get("afirmacao", ""),
         "tese": leitura.get("tese", ""),
-        "linhas": leitura.get("linhas", []),
+        "frentes": frentes,
         "ideia": str(ideia.pk),
     }
     briefing = "\n".join(
         [
             f"O que se diz: {debate['afirmacao']}",
             f"O que o autor suspeita: {debate['tese']}",
-            *[f"Outra explicacao possivel: {x}" for x in debate["linhas"]],
+            *[f"Frente '{f['nome']}' ({f['papel']}): {f['descricao']}" for f in frentes],
             "Investigar: a conclusao sai da evidencia, a favor ou contra o autor.",
         ]
     )
@@ -160,20 +223,24 @@ def criar_pauta(ideia: Ideia):
     return pauta
 
 
-def _marcar(candidatos: list, lado: str) -> int:
+def _marcar(candidatos: list, frente: dict) -> int:
     for candidato in candidatos:
-        candidato.metricas = {**(candidato.metricas or {}), "lado": lado}
+        candidato.metricas = {
+            **(candidato.metricas or {}),
+            "frente": frente["nome"],
+            "lado": frente["papel"],
+        }
         candidato.save(update_fields=["metricas"])
     return len(candidatos)
 
 
-def _links_colados(ideia: Ideia, pauta) -> list:
-    """Os links que a pessoa mandou com a ideia: sugeridos como discurso."""
+def _links_colados(urls: list[str], pauta, *, discurso: bool) -> list:
+    """Os links que a pessoa mandou, como sugestao da frente deles."""
     from apps.knowledge.fontes_web import _ja_conhecida, normalizar_caminho
     from apps.knowledge.models import CandidatoDeFonte
 
     novos = []
-    for url in ideia.links or []:
+    for url in urls:
         if _ja_conhecida(url):
             continue
         novos.append(
@@ -184,21 +251,20 @@ def _links_colados(ideia: Ideia, pauta) -> list:
                 dominio=normalizar_caminho(url).split("/", 1)[0][:200],
                 consulta="mandado com a ideia",
                 pauta=pauta,
-                papel=CandidatoDeFonte.Papel.DISCURSO,
+                papel=CandidatoDeFonte.Papel.DISCURSO if discurso else "",
             )
         )
     return novos
 
 
 def buscar(ideia: Ideia) -> dict:
-    """As tres buscas. Cada uma por si: uma que falha nao derruba as outras."""
+    """Cada frente por si: uma busca que falha nao derruba as outras."""
     from apps.knowledge.fontes_web import _buscar_paginas
     from apps.knowledge.models import CandidatoDeFonte
 
     pauta = ideia.pauta or criar_pauta(ideia)
-    leitura = ideia.leitura
-    consultas = leitura.get("buscas") or {}
-    feito: dict = {"erros": []}
+    frentes = ideia.leitura.get("frentes") or []
+    feito: dict = {"frentes": {}, "erros": []}
 
     def tentar(nome: str, funcao):
         try:
@@ -208,46 +274,54 @@ def buscar(ideia: Ideia) -> dict:
             feito["erros"].append(f"{nome}: {exc}"[:300])
             return []
 
-    discurso = _links_colados(ideia, pauta)
-    discurso += tentar(
-        "discurso",
-        lambda: _buscar_paginas(
-            pauta,
-            consultas.get("discurso") or [ideia.titulo],
-            VAGAS["discurso"],
-            papel=CandidatoDeFonte.Papel.DISCURSO,
-        ),
-    )
-    if leitura.get("videos"):
-        from apps.radar.youtube import buscar_para_pauta as videos
+    # Link que o texto nao atribuiu a nenhuma frente: e o que a pessoa viu,
+    # entao vai para o discurso.
+    atribuidos = {u for f in frentes for u in f.get("links", [])}
+    soltos = [u for u in ideia.links or [] if u not in atribuidos]
 
-        discurso += tentar(
-            "videos",
-            lambda: videos(
+    for frente in frentes:
+        papel = frente["papel"]
+        discurso = papel == "discurso"
+        consultas = frente.get("buscas") or [frente["nome"]]
+        urls = frente.get("links", []) + (soltos if discurso else [])
+        if discurso:
+            soltos = []
+        achados = _links_colados(urls, pauta, discurso=discurso)
+        achados += tentar(
+            frente["nome"],
+            lambda consultas=consultas, papel=papel: _buscar_paginas(
                 pauta,
-                falta=VIDEOS_DO_DISCURSO,
-                consulta=(consultas.get("discurso") or [ideia.titulo])[0],
-                papel=CandidatoDeFonte.Papel.DISCURSO,
+                consultas,
+                VAGAS[papel],
+                papel=CandidatoDeFonte.Papel.DISCURSO if papel == "discurso" else "",
             ),
         )
-    feito["discurso"] = _marcar(discurso, "discurso")
+        if frente.get("videos"):
+            from apps.radar.youtube import buscar_para_pauta as videos
 
-    for lado in ("a_favor", "contra"):
-        achados = tentar(
-            lado, lambda lado=lado: _buscar_paginas(pauta, consultas.get(lado) or [], VAGAS[lado])
-        )
-        if leitura.get("estudos", True):
+            achados += tentar(
+                f"{frente['nome']} (videos)",
+                lambda consultas=consultas, discurso=discurso: videos(
+                    pauta,
+                    falta=VIDEOS,
+                    consulta=consultas[0],
+                    papel=CandidatoDeFonte.Papel.DISCURSO if discurso else "",
+                ),
+            )
+        if frente.get("estudos") and ESTUDOS[papel]:
             from apps.knowledge.academicos import buscar_para_pauta as estudos
 
-            for consulta in (consultas.get(lado) or [])[:2]:
+            for consulta in consultas[:2]:
                 achados += tentar(
-                    f"estudos {lado}",
-                    lambda consulta=consulta, lado=lado: estudos(
-                        pauta, limite=ESTUDOS[lado], consulta=consulta
+                    f"{frente['nome']} (estudos)",
+                    lambda consulta=consulta, papel=papel: estudos(
+                        pauta, limite=ESTUDOS[papel], consulta=consulta
                     ),
                 )
-        feito[lado] = _marcar(achados, lado)
+        feito["frentes"][frente["nome"]] = _marcar(achados, frente)
 
+    if soltos:  # sem frente de discurso (nao acontece: _frentes garante uma)
+        _links_colados(soltos, pauta, discurso=True)
     ideia.buscas = feito
     ideia.situacao = Ideia.Situacao.CURADORIA
     ideia.save(update_fields=["buscas", "situacao", "atualizada_em"])
@@ -273,7 +347,8 @@ def processar(ideia: Ideia) -> None:
 
 def material_para_as_redes(ideia: Ideia) -> list[dict]:
     """O que a pauta tem de aprovado, como referencias do post das redes: o
-    discurso marcado como discurso e a evidencia com o texto do acervo."""
+    discurso marcado como discurso, a evidencia com o texto do acervo, e a
+    frente de cada uma."""
     from apps.knowledge.models import CandidatoDeFonte
 
     saida = []
@@ -295,6 +370,30 @@ def material_para_as_redes(ideia: Ideia) -> list[dict]:
                 "site": (candidato.canal_nome or candidato.dominio)[:120],
                 "texto": texto[:12000],
                 "papel": candidato.papel or "evidencia",
+                "frente": (candidato.metricas or {}).get("frente", ""),
             }
         )
     return saida
+
+
+def fontes_por_frente(ideia: Ideia) -> list[dict]:
+    """Para a tela: cada frente com quantas fontes esperam e quantas aprovadas."""
+    from apps.knowledge.models import CandidatoDeFonte
+
+    frentes = [
+        {"nome": f["nome"], "papel": f["papel"], "descricao": f.get("descricao", "")}
+        for f in (ideia.leitura or {}).get("frentes", [])
+    ]
+    por_nome = {f["nome"]: {**f, "esperando": 0, "aprovadas": 0} for f in frentes}
+    if ideia.pauta_id:
+        for candidato in CandidatoDeFonte.objects.filter(pauta_id=ideia.pauta_id).only(
+            "situacao", "metricas"
+        ):
+            linha = por_nome.get((candidato.metricas or {}).get("frente", ""))
+            if linha is None:
+                continue
+            if candidato.situacao == CandidatoDeFonte.Situacao.PENDENTE:
+                linha["esperando"] += 1
+            elif candidato.situacao == CandidatoDeFonte.Situacao.APROVADO:
+                linha["aprovadas"] += 1
+    return list(por_nome.values())

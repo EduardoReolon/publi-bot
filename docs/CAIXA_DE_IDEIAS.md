@@ -10,21 +10,31 @@ noticias"). O resto acontece em segundo plano.
 2. **Audio** vira texto no worker da placa (o mesmo do acervo). Placa ocupada:
    tenta de novo em 10 minutos.
 3. **Ler** (`investigacao.ler`, prompt `ideia_leitura`, uma chamada): o modelo
-   separa a **afirmacao** que circula, a **tese** do autor, ate 3 **outras
-   explicacoes** e as consultas de cada lado; diz se cabe estudo cientifico,
-   se o tema tem discurso em video, e se rende **site, redes ou os dois**.
-4. **Pauta** sugerida (`Topic.origin = ideia`), com o debate gravado em
-   `Topic.debate` e resumido na orientacao.
-5. **Buscar**, tudo como sugestao para a curadoria da pauta:
+   separa a **afirmacao** que circula, a **tese** do autor e de 3 a 6
+   **frentes** — linhas de raciocinio, cada uma com papel, descricao,
+   consultas, se cabe estudo cientifico ou video, e os links do autor que
+   pertencem a ela. Diz tambem se rende **site, redes ou os dois**.
+4. **Pauta** sugerida (`Topic.origin = ideia`), com o debate e as frentes em
+   `Topic.debate`, resumidos na orientacao.
+5. **Buscar** cada frente (`investigacao.buscar`), tudo como sugestao para a
+   curadoria da pauta, marcado com a frente e o papel (`metricas`):
 
-| Lado | Onde busca | Vagas | Papel |
+| Papel da frente | O que e | Vagas (paginas + estudos por consulta) | Papel da fonte |
 |---|---|---|---|
-| Discurso (o que se diz) | links colados, busca web, YouTube (se o tema tem video) | 4 + 2 videos | **DISCURSO** |
-| A favor da tese | busca web, OpenAlex | 3 + 2 por consulta | evidencia |
-| Contra a tese (e a favor das outras explicacoes) | busca web, OpenAlex | **5** + 3 por consulta, mais consultas | evidencia |
+| discurso | o que se diz: materias, posts, videos | 4 + videos se for o caso | **DISCURSO** |
+| a_favor | sustentaria a tese do autor | 3 + 2 | evidencia |
+| contra | a melhor evidencia contra a tese | **5 + 3** | evidencia |
+| alternativa | outra explicacao, que nem a afirmacao nem a tese consideram | 3 + 2 | evidencia |
 
-O contra tem mais consultas e mais vagas de proposito: a ideia so vale se
-sobreviver a melhor evidencia contra ela.
+O contra tem mais vagas de proposito: a ideia so vale se sobreviver a melhor
+evidencia contra ela. Toda leitura tem pelo menos uma frente de discurso e uma
+contra (se o modelo nao montar, o PubliBot acrescenta).
+
+**Voce comanda as frentes pelo texto**: "considere a frente Produtividade como
+outra explicacao", "a frente X e contraria", "o link do g1 e da frente O que o
+jornal diz". O modelo usa exatamente esses nomes e papeis e completa o resto.
+Link colado sem frente vai para o discurso (e o que voce viu); link que o
+modelo inventar e descartado (so valem os que voce colou).
 
 6. **Curadoria** (Documentos > Fontes sugeridas, filtrada pela pauta; o botao
    "Fazer a curadoria" da ideia leva direto).
@@ -42,7 +52,7 @@ sobreviver a melhor evidencia contra ela.
 A garantia nao depende do modelo obedecer: depende de onde o texto fica.
 
 1. Discurso aprovado **nao vira documento** (`fontes_web.aprovar_como_discurso`):
-   o texto fica so no `CandidatoDeFonte` (`papel = discurso`). A busca do
+   o texto fica so no `CandidatoDeFonte` (`papel = discurso`), com a frente. A busca do
    acervo — a unica porta pela qual uma fonte vira evidencia de um artigo —
    so le documentos; portanto nunca o encontra, em nenhuma pauta.
 2. `fontes_web.aprovar` desvia todo candidato com papel discurso para
@@ -68,7 +78,8 @@ contra) -> conclusao honesta. Critica a afirmacao, nunca as pessoas.
 - **Seguir as citacoes** (`fontes_web.seguir_citacoes`): ao aprovar um
   discurso, os links da pagina que parecem fonte primaria (PDF, DOI, pagina de
   estudo/relatorio/pesquisa, site .gov/.edu/.org, instituicao confiavel do
-  catalogo de dados) viram sugestao de **evidencia** da mesma pauta, ate 5.
+  catalogo de dados) viram sugestao de **evidencia** da mesma pauta e da mesma
+  frente, ate 5.
   E a investigacao mais barata e mais util: a materia diz "segundo pesquisa
   X", e a pesquisa X diz outra coisa com frequencia.
 - **Busca do contra com mais esforco** (vagas e consultas a mais).
@@ -92,7 +103,7 @@ o que ficou de fora e por que):
 | Quero mudar | Onde |
 |---|---|
 | O que o modelo separa e as consultas | prompt `ideia_leitura` (Configuracao > Prompts) |
-| Vagas por lado | `investigacao.VAGAS`, `ESTUDOS`, `VIDEOS_DO_DISCURSO` |
+| Vagas por papel de frente | `investigacao.VAGAS`, `ESTUDOS`, `VIDEOS` |
 | O que o artigo recebe do debate | `content/debate.py` |
 | O que conta como fonte primaria | `fontes_web._PRIMARIA` |
 

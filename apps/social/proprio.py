@@ -102,6 +102,8 @@ def _referencias(entrada: Entrada) -> str:
     blocos = []
     for i, ref in enumerate(r for r in entrada.referencias or [] if r.get("texto")):
         origem = " — ".join(x for x in [ref.get("site"), ref.get("titulo")] if x) or ref["url"]
+        if ref.get("frente"):
+            origem = f"{origem}; frente '{ref['frente']}'"
         if ref.get("papel") == "discurso":
             # O "o que se diz" (caixa de ideias): citado e analisado, nunca prova.
             rotulo = "DISCURSO, NAO E EVIDENCIA: cite como o que se diz, sem tirar conclusao dele"

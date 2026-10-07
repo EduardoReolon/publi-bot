@@ -439,6 +439,16 @@ def seguir_citacoes(candidato: CandidatoDeFonte, html: bytes | str) -> list[Cand
                 consulta=f"citada em {candidato.url}"[:500],
                 pauta=candidato.pauta,
                 preferido=confiavel(caminho_de(url)),
+                # Na caixa de ideias, a fonte primaria fica na frente do discurso que a citou.
+                metricas={
+                    k: v
+                    for k, v in {
+                        "frente": (candidato.metricas or {}).get("frente"),
+                        "lado": "citada",
+                        "citada_por": candidato.url,
+                    }.items()
+                    if v
+                },
             )
         )
         if len(achados) >= MAXIMO_DE_CITACOES:

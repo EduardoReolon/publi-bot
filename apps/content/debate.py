@@ -51,6 +51,17 @@ def bloco(pauta) -> str:
         linhas.append(f"- O que o autor suspeita: {debate['tese']}")
     for outra in debate.get("linhas") or []:
         linhas.append(f"- Outra explicacao possivel, a considerar: {outra}")
+    papeis = {
+        "discurso": "o que se diz (analisar, nao provar)",
+        "a_favor": "sustentaria o autor",
+        "contra": "contra o autor",
+        "alternativa": "outra explicacao",
+    }
+    for frente in debate.get("frentes") or []:
+        linhas.append(
+            f"- Frente '{frente.get('nome', '')}' — {papeis.get(frente.get('papel'), '')}: "
+            f"{frente.get('descricao', '')}"
+        )
     linhas += [
         "- A conclusao sai das FONTES (evidencia), e so delas. Se elas sustentam o que se "
         "diz, diga isso com clareza; se sustentam o autor, mostre como; se apontam outra "
@@ -68,6 +79,9 @@ def bloco(pauta) -> str:
         )
         for n, candidato in enumerate(exemplos, start=1):
             origem = candidato.canal_nome or candidato.dominio or candidato.url
+            frente = (candidato.metricas or {}).get("frente")
+            if frente:
+                origem = f"{origem} (frente '{frente}')"
             texto = (candidato.texto_extraido or candidato.trecho or "").strip()
             # Sem colchete: [n] e o marcador de citacao das fontes de evidencia.
             linhas.append(
