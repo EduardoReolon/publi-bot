@@ -94,12 +94,15 @@ def test_ideia_vira_pauta_com_debate_e_busca_os_dois_lados(ambiente, modelo, bus
         reverse("ideias:inicio", urlconf=U),
         {
             "texto": "Vi no jornal que falta mao de obra para IA. Eu acho que...",
-            "links": "https://g1.exemplo.com/ia-mao-de-obra",
+            "links": "https://g1.exemplo.com/ia-mao-de-obra\nhttps://estudo.org/produtividade",
         },
     )
     assert resposta.status_code == 302
     ideia = Ideia.objects.get()
-    assert ideia.links == ["https://g1.exemplo.com/ia-mao-de-obra"]
+    assert ideia.links == [
+        "https://g1.exemplo.com/ia-mao-de-obra",
+        "https://estudo.org/produtividade",
+    ]
 
     tasks.processar_ideia(str(ideia.pk))
     ideia.refresh_from_db()
@@ -220,8 +223,12 @@ def test_geracao_recebe_o_debate(ambiente):
 
 @pytest.mark.django_db
 def test_audio_e_levar_as_redes(ambiente, modelo, buscador, monkeypatch, settings, tmp_path):
-    from apps.social import proprio
-    from apps.social.models import Destino
+    # Pelo registro do Django: a caixa de ideias nao importa o modulo de redes.
+    from django.apps import apps as registro
+    from django.utils.module_loading import import_string
+
+    proprio = import_string("apps.social.proprio")
+    Destino = registro.get_model("social", "Destino")
 
     settings.MEDIA_ROOT = tmp_path
     _, _, client = ambiente

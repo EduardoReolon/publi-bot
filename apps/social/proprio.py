@@ -314,6 +314,11 @@ def criar_comentario(
     return entrada
 
 
+def contas_para_comentar() -> list[tuple[str, str]]:
+    destinos = list(Destino.objects.filter(ligado=True)) or list(Destino.objects.all())
+    return [(str(d.pk), d.nome) for d in destinos]
+
+
 def links_que_falharam(entrada: Entrada) -> list[str]:
     return [f"{r['url']}: {r['erro']}" for r in entrada.referencias or [] if r.get("erro")]
 

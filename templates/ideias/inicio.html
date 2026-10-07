@@ -81,7 +81,7 @@
       <form method="post" action="{% url 'ideias:acao' ideia.pk %}" class="acoes">
         {% csrf_token %}
         {% if redes and ideia.pauta %}
-          {% for d in redes %}<label style="display:inline-block; margin-right:.6rem"><input type="checkbox" name="destinos" value="{{ d.pk }}" style="width:auto"> {{ d.nome }}</label>{% endfor %}
+          {% for pk, nome in redes %}<label style="display:inline-block; margin-right:.6rem"><input type="checkbox" name="destinos" value="{{ pk }}" style="width:auto"> {{ nome }}</label>{% endfor %}
           <button type="submit" name="acao" value="redes" class="botao secundario pequeno">{% translate "Levar as redes (com as fontes aprovadas)" %}</button>
         {% endif %}
         <button type="submit" name="acao" value="de_novo" class="botao discreto pequeno">{% translate "Ler e buscar de novo" %}</button>

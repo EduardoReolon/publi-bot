@@ -27,3 +27,5 @@ class SocialConfig(AppConfig):
     pendencias = "apps.social.painel.pendencias"
     alertas = "apps.social.painel.alertas"
     exclusao_de_dados = "apps.social.privacidade.excluir"
+    contas_das_redes = "apps.social.proprio.contas_para_comentar"
+    comentar_nas_redes = "apps.social.proprio.criar_comentario"

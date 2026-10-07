@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from django.apps import apps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
@@ -78,12 +77,10 @@ def inicio(request: HttpRequest) -> HttpResponse:
     )
 
 
-def _destinos_das_redes() -> list:
-    if not apps.is_installed("apps.social"):
-        return []
-    from apps.social.models import Destino
+def _destinos_das_redes() -> list[tuple[str, str]]:
+    from apps.ops.extensoes import contas_das_redes
 
-    return list(Destino.objects.filter(ligado=True)) or list(Destino.objects.all())
+    return contas_das_redes()
 
 
 @login_required
@@ -100,9 +97,9 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
         ideia.situacao = Ideia.Situacao.DESCARTADA
         ideia.save(update_fields=["situacao", "atualizada_em"])
         messages.info(request, _("Ideia descartada (a pauta, se houver, continua em Pautas)."))
-    elif qual == "redes" and apps.is_installed("apps.social"):
+    elif qual == "redes":
         from apps.ideias.investigacao import material_para_as_redes
-        from apps.social.proprio import EntradaInvalida, criar_comentario
+        from apps.ops.extensoes import comentar_nas_redes
 
         leitura = ideia.leitura or {}
         texto = "\n".join(
@@ -115,13 +112,13 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
             if x.strip()
         )
         try:
-            criar_comentario(
+            comentar_nas_redes(
                 texto=texto,
                 referencias=material_para_as_redes(ideia),
                 destinos=request.POST.getlist("destinos"),
                 por=request.user,
             )
             messages.success(request, _("Os posts estao sendo escritos (Redes > Para revisar)."))
-        except EntradaInvalida as exc:
+        except (ValueError, LookupError) as exc:
             messages.error(request, str(exc))
     return redirect(f"{reverse('ideias:inicio')}#ideia-{ideia.pk}")
