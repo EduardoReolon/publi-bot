@@ -14,6 +14,8 @@ pergunta.
 
 from __future__ import annotations
 
+from apps.editorial.linguagem import CONSELHOS_DE_SAUDE
+
 TIPOS_DE_CONTEUDO = [
     ("guia", "Guia (o que e)"),
     ("passo_a_passo", "Passo a passo"),
@@ -99,6 +101,7 @@ PRESETS: dict[str, dict] = {
             {"termo": "trata", "troca": "auxilia no manejo", "motivo": "promessa de resultado"},
             {"termo": "garante", "troca": "pode contribuir para", "motivo": "promessa"},
             {"termo": "milagroso", "troca": "", "motivo": "promessa"},
+            *CONSELHOS_DE_SAUDE,
         ],
         "tipo_padrao": "guia",
     },

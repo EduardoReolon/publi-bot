@@ -252,7 +252,11 @@ class PublicadorInstagram(Publicador):
             )["id"]
         elif len(imagens) == 1:
             container = self._post(
-                f"{conta}/media", "Instagram (imagem)", image_url=imagens[0].url, caption=texto
+                f"{conta}/media",
+                "Instagram (imagem)",
+                image_url=imagens[0].url,
+                caption=texto,
+                **_alt(imagens[0]),
             )["id"]
         else:
             filhos = [
@@ -262,7 +266,7 @@ class PublicadorInstagram(Publicador):
                     **(
                         {"media_type": "VIDEO", "video_url": imagem.url}
                         if imagem.video
-                        else {"image_url": imagem.url}
+                        else {"image_url": imagem.url, **_alt(imagem)}
                     ),
                     is_carousel_item="true",
                 )["id"]
@@ -403,6 +407,11 @@ class PublicadorInstagram(Publicador):
             valores = item.get("values") or [{}]
             saida[self.NOMES.get(item.get("name"), item.get("name"))] = valores[0].get("value", 0)
         return saida
+
+
+def _alt(imagem) -> dict:
+    """Texto alternativo da imagem (leitor de tela), quando houver."""
+    return {"alt_text": imagem.alt[:1000]} if imagem.alt else {}
 
 
 REDE = Rede(

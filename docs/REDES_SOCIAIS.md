@@ -205,6 +205,16 @@ resposta, o PubliBot responde no comentario com o comeco dela e o link.
 - "Regras que nunca se quebram" (Configurar) vao em todo post: sem promessa
   de resultado ou cura, sem urgencia falsa, sem antes e depois, sem preco como
   chamariz, so o que o artigo afirma. Editavel por negocio.
+- **Cuidados de linguagem** (`apps/editorial/linguagem.py`, os mesmos dos
+  artigos): termo que estigmatiza vira aviso com a troca ("portador de" ->
+  "pessoa com", "deficiente" -> "pessoa com deficiencia", "cometer suicidio"
+  -> "morrer por suicidio"); tema sensivel no material leva a instrucao a quem
+  escreve e a conferencia confere (suicidio sem o CVV 188 ou com metodo;
+  transtorno alimentar com peso ou caloria). Aviso, nunca bloqueio.
+- **Acessibilidade**: cada imagem publicada leva texto alternativo (`alt_text`
+  no Instagram, `altText` no LinkedIn): o texto da lamina, a descricao ou nota
+  da foto, o titulo do artigo na capa. Hashtags com cada palavra em maiuscula
+  (#SaudeMental), que o leitor de tela le palavra por palavra.
 
 ## Material proprio: caso real, novidade e fotos — `proprio.py`, `fotos.py`
 

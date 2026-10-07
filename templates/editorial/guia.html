@@ -94,9 +94,25 @@
       {% blocktranslate trimmed %}
         Alem destes, a revisao sempre avisa sobre marcas de texto de maquina
         ("vale ressaltar", "no cenario atual", "proporcionar", excesso de
-        travessao). Esses sao so avisos: nao bloqueiam.
+        travessao) e sobre cuidados de linguagem: termos que estigmatizam (com a
+        troca sugerida, como "pessoa com deficiencia") e temas sensiveis sem o
+        cuidado (suicidio sem o CVV 188, transtorno alimentar com peso ou
+        calorias). Esses sao so avisos: nao bloqueiam.
       {% endblocktranslate %}
     </p>
+    {% if conselhos_que_faltam and perfil.mode == 'saude' %}
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed count n=conselhos_que_faltam|length %}
+          Area da saude? Ha {{ n }} termo das regras de publicidade do CFM e do CFO que o
+          seu guia ainda nao tem
+        {% plural %}
+          Area da saude? Ha {{ n }} termos das regras de publicidade do CFM e do CFO que o
+          seu guia ainda nao tem
+        {% endblocktranslate %}
+        ({% for t in conselhos_que_faltam %}"{{ t.termo }}"{% if not forloop.last %}, {% endif %}{% endfor %}).
+        <button type="submit" form="form-conselhos" class="botao secundario pequeno">{% translate "Adicionar ao meu guia" %}</button>
+      </p>
+    {% endif %}
 
     <h2>{% translate "Estruturas por tipo de conteudo" %}</h2>
     <p class="pre-visualizacao">
@@ -144,4 +160,5 @@
       <button type="submit">{% translate "Salvar guia" %}</button>
     </div>
   </form>
+<form id="form-conselhos" method="post" action="{% url 'editorial:conselhos' %}" style="display:none">{% csrf_token %}</form>
 {% endblock %}

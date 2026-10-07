@@ -11,6 +11,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
 from apps.editorial.forms import PerfilDoNegocioForm, PerfilEditorialForm
+from apps.editorial.linguagem import termos_que_faltam
 from apps.editorial.models import EditorialProfile, PerfilDoNegocio
 from apps.editorial.presets import MODOS
 from apps.editorial.services import aplicar_modo
@@ -51,12 +52,26 @@ def guia(request: HttpRequest) -> HttpResponse:
             "modos": MODOS,
             "url_negocio": reverse("editorial:negocio"),
             "colado": colado,
+            "conselhos_que_faltam": termos_que_faltam(perfil),
             "pedido_do_guia": primeiros_passos.pedido_do_guia(
                 PerfilDoNegocio.carregar(), ConfiguracaoDoRadar.carregar()
             ),
         },
         status=400 if request.method == "POST" and not colado else 200,
     )
+
+
+@login_required
+@require_POST
+def adicionar_conselhos(request: HttpRequest) -> HttpResponse:
+    """Acrescenta ao vocabulario proibido os termos das regras de publicidade em
+    saude (CFM/CFO) que faltam. Nao tira nem muda nada do que ja esta la."""
+    perfil = EditorialProfile.carregar()
+    novos = termos_que_faltam(perfil)
+    perfil.termos = [*(perfil.termos or []), *novos]
+    perfil.save(update_fields=["termos"])
+    messages.success(request, _("%(n)s termo(s) adicionados ao guia.") % {"n": len(novos)})
+    return redirect("editorial:guia")
 
 
 @login_required

@@ -202,12 +202,13 @@ class PublicadorLinkedIn(Publicador):
             "isReshareDisabledByAuthor": False,
         }
         if imagens:
-            corpo["content"] = {
-                "media": {
-                    "id": self._enviar_imagem(imagens[0], cabecalhos),
-                    "title": post.artigo_titulo[:200],
-                }
+            media = {
+                "id": self._enviar_imagem(imagens[0], cabecalhos),
+                "title": post.artigo_titulo[:200],
             }
+            if imagens[0].alt:
+                media["altText"] = imagens[0].alt[:4086]  # leitor de tela
+            corpo["content"] = {"media": media}
         resposta = self._conferir(
             self.http.post(f"{API}/rest/posts", json=corpo, headers=cabecalhos),
             "LinkedIn (post)",

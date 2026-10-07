@@ -70,6 +70,7 @@ class ImagemPublica:
     url: str
     caminho: str  # no storage
     video: bool = False
+    alt: str = ""  # texto alternativo, para leitor de tela
 
 
 @dataclass
