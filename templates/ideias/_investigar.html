@@ -1,0 +1,33 @@
+{% load i18n %}{% comment %}Comum a pauta e a revisao: `p` (a pauta) e `alvo` (o artigo ou falso).{% endcomment %}{% if p %}
+{% with ideia=p.ideias.all.0 %}
+<section class="cartao" id="investigar">
+  <h2>{% translate "Modo investigativo" %}{% if ideia %} <span class="selo {% if ideia.situacao == 'curadoria' %}alerta{% elif ideia.situacao == 'erro' %}ruim{% endif %}">{{ ideia.get_situacao_display }}</span>{% endif %}</h2>
+  {% if alvo and alvo.consensus != 'high' %}
+    <div class="aviso alerta">{% translate "As fontes deste artigo nao concordam por inteiro: e o caso tipico para investigar cada versao de forma organizada." %}</div>
+  {% endif %}
+  {% if p.debate.frentes %}
+    <ul>
+      {% for f in p.debate.frentes %}<li><strong>{{ f.nome }}</strong> <span class="ajuda">({% if f.papel == 'discurso' %}{% translate "o que se diz" %}{% elif f.papel == 'a_favor' %}{% translate "a favor" %}{% elif f.papel == 'contra' %}{% translate "contra" %}{% else %}{% translate "outra explicacao" %}{% endif %})</span> {{ f.descricao }}</li>{% endfor %}
+    </ul>
+    <div class="acoes">
+      <a class="botao secundario pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ p.pk }}">{% translate "Fazer a curadoria das frentes" %}</a>
+      <a class="botao discreto pequeno" href="{% url 'ideias:inicio' %}{% if ideia %}#ideia-{{ ideia.pk }}{% endif %}">{% translate "Ver em Ideias" %}</a>
+    </div>
+    {% if alvo %}<p class="ajuda">{% translate "O artigo ja escrito nao muda sozinho: as frentes entram na proxima geracao ('Gerar de novo do zero')." %}</p>{% endif %}
+  {% else %}
+    <p class="pre-visualizacao">{% translate "Quando o tema tem versoes diferentes, o PubliBot separa as frentes (o que se diz, a favor, contra, outras explicacoes) e busca as fontes de cada uma para a sua curadoria. O que se diz entra como discurso: citado e analisado, nunca prova." %}</p>
+  {% endif %}
+  <details {% if not p.debate.frentes and alvo and alvo.consensus == 'conflict' %}open{% endif %}>
+    <summary>{% if p.debate.frentes %}{% translate "Investigar de novo" %}{% else %}{% translate "Ligar o modo investigativo" %}{% endif %}</summary>
+    <form method="post" action="{% url 'ideias:investigar_pauta' p.pk %}">
+      {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+      <div class="campo">
+        <label>{% translate "O que investigar (opcional)" %}</label>
+        <textarea name="texto" class="curto" rows="3" placeholder="{% translate 'Ex.: dizem que X; eu acho que Y. Considere a frente Z como outra explicacao. Links tambem valem.' %}"></textarea>
+      </div>
+      <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Investigar as frentes" %}</button></div>
+    </form>
+  </details>
+</section>
+{% endwith %}
+{% endif %}

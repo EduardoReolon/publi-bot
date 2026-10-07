@@ -19,6 +19,9 @@
     {% if pauta.status != 'rejected' and pauta.faltam_os_dois %}{% include "content/_gerar_os_dois.html" %}{% endif %}
   </section>
 
+  {% comment %}Blocos de modulos opcionais (ver apps/ops/extensoes.py).{% endcomment %}
+  {% for bloco in blocos_da_pauta %}{% include bloco %}{% endfor %}
+
   {% if pauta.referencias and config.fluxo_do_acervo %}
     <section class="cartao">
       <h2>{% translate "Referencias (A)" %}</h2>

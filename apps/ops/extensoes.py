@@ -11,6 +11,7 @@ le essas declaracoes daqui:
         prompts_iniciais = "apps.meu.prompts.PROMPTS"     # caminho pontilhado
         prompts_com_guia = {"meu_prompt"}                 # recebem o guia editorial
         blocos_do_artigo = ["meu/_no_artigo.html"]        # incluidos na tela do artigo
+        blocos_da_pauta = ["meu/_na_pauta.html"]          # incluidos na tela da pauta
         pendencias = "apps.meu.painel.pendencias"         # () -> {"chave": numero}
         alertas = "apps.meu.painel.alertas"               # () -> ["texto", ...] no painel
         exclusao_de_dados = "apps.meu.privacidade.excluir"  # (rede, usuario, apagar) -> n
@@ -68,6 +69,10 @@ def prompts_com_guia() -> frozenset:
 
 def blocos_do_artigo() -> list[str]:
     return [bloco for lista in _declaracoes("blocos_do_artigo") for bloco in lista]
+
+
+def blocos_da_pauta() -> list[str]:
+    return [bloco for lista in _declaracoes("blocos_da_pauta") for bloco in lista]
 
 
 def pendencias() -> dict:
