@@ -294,3 +294,40 @@ def capturar_textos(request: HttpRequest, pk) -> HttpResponse:
         return JsonResponse({"detalhe": detalhe})
     messages.info(request, detalhe)
     return redirect(f"{reverse('content:pauta', args=[pauta.pk])}#investigar")
+
+
+@login_required
+@require_POST
+def colar_veredito(request: HttpRequest, pk) -> HttpResponse:
+    """A resposta da outra IA ao pedido de veredito: guarda o veredito e aplica o
+    refinamento (frentes, textos a capturar, sugestoes de curadoria)."""
+    from apps.content.models import Topic
+    from apps.ideias.tasks import depois_do_veredito
+    from apps.ideias.veredito import VereditoInvalido, aplicar_veredito
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    destino = redirect(f"{reverse('content:pauta', args=[pauta.pk])}#veredito")
+    try:
+        resumo = aplicar_veredito(pauta, request.POST.get("resposta", ""))
+    except VereditoInvalido as exc:
+        messages.error(request, _("Nao deu para ler a resposta: %(e)s") % {"e": exc})
+        return destino
+    ideia_pk, capturar = resumo["ideia"], resumo["capturar"]
+    transaction.on_commit(lambda: depois_do_veredito.delay(ideia_pk, capturar))
+    partes = []
+    if resumo["frentes_novas"]:
+        partes.append(_("frentes novas: %(f)s") % {"f": ", ".join(resumo["frentes_novas"])})
+    if resumo["rebuscar"]:
+        partes.append(_("buscar de novo: %(f)s") % {"f": ", ".join(resumo["rebuscar"])})
+    if capturar:
+        partes.append(_("%(n)s fonte(s) para capturar o texto") % {"n": len(capturar)})
+    if resumo["sugestoes"]:
+        partes.append(
+            _("%(n)s sugestao(oes) de curadoria nos cartoes") % {"n": resumo["sugestoes"]}
+        )
+    messages.success(
+        request,
+        _("Veredito guardado. %(o)s. O resto roda em segundo plano.")
+        % {"o": "; ".join(partes) or _("nada a refinar")},
+    )
+    return destino

@@ -59,6 +59,12 @@ niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
   {% endif %}
   {% if candidato.pauta %}<div class="ajuda">{% translate "Para a pauta:" %} {{ candidato.pauta.title }}</div>{% endif %}
 
+  {% with sugestao=candidato.metricas.sugestao_da_ia %}{% if sugestao %}
+    <div class="aviso espera"><strong>{% translate "Sugestao do veredito da outra IA" %}:</strong>
+      {% if sugestao.acao == 'aprovar' %}{% translate "aprovar" %}{% elif sugestao.acao == 'recusar' %}{% translate "recusar" %}{% else %}{% translate "usar como discurso" %}{% endif %}{% if sugestao.motivo %} — {{ sugestao.motivo }}{% endif %}
+      <span class="ajuda">({% translate "so sugestao: quem decide e voce" %})</span>
+    </div>
+  {% endif %}{% endwith %}
   {% if candidato.papel == 'discurso' %}
     <div class="aviso alerta">
       <strong>{% translate "Sugerida como DISCURSO" %}</strong> —

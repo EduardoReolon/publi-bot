@@ -84,7 +84,27 @@
         {% csrf_token %}
         <button type="submit" class="botao discreto pequeno" title="{% translate 'Baixa o texto das paginas que so tem o resumo da busca e confere a legenda dos videos, para o dossie levar o conteudo' %}">{% translate "Capturar os textos e as legendas que faltam" %}</button>
       </form>
+      <form method="post" action="{% url 'ideias:colar_veredito' p.pk %}">
+        {% csrf_token %}
+        <div class="campo">
+          <label>{% translate "Cole aqui a resposta inteira da outra IA" %}</label>
+          <textarea name="resposta" rows="6" required placeholder="{% translate '1. VEREDITO ... 5. REFINAMENTO ```json {...} ```' %}"></textarea>
+          <div class="ajuda">{% blocktranslate trimmed %}
+            O texto do veredito fica guardado nesta pauta. O bloco JSON do fim e aplicado: frentes novas
+            (buscadas), frentes melhoradas (buscadas de novo so se a IA marcou), as fontes que ela pediu
+            com o texto completo e as sugestoes de curadoria, que aparecem nos cartoes. Nenhuma frente e
+            apagada e nenhuma fonte e aprovada ou recusada sozinha.
+          {% endblocktranslate %}</div>
+        </div>
+        <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Guardar o veredito e refinar" %}</button></div>
+      </form>
     </details>
+    {% if p.debate.veredito %}
+      <details class="secao" id="ultimo-veredito">
+        <summary><strong>{% translate "Ultimo veredito" %}</strong> <span class="ajuda">{{ p.debate.veredito.em|slice:":10" }}</span></summary>
+        <div class="texto-capturado">{{ p.debate.veredito.texto|linebreaksbr }}</div>
+      </details>
+    {% endif %}
   {% endif %}
 
   {% if ideia %}<p class="ajuda"><a href="{% url 'ideias:inicio' %}#ideia-{{ ideia.pk }}">{% translate "Ver em Ideias" %}</a></p>{% endif %}

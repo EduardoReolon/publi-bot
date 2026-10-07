@@ -577,3 +577,84 @@ def test_pedido_da_outra_ia_conversa_antes_do_json():
         ("Nova", "alternativa"),
     ]
     assert frentes[0]["descricao"] == "melhor" and acrescentadas == ["Nova"]
+
+
+@pytest.mark.django_db
+def test_veredito_colado_guarda_e_refina(
+    ambiente, modelo, buscador, monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.ideias import veredito
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    monkeypatch.setattr("apps.knowledge.tasks.verificar_legendas_da_pauta.delay", lambda pk: None)
+    client.post(reverse("ideias:inicio", urlconf=U), {"texto": "Falta mao de obra para IA?"})
+    ideia = Ideia.objects.get()
+    tasks.processar_ideia(str(ideia.pk))
+    pauta = Ideia.objects.get().pauta
+    texto_do_dossie = veredito.dossie(pauta)
+    assert "5. REFINAMENTO" in texto_do_dossie and '"buscar_de_novo"' in texto_do_dossie
+    pauta.refresh_from_db()
+    codigos = pauta.debate["codigos_do_dossie"]
+    f1, f2 = codigos[0], codigos[1]
+    existente = Ideia.objects.get().leitura["frentes"][1]["nome"]
+
+    resposta = (
+        "1. VEREDITO: em parte.\n2. POR MEIO E PUBLICO: ...\n5. REFINAMENTO\n```json\n"
+        + json.dumps(
+            {
+                "frentes": [
+                    {
+                        "nome": "A realidade do RH",
+                        "papel": "a_favor",
+                        "descricao": "Dados de recrutamento.",
+                        "buscas": ["relatorio vagas ia engenharia de dados"],
+                        "estudos": True,
+                    },
+                    {"nome": existente, "papel": "a_favor", "buscar_de_novo": True},
+                ],
+                "capturar_texto": ["F1"],
+                "sugestoes_de_curadoria": [
+                    {"fonte": "[F2]", "acao": "recusar", "motivo": "opiniao sem dado"},
+                    {"fonte": "F99", "acao": "aprovar"},
+                ],
+            }
+        )
+        + "\n```\nBoa sorte."
+    )
+    disparos = []
+    monkeypatch.setattr(tasks.depois_do_veredito, "delay", lambda *a: disparos.append(a))
+    with django_capture_on_commit_callbacks(execute=True):
+        client.post(
+            reverse("ideias:colar_veredito", args=[pauta.pk], urlconf=U), {"resposta": "oi"}
+        )
+        assert not disparos  # sem JSON: avisa e nao muda nada
+        client.post(
+            reverse("ideias:colar_veredito", args=[pauta.pk], urlconf=U), {"resposta": resposta}
+        )
+    pauta.refresh_from_db()
+    ideia = Ideia.objects.get()
+    assert (
+        pauta.debate["veredito"]["texto"].startswith("1. VEREDITO")
+        and "```" not in (pauta.debate["veredito"]["texto"])
+    )
+    nomes = [f["nome"] for f in ideia.leitura["frentes"]]
+    assert "A realidade do RH" in nomes and nomes.count(existente) == 1
+    assert ideia.refino["buscar"] == ["A realidade do RH", existente]
+    assert disparos == [(str(ideia.pk), [f1])]
+    sugerida = CandidatoDeFonte.objects.get(pk=f2)
+    assert sugerida.metricas["sugestao_da_ia"] == {"acao": "recusar", "motivo": "opiniao sem dado"}
+    assert sugerida.situacao == CandidatoDeFonte.Situacao.PENDENTE  # so sugestao
+
+    # A tarefa: captura o texto pedido e busca so as duas frentes.
+    monkeypatch.setattr("apps.knowledge.web.texto_da_pagina", lambda url: "Texto completo")
+    ja = len(buscador)
+    tasks.depois_do_veredito(str(ideia.pk), [f1])
+    assert CandidatoDeFonte.objects.get(pk=f1).texto_extraido == "Texto completo"
+    assert set(buscador[ja:]) == {
+        "relatorio vagas ia engenharia de dados",
+        "especialista conferir saida ia",
+    }
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert "Ultimo veredito" in tela and "Sugestao do veredito da outra IA" in tela
+    assert "Guardar o veredito e refinar" in tela

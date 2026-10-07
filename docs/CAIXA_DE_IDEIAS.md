@@ -90,7 +90,20 @@ o papel (o que se diz / evidencia) e se ja foi aprovada ou ainda espera. O
 pedido manda: veredito com as fontes; separar o que a fonte MOSTRA do que ela
 DIZ; comparar como cada meio conta a historia e para que publico (diferenca de
 fato ou de enfase); o que falta; e a conclusao honesta para um artigo.
-Recusadas ficam de fora. "Capturar o texto das paginas que faltam" baixa, em
+Recusadas ficam de fora.
+
+A parte 5 do pedido e o **REFINAMENTO**: um bloco ```json no fim da resposta,
+com as frentes que mudam ou entram (nome exato da existente para melhorar;
+`buscar_de_novo` para buscar de novo nela), `capturar_texto` (os [Fn] que
+merecem o texto completo), `sugestoes_de_curadoria` ([Fn], aprovar / recusar /
+discurso, motivo) e, se precisar, a correcao da afirmacao e da tese. A resposta
+INTEIRA e colada de volta no mesmo bloco ("Guardar o veredito e refinar",
+`veredito.aplicar_veredito`): o texto fica na pauta ("Ultimo veredito"); as
+frentes passam pelas mesmas regras do refinamento (nenhuma e apagada nem
+renomeada); a tarefa `depois_do_veredito` captura os textos pedidos e busca so
+as frentes novas e as marcadas; as sugestoes de curadoria aparecem nos cartoes,
+sem decidir nada. Os [Fn] valem pela lista guardada quando o dossie foi gerado
+(`debate.codigos_do_dossie`), mesmo que novas fontes cheguem depois. "Capturar o texto das paginas que faltam" baixa, em
 segundo plano, o texto das paginas que so tinham o resumo da busca.
 
 ## Videos e estudos: o que acontece ao aprovar
