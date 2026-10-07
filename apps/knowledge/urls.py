@@ -38,6 +38,11 @@ urlpatterns = [
         name="capturar_texto_do_candidato",
     ),
     path("fontes-sugeridas/<uuid:pk>/audio/", views.enviar_audio, name="enviar_audio"),
+    path(
+        "fontes-sugeridas/<uuid:pk>/legenda/",
+        views.verificar_legenda_do_candidato,
+        name="verificar_legenda_do_candidato",
+    ),
     path("caminhos/", views.caminhos_confiaveis, name="caminhos"),
     path("categorias/", views.categorias, name="categorias"),
     path("busca/", views.qualidade_da_busca, name="busca"),

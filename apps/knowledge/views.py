@@ -1163,3 +1163,26 @@ def enviar_pdf(request: HttpRequest, pk) -> HttpResponse:
     receber_pdf(candidato, arquivo, categoria=categoria, por=request.user)
     messages.success(request, _("PDF recebido. Confira na curadoria quando a leitura terminar."))
     return _voltar_as_fontes(request)
+
+
+@login_required
+@require_POST
+def verificar_legenda_do_candidato(request: HttpRequest, pk) -> HttpResponse:
+    """Confere agora se o video sugerido tem legenda (e guarda a transcricao)."""
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.videos import LEGENDA_NAO, LEGENDA_SIM, verificar_legenda
+
+    candidato = get_object_or_404(
+        CandidatoDeFonte,
+        pk=pk,
+        situacao=CandidatoDeFonte.Situacao.PENDENTE,
+        tipo=CandidatoDeFonte.Tipo.VIDEO,
+    )
+    estado = verificar_legenda(candidato)
+    if estado == LEGENDA_SIM:
+        messages.success(request, _("Tem legenda: a transcricao ja esta guardada."))
+    elif estado == LEGENDA_NAO:
+        messages.info(request, _("O video nao tem legenda: aprovado, ele espera o audio."))
+    else:
+        messages.warning(request, _("O YouTube recusou este servidor agora; tente mais tarde."))
+    return _voltar_as_fontes(request, f"#candidato-{candidato.pk}")

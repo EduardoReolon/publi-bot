@@ -29,21 +29,7 @@
   {% if aguardando_audio %}
     <h2 id="aguardando-audio">{% translate "Videos aguardando o audio" %}</h2>
     {% for candidato in aguardando_audio %}
-      <div class="aviso">
-        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
-        <span class="selo">{{ candidato.canal_nome }}</span>
-        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
-        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_audio' candidato.pk %}" class="acoes">
-          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-          <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required>
-          <button type="submit">{% translate "Enviar audio para transcrever" %}</button>
-        </form>
-        <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}" class="acoes">
-          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-          <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
-          <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
-        </form>
-      </div>
+      {% include "knowledge/_aguardando_arquivo.html" %}
     {% endfor %}
   {% endif %}
 
@@ -57,27 +43,7 @@
       {% endblocktranslate %}
     </p>
     {% for candidato in aguardando_pdf %}
-      <div class="aviso">
-        <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
-        {% if candidato.autores %}<span class="ajuda">{{ candidato.autores|truncatechars:80 }}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}</span>{% endif %}
-        <div class="pre-visualizacao">{{ candidato.motivo }}</div>
-        <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_pdf' candidato.pk %}" class="acoes">
-          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-          <input type="file" name="pdf" accept="application/pdf,.pdf" required>
-          <button type="submit">{% translate "Enviar o PDF" %}</button>
-        </form>
-        {% if candidato.documento and candidato.documento.extraction_method == 'resumo' %}
-          <form method="post" action="{% url 'knowledge:seguir_com_o_resumo' candidato.pk %}" class="acoes">
-            {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-            <button type="submit" class="botao secundario pequeno" title="{% translate 'O artigo usa o resumo, sem o texto completo' %}">{% translate "Nao achei o PDF: seguir com o resumo" %}</button>
-          </form>
-        {% endif %}
-        <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}" class="acoes">
-          {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-          <button type="submit" class="botao discreto pequeno" title="{% translate 'Volta para as sugestoes, com recusar e as outras opcoes' %}">{% translate "Desfazer aprovacao" %}</button>
-          <button type="submit" name="recusar" value="1" class="botao discreto pequeno">{% translate "Recusar" %}</button>
-        </form>
-      </div>
+      {% include "knowledge/_aguardando_arquivo.html" %}
     {% endfor %}
   {% endif %}
 

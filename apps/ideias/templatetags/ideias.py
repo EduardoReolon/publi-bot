@@ -16,13 +16,25 @@ def frentes_da_pauta(pauta) -> dict:
     from apps.knowledge.views import contexto_da_curadoria
 
     frentes = [
-        {**f, "ancora": f"frente-{n}", "pendentes": [], "aprovadas": [], "recusadas": 0}
+        {
+            **f,
+            "ancora": f"frente-{n}",
+            "pendentes": [],
+            "esperando_arquivo": [],
+            "falharam": [],
+            "aprovadas": [],
+            "recusadas": 0,
+        }
         for n, f in enumerate((getattr(pauta, "debate", None) or {}).get("frentes") or [], 1)
     ]
     por_nome = {f["nome"]: f for f in frentes}
     total_esperando = 0
     if frentes:
-        for candidato in CandidatoDeFonte.objects.filter(pauta=pauta).order_by("encontrado_em"):
+        for candidato in (
+            CandidatoDeFonte.objects.filter(pauta=pauta)
+            .select_related("documento")
+            .order_by("encontrado_em")
+        ):
             frente = por_nome.get((candidato.metricas or {}).get("frente", ""))
             if frente is None:
                 continue
@@ -32,6 +44,15 @@ def frentes_da_pauta(pauta) -> dict:
                 total_esperando += 1
             elif candidato.situacao == CandidatoDeFonte.Situacao.RECUSADO:
                 frente["recusadas"] += 1
+            elif candidato.situacao in (
+                CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
+                CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
+            ):
+                # Aprovada, mas espera o audio ou o PDF: o envio fica aqui mesmo.
+                frente["esperando_arquivo"].append(candidato)
+                total_esperando += 1
+            elif candidato.situacao == CandidatoDeFonte.Situacao.FALHOU:
+                frente["falharam"].append(candidato)
             else:
                 frente["aprovadas"].append(candidato)
     return {"frentes": frentes, "esperando": total_esperando, **contexto_da_curadoria()}

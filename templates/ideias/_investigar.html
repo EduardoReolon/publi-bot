@@ -40,7 +40,7 @@
       <summary>
         <strong>{{ f.nome }}</strong>
         {% if f.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso (o que se diz)" %}</span>{% elif f.papel == 'a_favor' %}<span class="selo ok">{% translate "a favor" %}</span>{% elif f.papel == 'contra' %}<span class="selo ruim">{% translate "contra" %}</span>{% else %}<span class="selo">{% translate "outra explicacao" %}</span>{% endif %}
-        <span class="ajuda">{{ f.pendentes|length }} {% translate "esperando" %} · {{ f.aprovadas|length }} {% translate "aprovadas" %}{% if f.recusadas %} · {{ f.recusadas }} {% translate "recusadas" %}{% endif %}</span>
+        <span class="ajuda">{{ f.pendentes|length }} {% translate "esperando" %}{% if f.esperando_arquivo %} · <strong>{{ f.esperando_arquivo|length }} {% translate "esperando PDF ou audio" %}</strong>{% endif %} · {{ f.aprovadas|length }} {% translate "aprovadas" %}{% if f.recusadas %} · {{ f.recusadas }} {% translate "recusadas" %}{% endif %}</span>
       </summary>
       {% if f.descricao %}<p class="ajuda">{{ f.descricao }}</p>{% endif %}
       {% for candidato in f.pendentes %}
@@ -48,10 +48,18 @@
       {% empty %}
         <p class="vazio">{% translate "Nenhuma fonte esperando decisao nesta frente." %}</p>
       {% endfor %}
+      {% if f.esperando_arquivo %}
+        <p class="ajuda"><strong>{% translate "Aprovadas, esperando o arquivo" %}:</strong> {% translate "envie o PDF (estudo) ou o audio (video sem legenda) aqui mesmo." %}</p>
+        {% for candidato in f.esperando_arquivo %}{% include "knowledge/_aguardando_arquivo.html" with ancora_de_volta=f.ancora %}{% endfor %}
+      {% endif %}
+      {% if f.falharam %}
+        <p class="ajuda"><strong>{% translate "Nao deu para buscar" %}:</strong></p>
+        <ul class="ajuda">{% for c in f.falharam %}<li><a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">{{ c.titulo|default:c.url|truncatechars:90 }}</a> — {{ c.motivo|truncatechars:160 }}</li>{% endfor %}</ul>
+      {% endif %}
       {% if f.aprovadas %}
         <p class="ajuda"><strong>{% translate "Aprovadas" %}:</strong></p>
         <ul class="ajuda">
-          {% for c in f.aprovadas %}<li><a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">{{ c.titulo|default:c.url|truncatechars:90 }}</a> {% if c.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso" %}</span>{% else %}<span class="selo ok">{% translate "evidencia" %}</span>{% endif %}{% if c.metricas.citada_por %} <span class="ajuda">({% translate "fonte primaria citada pelo discurso" %})</span>{% endif %}</li>{% endfor %}
+          {% for c in f.aprovadas %}<li><a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">{{ c.titulo|default:c.url|truncatechars:90 }}</a> {% if c.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso" %}</span>{% else %}<span class="selo ok">{% translate "evidencia" %}</span>{% endif %}{% if c.tipo == 'video' %}{% if c.documento or c.metricas.legenda == 'sim' %} <span class="selo ok">{% translate "com transcricao" %}</span>{% else %} <span class="selo alerta" title="{% translate 'Sem legenda: o artigo e o dossie veem so o titulo e a descricao' %}">{% translate "sem transcricao" %}</span>{% endif %}{% endif %}{% if c.documento and c.documento.status != 'curated' %} <a class="ajuda" href="{% url 'knowledge:curar' c.documento.pk %}">({% translate "curadoria pendente" %})</a>{% endif %}{% if c.metricas.citada_por %} <span class="ajuda">({% translate "fonte primaria citada pelo discurso" %})</span>{% endif %}</li>{% endfor %}
         </ul>
       {% endif %}
       <div class="acoes"><a class="botao discreto pequeno" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ p.pk }}&frente={{ f.nome|urlencode }}">{% translate "Abrir na tela de curadoria" %}</a></div>
@@ -74,7 +82,7 @@
       <textarea id="dossie-{{ p.pk }}" readonly rows="12" style="width:100%">{% translate "Carregando..." %}</textarea>
       <form method="post" action="{% url 'ideias:capturar_textos' p.pk %}" class="acoes" data-em-segundo-plano="{% translate 'Capturando...' %}">
         {% csrf_token %}
-        <button type="submit" class="botao discreto pequeno" title="{% translate 'Baixa o texto das paginas que so tem o resumo da busca, para o dossie levar o conteudo' %}">{% translate "Capturar o texto das paginas que faltam" %}</button>
+        <button type="submit" class="botao discreto pequeno" title="{% translate 'Baixa o texto das paginas que so tem o resumo da busca e confere a legenda dos videos, para o dossie levar o conteudo' %}">{% translate "Capturar os textos e as legendas que faltam" %}</button>
       </form>
     </details>
   {% endif %}

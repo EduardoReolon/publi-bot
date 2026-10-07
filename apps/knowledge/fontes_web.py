@@ -263,6 +263,7 @@ def _buscar_paginas(
     bloqueado como fonte aparece mesmo assim: o discurso e justamente o que se
     diz por ai."""
     from apps.knowledge.provisorias import acolher_se_ligado
+    from apps.knowledge.videos import tratar_como_video
     from apps.radar.models import ChamadaExterna
     from apps.radar.provedores import buscar
 
@@ -279,15 +280,17 @@ def _buscar_paginas(
             if _ja_conhecida(url) or (bloqueada(url) and not discurso):
                 continue
             caminho = caminho_de(url)
-            candidato = CandidatoDeFonte.objects.create(
-                url=url,
-                titulo=item.titulo[:500],
-                trecho=item.trecho,
-                dominio=normalizar_caminho(url).split("/", 1)[0][:200],
-                consulta=consulta[:500],
-                pauta=pauta,
-                preferido=confiavel(caminho),
-                papel=papel,
+            candidato = tratar_como_video(
+                CandidatoDeFonte.objects.create(
+                    url=url,
+                    titulo=item.titulo[:500],
+                    trecho=item.trecho,
+                    dominio=normalizar_caminho(url).split("/", 1)[0][:200],
+                    consulta=consulta[:500],
+                    pauta=pauta,
+                    preferido=confiavel(caminho),
+                    papel=papel,
+                )
             )
             if discurso:
                 pass  # so a pessoa decide (ver `aprovar_como_discurso`)
@@ -376,6 +379,12 @@ def aprovar_como_discurso(candidato: CandidatoDeFonte, *, por=None) -> Candidato
 
     candidato.papel = CandidatoDeFonte.Papel.DISCURSO
     html = b""
+    if candidato.tipo == CandidatoDeFonte.Tipo.VIDEO:
+        # O que o video DIZ esta na fala: a transcricao, quando ha legenda.
+        # Sem ela, fica titulo e descricao (a tela avisa).
+        from apps.knowledge.videos import verificar_legenda
+
+        verificar_legenda(candidato)
     if candidato.tipo == CandidatoDeFonte.Tipo.PAGINA and not candidato.texto_extraido:
         try:
             html, final, _tipo = baixar(candidato.url)

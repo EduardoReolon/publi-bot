@@ -3,7 +3,13 @@ tela de Fontes sugeridas e nas frentes da pauta. Precisa de: candidato, categori
 niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
 <div class="aviso" id="candidato-{{ candidato.pk }}">
   <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
-  {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %} · {{ candidato.canal_nome }}</span>
+  {% if candidato.tipo == 'video' %}<span class="selo">{% translate "video" %}{% if candidato.canal_nome %} · {{ candidato.canal_nome }}{% endif %}</span>
+    {% with legenda=candidato.metricas.legenda %}
+      {% if legenda == 'sim' %}<span class="selo ok">{% blocktranslate trimmed with n=candidato.texto_extraido|wordcount %}com transcricao ({{ n }} palavras){% endblocktranslate %}</span>
+      {% elif legenda == 'nao' %}<span class="selo alerta" title="{% translate 'O video nao tem legenda. Aprovado como evidencia, fica esperando voce enviar o audio (aqui mesmo e em Fontes sugeridas). Como discurso, so o titulo e a descricao entram.' %}">{% translate "sem legenda: so com o audio" %}</span>
+      {% elif legenda == 'bloqueada' %}<span class="selo alerta" title="{% translate 'O YouTube recusou este servidor na hora de conferir. Tente de novo mais tarde, ou aprove e envie o audio.' %}">{% translate "legenda nao conferida (YouTube recusou)" %}</span>
+      {% else %}<span class="selo">{% translate "legenda ainda nao conferida" %}</span>{% endif %}
+    {% endwith %}
     {% with m=candidato.metricas %}{% if m %}
       <div class="ajuda">
         {% if candidato.publicado_em %}{{ candidato.publicado_em|date:"d/m/Y" }}{% endif %}
@@ -26,6 +32,18 @@ niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
   {% if candidato.preferido %}<span class="selo ok">{% if candidato.tipo == 'video' %}{% translate "canal preferido" %}{% else %}{% translate "caminho preferido" %}{% endif %}</span>{% endif %}
   <div class="pre-visualizacao">{{ candidato.url }}</div>
   {% if candidato.trecho %}<div class="pre-visualizacao">{{ candidato.trecho|truncatechars:300 }}</div>{% endif %}
+  {% if candidato.tipo == 'video' %}
+    {% if candidato.metricas.legenda == 'sim' %}
+      <details>
+        <summary>{% translate "Ver a transcricao" %}</summary>
+        <pre class="texto-capturado">{{ candidato.texto_extraido }}</pre>
+      </details>
+    {% elif candidato.metricas.legenda != 'nao' %}
+      <form method="post" action="{% url 'knowledge:verificar_legenda_do_candidato' candidato.pk %}">
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}<button type="submit" class="botao discreto pequeno">{% translate "Conferir a legenda agora" %}</button>
+      </form>
+    {% endif %}
+  {% endif %}
   {% if candidato.tipo == 'pagina' %}
     {% if candidato.texto_extraido %}
       <details>
@@ -56,7 +74,7 @@ niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
   <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
     {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}
     {% if candidato.tipo == 'artigo' and not candidato.pdf_url %}
-      <label class="ajuda" style="width:100%">{% translate "Ja baixou o PDF? Envie junto (opcional). Sem ele, o artigo aprovado vai para 'Artigos aguardando o PDF', no topo desta pagina." %}
+      <label class="ajuda" style="width:100%">{% translate "Ja baixou o PDF? Envie junto (opcional). Sem ele, o artigo aprovado fica esperando o PDF: na frente da pauta e no topo de Fontes sugeridas, com o botao de enviar." %}
         <input type="file" name="pdf" accept="application/pdf,.pdf">
       </label>
     {% endif %}
