@@ -32,7 +32,7 @@ from apps.content.services import (
 )
 from apps.content.tasks import responder_pergunta
 from apps.knowledge.referencias import painel as painel_de_referencias
-from apps.ops.extensoes import blocos_do_artigo
+from apps.ops.extensoes import blocos_da_pauta, blocos_do_artigo
 from apps.ops.models import GenerationJob
 from apps.radar.links_quebrados import cobertura_do_artigo
 
@@ -126,6 +126,7 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
             "config": config,
             "dados_escolhidos": escolhidos(alvo),
             "dados_sugeridos": sugestoes(alvo),
+            "blocos_da_pauta": blocos_da_pauta(),
         },
     )
 

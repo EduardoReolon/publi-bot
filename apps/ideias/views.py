@@ -122,3 +122,39 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
         except (ValueError, LookupError) as exc:
             messages.error(request, str(exc))
     return redirect(f"{reverse('ideias:inicio')}#ideia-{ideia.pk}")
+
+
+@login_required
+@require_POST
+def investigar_pauta(request: HttpRequest, pk) -> HttpResponse:
+    """O modo investigativo numa pauta que ja existe: a mesma leitura por frentes
+    da caixa de ideias, sobre a pauta (titulo e orientacao) e o que o revisor
+    quer investigar. A pauta ganha o debate; o titulo dela nao muda."""
+    from apps.content.models import Topic
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    pedido = request.POST.get("texto", "").strip()
+    texto = "\n".join(
+        x
+        for x in [
+            f"Pauta: {pauta.title}",
+            f"Orientacao da pauta: {pauta.briefing}" if pauta.briefing else "",
+            f"O que o revisor quer investigar: {pedido}" if pedido else "",
+        ]
+        if x
+    )
+    ideia = Ideia.objects.create(
+        texto=texto[:20000], links=_links(pedido), pauta=pauta, criada_por=request.user
+    )
+    _disparar(ideia)
+    messages.success(
+        request,
+        _(
+            "Modo investigativo ligado: em segundo plano o PubliBot monta as frentes desta "
+            "pauta e busca as fontes de cada uma para a sua curadoria (acompanhe em Ideias)."
+        ),
+    )
+    voltar = request.POST.get("voltar", "")
+    if voltar.startswith("/") and not voltar.startswith("//"):
+        return redirect(voltar)
+    return redirect("content:pauta", pk=pauta.pk)

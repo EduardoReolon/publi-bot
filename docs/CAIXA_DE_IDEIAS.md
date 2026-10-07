@@ -42,6 +42,22 @@ modelo inventar e descartado (so valem os que voce colou).
    as redes**: um post de "noticia ou estudo comentado" com as fontes
    aprovadas, cada uma com o seu papel.
 
+## Modo investigativo em qualquer pauta
+
+Uma ideia e uma pauta com a leitura por frentes. O mesmo vale para a pauta que
+ja existe: na tela da pauta e na revisao do artigo, o cartao **Modo
+investigativo** > "Investigar as frentes" (com um campo opcional: "dizem X, eu
+acho Y, considere a frente Z como...", links tambem). Em segundo plano, a
+mesma leitura e as mesmas buscas por frente; a pauta ganha o debate (o titulo
+nao muda) e as fontes vao para a curadoria dela. Aparece tambem em Ideias.
+
+O algoritmo sugere: quando a tese do artigo saiu com as fontes em
+concordancia **parcial** ou **divergente** (`Article.consensus`, do passo de
+consenso), o cartao avisa na revisao que e o caso tipico para investigar. O
+artigo ja escrito nao muda sozinho: as frentes entram na proxima geracao
+("Gerar de novo do zero"). Ligado ao nucleo pelos pontos de extensao
+`blocos_da_pauta` e `blocos_do_artigo` (`apps/ops/extensoes.py`).
+
 ## Os dois tipos de fonte (e a trava)
 
 - **Evidencia** — sustenta o que o texto afirma. Vai para o acervo, com

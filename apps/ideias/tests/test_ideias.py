@@ -261,3 +261,35 @@ def test_audio_e_levar_as_redes(ambiente, modelo, buscador, monkeypatch, setting
     assert all(r["papel"] == "discurso" for r in entrada.referencias)
     material = proprio.como_artigo(entrada).texto
     assert "DISCURSO, NAO E EVIDENCIA" in material
+
+
+@pytest.mark.django_db
+def test_modo_investigativo_em_pauta_que_ja_existe(ambiente, modelo, buscador, monkeypatch):
+    from apps.content.models import Article
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    pauta = Topic.objects.create(title="IA e mercado de trabalho", briefing="Para gestores.")
+    artigo = Article.objects.create(
+        title="IA e mercado de trabalho", topic=pauta, consensus=Article.Consensus.CONFLICT
+    )
+
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert "Ligar o modo investigativo" in tela
+
+    resposta = client.post(
+        reverse("ideias:investigar_pauta", args=[pauta.pk], urlconf=U),
+        {"texto": "Dizem que falta mao de obra. https://g1.exemplo.com/ia", "voltar": "/x/"},
+    )
+    assert resposta.status_code == 302 and resposta["Location"] == "/x/"
+    ideia = Ideia.objects.get()
+    assert ideia.pauta == pauta and ideia.links == ["https://g1.exemplo.com/ia"]
+    assert "Pauta: IA e mercado de trabalho" in ideia.texto and "Para gestores." in ideia.texto
+
+    tasks.processar_ideia(str(ideia.pk))
+    pauta.refresh_from_db()
+    assert pauta.title == "IA e mercado de trabalho"  # o titulo da pauta nao muda
+    assert pauta.debate["frentes"] and Topic.objects.count() == 1
+
+    revisao = client.get(reverse("content:revisar", args=[artigo.pk], urlconf=U)).content.decode()
+    assert "nao concordam por inteiro" in revisao and "Produtividade" in revisao
