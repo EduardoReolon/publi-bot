@@ -188,7 +188,6 @@ def negocio(request: HttpRequest) -> HttpResponse:
             "basico": basico,
             "valores": valores,
             "colado": colado,
-            "conselhos_que_faltam": termos_que_faltam(perfil),
             "sementes": config.lista_de_sementes,
             "dores": config.lista_de_dores,
             "regioes": [nome for _codigo, nome in config.locais() if nome],
