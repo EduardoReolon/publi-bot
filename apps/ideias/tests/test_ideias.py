@@ -292,4 +292,70 @@ def test_modo_investigativo_em_pauta_que_ja_existe(ambiente, modelo, buscador, m
     assert pauta.debate["frentes"] and Topic.objects.count() == 1
 
     revisao = client.get(reverse("content:revisar", args=[artigo.pk], urlconf=U)).content.decode()
-    assert "nao concordam por inteiro" in revisao and "Produtividade" in revisao
+    assert "as fontes divergem" in revisao and "Produtividade" in revisao
+
+    # Na pauta: a arvore (Sobre a pauta no topo), as frentes com os cards de
+    # curadoria e o link para a curadoria filtrada pela frente.
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert tela.index('id="sobre"') < tela.index('id="investigar"')
+    assert "alimenta o A e o B" in tela and 'id="frente-1"' in tela
+    assert 'name="ancora" value="#frente-' in tela
+    assert "frente=Produtividade" in tela
+
+    curadoria = client.get(
+        reverse("knowledge:fontes_sugeridas", urlconf=U) + f"?pauta={pauta.pk}&frente=Produtividade"
+    ).content.decode()
+    assert "Frente: Produtividade" in curadoria and "Todas as frentes desta pauta" in curadoria
+    da_frente = CandidatoDeFonte.objects.filter(pauta=pauta, metricas__frente="Produtividade")
+    assert da_frente and all(c.url in curadoria for c in da_frente)
+    assert "g1.exemplo.com" not in curadoria
+
+
+@pytest.mark.django_db
+def test_ideia_preparada_pela_outra_ia(
+    ambiente, buscador, monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.ideias.investigacao import pedido_para_outra_ia
+
+    _, _, client = ambiente
+    disparadas = []
+    monkeypatch.setattr(
+        tasks.processar_ideia, "delay", lambda pk: pytest.fail("nao chama o modelo")
+    )
+    monkeypatch.setattr(tasks.buscar_ideia, "delay", disparadas.append)
+    client.post(
+        reverse("ideias:inicio", urlconf=U),
+        {"texto": "Dizem que falta mao de obra para IA.", "modo": "outra_ia"},
+    )
+    ideia = Ideia.objects.get()
+    assert ideia.situacao == Ideia.Situacao.OUTRA_IA and ideia.pauta is None
+
+    pedido = pedido_para_outra_ia(ideia)
+    assert "PESQUISAR NA WEB" in pedido and "Dizem que falta mao de obra" in pedido
+    tela = client.get(reverse("ideias:inicio", urlconf=U)).content.decode()
+    assert "Copiar o pedido" in tela and "Cole aqui a resposta" in tela
+
+    # Resposta quebrada: avisa e nao muda nada.
+    client.post(
+        reverse("ideias:acao", args=[ideia.pk], urlconf=U), {"acao": "resposta", "resposta": "oi"}
+    )
+    ideia.refresh_from_db()
+    assert ideia.situacao == Ideia.Situacao.OUTRA_IA and not disparadas
+
+    resposta = "Aqui esta:\n```json\n" + json.dumps(LEITURA) + "\n```\nBoa sorte!"
+    with django_capture_on_commit_callbacks(execute=True):
+        client.post(
+            reverse("ideias:acao", args=[ideia.pk], urlconf=U),
+            {"acao": "resposta", "resposta": resposta},
+        )
+    ideia.refresh_from_db()
+    assert ideia.leitura["pela_outra_ia"] and disparadas == [str(ideia.pk)]
+    # Os links que a outra IA achou entram (para a curadoria), mesmo sem estar na ideia.
+    frentes = {f["nome"]: f for f in ideia.leitura["frentes"]}
+    assert "https://estudo.org/produtividade" in frentes["Produtividade"]["links"]
+
+    tasks.buscar_ideia(str(ideia.pk))
+    ideia.refresh_from_db()
+    assert ideia.situacao == Ideia.Situacao.CURADORIA and ideia.pauta.debate["frentes"]
+    achado = CandidatoDeFonte.objects.get(url="https://estudo.org/produtividade")
+    assert "outra IA" in achado.trecho

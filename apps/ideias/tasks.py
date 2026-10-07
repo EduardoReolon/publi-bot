@@ -46,3 +46,16 @@ def processar_ideia(self, ideia_id: str) -> str:
                 return ideia.situacao
     processar(ideia)
     return ideia.situacao
+
+
+@shared_task
+def buscar_ideia(ideia_id: str) -> str:
+    """A leitura veio pronta da outra IA: cria a pauta e busca as frentes."""
+    from apps.ideias.investigacao import so_buscar
+    from apps.ideias.models import Ideia
+
+    ideia = Ideia.objects.filter(pk=ideia_id).first()
+    if ideia is None or not (ideia.leitura or {}).get("frentes"):
+        return "nada a fazer"
+    so_buscar(ideia)
+    return ideia.situacao

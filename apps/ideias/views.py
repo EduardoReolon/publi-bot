@@ -42,16 +42,30 @@ def inicio(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
         texto = request.POST.get("texto", "").strip()
         audio = request.FILES.get("audio")
+        pela_outra_ia = request.POST.get("modo") == "outra_ia"
         if not (texto or audio):
             messages.error(request, _("Escreva a ideia ou grave um audio."))
+            return redirect("ideias:inicio")
+        if pela_outra_ia and not texto:
+            messages.error(
+                request,
+                _("Para preparar com outra IA, escreva a ideia (o audio vai pelo modelo daqui)."),
+            )
             return redirect("ideias:inicio")
         ideia = Ideia.objects.create(
             texto=texto[:20000],
             links=_links(request.POST.get("links", "")),
             criada_por=request.user,
+            situacao=Ideia.Situacao.OUTRA_IA if pela_outra_ia else Ideia.Situacao.NOVA,
         )
         if audio is not None:
             ideia.audio.save(audio.name[-80:], ContentFile(audio.read()), save=True)
+        if pela_outra_ia:
+            messages.info(
+                request,
+                _("Copie o pedido abaixo, cole numa IA grande e traga a resposta de volta."),
+            )
+            return redirect(f"{reverse('ideias:inicio')}#ideia-{ideia.pk}")
         _disparar(ideia)
         messages.success(
             request,
@@ -62,10 +76,13 @@ def inicio(request: HttpRequest) -> HttpResponse:
         )
         return redirect("ideias:inicio")
     ideias = list(Ideia.objects.select_related("pauta")[:100])
-    from apps.ideias.investigacao import fontes_por_frente
+    from apps.ideias.investigacao import fontes_por_frente, pedido_para_outra_ia
 
     for ideia in ideias:
         ideia.frentes = fontes_por_frente(ideia)
+        ideia.pedido = (
+            pedido_para_outra_ia(ideia) if ideia.situacao == Ideia.Situacao.OUTRA_IA else ""
+        )
     return render(
         request,
         "ideias/inicio.html",
@@ -93,6 +110,26 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
         ideia.save(update_fields=["situacao", "atualizada_em"])
         _disparar(ideia)
         messages.info(request, _("Lendo e buscando de novo, em segundo plano."))
+    elif qual == "outra_ia":
+        ideia.situacao = Ideia.Situacao.OUTRA_IA
+        ideia.save(update_fields=["situacao", "atualizada_em"])
+    elif qual == "resposta":
+        from apps.ideias.investigacao import LeituraInvalida, aplicar_resposta
+        from apps.ideias.tasks import buscar_ideia
+
+        try:
+            aplicar_resposta(ideia, request.POST.get("resposta", ""))
+        except LeituraInvalida as exc:
+            messages.error(request, _("Nao deu para ler a resposta: %(e)s") % {"e": exc})
+        else:
+            ideia.situacao = Ideia.Situacao.BUSCANDO
+            ideia.save(update_fields=["situacao", "atualizada_em"])
+            pk = str(ideia.pk)
+            transaction.on_commit(lambda: buscar_ideia.delay(pk))
+            messages.success(
+                request,
+                _("Resposta lida: a pauta nasce e as frentes sao buscadas em segundo plano."),
+            )
     elif qual == "descartar":
         ideia.situacao = Ideia.Situacao.DESCARTADA
         ideia.save(update_fields=["situacao", "atualizada_em"])

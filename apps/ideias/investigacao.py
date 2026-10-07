@@ -142,36 +142,87 @@ def _frentes(dados: dict, links_da_ideia: list[str]) -> list[dict]:
     return frentes
 
 
-def ler(ideia: Ideia) -> dict:
-    """A leitura do modelo, limpa e guardada na ideia."""
-    from apps.content.inference import executar_prompt
+def _variaveis(ideia: Ideia) -> dict:
     from apps.integrations.models import Site
 
     site = Site.objects.first()
-    links = "\n".join(ideia.links or []) or "(nenhum)"
-    resultado = executar_prompt(
-        key="ideia_leitura",
-        variaveis={
-            "ideia": ideia.relato,
-            "links": links,
-            "negocio": _negocio() or "(nao informado)",
-            "idioma": getattr(site, "content_language", "") or "pt-BR",
-        },
-        site=site,
-        json_schema=ESQUEMA,
-        com_convite=False,
-    )
-    dados = _json(resultado.texto)
+    return {
+        "ideia": ideia.relato,
+        "links": "\n".join(ideia.links or []) or "(nenhum)",
+        "negocio": _negocio() or "(nao informado)",
+        "idioma": getattr(site, "content_language", "") or "pt-BR",
+    }
+
+
+def _guardar_leitura(ideia: Ideia, dados: dict, *, links_permitidos=None) -> dict:
+    """A leitura limpa (as mesmas regras, venha do modelo daqui ou da outra IA)."""
+    permitidos = (ideia.links or []) if links_permitidos is None else links_permitidos
     leitura = {
         "titulo": str(dados.get("titulo") or "")[:300],
         "afirmacao": str(dados["afirmacao"])[:500],
         "tese": str(dados["tese"])[:500],
-        "frentes": _frentes(dados, ideia.links or []),
+        "frentes": _frentes(dados, permitidos),
     }
     ideia.leitura = leitura
     ideia.onde = dados.get("onde") if dados.get("onde") in Ideia.Onde.values else Ideia.Onde.SITE
     ideia.save(update_fields=["leitura", "onde", "atualizada_em"])
     return leitura
+
+
+def ler(ideia: Ideia) -> dict:
+    """A leitura do modelo daqui, limpa e guardada na ideia."""
+    from apps.content.inference import executar_prompt
+    from apps.integrations.models import Site
+
+    resultado = executar_prompt(
+        key="ideia_leitura",
+        variaveis=_variaveis(ideia),
+        site=Site.objects.first(),
+        json_schema=ESQUEMA,
+        com_convite=False,
+    )
+    return _guardar_leitura(ideia, _json(resultado.texto))
+
+
+# -- A leitura feita por outra IA (maior, com pesquisa na web) ---------------------
+PARA_A_OUTRA_IA = (
+    "\n\nVOCE PODE PESQUISAR NA WEB: se o assunto for recente ou voce nao tiver certeza, "
+    "pesquise para entender o contexto e montar buscas melhores. Em 'links' de cada frente "
+    "voce pode incluir links REAIS que encontrou (alem dos do autor), copiados exatamente: "
+    "nenhum deles e usado sem passar pela curadoria do autor. Nunca invente link.\n"
+    "Responda SOMENTE com o JSON, num bloco de codigo."
+)
+
+
+def pedido_para_outra_ia(ideia: Ideia) -> str:
+    """O mesmo pedido do modelo daqui (a versao em uso do prompt `ideia_leitura`),
+    com licenca para pesquisar, para colar numa IA grande."""
+    from apps.content.services import escolher_versao_de_prompt
+
+    versao = escolher_versao_de_prompt("ideia_leitura")
+    corpo = versao.user_prompt_template.format(**_variaveis(ideia))
+    return f"{versao.system_prompt}{PARA_A_OUTRA_IA}\n\n{corpo}"
+
+
+def aplicar_resposta(ideia: Ideia, texto: str) -> dict:
+    """A resposta colada da outra IA: o JSON (achado no meio do texto, se vier
+    com conversa em volta), conferido com as mesmas regras. Os links que ela
+    achou valem como sugestao (passam pela curadoria)."""
+    inicio, fim = (texto or "").find("{"), (texto or "").rfind("}")
+    if inicio < 0 or fim <= inicio:
+        raise LeituraInvalida("nao achei o JSON na resposta colada.")
+    dados = _json(texto[inicio : fim + 1])
+    achados = [
+        str(u).strip()
+        for f in dados.get("frentes") or []
+        if isinstance(f, dict)
+        for u in f.get("links") or []
+        if str(u).strip().startswith(("http://", "https://"))
+    ]
+    leitura = _guardar_leitura(ideia, dados, links_permitidos=[*(ideia.links or []), *achados])
+    ideia.leitura = {**leitura, "pela_outra_ia": True}
+    ideia.save(update_fields=["leitura", "atualizada_em"])
+    return ideia.leitura
 
 
 def _negocio() -> str:
@@ -234,7 +285,7 @@ def _marcar(candidatos: list, frente: dict) -> int:
     return len(candidatos)
 
 
-def _links_colados(urls: list[str], pauta, *, discurso: bool) -> list:
+def _links_colados(urls: list[str], pauta, *, discurso: bool, do_autor=()) -> list:
     """Os links que a pessoa mandou, como sugestao da frente deles."""
     from apps.knowledge.fontes_web import _ja_conhecida, normalizar_caminho
     from apps.knowledge.models import CandidatoDeFonte
@@ -247,9 +298,11 @@ def _links_colados(urls: list[str], pauta, *, discurso: bool) -> list:
             CandidatoDeFonte.objects.create(
                 url=url[:500],
                 titulo=url[:500],
-                trecho="Link que voce mandou com a ideia.",
+                trecho="Link que voce mandou com a ideia."
+                if url in do_autor
+                else "Achado pela outra IA ao preparar a ideia (confira).",
                 dominio=normalizar_caminho(url).split("/", 1)[0][:200],
-                consulta="mandado com a ideia",
+                consulta="mandado com a ideia" if url in do_autor else "achado pela outra IA",
                 pauta=pauta,
                 papel=CandidatoDeFonte.Papel.DISCURSO if discurso else "",
             )
@@ -286,7 +339,7 @@ def buscar(ideia: Ideia) -> dict:
         urls = frente.get("links", []) + (soltos if discurso else [])
         if discurso:
             soltos = []
-        achados = _links_colados(urls, pauta, discurso=discurso)
+        achados = _links_colados(urls, pauta, discurso=discurso, do_autor=ideia.links or [])
         achados += tentar(
             frente["nome"],
             lambda consultas=consultas, papel=papel: _buscar_paginas(
@@ -321,11 +374,20 @@ def buscar(ideia: Ideia) -> dict:
         feito["frentes"][frente["nome"]] = _marcar(achados, frente)
 
     if soltos:  # sem frente de discurso (nao acontece: _frentes garante uma)
-        _links_colados(soltos, pauta, discurso=True)
+        _links_colados(soltos, pauta, discurso=True, do_autor=ideia.links or [])
     ideia.buscas = feito
     ideia.situacao = Ideia.Situacao.CURADORIA
     ideia.save(update_fields=["buscas", "situacao", "atualizada_em"])
     return feito
+
+
+def so_buscar(ideia: Ideia) -> None:
+    """A leitura ja existe (veio da outra IA): pauta e buscas."""
+    ideia.situacao = Ideia.Situacao.BUSCANDO
+    ideia.erro = ""
+    ideia.save(update_fields=["situacao", "erro", "atualizada_em"])
+    criar_pauta(ideia)
+    buscar(ideia)
 
 
 def processar(ideia: Ideia) -> None:

@@ -132,6 +132,16 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
 
 
 @login_required
+def previa_dos_dados(request: HttpRequest, pk) -> HttpResponse:
+    """O texto dos dados publicos que vai para o modelo (carregado sob pedido)."""
+    from apps.content.dados_da_pauta import previa
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    texto = previa(pauta) or _("Nenhum dado com valor para mandar ao modelo.")
+    return HttpResponse(texto, content_type="text/plain; charset=utf-8")
+
+
+@login_required
 @require_POST
 def dados_da_pauta(request: HttpRequest, pk) -> HttpResponse:
     """Usa ou tira um dado publico da pauta."""

@@ -31,7 +31,11 @@
       <textarea id="links" name="links" class="curto" rows="2" placeholder="https://..."></textarea>
       <div class="ajuda">{% translate "A materia que voce viu, um post: entram como sugestao de discurso. Instagram e TikTok nao deixam o PubliBot procurar perfis de terceiros; cole o link aqui." %}</div>
     </div>
-    <div class="acoes"><button type="submit" class="botao">{% translate "Guardar a ideia" %}</button></div>
+    <div class="acoes">
+      <button type="submit" class="botao">{% translate "Guardar a ideia" %}</button>
+      <button type="submit" name="modo" value="outra_ia" class="botao secundario" title="{% translate 'Monta o pedido para uma IA grande (que pode pesquisar na web); voce cola a resposta de volta e o PubliBot busca as frentes' %}">{% translate "Preparar com outra IA" %}</button>
+    </div>
+    <p class="ajuda">{% translate "Com outra IA: escreva de qualquer jeito; uma IA grande separa o que se diz, a sua suspeita e as frentes (e pode pesquisar o assunto). A resposta passa pelas mesmas regras, e toda fonte, inclusive link que ela achar, passa pela sua curadoria." %}</p>
   </form>
 
   <section class="secao">
@@ -47,6 +51,27 @@
       <h2>{{ ideia.titulo }} <span class="selo {% if ideia.situacao == 'erro' %}ruim{% elif ideia.situacao == 'curadoria' %}alerta{% elif ideia.situacao == 'pauta' %}ok{% endif %}">{{ ideia.get_situacao_display }}</span>{% if ideia.onde %} <span class="selo">{{ ideia.get_onde_display }}</span>{% endif %}</h2>
       <p class="ajuda">{{ ideia.criada_em|date:"d/m/Y H:i" }}{% if ideia.audio %} · {% translate "por audio" %}{% endif %}</p>
       {% if ideia.erro %}<div class="aviso ruim">{{ ideia.erro }}</div>{% endif %}
+      {% if ideia.situacao == 'outra_ia' %}
+        <div class="aviso espera">
+          <strong>1.</strong> {% translate "Copie o pedido e cole numa IA grande (de preferencia com pesquisa na web ligada)." %}
+          <div class="acoes"><button type="button" class="botao secundario pequeno" data-copiar="pedido-{{ ideia.pk }}">{% translate "Copiar o pedido" %}</button></div>
+          <details><summary>{% translate "Ver o pedido" %}</summary><textarea id="pedido-{{ ideia.pk }}" readonly rows="10" style="width:100%">{{ ideia.pedido }}</textarea></details>
+          <form method="post" action="{% url 'ideias:acao' ideia.pk %}">
+            {% csrf_token %}
+            <div class="campo">
+              <label><strong>2.</strong> {% translate "Cole aqui a resposta da outra IA" %}</label>
+              <textarea name="resposta" rows="6" required placeholder='{"titulo": ..., "frentes": [...]}'></textarea>
+            </div>
+            <div class="acoes">
+              <button type="submit" name="acao" value="resposta" class="botao pequeno">{% translate "Ler a resposta e buscar as frentes" %}</button>
+            </div>
+          </form>
+          <form method="post" action="{% url 'ideias:acao' ideia.pk %}" class="acoes">
+            {% csrf_token %}<button type="submit" name="acao" value="de_novo" class="botao discreto pequeno">{% translate "Deixar o modelo daqui ler" %}</button>
+          </form>
+        </div>
+      {% endif %}
+      {% if ideia.leitura.pela_outra_ia %}<p class="ajuda">{% translate "Leitura feita pela outra IA." %}</p>{% endif %}
       {% if ideia.leitura.afirmacao %}
         <ul>
           <li><strong>{% translate "O que se diz:" %}</strong> {{ ideia.leitura.afirmacao }}</li>
@@ -85,6 +110,7 @@
           <button type="submit" name="acao" value="redes" class="botao secundario pequeno">{% translate "Levar as redes (com as fontes aprovadas)" %}</button>
         {% endif %}
         <button type="submit" name="acao" value="de_novo" class="botao discreto pequeno">{% translate "Ler e buscar de novo" %}</button>
+        {% if ideia.situacao != 'outra_ia' %}<button type="submit" name="acao" value="outra_ia" class="botao discreto pequeno">{% translate "Preparar com outra IA" %}</button>{% endif %}
         {% if ideia.situacao != 'descartada' %}<button type="submit" name="acao" value="descartar" class="botao discreto pequeno">{% translate "Descartar" %}</button>{% endif %}
       </form>
     </section>

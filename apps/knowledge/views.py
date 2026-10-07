@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from urllib.parse import urlencode
 
@@ -810,11 +811,15 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     except ValueError:
         pass
 
+    # Da caixa de ideias / modo investigativo: so as fontes de uma frente da pauta.
+    frente = request.GET.get("frente", "").strip()[:80] if pauta is not None else ""
+
     def da_pauta(qs):
         if pauta is None:
             return qs
         da_pesquisa = ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("candidatos") or []
-        return qs.filter(pauta=pauta).exclude(pk__in=da_pesquisa)
+        qs = qs.filter(pauta=pauta).exclude(pk__in=da_pesquisa)
+        return qs.filter(metricas__frente=frente) if frente else qs
 
     consulta = da_pauta(
         CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.PENDENTE)
@@ -859,11 +864,22 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
             "pauta": pauta,
             "recentes": recentes,
             "so_recusados": so_recusados,
-            "categorias": DocumentCategory.objects.order_by("name"),
-            "niveis": CaminhoConfiavel.Nivel.choices,
-            "aviso": AVISO_DE_CONFIANCA,
+            "frente": frente,
+            **contexto_da_curadoria(),
         },
     )
+
+
+def contexto_da_curadoria() -> dict:
+    """O que o cartao de fonte (`knowledge/_candidato.html`) precisa, onde quer
+    que ele apareca (Fontes sugeridas, frentes da pauta)."""
+    from apps.knowledge.models import CaminhoConfiavel
+
+    return {
+        "categorias": DocumentCategory.objects.order_by("name"),
+        "niveis": CaminhoConfiavel.Nivel.choices,
+        "aviso": AVISO_DE_CONFIANCA,
+    }
 
 
 def _voltar_as_fontes(request: HttpRequest, ancora: str = "") -> HttpResponse:
@@ -872,6 +888,10 @@ def _voltar_as_fontes(request: HttpRequest, ancora: str = "") -> HttpResponse:
     voltar = request.POST.get("voltar", "")
     if not (voltar.startswith("/") and not voltar.startswith("//")):
         voltar = reverse("knowledge:fontes_sugeridas")
+    # O cartao numa frente da pauta volta para a frente (ela reabre sozinha).
+    pedida = request.POST.get("ancora", "")
+    if not ancora and re.fullmatch(r"#[\w-]{1,80}", pedida):
+        ancora = pedida
     return redirect(voltar.split("#")[0] + ancora)
 
 
