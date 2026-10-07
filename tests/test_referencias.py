@@ -352,3 +352,22 @@ def test_gerar_busca_videos_uma_vez_e_depois_segue(
     # Segunda vez: segue sem buscar de novo.
     client.post(url)
     assert gerados and achados == [3]
+
+
+def test_gerar_sem_recarregar_responde_json_sem_mensagem(
+    ambiente,  # noqa: F811
+    monkeypatch,
+):
+    from apps.content import fluxos
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Retencao", status=Topic.Status.APPROVED)
+    monkeypatch.setattr(fluxos, "disparar", lambda p, fluxo: ("success", "A: geracao iniciada."))
+    url = reverse("content:gerar", args=[pauta.pk], urlconf="core.urls_tenants")
+    resposta = client.post(url, {"fluxo": "ligados"}, HTTP_X_EM_SEGUNDO_PLANO="1")
+    assert resposta.status_code == 200 and "geracao iniciada" in resposta.json()["detalhe"]
+    # Nenhuma mensagem fica pendurada para a proxima pagina.
+    pagina = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
+    assert "geracao iniciada" not in pagina
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants"))
+    assert "data-em-segundo-plano" in tela.content.decode()

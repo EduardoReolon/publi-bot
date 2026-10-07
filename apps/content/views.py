@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, Q
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -359,8 +359,11 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
     escolhidos = (
         fluxos.ligados() if pedido == "ligados" else [pedido if pedido == "pesquisa" else ""]
     )
-    for fluxo in escolhidos:
-        nivel, mensagem = fluxos.disparar(pauta, fluxo)
+    respostas = [fluxos.disparar(pauta, fluxo) for fluxo in escolhidos]
+    if request.headers.get("X-Em-Segundo-Plano"):
+        # Clique sem recarregar a pagina: o detalhe vai no title do botao.
+        return JsonResponse({"detalhe": " ".join(str(m) for _n, m in respostas)})
+    for nivel, mensagem in respostas:
         getattr(messages, nivel)(request, mensagem)
     artigo = Article.objects.filter(pk=request.POST.get("artigo") or None, topic=pauta).first()
     return _ao_artigo(artigo) if artigo else _de_volta(pauta)

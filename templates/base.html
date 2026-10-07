@@ -424,6 +424,38 @@
     ancora.insertAdjacentElement("afterend", botao);
   });
 
+  /* Acao que so dispara uma tarefa de fundo: <form data-em-segundo-plano="Gerando...">.
+     Envia sem recarregar a pagina (a pessoa continua rolando), troca o texto do
+     botao e o desativa. A view responde 200 sem mensagem quando ve o cabecalho
+     X-Em-Segundo-Plano; o detalhe (se houver) fica no title do botao. */
+  document.addEventListener("submit", function (evento) {
+    var form = evento.target;
+    if (!form.hasAttribute || !form.hasAttribute("data-em-segundo-plano")) return;
+    evento.preventDefault();
+    var botoes = form.querySelectorAll("button[type=submit], button:not([type])");
+    var rotulos = Array.prototype.map.call(botoes, function (b) { return b.textContent; });
+    botoes.forEach(function (b) { b.disabled = true; b.textContent = form.getAttribute("data-em-segundo-plano"); });
+    fetch(form.action, {
+      method: "POST",
+      body: new FormData(form),
+      credentials: "same-origin",
+      headers: { "X-Em-Segundo-Plano": "1" }
+    }).then(function (resposta) {
+      return resposta.json().catch(function () { return {}; }).then(function (dados) {
+        if (resposta.ok) {
+          if (dados.detalhe) botoes.forEach(function (b) { b.title = dados.detalhe; });
+        } else if (dados.detalhe) {
+          // Recusado com motivo (ex.: perto demais do que ja existe): o motivo vira o rotulo.
+          botoes.forEach(function (b) { b.textContent = dados.detalhe; });
+        } else {
+          throw new Error(resposta.status);
+        }
+      });
+    }).catch(function () {
+      botoes.forEach(function (b, i) { b.disabled = false; b.textContent = rotulos[i]; b.title = "Nao deu certo: tente de novo"; });
+    });
+  });
+
   /* Botao de copiar: <button data-copiar="id-do-campo">. Sem HTTPS (desenvolvimento)
      nao ha API de area de transferencia; o campo fica selecionado para Ctrl+C. */
   document.addEventListener("click", function (evento) {

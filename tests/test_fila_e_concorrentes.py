@@ -752,6 +752,16 @@ def test_virar_pauta_na_tela_vale_para_grupo_so_de_sementes(
         )
     assert "Virando pauta" in resposta.content.decode()  # o clique volta na hora
 
+    # Sem recarregar a pagina: JSON, e o motivo quando o tema ja esta escrito.
+    outro = GrupoDeDemanda.objects.create(
+        rotulo="Churn", centroide=[1.0] + [0.0] * 1023, parcelas={"canibalizacao": 0.9}
+    )
+    recusa = client.post(
+        reverse("radar:grupo_para_pauta", args=[outro.pk], urlconf="core.urls_tenants"),
+        HTTP_X_EM_SEGUNDO_PLANO="1",
+    )
+    assert recusa.status_code == 409 and "perto demais" in recusa.json()["detalhe"]
+
     assert Topic.objects.filter(origin=Topic.Origin.RADAR, title="Up-sell").exists()
     get_embedding_client.cache_clear()
 
