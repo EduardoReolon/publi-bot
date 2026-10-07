@@ -31,3 +31,12 @@ class IdeiasConfig(AppConfig):
     # O "modo investigativo" em qualquer pauta (e na revisao do artigo dela).
     blocos_da_pauta = ["ideias/_investigar_na_pauta.html"]
     blocos_do_artigo = ["ideias/_investigar_no_artigo.html"]
+    # As ideias aprovadas, para a escolha do dia das redes.
+    ideias_para_as_redes = "apps.ideias.investigacao.para_as_redes"
+
+    def ready(self) -> None:
+        from django.db.models.signals import post_save
+
+        from apps.ideias.investigacao import artigo_salvo
+
+        post_save.connect(artigo_salvo, sender="content.Article", dispatch_uid="ideia_aprovada")

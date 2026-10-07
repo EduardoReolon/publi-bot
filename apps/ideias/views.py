@@ -10,6 +10,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_POST
 
 from apps.ideias.models import Ideia
@@ -89,9 +90,43 @@ def inicio(request: HttpRequest) -> HttpResponse:
         {
             "aba": "ideias",
             "ideias": ideias,
+            "grupos": _grupos(ideias),
             "redes": _destinos_das_redes(),
         },
     )
+
+
+GRUPOS = [
+    ("andamento", gettext_lazy("Em andamento"), True),
+    ("curadoria", gettext_lazy("Esperando a sua curadoria"), True),
+    ("aprovadas", gettext_lazy("Aprovadas"), False),
+    ("pautas", gettext_lazy("Viraram pauta"), False),
+    ("descartadas", gettext_lazy("Descartadas"), False),
+]
+
+
+def _grupo(ideia: Ideia) -> str:
+    S = Ideia.Situacao
+    if ideia.situacao == S.CURADORIA:
+        return "curadoria"
+    if ideia.situacao == S.APROVADA:
+        return "aprovadas"
+    if ideia.situacao == S.PAUTA:
+        return "pautas"
+    if ideia.situacao == S.DESCARTADA:
+        return "descartadas"
+    return "andamento"  # na fila, lendo, buscando, outra IA, erro
+
+
+def _grupos(ideias: list) -> list[dict]:
+    por_grupo: dict = {}
+    for ideia in ideias:
+        por_grupo.setdefault(_grupo(ideia), []).append(ideia)
+    return [
+        {"chave": chave, "titulo": titulo, "aberto": aberto, "ideias": por_grupo[chave]}
+        for chave, titulo, aberto in GRUPOS
+        if por_grupo.get(chave)
+    ]
 
 
 def _destinos_das_redes() -> list[tuple[str, str]]:
@@ -106,10 +141,23 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
     ideia = get_object_or_404(Ideia, pk=pk)
     qual = request.POST.get("acao")
     if qual == "de_novo":
+        # Com frentes ja definidas, e refinamento: elas ficam (e sao buscadas de novo).
+        ideia.refino = {"pedido": "", "buscar_existentes": True}
         ideia.situacao = Ideia.Situacao.NOVA
-        ideia.save(update_fields=["situacao", "atualizada_em"])
+        ideia.save(update_fields=["situacao", "refino", "atualizada_em"])
         _disparar(ideia)
         messages.info(request, _("Lendo e buscando de novo, em segundo plano."))
+    elif qual == "aprovar":
+        from apps.ideias.investigacao import aprovar
+
+        aprovar(ideia)
+        messages.success(
+            request,
+            _(
+                "Ideia aprovada: pode ir para as redes (na escolha do dia, se ligada, "
+                "ou agora, em Levar as redes)."
+            ),
+        )
     elif qual == "outra_ia":
         ideia.situacao = Ideia.Situacao.OUTRA_IA
         ideia.save(update_fields=["situacao", "atualizada_em"])
@@ -133,27 +181,26 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
     elif qual == "descartar":
         ideia.situacao = Ideia.Situacao.DESCARTADA
         ideia.save(update_fields=["situacao", "atualizada_em"])
-        messages.info(request, _("Ideia descartada (a pauta, se houver, continua em Pautas)."))
+        pauta = ideia.pauta
+        if pauta is not None and request.POST.get("rejeitar_pauta") and not pauta.articles.exists():
+            from apps.content.models import Topic
+
+            pauta.status = Topic.Status.REJECTED
+            pauta.save(update_fields=["status"])
+            messages.info(request, _("Ideia descartada e a pauta dela rejeitada."))
+        else:
+            messages.info(request, _("Ideia descartada (a pauta, se houver, continua em Pautas)."))
     elif qual == "redes":
-        from apps.ideias.investigacao import material_para_as_redes
+        from apps.ideias.investigacao import material_para_as_redes, texto_para_as_redes
         from apps.ops.extensoes import comentar_nas_redes
 
-        leitura = ideia.leitura or {}
-        texto = "\n".join(
-            x
-            for x in [
-                f"O que se diz: {leitura.get('afirmacao', '')}",
-                f"O que eu suspeito: {leitura.get('tese', '')}",
-                ideia.relato,
-            ]
-            if x.strip()
-        )
         try:
             comentar_nas_redes(
-                texto=texto,
+                texto=texto_para_as_redes(ideia),
                 referencias=material_para_as_redes(ideia),
                 destinos=request.POST.getlist("destinos"),
                 por=request.user,
+                origem=f"ideia:{ideia.pk}",
             )
             messages.success(request, _("Os posts estao sendo escritos (Redes > Para revisar)."))
         except (ValueError, LookupError) as exc:
@@ -171,6 +218,35 @@ def investigar_pauta(request: HttpRequest, pk) -> HttpResponse:
 
     pauta = get_object_or_404(Topic, pk=pk)
     pedido = request.POST.get("texto", "").strip()
+    voltar = request.POST.get("voltar", "")
+    destino = (
+        redirect(voltar)
+        if voltar.startswith("/") and not voltar.startswith("//")
+        else redirect("content:pauta", pk=pauta.pk)
+    )
+    # Ja investigada: e REFINAMENTO da mesma ideia. As frentes ficam (as fontes
+    # estao ligadas a elas); o texto pode corrigir o que se diz e a suspeita,
+    # melhorar as frentes e acrescentar novas. Mudar as frentes: ideia nova.
+    existente = next((i for i in pauta.ideias.all() if (i.leitura or {}).get("frentes")), None)
+    if existente is not None:
+        existente.refino = {
+            "pedido": pedido[:5000],
+            "buscar_existentes": bool(request.POST.get("buscar_existentes")),
+        }
+        existente.links = list(dict.fromkeys([*(existente.links or []), *_links(pedido)]))[
+            : MAXIMO_DE_LINKS * 2
+        ]
+        existente.situacao = Ideia.Situacao.NOVA
+        existente.save(update_fields=["refino", "links", "situacao", "atualizada_em"])
+        _disparar(existente)
+        messages.success(
+            request,
+            _(
+                "Refinando em segundo plano: as frentes ficam; so as novas (ou todas, se "
+                "voce marcou) sao buscadas."
+            ),
+        )
+        return destino
     texto = "\n".join(
         x
         for x in [
@@ -191,10 +267,7 @@ def investigar_pauta(request: HttpRequest, pk) -> HttpResponse:
             "pauta e busca as fontes de cada uma para a sua curadoria (acompanhe em Ideias)."
         ),
     )
-    voltar = request.POST.get("voltar", "")
-    if voltar.startswith("/") and not voltar.startswith("//"):
-        return redirect(voltar)
-    return redirect("content:pauta", pk=pauta.pk)
+    return destino
 
 
 @login_required

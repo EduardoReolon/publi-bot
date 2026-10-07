@@ -18,6 +18,9 @@ class Ideia(models.Model):
         LENDO = "lendo", _("O modelo esta lendo")
         BUSCANDO = "buscando", _("Buscando fontes")
         CURADORIA = "curadoria", _("Esperando a sua curadoria")
+        # Voce aprovou a ideia (ou um artigo que nasceu dela): pode ir para as
+        # redes, com ou sem artigo no site.
+        APROVADA = "aprovada", _("Aprovada")
         PAUTA = "pauta", _("Virou pauta")
         DESCARTADA = "descartada", _("Descartada")
         ERRO = "erro", _("Erro")
@@ -46,6 +49,10 @@ class Ideia(models.Model):
         "content.Topic", on_delete=models.SET_NULL, null=True, blank=True, related_name="ideias"
     )
     erro = models.TextField(blank=True)
+    # Investigar de novo e REFINAMENTO: {"pedido": "...", "buscar_existentes": bool,
+    # "buscar": [nomes das frentes a buscar]}. As frentes ja definidas ficam.
+    refino = models.JSONField(default=dict, blank=True)
+    aprovada_em = models.DateTimeField(null=True, blank=True)
     criada_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )

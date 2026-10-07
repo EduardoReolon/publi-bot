@@ -42,10 +42,32 @@ modelo inventar e descartado (so valem os que voce colou).
    as redes**: um post de "noticia ou estudo comentado" com as fontes
    aprovadas, cada uma com o seu papel.
 
+## Refinar, aprovar, descartar
+
+- **Investigar de novo e REFINAMENTO** (na pauta, "Refinar a investigacao"; na
+  ideia, "Ler e buscar de novo"): a mesma ideia e lida de novo com as frentes
+  atuais FIXAS (`fundir_frentes`): o nome e o papel ficam, porque as fontes
+  achadas e decididas estao ligadas a elas; a leitura nova pode corrigir o que
+  se diz e a suspeita, melhorar a descricao e as buscas das frentes e
+  ACRESCENTAR frentes. So as novas sao buscadas, a nao ser que se marque
+  "buscar de novo tambem nas frentes que ja existem". Para mudar as frentes,
+  mande uma ideia nova.
+- **Aprovar a ideia**: pronta para as redes, com ou sem artigo no site. Aprovar
+  (ou publicar) um artigo que nasceu da pauta da ideia tambem a aprova. So
+  ideias aprovadas entram na escolha do dia das redes (nunca as que estao em
+  curadoria), e so enquanto a pauta nao tem artigo publicado.
+- **Descartar** com "rejeitar a pauta tambem" (marcado quando a pauta ainda nao
+  tem artigo): nada fica de lixo em Pautas.
+- A lista de Ideias e em grupos: em andamento, esperando curadoria (abertos),
+  aprovadas, viraram pauta e descartadas (recolhidos).
+
 ## Preparar com outra IA
 
 "Preparar com outra IA" (ao mandar a ideia, ou depois, na propria ideia) nao
-chama o modelo daqui: monta o pedido (o mesmo prompt `ideia_leitura`, com a
+chama o modelo daqui: monta o pedido, que manda a outra IA CONVERSAR antes de
+responder (reescrever o que se diz, a suspeita e o contraste; apontar as
+ambiguidades; perguntar; confirmar as frentes) e so entao devolver o JSON. O
+pedido (o mesmo prompt `ideia_leitura`, com a
 licenca para pesquisar na web e trazer links reais) para colar numa IA grande.
 A resposta colada de volta (JSON, pode vir dentro de texto ou bloco de codigo)
 passa pelas mesmas regras da leitura daqui (frente "contra" garantida, papeis

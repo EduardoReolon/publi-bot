@@ -139,6 +139,7 @@ class ConfiguracaoForm(forms.ModelForm):
             "variantes",
             "reciclar_apos_meses",
             "espacamento_dias",
+            "link_da_oferta",
             "instrucoes",
             "regras",
             "descrever_fotos",

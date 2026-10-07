@@ -349,3 +349,57 @@ def endereco_publico(caminho: str) -> str:
     if dominio is None:
         return caminho
     return f"{settings.ESQUEMA_PUBLICO}://{dominio.domain}{caminho}"
+
+
+def ideias_aprovadas() -> list[dict]:
+    """As ideias aprovadas na caixa de ideias (outro modulo, pela extensao):
+    [{"id", "titulo", "texto", "referencias"}]."""
+    from apps.ops.extensoes import ideias_para_as_redes
+
+    return ideias_para_as_redes()
+
+
+LIMIAR_DO_ARTIGO_PARECIDO = 0.5
+
+
+def artigo_mais_parecido(texto: str) -> tuple[str, str] | None:
+    """(titulo, url) do artigo publicado mais perto do texto, se perto o
+    bastante; o destino sugerido do link de um post sem artigo (a pessoa troca)."""
+    import numpy as np
+
+    publicados = [a for a in (artigo(pk) for pk in artigos_no_ar()[:200]) if a and a.url]
+    if not publicados or not (texto or "").strip():
+        return None
+    try:
+        vetor, *dos_artigos = vetores(
+            [texto[:2000], *[f"{a.titulo}. {a.resumo}" for a in publicados]], consulta=True
+        )
+    except Exception:  # sem embedding agora: fica a pagina inicial
+        return None
+    v = np.asarray(vetor, dtype=float)
+    melhor, nota = None, -1.0
+    for item, outro in zip(publicados, dos_artigos, strict=True):
+        o = np.asarray(outro, dtype=float)
+        cos = float(v @ o / ((np.linalg.norm(v) * np.linalg.norm(o)) + 1e-9))
+        if cos > nota:
+            melhor, nota = item, cos
+    if melhor is None or nota < LIMIAR_DO_ARTIGO_PARECIDO:
+        return None
+    return melhor.titulo, melhor.url
+
+
+def destinos_do_link(limite: int = 50) -> list[tuple[str, str]]:
+    """[(rotulo, url)] para onde o link de um post pode levar: a pagina inicial,
+    a pagina da oferta (se cadastrada) e os artigos publicados."""
+    from apps.social.models import ConfiguracaoSocial
+
+    saida = []
+    if inicio := endereco_do_site():
+        saida.append(("Pagina inicial do site", inicio))
+    if oferta := ConfiguracaoSocial.carregar().link_da_oferta:
+        saida.append(("Pagina da oferta (landing page)", oferta))
+    for pk in artigos_no_ar()[:limite]:
+        a = artigo(pk)
+        if a and a.url:
+            saida.append((f"Artigo: {a.titulo}", a.url))
+    return saida

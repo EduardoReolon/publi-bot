@@ -474,3 +474,106 @@ def test_video_mostra_a_legenda_antes_e_quem_espera_arquivo_fica_na_frente(
     tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
     assert "esperando PDF ou audio" in tela and "Enviar audio para transcrever" in tela
     assert reverse("knowledge:enviar_audio", args=[outro.pk], urlconf=U) in tela
+
+
+@pytest.mark.django_db
+def test_refinar_mantem_as_frentes_e_so_busca_as_novas(ambiente, buscador, monkeypatch):
+    from apps.content.models import Article
+    from apps.ideias import investigacao
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    monkeypatch.setattr("apps.knowledge.tasks.verificar_legendas_da_pauta.delay", lambda pk: None)
+    leituras = [LEITURA]
+    pedidos = []
+
+    def executar(**kw):
+        pedidos.append(kw["variaveis"]["ideia"])
+        return types.SimpleNamespace(texto=json.dumps(leituras[-1]))
+
+    monkeypatch.setattr("apps.content.inference.executar_prompt", executar)
+    client.post(reverse("ideias:inicio", urlconf=U), {"texto": "Falta mao de obra para IA?"})
+    ideia = Ideia.objects.get()
+    tasks.processar_ideia(str(ideia.pk))
+    ideia.refresh_from_db()
+    pauta = ideia.pauta
+    antes = CandidatoDeFonte.objects.filter(pauta=pauta).count()
+    nomes = [f["nome"] for f in ideia.leitura["frentes"]]
+
+    # A leitura nova renomeia uma frente, troca a suspeita e traz uma frente nova.
+    refinada = json.loads(json.dumps(LEITURA))
+    refinada["tese"] = "A IA e para leigos; falta especialista da area, nao quem estude IA."
+    refinada["frentes"][1]["nome"] = "Outro nome"
+    refinada["frentes"].append(
+        {"nome": "Letramento basico", "papel": "alternativa", "buscas": ["letramento ia"]}
+    )
+    leituras.append(refinada)
+    ja_buscadas = len(buscador)
+    client.post(
+        reverse("ideias:investigar_pauta", args=[pauta.pk], urlconf=U),
+        {"texto": "A critica e ao 'todo mundo precisa estudar IA'."},
+    )
+    assert Ideia.objects.count() == 1  # a mesma ideia, nao outra
+    tasks.processar_ideia(str(ideia.pk))
+    ideia.refresh_from_db()
+    pauta.refresh_from_db()
+
+    assert "REFINAMENTO" in pedidos[-1] and "todo mundo precisa estudar IA" in pedidos[-1]
+    novos_nomes = [f["nome"] for f in ideia.leitura["frentes"]]
+    assert novos_nomes[: len(nomes)] == nomes  # as antigas ficam, na ordem
+    assert "Letramento basico" in novos_nomes and "Outro nome" in novos_nomes
+    assert pauta.debate["tese"].startswith("A IA e para leigos")
+    # So as frentes novas buscaram; as fontes antigas continuam.
+    assert set(ideia.buscas["frentes"]) >= set(nomes)
+    assert buscador[ja_buscadas:] == ["especialista conferir saida ia", "letramento ia"]
+    assert CandidatoDeFonte.objects.filter(pauta=pauta).count() > antes
+    assert ideia.refino == {}
+
+    # Grupos, aprovar, artigo aprovado aprova a ideia, descartar rejeita a pauta.
+    tela = client.get(reverse("ideias:inicio", urlconf=U)).content.decode()
+    assert 'id="ideias-curadoria"' in tela and "Aprovar a ideia" in tela
+    artigo = Article.objects.create(title="x", topic=pauta)
+    artigo.status = Article.Status.APPROVED_SCHEDULED
+    artigo.save()
+    ideia.refresh_from_db()
+    assert ideia.situacao == Ideia.Situacao.APROVADA and ideia.aprovada_em
+    assert (
+        'id="ideias-aprovadas"' in client.get(reverse("ideias:inicio", urlconf=U)).content.decode()
+    )
+
+    monkeypatch.setattr(investigacao, "material_para_as_redes", lambda i: [{"url": "u"}])
+    assert [i["id"] for i in investigacao.para_as_redes()] == [str(ideia.pk)]
+    artigo.status = Article.Status.PUBLISHED
+    artigo.save()
+    assert investigacao.para_as_redes() == []  # o artigo publicado e que vai
+
+    outra = Ideia.objects.create(texto="Outra", pauta=Topic.objects.create(title="Outra"))
+    client.post(
+        reverse("ideias:acao", args=[outra.pk], urlconf=U),
+        {"acao": "descartar", "rejeitar_pauta": "1"},
+    )
+    outra.refresh_from_db()
+    assert outra.situacao == Ideia.Situacao.DESCARTADA
+    assert outra.pauta.status == Topic.Status.REJECTED
+
+
+def test_pedido_da_outra_ia_conversa_antes_do_json():
+    from apps.ideias.investigacao import PARA_A_OUTRA_IA, fundir_frentes
+
+    assert "CONVERSE COM O AUTOR" in PARA_A_OUTRA_IA and "CONTRASTE" in PARA_A_OUTRA_IA
+    antigas = [
+        {"nome": "Discurso", "papel": "discurso", "descricao": "a"},
+        {"nome": "Contra", "papel": "contra", "descricao": "b"},
+    ]
+    novas = [
+        {"nome": "discurso", "papel": "a_favor", "descricao": "melhor", "buscas": ["x"]},
+        {"nome": "O que se diz", "papel": "discurso", "descricao": "auto"},
+        {"nome": "Nova", "papel": "alternativa", "descricao": "c"},
+    ]
+    frentes, acrescentadas = fundir_frentes(antigas, novas)
+    assert [(f["nome"], f["papel"]) for f in frentes] == [
+        ("Discurso", "discurso"),
+        ("Contra", "contra"),
+        ("Nova", "alternativa"),
+    ]
+    assert frentes[0]["descricao"] == "melhor" and acrescentadas == ["Nova"]

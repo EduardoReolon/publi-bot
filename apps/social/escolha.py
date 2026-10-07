@@ -1,7 +1,8 @@
 """Qual artigo vai para qual conta, e quando — por regras, sem modelo.
 
 Uma vez por dia (com "sugerir sozinho" ligado), cada conta recebe ate o teto
-da semana. Os candidatos:
+da semana. Uma ideia aprovada na caixa de ideias (ultimos 30 dias, sem artigo
+publicado) vem antes de tudo: e um pedido seu. Depois, os candidatos:
 
 * **novo** — artigo no ar ha menos de 30 dias que ainda nao foi para a conta;
 * **subindo** — o Radar marcou o artigo como quase na primeira pagina do
@@ -290,6 +291,13 @@ def rodada() -> int:
         if proprio.tipo_da_vez(destino) == "fotos":
             novos = proprio.sugerir_do_banco(destino)
             if novos or destino.fotos_por_cento >= 100:
+                criados += len(novos)
+                continue
+        # Ideia que voce aprovou (caixa de ideias) e pedido explicito: vem antes.
+        ideia = proprio.ideia_da_vez(destino)
+        if ideia is not None:
+            novos = proprio.post_de_ideia(destino, ideia)
+            if novos:
                 criados += len(novos)
                 continue
         if destino.rede in REDES_DE_TEMA:

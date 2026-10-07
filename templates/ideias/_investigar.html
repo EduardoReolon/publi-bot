@@ -89,14 +89,18 @@
 
   {% if ideia %}<p class="ajuda"><a href="{% url 'ideias:inicio' %}#ideia-{{ ideia.pk }}">{% translate "Ver em Ideias" %}</a></p>{% endif %}
   <details>
-    <summary>{% if p.debate.frentes %}{% translate "Investigar de novo" %}{% else %}{% translate "Ligar o modo investigativo" %}{% endif %}</summary>
+    <summary>{% if p.debate.frentes %}{% translate "Refinar a investigacao" %}{% else %}{% translate "Ligar o modo investigativo" %}{% endif %}</summary>
     <form method="post" action="{% url 'ideias:investigar_pauta' p.pk %}">
       {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
       <div class="campo">
-        <label>{% translate "O que investigar (opcional)" %}</label>
-        <textarea name="texto" class="curto" rows="3" placeholder="{% translate 'Ex.: dizem que X; eu acho que Y. Considere a frente Z como outra explicacao. Links tambem valem.' %}"></textarea>
+        <label>{% if p.debate.frentes %}{% translate "O que refinar (opcional)" %}{% else %}{% translate "O que investigar (opcional)" %}{% endif %}</label>
+        <textarea name="texto" class="curto" rows="3" placeholder="{% if p.debate.frentes %}{% translate 'Ex.: o que se diz e na verdade X; a minha suspeita e Y. Acrescente a frente Z. Links tambem valem.' %}{% else %}{% translate 'Ex.: dizem que X; eu acho que Y. Considere a frente Z como outra explicacao. Links tambem valem.' %}{% endif %}"></textarea>
       </div>
-      <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Investigar as frentes" %}</button></div>
+      {% if p.debate.frentes %}
+        <p class="ajuda">{% translate "E refinamento: as frentes atuais ficam (com as fontes ja achadas e decididas); o texto pode corrigir o que se diz e a suspeita, melhorar as frentes e acrescentar novas. Para mudar as frentes, mande uma ideia nova em Ideias." %}</p>
+        <label class="ajuda" style="display:block"><input type="checkbox" name="buscar_existentes" value="1" style="width:auto"> {% translate "buscar de novo tambem nas frentes que ja existem (senao, so nas novas)" %}</label>
+      {% endif %}
+      <div class="acoes"><button type="submit" class="botao secundario pequeno">{% if p.debate.frentes %}{% translate "Refinar" %}{% else %}{% translate "Investigar as frentes" %}{% endif %}</button></div>
     </form>
   </details>
 </details>

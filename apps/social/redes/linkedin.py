@@ -201,6 +201,17 @@ class PublicadorLinkedIn(Publicador):
             "lifecycleState": "PUBLISHED",
             "isReshareDisabledByAuthor": False,
         }
+        enquete = (post.extras or {}).get("enquete")
+        if (post.extras or {}).get("formato") == "enquete" and enquete:
+            # Enquete de verdade (Posts API): sem imagem, a pergunta e as opcoes.
+            corpo["content"] = {
+                "poll": {
+                    "question": enquete["pergunta"][:140],
+                    "options": [{"text": o[:30]} for o in enquete["opcoes"][:4]],
+                    "settings": {"duration": "THREE_DAYS"},
+                }
+            }
+            imagens = []
         if imagens:
             media = {
                 "id": self._enviar_imagem(imagens[0], cabecalhos),

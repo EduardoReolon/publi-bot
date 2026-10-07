@@ -424,3 +424,115 @@ def test_o_provedor_manda_a_imagem_junto(monkeypatch):
     conteudo = enviados[0]["messages"][1]["content"]
     assert conteudo[0] == {"type": "text", "text": "descreva"}
     assert conteudo[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
+# -- Enquete, link do post e ideia aprovada -------------------------------------------------
+@pytest.mark.django_db
+def test_enquete_no_linkedin_e_post_comum_no_instagram(ambiente, monkeypatch):
+    insta, _ = _destinos()
+    entrada = Entrada.objects.create(tipo="caso", texto="Um caso", autorizado=True)
+    resposta = {
+        "gancho": "Voce usa IA no trabalho?",
+        "texto": "A pergunta do dia.",
+        "enquete": {
+            "pergunta": "Quem confere o que a IA escreve?",
+            "opcoes": ["Eu mesmo", "Um colega da area", "Ninguem", "x" * 50, "quinta"],
+        },
+    }
+    monkeypatch.setattr(fontes, "executar", lambda chave, variaveis, **_: json.dumps(resposta))
+    post = Post.objects.create(
+        destino=insta, entrada=entrada, motivo=Post.Motivo.CASO, extras={"formato": "enquete"}
+    )
+    redacao.escrever(post)
+    post.refresh_from_db()
+    assert post.extras["formato"] == "enquete" and len(post.extras["enquete"]["opcoes"]) == 4
+    assert post.extras["enquete"]["opcoes"][3] == "x" * 30
+    assert "A) Eu mesmo" in post.texto and "Responda nos comentarios" in post.texto
+
+    corpos = []
+
+    def criar(pedido):
+        corpos.append(json.loads(pedido.content))
+        return httpx.Response(201, headers={"x-restli-id": "urn:li:share:9"})
+
+    rede = Rede({"POST api.linkedin.com/rest/posts": criar})
+    destino = _conectado("linkedin", "urn:li:person:1")
+    no_linkedin = _post(
+        destino,
+        texto="A pergunta do dia.",
+        extras={"formato": "enquete", "enquete": post.extras["enquete"]},
+    )
+    PublicadorLinkedIn(destino, http=rede.cliente()).publicar(
+        no_linkedin, "A pergunta do dia.", [ImagemPublica(url="u", caminho="c")]
+    )
+    enquete = corpos[0]["content"]["poll"]
+    assert enquete["question"] == "Quem confere o que a IA escreve?"
+    assert [o["text"] for o in enquete["options"]][:2] == ["Eu mesmo", "Um colega da area"]
+    assert "media" not in corpos[0]["content"]
+
+
+@pytest.mark.django_db
+def test_trocar_o_link_e_refazer_como_enquete_pela_tela(ambiente, monkeypatch):
+    _, _, client = ambiente
+    escritos = []
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(
+        fontes,
+        "destinos_do_link",
+        lambda limite=50: [
+            ("Pagina inicial do site", "https://site.exemplo.org/"),
+            ("Pagina da oferta (landing page)", "https://site.exemplo.org/oferta"),
+        ],
+    )
+    insta, _ = _destinos()
+    post = Post.objects.create(
+        destino=insta,
+        motivo=Post.Motivo.NOVO,
+        texto="Texto",
+        situacao=Post.Situacao.RASCUNHO,
+        artigo_url="https://site.exemplo.org/artigo/",
+    )
+    tela = client.get(reverse("social:inicio", urlconf=U)).content.decode()
+    assert "Para onde o link leva" in tela and "Pagina da oferta (landing page)" in tela
+    assert "Refazer como pergunta/enquete" in tela
+
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
+    client.post(acao, {"acao": "trocar_link", "link": "https://site.exemplo.org/oferta"})
+    post.refresh_from_db()
+    assert post.artigo_url == "https://site.exemplo.org/oferta"
+    client.post(acao, {"acao": "trocar_link", "link": "x", "link_outro": "ftp://errado"})
+    post.refresh_from_db()
+    assert post.artigo_url == "https://site.exemplo.org/oferta"
+
+    client.post(acao, {"acao": "enquete"})
+    post.refresh_from_db()
+    assert post.extras["formato"] == "enquete" and escritos == [str(post.pk)]
+    client.post(acao, {"acao": "post_comum"})
+    post.refresh_from_db()
+    assert "formato" not in post.extras
+
+
+@pytest.mark.django_db
+def test_ideia_aprovada_vem_antes_na_rodada_e_nao_repete(ambiente, monkeypatch):
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(fontes, "artigo_mais_parecido", lambda texto: None)
+    ideia = {
+        "id": "abc",
+        "titulo": "Falta especialista",
+        "texto": "O que se diz: todo mundo precisa estudar IA.",
+        "referencias": [{"url": "https://g1.exemplo.com/x", "titulo": "Materia", "texto": "t"}],
+    }
+    monkeypatch.setattr(fontes, "ideias_aprovadas", lambda: [ideia])
+    config = ConfiguracaoSocial.carregar()
+    assert ConfiguracaoSocial._meta.get_field("ligado").default is True
+    config.ligado = True
+    config.save()
+    _, linkedin = _destinos()
+    Destino.objects.exclude(pk=linkedin.pk).delete()
+
+    assert escolha.rodada() == 1
+    post = Post.objects.get()
+    assert post.motivo == Post.Motivo.IDEIA and post.entrada.origem == "ideia:abc"
+    Post.objects.update(situacao=Post.Situacao.DESCARTADO)
+    escolha.rodada()
+    assert Post.objects.filter(entrada__origem="ideia:abc").count() == 1  # nao repete
