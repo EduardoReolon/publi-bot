@@ -79,7 +79,11 @@ def test_so_guarda_o_quebrado_perto_de_um_artigo(radar, monkeypatch):  # noqa: F
     assert links_quebrados.paginas_para_verificar() == ["https://blog.com.br/guia"]
     assert links_quebrados.verificar_um_lote() == 1
     [link] = LinkQuebrado.objects.all()
-    assert link.artigo == artigo and link.texto == "analise rfm de clientes"
+    # O artigo vem como candidato (termos em comum: analise, rfm, clientes); so
+    # entra no lugar quando a pessoa confirma.
+    assert link.artigo is None and link.artigo_parecido == artigo
+    assert link.texto == "analise rfm de clientes" and link.comparado_em
+    links_quebrados.usar_artigo_parecido(link)
     assert "não existe mais" in links_quebrados.email(link)
     assert artigo.published_url in links_quebrados.email(link)
     # A pagina nao volta tao cedo.
@@ -381,10 +385,10 @@ def test_link_ganha_artigo_parecido_e_pode_usar(ambiente, monkeypatch):  # noqa:
         dominio="blog.com.br",
         link_url="https://morto.com.br/lms",
         texto="plataforma EAD",
-        arquivo_titulo="O que e uma plataforma LMS",
+        arquivo_titulo="O que e uma plataforma LMS para treinamento",
         status_http=404,
     )
-    # Distancia 0.4: entre PERTO e QUASE, vira sugestao.
+    # Distancia 0.4, com termo em comum ("treinamento"): vira sugestao.
     assert links_quebrados.comparar_com_o_publicado(artigo) == 1
     link.refresh_from_db()
     assert link.artigo is None and link.artigo_parecido == artigo
@@ -392,7 +396,8 @@ def test_link_ganha_artigo_parecido_e_pode_usar(ambiente, monkeypatch):  # noqa:
 
     url = reverse("radar:imprensa", urlconf="core.urls_tenants")
     html = client.get(url).content.decode()
-    assert "Artigo parecido" in html and "Usar este artigo" in html
+    assert "Artigo candidato" in html and "Serve" in html and "trein" in html
+    assert 'id="links-confirmar"' in html
 
     client.post(
         reverse("radar:decidir_link_quebrado", args=[link.pk], urlconf="core.urls_tenants"),
@@ -491,3 +496,104 @@ def test_link_que_voltou_a_funcionar_sai_da_lista(ambiente, monkeypatch):  # noq
     novo.refresh_from_db()
     assert antigo.situacao == "descartado" and antigo.rechecado_em
     assert novo.situacao == "novo"  # achado ha menos de um dia: ainda nao rechecado
+
+
+def test_um_artigo_so_nao_vira_candidato_de_tudo(ambiente, monkeypatch):  # noqa: F811
+    # Mesmo vetor para tudo: o unico artigo e "o mais perto" de qualquer link.
+    _vetores(monkeypatch, {"": [1.0, 0.1, 0.0]})
+    monkeypatch.setattr(links_quebrados, "SEM_TERMO_EM_COMUM", -1)  # so com termo em comum
+    artigo = _artigo("Obesidade em adultos", "obesidade adultos")
+    sem_termo = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/a",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/dieta",
+        texto="dieta low carb para atletas",
+        status_http=404,
+    )
+    com_termo = LinkQuebrado.objects.create(
+        pagina_url="https://blog.com.br/b",
+        dominio="blog.com.br",
+        link_url="https://morto.com.br/obesos",
+        texto="obesidade na vida adulta",
+        status_http=404,
+    )
+    assert links_quebrados.recomparar_links() == 2
+    sem_termo.refresh_from_db()
+    com_termo.refresh_from_db()
+    assert sem_termo.artigo_parecido is None and sem_termo.comparado_em
+    assert com_termo.artigo_parecido == artigo
+    assert links_quebrados.termos_em_comum(com_termo, artigo) == ["adult", "obesi"]
+
+    # "Nao serve": sai, nao volta, e o link fica sem artigo.
+    _, _, client = ambiente
+    client.post(
+        reverse("radar:decidir_link_quebrado", args=[com_termo.pk], urlconf="core.urls_tenants"),
+        {"decisao": "nao_serve"},
+    )
+    com_termo.refresh_from_db()
+    assert com_termo.artigo_parecido is None and com_termo.artigos_recusados == [str(artigo.pk)]
+    links_quebrados.comparar_com_artigos(com_termo)
+    com_termo.refresh_from_db()
+    assert com_termo.artigo_parecido is None
+
+
+def test_tela_separa_os_links_em_grupos_e_a_pauta_volta_ao_link(ambiente):  # noqa: F811
+    from apps.content.models import Topic
+
+    _, _, client = ambiente
+    artigo = _artigo("Plataforma LMS", "lms")
+    pauta = Topic.objects.create(title="Precificacao de servicos", origin="link")
+    base = {"dominio": "blog.com.br", "status_http": 404}
+    hoje = timezone.localdate()
+    criar = [
+        ("pronto", {"artigo": artigo}),
+        ("candidato", {"artigo_parecido": artigo, "parecido_proximidade": 0.6}),
+        ("da-pauta", {"pauta": pauta, "situacao": "pauta"}),
+        ("sem", {}),
+        ("enviado", {"artigo": artigo, "situacao": "contatado", "contatado_em": hoje}),
+        (
+            "parado",
+            {
+                "artigo": artigo,
+                "situacao": "contatado",
+                "contatado_em": hoje - datetime.timedelta(days=60),
+            },
+        ),
+        ("ganho", {"artigo": artigo, "situacao": "conquistado"}),
+    ]
+    ids = {}
+    for nome, extra in criar:
+        ids[nome] = LinkQuebrado.objects.create(
+            pagina_url=f"https://blog.com.br/{nome}",
+            link_url=f"https://morto.com.br/{nome}",
+            texto=nome,
+            **base,
+            **extra,
+        ).pk
+    html = client.get(reverse("radar:imprensa", urlconf="core.urls_tenants")).content.decode()
+    ordem = [
+        "links-prontos",
+        "links-confirmar",
+        "links-pauta",
+        "links-sem_artigo",
+        "links-enviados",
+        "links-parados",
+        "links-conquistados",
+    ]
+    posicoes = [html.index(f'id="{g}"') for g in ordem]
+    assert posicoes == sorted(posicoes)
+    # Cada link no seu grupo: entre o titulo do grupo e o do proximo.
+    for (nome, _extra), grupo, proximo in zip(criar, ordem, [*ordem[1:], None], strict=True):
+        trecho = html[
+            html.index(f'id="{grupo}"') : html.index(f'id="{proximo}"') if proximo else None
+        ]
+        assert f'id="link-{ids[nome]}"' in trecho, nome
+    assert "Pauta criada para este link" in html and "Enviei de novo" in html
+
+    # Da pauta (e da lista de pautas) de volta ao link quebrado.
+    for url in (
+        reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants"),
+        reverse("content:pautas", urlconf="core.urls_tenants"),
+    ):
+        tela = client.get(url).content.decode()
+        assert f"#link-{ids['da-pauta']}" in tela

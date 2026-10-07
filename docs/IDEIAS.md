@@ -6,6 +6,15 @@
 O que ja foi pensado e ficou de fora de proposito, com o motivo. Antes de
 construir uma delas, releia o motivo: ele pode continuar valendo.
 
+## Modelo julgando o artigo candidato de um link quebrado
+
+**O que e.** Mandar a pagina que sumiu e o artigo candidato para um modelo
+dizer se um substitui o outro. **Por que ficou de fora.** O algoritmo ja corta o
+caso ruim (com um artigo so publicado, ele era o "mais perto" de tudo): exige
+termo do assunto em comum, e o candidato so entra no lugar com o "Serve" da
+pessoa; "Nao serve" nao volta. Rever se, com muitos artigos, os candidatos
+errados continuarem comuns.
+
 ## Backlinks dos concorrentes ("link intersect")
 
 **O que e.** Listar os sites que linkam para dois ou mais concorrentes e nao

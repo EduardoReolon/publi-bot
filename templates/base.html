@@ -416,6 +416,9 @@
     var juntoId = lista.getAttribute("data-recolher-junto");
     var junto = juntoId ? document.getElementById(juntoId) : null;
     if (lista.hasAttribute("data-expandido") || (itens.length <= quantos && !junto)) return;
+    /* Quem chega por um link (#link-x) para um item da lista ve a lista inteira. */
+    var alvo = location.hash ? document.getElementById(location.hash.slice(1)) : null;
+    if (alvo && lista.contains(alvo)) return;
     var escondidos = itens.slice(quantos);
     escondidos.forEach(function (item) { item.hidden = true; });
     if (junto) junto.hidden = true;

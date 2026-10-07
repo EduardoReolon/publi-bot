@@ -2,7 +2,10 @@
   <span class="selo">{% translate "radar" %} · {{ pauta.demand_score|floatformat:0 }}</span>
 {% endif %}
 {% if pauta.origin == 'link' %}
-  <span class="selo alerta" title="{% translate 'O titulo segue a pagina que sumiu, para o dono do site reconhecer a troca. Pode mudar.' %}">{% translate "link quebrado" %}</span>
+  {% with lk=pauta.links_quebrados.all.0 %}
+  {% if lk %}<a class="selo alerta" href="{% url 'radar:imprensa' %}#link-{{ lk.pk }}" title="{% translate 'O titulo segue a pagina que sumiu, para o dono do site reconhecer a troca. Pode mudar. Clique para ver o link quebrado.' %}">{% translate "link quebrado" %} ↗</a>
+  {% else %}<span class="selo alerta" title="{% translate 'O titulo segue a pagina que sumiu, para o dono do site reconhecer a troca. Pode mudar.' %}">{% translate "link quebrado" %}</span>{% endif %}
+  {% endwith %}
 {% endif %}
 {% if pauta.content_type %}<span class="selo">{{ pauta.get_content_type_display }}</span>{% endif %}
 {% with g=pauta.grupo_avaliado %}{% if g %}
