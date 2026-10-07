@@ -385,13 +385,21 @@ def grupo_para_pauta(request: HttpRequest, pk) -> HttpResponse:
     from apps.radar.tasks import virar_pauta
 
     grupo = get_object_or_404(GrupoDeDemanda, pk=pk, situacao=GrupoDeDemanda.Situacao.NOVO)
+    sem_recarregar = bool(request.headers.get("X-Em-Segundo-Plano"))
     if grupo.parcelas.get("canibalizacao", 0) >= 0.8:
+        if sem_recarregar:
+            return JsonResponse(
+                {"detalhe": _("Nao virou pauta: o tema esta perto demais do que ja foi escrito.")},
+                status=409,
+            )
         messages.error(
             request, _("Nao virou pauta: o tema esta perto demais do que ja foi escrito.")
         )
         return redirect("radar:radar")
     pk_do_grupo = str(grupo.pk)
     transaction.on_commit(lambda: virar_pauta.delay(pk_do_grupo))
+    if sem_recarregar:
+        return JsonResponse({"detalhe": _("Aparece em Pautas (sugeridas) em instantes.")})
     messages.success(
         request,
         _(

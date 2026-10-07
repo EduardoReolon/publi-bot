@@ -126,7 +126,7 @@
           </td>
           <td>
             <div class="acoes" style="margin:0">
-              <form method="post" action="{% url 'radar:grupo_para_pauta' grupo.pk %}">
+              <form method="post" action="{% url 'radar:grupo_para_pauta' grupo.pk %}" data-em-segundo-plano="{% translate 'Virando pauta...' %}">
                 {% csrf_token %}<button type="submit" class="botao secundario pequeno">{% translate "Virar pauta" %}</button>
               </form>
               <form method="post" action="{% url 'radar:descartar_grupo' grupo.pk %}">
