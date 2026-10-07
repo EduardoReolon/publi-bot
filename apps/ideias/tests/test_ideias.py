@@ -658,3 +658,60 @@ def test_veredito_colado_guarda_e_refina(
     tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
     assert "Ultimo veredito" in tela and "Sugestao do veredito da outra IA" in tela
     assert "Guardar o veredito e refinar" in tela
+
+
+@pytest.mark.django_db
+def test_pauta_comum_investiga_e_refina_com_outra_ia(
+    ambiente, buscador, monkeypatch, django_capture_on_commit_callbacks
+):
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: pytest.fail("modelo daqui"))
+    monkeypatch.setattr("apps.knowledge.tasks.verificar_legendas_da_pauta.delay", lambda pk: None)
+    disparos = []
+    monkeypatch.setattr(tasks.buscar_ideia, "delay", disparos.append)
+    pauta = Topic.objects.create(title="IA e mercado de trabalho", briefing="Para gestores.")
+    url_da_pauta = reverse("content:pauta", args=[pauta.pk], urlconf=U)
+    assert "Com outra IA" in client.get(url_da_pauta).content.decode()
+
+    client.post(
+        reverse("ideias:investigar_pauta", args=[pauta.pk], urlconf=U),
+        {"texto": "Dizem que falta mao de obra.", "modo": "outra_ia", "voltar": url_da_pauta},
+    )
+    ideia = Ideia.objects.get()
+    assert ideia.situacao == Ideia.Situacao.OUTRA_IA and ideia.pauta == pauta
+    tela = client.get(url_da_pauta).content.decode()
+    url_do_pedido = reverse("ideias:pedido", args=[ideia.pk], urlconf=U)
+    assert "Investigando com outra IA" in tela and url_do_pedido in tela
+    assert "CONVERSE COM O AUTOR" in client.get(url_do_pedido).content.decode()
+
+    with django_capture_on_commit_callbacks(execute=True):
+        resposta = client.post(
+            reverse("ideias:acao", args=[ideia.pk], urlconf=U),
+            {"acao": "resposta", "resposta": json.dumps(LEITURA), "voltar": url_da_pauta},
+        )
+    assert resposta["Location"] == url_da_pauta and disparos == [str(ideia.pk)]
+    tasks.buscar_ideia(str(ideia.pk))
+    pauta.refresh_from_db()
+    assert pauta.title == "IA e mercado de trabalho" and pauta.debate["frentes"]
+    nomes = [f["nome"] for f in pauta.debate["frentes"]]
+
+    # Refinar com outra IA: a mesma ideia; o pedido leva as frentes fixas.
+    client.post(
+        reverse("ideias:investigar_pauta", args=[pauta.pk], urlconf=U),
+        {"texto": "A critica e ao 'todo mundo precisa estudar IA'.", "modo": "outra_ia"},
+    )
+    ideia.refresh_from_db()
+    assert Ideia.objects.count() == 1 and ideia.situacao == Ideia.Situacao.OUTRA_IA
+    pedido = client.get(url_do_pedido).content.decode()
+    assert "REFINAMENTO" in pedido and nomes[0] in pedido and "estudar IA" in pedido
+    assert "Refinando com outra IA" in client.get(url_da_pauta).content.decode()
+    refinada = json.loads(json.dumps(LEITURA))
+    refinada["frentes"].append({"nome": "Letramento", "papel": "alternativa", "buscas": ["x"]})
+    with django_capture_on_commit_callbacks(execute=True):
+        client.post(
+            reverse("ideias:acao", args=[ideia.pk], urlconf=U),
+            {"acao": "resposta", "resposta": json.dumps(refinada)},
+        )
+    ideia.refresh_from_db()
+    assert [f["nome"] for f in ideia.leitura["frentes"]][: len(nomes)] == nomes
+    assert ideia.refino["buscar"] == ["Letramento"]

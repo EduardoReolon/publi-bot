@@ -1,6 +1,6 @@
 {% load i18n ideias %}{% comment %}Comum a pauta e a revisao: `p` (a pauta) e `alvo` (o artigo ou falso).{% endcomment %}{% if p %}
 {% with ideia=p.ideias.all.0 %}{% frentes_da_pauta p as inv %}
-<details class="ramo" id="investigar" {% if alvo and alvo.consensus == 'conflict' and not p.debate.frentes %}open{% endif %}>
+<details class="ramo" id="investigar" {% if alvo and alvo.consensus == 'conflict' and not p.debate.frentes or ideia.situacao == 'outra_ia' %}open{% endif %}>
   <summary>
     <strong>{% translate "Investigacao" %}</strong>
     <span class="ajuda">{% translate "(vale para A e B)" %}</span>
@@ -27,6 +27,28 @@
       <li>{% blocktranslate trimmed %}<strong>Artigo ja escrito</strong> nao muda sozinho: a investigacao entra na proxima geracao ("Gerar de novo do zero").{% endblocktranslate %}</li>
     </ul>
   </details>
+
+  {% if ideia.situacao == 'outra_ia' %}
+    <div class="aviso espera" id="outra-ia">
+      <strong>{% if p.debate.frentes %}{% translate "Refinando com outra IA" %}{% else %}{% translate "Investigando com outra IA" %}{% endif %}</strong>
+      <details data-carregar="{% url 'ideias:pedido' ideia.pk %}" open>
+        <summary>{% translate "1. Copie o pedido e cole numa IA grande (de preferencia com pesquisa na web). Ela conversa com voce antes de responder." %}</summary>
+        <div class="acoes"><button type="button" class="botao secundario pequeno" data-copiar="pedido-pauta-{{ ideia.pk }}">{% translate "Copiar o pedido" %}</button></div>
+        <textarea id="pedido-pauta-{{ ideia.pk }}" readonly rows="8" style="width:100%">{% translate "Carregando..." %}</textarea>
+      </details>
+      <form method="post" action="{% url 'ideias:acao' ideia.pk %}">
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#investigar">
+        <div class="campo">
+          <label>{% translate "2. Cole aqui a resposta final (com o JSON)" %}</label>
+          <textarea name="resposta" rows="5" required></textarea>
+        </div>
+        <div class="acoes">
+          <button type="submit" name="acao" value="resposta" class="botao pequeno">{% translate "Ler a resposta e buscar as frentes" %}</button>
+          <button type="submit" name="acao" value="de_novo" formnovalidate class="botao discreto pequeno">{% translate "Deixar o modelo daqui ler" %}</button>
+        </div>
+      </form>
+    </div>
+  {% endif %}
 
   {% if p.debate.afirmacao or p.debate.tese %}
     <ul>
@@ -120,7 +142,10 @@
         <p class="ajuda">{% translate "E refinamento: as frentes atuais ficam (com as fontes ja achadas e decididas); o texto pode corrigir o que se diz e a suspeita, melhorar as frentes e acrescentar novas. Para mudar as frentes, mande uma ideia nova em Ideias." %}</p>
         <label class="ajuda" style="display:block"><input type="checkbox" name="buscar_existentes" value="1" style="width:auto"> {% translate "buscar de novo tambem nas frentes que ja existem (senao, so nas novas)" %}</label>
       {% endif %}
-      <div class="acoes"><button type="submit" class="botao secundario pequeno">{% if p.debate.frentes %}{% translate "Refinar" %}{% else %}{% translate "Investigar as frentes" %}{% endif %}</button></div>
+      <div class="acoes">
+        <button type="submit" class="botao secundario pequeno">{% if p.debate.frentes %}{% translate "Refinar" %}{% else %}{% translate "Investigar as frentes" %}{% endif %}</button>
+        <button type="submit" name="modo" value="outra_ia" class="botao discreto pequeno" title="{% translate 'Monta o pedido para uma IA grande, que conversa com voce antes de responder; voce cola a resposta de volta aqui' %}">{% translate "Com outra IA" %}</button>
+      </div>
     </form>
   </details>
 </details>
