@@ -16,6 +16,9 @@ from django.views.decorators.http import require_POST
 from apps.ideias.models import Ideia
 
 MAXIMO_DE_LINKS = 5
+AVISO_OUTRA_IA = gettext_lazy(
+    "Copie o pedido (no bloco Investigacao), cole numa IA grande e traga a resposta."
+)
 
 
 def pendencias() -> dict:
@@ -141,8 +144,14 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
     ideia = get_object_or_404(Ideia, pk=pk)
     qual = request.POST.get("acao")
     if qual == "de_novo":
-        # Com frentes ja definidas, e refinamento: elas ficam (e sao buscadas de novo).
-        ideia.refino = {"pedido": "", "buscar_existentes": True}
+        # Com frentes ja definidas, e refinamento: elas ficam (e sao buscadas de
+        # novo). Vindo do "com outra IA", o pedido de refinamento continua.
+        refino = ideia.refino or {}
+        ideia.refino = (
+            {**refino, "buscar_existentes": bool(refino.get("buscar_existentes"))}
+            if ideia.situacao == Ideia.Situacao.OUTRA_IA and refino.get("pedido")
+            else {"pedido": "", "buscar_existentes": True}
+        )
         ideia.situacao = Ideia.Situacao.NOVA
         ideia.save(update_fields=["situacao", "refino", "atualizada_em"])
         _disparar(ideia)
@@ -205,7 +214,19 @@ def acao(request: HttpRequest, pk) -> HttpResponse:
             messages.success(request, _("Os posts estao sendo escritos (Redes > Para revisar)."))
         except (ValueError, LookupError) as exc:
             messages.error(request, str(exc))
+    voltar = request.POST.get("voltar", "")
+    if voltar.startswith("/") and not voltar.startswith("//"):
+        return redirect(voltar)
     return redirect(f"{reverse('ideias:inicio')}#ideia-{ideia.pk}")
+
+
+@login_required
+def pedido(request: HttpRequest, pk) -> HttpResponse:
+    """O pedido para a outra IA, em texto (carregado so ao abrir, na pauta)."""
+    from apps.ideias.investigacao import pedido_para_outra_ia
+
+    ideia = get_object_or_404(Ideia, pk=pk)
+    return HttpResponse(pedido_para_outra_ia(ideia), content_type="text/plain; charset=utf-8")
 
 
 @login_required
@@ -228,6 +249,7 @@ def investigar_pauta(request: HttpRequest, pk) -> HttpResponse:
     # estao ligadas a elas); o texto pode corrigir o que se diz e a suspeita,
     # melhorar as frentes e acrescentar novas. Mudar as frentes: ideia nova.
     existente = next((i for i in pauta.ideias.all() if (i.leitura or {}).get("frentes")), None)
+    pela_outra_ia = request.POST.get("modo") == "outra_ia"
     if existente is not None:
         existente.refino = {
             "pedido": pedido[:5000],
@@ -236,8 +258,11 @@ def investigar_pauta(request: HttpRequest, pk) -> HttpResponse:
         existente.links = list(dict.fromkeys([*(existente.links or []), *_links(pedido)]))[
             : MAXIMO_DE_LINKS * 2
         ]
-        existente.situacao = Ideia.Situacao.NOVA
+        existente.situacao = Ideia.Situacao.OUTRA_IA if pela_outra_ia else Ideia.Situacao.NOVA
         existente.save(update_fields=["refino", "links", "situacao", "atualizada_em"])
+        if pela_outra_ia:
+            messages.info(request, AVISO_OUTRA_IA)
+            return destino
         _disparar(existente)
         messages.success(
             request,
@@ -257,8 +282,15 @@ def investigar_pauta(request: HttpRequest, pk) -> HttpResponse:
         if x
     )
     ideia = Ideia.objects.create(
-        texto=texto[:20000], links=_links(pedido), pauta=pauta, criada_por=request.user
+        texto=texto[:20000],
+        links=_links(pedido),
+        pauta=pauta,
+        criada_por=request.user,
+        situacao=Ideia.Situacao.OUTRA_IA if pela_outra_ia else Ideia.Situacao.NOVA,
     )
+    if pela_outra_ia:
+        messages.info(request, AVISO_OUTRA_IA)
+        return destino
     _disparar(ideia)
     messages.success(
         request,

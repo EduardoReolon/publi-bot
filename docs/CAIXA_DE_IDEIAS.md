@@ -136,6 +136,14 @@ bloco exato que o modelo recebe.
 
 ## Modo investigativo em qualquer pauta
 
+Tudo o que a ideia tem vale para a pauta comum (do radar, do link quebrado,
+manual): ao ligar o modo investigativo, a pauta ganha uma ideia ligada a ela,
+e dai em diante sao os mesmos recursos — frentes com curadoria, refinamento,
+dossie e veredito da outra IA, aprovar e levar as redes. Na propria pauta,
+"Com outra IA" (ao ligar ou ao refinar) mostra o pedido para copiar e o campo
+para colar a resposta, sem ir para a tela de Ideias; o titulo da pauta nunca
+muda.
+
 Uma ideia e uma pauta com a leitura por frentes. O mesmo vale para a pauta que
 ja existe: na tela da pauta e na revisao do artigo, o ramo **Investigacao** >
 "Ligar o modo investigativo" (com um campo opcional: "dizem X, eu
