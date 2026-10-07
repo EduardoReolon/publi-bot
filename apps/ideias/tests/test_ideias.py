@@ -359,3 +359,50 @@ def test_ideia_preparada_pela_outra_ia(
     assert ideia.situacao == Ideia.Situacao.CURADORIA and ideia.pauta.debate["frentes"]
     achado = CandidatoDeFonte.objects.get(url="https://estudo.org/produtividade")
     assert "outra IA" in achado.trecho
+
+
+@pytest.mark.django_db
+def test_dossie_para_o_veredito_leva_o_conteudo_e_o_meio(ambiente, modelo, buscador, monkeypatch):
+    from apps.ideias import veredito
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    client.post(
+        reverse("ideias:inicio", urlconf=U),
+        {"texto": "Falta mao de obra para IA?", "links": "https://g1.exemplo.com/ia-mao-de-obra"},
+    )
+    ideia = Ideia.objects.get()
+    tasks.processar_ideia(str(ideia.pk))
+    ideia.refresh_from_db()
+    pauta = ideia.pauta
+
+    # Um video aprovado como discurso (com texto) e uma pagina recusada.
+    candidatos = CandidatoDeFonte.objects.filter(pauta=pauta)
+    video = candidatos.filter(papel=CandidatoDeFonte.Papel.DISCURSO).first()
+    video.tipo, video.canal_nome = CandidatoDeFonte.Tipo.VIDEO, "Jornal da TV"
+    video.situacao = CandidatoDeFonte.Situacao.APROVADO
+    video.texto_extraido = "Falta quem saiba usar a IA, diz o apresentador. " * 400
+    video.save()
+    recusada = candidatos.exclude(pk=video.pk).first()
+    recusada.situacao = CandidatoDeFonte.Situacao.RECUSADO
+    recusada.save()
+
+    texto = veredito.dossie(pauta)
+    assert "VEREDITO" in texto and "POR MEIO E PUBLICO" in texto
+    assert "A SUSPEITA DO AUTOR: Falta profissional" in texto
+    assert "video (fala: TV, YouTube, podcast) — canal Jornal da TV" in texto
+    assert "papel: o que se diz · aprovada pelo autor" in texto
+    assert "ainda nao curada" in texto and "so o resumo da busca" in texto
+    assert recusada.url not in texto
+    # O texto longo e cortado, nao despejado inteiro.
+    assert texto.count("diz o apresentador") < 400 and "[...]" in texto
+
+    # Na pauta: carregado so ao abrir, e baixar o texto que falta.
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    url = reverse("ideias:dossie", args=[pauta.pk], urlconf=U)
+    assert f'data-carregar="{url}"' in tela and "Copiar o dossie" in tela
+    assert client.get(url).content.decode() == texto
+
+    monkeypatch.setattr("apps.knowledge.web.texto_da_pagina", lambda url: f"Texto inteiro de {url}")
+    assert veredito.capturar_textos(pauta) >= 1
+    assert "Texto inteiro de https://" in veredito.dossie(pauta)

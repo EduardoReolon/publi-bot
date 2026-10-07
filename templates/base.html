@@ -468,16 +468,18 @@
     });
   });
 
-  /* <details data-carregar="url">: o conteudo (texto) so e buscado ao abrir, uma vez. */
+  /* <details data-carregar="url">: o conteudo (texto) so e buscado ao abrir, uma
+     vez, e vai para o primeiro <pre> ou <textarea> dentro dele. */
   document.querySelectorAll("details[data-carregar]").forEach(function (caixa) {
     caixa.addEventListener("toggle", function () {
       if (!caixa.open || caixa.dataset.carregado) return;
       caixa.dataset.carregado = "1";
-      var alvo = caixa.querySelector("pre");
+      var alvo = caixa.querySelector("pre, textarea");
+      function por(texto) { if (!alvo) return; if (alvo.tagName === "TEXTAREA") alvo.value = texto; else alvo.textContent = texto; }
       fetch(caixa.getAttribute("data-carregar"), { credentials: "same-origin" })
         .then(function (r) { return r.text(); })
-        .then(function (texto) { if (alvo) alvo.textContent = texto; })
-        .catch(function () { if (alvo) alvo.textContent = "Nao deu para carregar: tente de novo."; caixa.dataset.carregado = ""; });
+        .then(por)
+        .catch(function () { por("Nao deu para carregar: tente de novo."); caixa.dataset.carregado = ""; });
     });
   });
 

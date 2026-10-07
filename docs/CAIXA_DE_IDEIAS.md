@@ -54,6 +54,23 @@ marcadas "achado pela outra IA (confira)", e passam pela curadoria como
 qualquer fonte. Depois a tarefa `buscar_ideia` cria a pauta e busca as frentes.
 "Deixar o modelo daqui ler" volta ao caminho normal.
 
+## Pedir um veredito a outra IA
+
+No ramo Investigacao, "Pedir um veredito a outra IA" (`apps/ideias/veredito.py`)
+monta um dossie para colar numa IA grande: a afirmacao, a suspeita, as frentes
+e, de cada fonte, o CONTEUDO (o texto do acervo, o capturado na curadoria ou, na
+falta, o resumo da busca, marcado), cortado para caber (~60 mil caracteres no
+total). Nao vai so o link: um modelo de fora abre dois ou tres, no maximo.
+
+Cada fonte leva o MEIO (video/fala, texto publicado, orgao oficial, estudo,
+comunidade — pela mesma `natureza_sugerida` da curadoria), o veiculo ou canal,
+o papel (o que se diz / evidencia) e se ja foi aprovada ou ainda espera. O
+pedido manda: veredito com as fontes; separar o que a fonte MOSTRA do que ela
+DIZ; comparar como cada meio conta a historia e para que publico (diferenca de
+fato ou de enfase); o que falta; e a conclusao honesta para um artigo.
+Recusadas ficam de fora. "Capturar o texto das paginas que faltam" baixa, em
+segundo plano, o texto das paginas que so tinham o resumo da busca.
+
 ## A tela da pauta (arvore)
 
 Tudo recolhido, um ramo por assunto: **Sobre a pauta** (no topo), **Artigo A**

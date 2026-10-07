@@ -6,7 +6,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
 from django.db import transaction
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
@@ -195,3 +195,29 @@ def investigar_pauta(request: HttpRequest, pk) -> HttpResponse:
     if voltar.startswith("/") and not voltar.startswith("//"):
         return redirect(voltar)
     return redirect("content:pauta", pk=pauta.pk)
+
+
+@login_required
+def dossie(request: HttpRequest, pk) -> HttpResponse:
+    """O pedido de veredito, em texto, para copiar (carregado so ao abrir)."""
+    from apps.content.models import Topic
+    from apps.ideias.veredito import dossie as montar
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    return HttpResponse(montar(pauta), content_type="text/plain; charset=utf-8")
+
+
+@login_required
+@require_POST
+def capturar_textos(request: HttpRequest, pk) -> HttpResponse:
+    from apps.content.models import Topic
+    from apps.ideias.tasks import capturar_textos_da_pauta
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    pk_da_pauta = str(pauta.pk)
+    transaction.on_commit(lambda: capturar_textos_da_pauta.delay(pk_da_pauta))
+    detalhe = _("Capturando os textos em segundo plano; abra o dossie de novo daqui a pouco.")
+    if request.headers.get("X-Em-Segundo-Plano"):
+        return JsonResponse({"detalhe": detalhe})
+    messages.info(request, detalhe)
+    return redirect(f"{reverse('content:pauta', args=[pauta.pk])}#investigar")

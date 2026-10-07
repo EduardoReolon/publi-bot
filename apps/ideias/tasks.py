@@ -59,3 +59,13 @@ def buscar_ideia(ideia_id: str) -> str:
         return "nada a fazer"
     so_buscar(ideia)
     return ideia.situacao
+
+
+@shared_task
+def capturar_textos_da_pauta(pauta_id: str) -> int:
+    """Para o dossie do veredito: o texto das paginas que so tem o resumo."""
+    from apps.content.models import Topic
+    from apps.ideias.veredito import capturar_textos
+
+    pauta = Topic.objects.filter(pk=pauta_id).first()
+    return capturar_textos(pauta) if pauta else 0
