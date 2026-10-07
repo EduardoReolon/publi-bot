@@ -71,6 +71,20 @@ fato ou de enfase); o que falta; e a conclusao honesta para um artigo.
 Recusadas ficam de fora. "Capturar o texto das paginas que faltam" baixa, em
 segundo plano, o texto das paginas que so tinham o resumo da busca.
 
+## Videos e estudos: o que acontece ao aprovar
+
+- **Video**: a legenda e conferida ANTES da decisao (tarefa logo depois da
+  busca das frentes, ou "Conferir a legenda agora" no cartao) e a transcricao
+  fica guardada no candidato. O cartao diz: "com transcricao (N palavras)",
+  "sem legenda: so com o audio", "legenda nao conferida (YouTube recusou)" ou
+  "ainda nao conferida". Aprovado como evidencia, usa a transcricao guardada;
+  sem legenda, fica esperando o audio. Aprovado como discurso, a fala entra
+  (sem legenda, so titulo e descricao, e a lista de aprovadas avisa "sem
+  transcricao"). Link do YouTube achado pela busca da web ou colado vira video.
+- **Estudo sem PDF aberto**: aprovado, fica esperando o PDF.
+- Quem espera o audio ou o PDF aparece **na propria frente**, com o envio ali
+  mesmo (e tambem no topo de Fontes sugeridas). Quem falhou aparece com o motivo.
+
 ## A tela da pauta (arvore)
 
 Tudo recolhido, um ramo por assunto: **Sobre a pauta** (no topo), **Artigo A**

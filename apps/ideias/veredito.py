@@ -169,8 +169,9 @@ def dossie(pauta, *, limite: int = LIMITE_DO_DOSSIE) -> str:
 
 
 def capturar_textos(pauta) -> int:
-    """Baixa o texto das paginas das frentes que so tem o resumo da busca, para
-    o dossie levar o conteudo (e nao o link). Devolve quantas capturou."""
+    """Baixa o texto das paginas das frentes que so tem o resumo da busca e a
+    legenda dos videos ainda nao conferidos, para o dossie levar o conteudo (e
+    nao o link). Devolve quantas fontes tentou."""
     from apps.knowledge.models import CandidatoDeFonte
     from apps.knowledge.web import PaginaIndisponivel, texto_da_pagina
 
@@ -185,4 +186,7 @@ def capturar_textos(pauta) -> int:
             continue
         c.save(update_fields=["texto_extraido"])
         capturadas += 1
-    return capturadas
+    # Videos: a transcricao, pela legenda (a fala e o que o video diz).
+    from apps.knowledge.videos import verificar_legendas
+
+    return capturadas + verificar_legendas(pauta, limite=20)

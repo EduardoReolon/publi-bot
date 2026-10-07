@@ -32,6 +32,8 @@ import json
 import logging
 import re
 
+from django.db import transaction
+
 from apps.ideias.models import Ideia
 
 logger = logging.getLogger("publibot.ideias")
@@ -289,22 +291,25 @@ def _links_colados(urls: list[str], pauta, *, discurso: bool, do_autor=()) -> li
     """Os links que a pessoa mandou, como sugestao da frente deles."""
     from apps.knowledge.fontes_web import _ja_conhecida, normalizar_caminho
     from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.videos import tratar_como_video
 
     novos = []
     for url in urls:
         if _ja_conhecida(url):
             continue
         novos.append(
-            CandidatoDeFonte.objects.create(
-                url=url[:500],
-                titulo=url[:500],
-                trecho="Link que voce mandou com a ideia."
-                if url in do_autor
-                else "Achado pela outra IA ao preparar a ideia (confira).",
-                dominio=normalizar_caminho(url).split("/", 1)[0][:200],
-                consulta="mandado com a ideia" if url in do_autor else "achado pela outra IA",
-                pauta=pauta,
-                papel=CandidatoDeFonte.Papel.DISCURSO if discurso else "",
+            tratar_como_video(
+                CandidatoDeFonte.objects.create(
+                    url=url[:500],
+                    titulo=url[:500],
+                    trecho="Link que voce mandou com a ideia."
+                    if url in do_autor
+                    else "Achado pela outra IA ao preparar a ideia (confira).",
+                    dominio=normalizar_caminho(url).split("/", 1)[0][:200],
+                    consulta="mandado com a ideia" if url in do_autor else "achado pela outra IA",
+                    pauta=pauta,
+                    papel=CandidatoDeFonte.Papel.DISCURSO if discurso else "",
+                )
             )
         )
     return novos
@@ -378,6 +383,12 @@ def buscar(ideia: Ideia) -> dict:
     ideia.buscas = feito
     ideia.situacao = Ideia.Situacao.CURADORIA
     ideia.save(update_fields=["buscas", "situacao", "atualizada_em"])
+    # Os videos achados: a legenda e conferida antes da decisao, para a tela
+    # dizer se ha transcricao.
+    from apps.knowledge.tasks import verificar_legendas_da_pauta
+
+    pk_da_pauta = str(pauta.pk)
+    transaction.on_commit(lambda: verificar_legendas_da_pauta.delay(pk_da_pauta))
     return feito
 
 

@@ -287,3 +287,13 @@ def pesquisar_pauta(self, topic_id: str) -> int:
             transaction.on_commit(lambda: gerar_b_quando_pronta.delay(str(pauta.pk)))
         return achados
     return 0
+
+
+@shared_task
+def verificar_legendas_da_pauta(pauta_id: str) -> int:
+    """Confere a legenda dos videos sugeridos para a pauta, antes da decisao."""
+    from apps.content.models import Topic
+    from apps.knowledge.videos import verificar_legendas
+
+    pauta = Topic.objects.filter(pk=pauta_id).first()
+    return verificar_legendas(pauta) if pauta else 0

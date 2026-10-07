@@ -145,6 +145,71 @@ def buscar_legenda(video_id: str, idiomas=("pt", "pt-BR", "en")) -> list[tuple[f
     return [(trecho.start, trecho.text) for trecho in legenda]
 
 
+# Estado da legenda de um video sugerido, em `metricas["legenda"]`: conferido
+# ANTES da decisao, para a tela dizer se ha transcricao (como o "PDF aberto" dos
+# estudos). A transcricao fica em `texto_extraido` e a aprovacao a reaproveita.
+LEGENDA_SIM = "sim"
+LEGENDA_NAO = "nao"  # o video nao tem legenda: so com o audio
+LEGENDA_BLOQUEADA = "bloqueada"  # o YouTube recusou este servidor: tente de novo depois
+VERIFICACOES_POR_VEZ = 8
+
+
+def eh_video(url: str) -> bool:
+    return bool(id_do_video(url))
+
+
+def tratar_como_video(candidato: CandidatoDeFonte) -> CandidatoDeFonte:
+    """Link do YouTube achado pela busca da web (ou colado) e video, nao pagina:
+    a pagina do YouTube nao tem o que capturar, e o texto vem da legenda."""
+    if candidato.tipo == CandidatoDeFonte.Tipo.PAGINA and eh_video(candidato.url):
+        candidato.tipo = CandidatoDeFonte.Tipo.VIDEO
+        candidato.save(update_fields=["tipo"])
+    return candidato
+
+
+def verificar_legenda(candidato: CandidatoDeFonte) -> str:
+    """Busca a legenda e guarda a transcricao no candidato. Devolve o estado."""
+    if (candidato.metricas or {}).get("legenda") == LEGENDA_SIM and candidato.texto_extraido:
+        return LEGENDA_SIM
+    try:
+        trechos = buscar_legenda(id_do_video(candidato.url))
+    except LegendaIndisponivel as exc:
+        estado = LEGENDA_BLOQUEADA if "recusou" in str(exc) else LEGENDA_NAO
+    else:
+        estado = LEGENDA_SIM if trechos else LEGENDA_NAO
+        if trechos:
+            candidato.texto_extraido = markdown_da_transcricao(candidato.titulo, trechos)
+    candidato.metricas = {
+        **(candidato.metricas or {}),
+        "legenda": estado,
+        "legenda_conferida_em": timezone.now().isoformat(timespec="minutes"),
+    }
+    candidato.save(update_fields=["metricas", "texto_extraido"])
+    return estado
+
+
+def verificar_legendas(pauta=None, limite: int = VERIFICACOES_POR_VEZ) -> int:
+    """Os videos sugeridos (da pauta, se dada) ainda sem legenda conferida, ou
+    que o YouTube recusou da ultima vez. Poucos por vez: o YouTube bloqueia
+    quem pede muito."""
+    from django.db.models import Q
+
+    consulta = CandidatoDeFonte.objects.filter(
+        tipo=CandidatoDeFonte.Tipo.VIDEO, situacao=CandidatoDeFonte.Situacao.PENDENTE
+    ).filter(~Q(metricas__has_key="legenda") | Q(metricas__legenda=LEGENDA_BLOQUEADA))
+    if pauta is not None:
+        consulta = consulta.filter(pauta=pauta)
+    feitos = 0
+    for candidato in consulta.order_by("encontrado_em")[:limite]:
+        try:
+            verificar_legenda(candidato)
+        except Exception:  # um video com problema nao para os outros
+            logger.warning("Legenda do candidato %s nao conferida.", candidato.pk, exc_info=True)
+            continue
+        feitos += 1
+    return feitos
+
+
 def _categoria_de_video() -> DocumentCategory:
     from apps.knowledge.perfis import categoria_da_natureza
 
@@ -163,12 +228,18 @@ def aprovar_video(
 
     categoria = categoria or _categoria_de_video()
     video_id = id_do_video(candidato.url)
-    try:
-        trechos = buscar_legenda(video_id)
-    except LegendaIndisponivel as exc:
+    # A transcricao conferida antes da decisao e reaproveitada; sem ela (ou se
+    # o YouTube recusou da outra vez), tenta agora.
+    if verificar_legenda(candidato) != LEGENDA_SIM:
+        nao_tem = (candidato.metricas or {}).get("legenda") == LEGENDA_NAO
+        motivo = (
+            "o video nao tem legenda disponivel."
+            if nao_tem
+            else "o YouTube recusou a leitura da legenda a partir deste servidor."
+        )
         candidato.situacao = CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO
         candidato.motivo = (
-            f"{exc} Baixe o audio do video (por exemplo com o yt-dlp, ou um site de "
+            f"{motivo} Baixe o audio do video (por exemplo com o yt-dlp, ou um site de "
             f"download de audio do YouTube) e envie aqui: a transcricao roda no "
             f"worker quando a placa estiver livre."
         )
@@ -177,7 +248,7 @@ def aprovar_video(
         candidato.save()
         return candidato
 
-    markdown = markdown_da_transcricao(candidato.titulo, trechos)
+    markdown = candidato.texto_extraido
     bruto = markdown.encode("utf-8")
     sha = hashlib.sha256(bruto).hexdigest()
     documento = Document.objects.filter(file_sha256=sha).first() or Document.objects.create(

@@ -406,3 +406,71 @@ def test_dossie_para_o_veredito_leva_o_conteudo_e_o_meio(ambiente, modelo, busca
     monkeypatch.setattr("apps.knowledge.web.texto_da_pagina", lambda url: f"Texto inteiro de {url}")
     assert veredito.capturar_textos(pauta) >= 1
     assert "Texto inteiro de https://" in veredito.dossie(pauta)
+
+
+@pytest.mark.django_db
+def test_video_mostra_a_legenda_antes_e_quem_espera_arquivo_fica_na_frente(
+    ambiente, modelo, buscador, monkeypatch
+):
+    from apps.knowledge import fontes_web, videos
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    monkeypatch.setattr("apps.knowledge.tasks.verificar_legendas_da_pauta.delay", lambda pk: None)
+    client.post(reverse("ideias:inicio", urlconf=U), {"texto": "Falta mao de obra para IA?"})
+    ideia = Ideia.objects.get()
+    tasks.processar_ideia(str(ideia.pk))
+    pauta = Ideia.objects.get().pauta
+
+    # Link do YouTube achado na busca da web vira VIDEO, nao pagina.
+    video = CandidatoDeFonte.objects.filter(pauta=pauta, papel="discurso").first()
+    video.url = "https://www.youtube.com/watch?v=abc123xyz"
+    video.save()
+    videos.tratar_como_video(video)
+    assert video.tipo == CandidatoDeFonte.Tipo.VIDEO
+
+    pedidos = []
+
+    def legenda(video_id):
+        pedidos.append(video_id)
+        return [(0, "Falta quem saiba usar a IA, diz o apresentador.")]
+
+    monkeypatch.setattr(videos, "buscar_legenda", legenda)
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert "legenda ainda nao conferida" in tela and "Conferir a legenda agora" in tela
+
+    assert videos.verificar_legendas(pauta) == 1
+    video.refresh_from_db()
+    assert video.metricas["legenda"] == "sim" and "diz o apresentador" in video.texto_extraido
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert "com transcricao (" in tela and "Ver a transcricao" in tela
+
+    # Como discurso, a fala entra (sem buscar a legenda de novo).
+    fontes_web.aprovar_como_discurso(video)
+    video.refresh_from_db()
+    assert "diz o apresentador" in video.texto_extraido and pedidos == ["abc123xyz"]
+
+    # Sem legenda: avisa antes; aprovado como evidencia, espera o audio NA frente.
+    outro = CandidatoDeFonte.objects.create(
+        url="https://youtu.be/semlegenda1",
+        tipo=CandidatoDeFonte.Tipo.VIDEO,
+        titulo="Video sem legenda",
+        pauta=pauta,
+        metricas={"frente": video.metricas["frente"], "lado": "discurso"},
+    )
+    monkeypatch.setattr(
+        videos,
+        "buscar_legenda",
+        lambda video_id: (_ for _ in ()).throw(
+            videos.LegendaIndisponivel("o video nao tem legenda disponivel (NoTranscriptFound).")
+        ),
+    )
+    assert videos.verificar_legenda(outro) == "nao"
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert "sem legenda: so com o audio" in tela
+    videos.aprovar_video(outro)
+    outro.refresh_from_db()
+    assert outro.situacao == CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert "esperando PDF ou audio" in tela and "Enviar audio para transcrever" in tela
+    assert reverse("knowledge:enviar_audio", args=[outro.pk], urlconf=U) in tela
