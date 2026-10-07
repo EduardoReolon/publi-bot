@@ -22,7 +22,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
-from apps.social import experimentos
+from apps.social import experimentos, fontes
 from apps.social.abordagens import garantir_abordagens
 from apps.social.forms import AbordagemForm, ConfiguracaoForm, DestinoForm, RecadoForm
 from apps.social.models import Abordagem, Comentario, ConfiguracaoSocial, Destino, Post, Recado
@@ -105,6 +105,7 @@ def inicio(request: HttpRequest) -> HttpResponse:
             ]
         ).order_by("destino__nome", "-criado_em")
         contexto["abordagens"] = Abordagem.objects.filter(ativa=True)
+        contexto["destinos_do_link"] = fontes.destinos_do_link()
     elif aba == "agenda":
         contexto["posts"] = posts.filter(
             situacao__in=[Post.Situacao.APROVADO, Post.Situacao.PUBLICANDO]
@@ -162,7 +163,7 @@ def _laminas_do_formulario(texto: str) -> list[dict]:
 @login_required
 @require_POST
 def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
-    from apps.social import fontes, laminas, publicacao
+    from apps.social import laminas, publicacao
     from apps.social.tasks import escrever_post
 
     post = get_object_or_404(Post.objects.select_related("destino", "abordagem"), pk=pk)
@@ -208,6 +209,31 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         post.save(update_fields=["abordagem", "situacao", "atualizado_em"])
         escrever_post.delay(str(post.pk))
         messages.info(request, _("Reescrevendo com a abordagem '%(a)s'.") % {"a": abordagem})
+    elif acao in ("enquete", "post_comum"):
+        extras = dict(post.extras or {})
+        if acao == "enquete":
+            extras["formato"] = "enquete"
+        else:
+            extras.pop("formato", None)
+            extras.pop("enquete", None)
+        post.extras = extras
+        post.situacao = Post.Situacao.SUGERIDO
+        post.save(update_fields=["extras", "situacao", "atualizado_em"])
+        escrever_post.delay(str(post.pk))
+        messages.info(
+            request,
+            _("Reescrevendo como enquete.")
+            if acao == "enquete"
+            else _("Reescrevendo como post comum."),
+        )
+    elif acao == "trocar_link":
+        url = (request.POST.get("link_outro") or request.POST.get("link") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            messages.error(request, _("Escolha um destino ou cole um endereco com http(s)://."))
+        else:
+            post.artigo_url = url[:500]
+            post.save(update_fields=["artigo_url", "atualizado_em"])
+            messages.success(request, _("O link do post agora leva para %(u)s.") % {"u": url})
     elif acao == "voltar_para_revisao":
         post.situacao = Post.Situacao.RASCUNHO
         post.agendado_para = None

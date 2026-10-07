@@ -26,6 +26,36 @@
   {% endif %}
   <div class="ajuda"><strong>{{ post.get_motivo_display }}.</strong> {{ post.por_que }}</div>
 
+  {% if post.extras.formato == 'enquete' %}
+    <div class="aviso espera" style="margin-top:.4rem">
+      <strong>{% translate "Enquete" %}</strong>{% if post.destino.rede == 'linkedin' %} <span class="ajuda">({% translate "sai como enquete do LinkedIn, por 3 dias" %})</span>{% else %} <span class="ajuda">({% translate "esta rede nao tem enquete pela API: sai como post comum, com a pergunta e as opcoes para responder nos comentarios" %})</span>{% endif %}
+      {% if post.extras.enquete %}<div>{{ post.extras.enquete.pergunta }}</div><ul class="ajuda">{% for o in post.extras.enquete.opcoes %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+  {% endif %}
+  {% if destinos_do_link and post.situacao != 'publicado' and post.situacao != 'publicando' %}
+    <details>
+      <summary class="ajuda">{% translate "Para onde o link leva" %}: {{ post.artigo_url|default:_("(nenhum)")|truncatechars:70 }}</summary>
+      <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+        <select name="link" style="width:auto; max-width:24rem">
+          {% for rotulo, url in destinos_do_link %}<option value="{{ url }}" {% if url == post.artigo_url %}selected{% endif %}>{{ rotulo|truncatechars:70 }}</option>{% endfor %}
+        </select>
+        <input type="url" name="link_outro" placeholder="{% translate 'ou cole outro endereco' %}" style="width:auto">
+        <button type="submit" name="acao" value="trocar_link" class="botao secundario pequeno">{% translate "Trocar o link" %}</button>
+      </form>
+    </details>
+  {% endif %}
+  {% if post.situacao == 'rascunho' or post.situacao == 'falhou' %}
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
+      {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+      {% if post.extras.formato == 'enquete' %}
+        <button type="submit" name="acao" value="post_comum" class="botao discreto pequeno">{% translate "Voltar a post comum" %}</button>
+      {% else %}
+        <button type="submit" name="acao" value="enquete" class="botao discreto pequeno" title="{% translate 'Reescreve terminando numa pergunta com opcoes. No LinkedIn vira enquete de verdade; nas outras redes, post comum com a pergunta.' %}">{% translate "Refazer como pergunta/enquete" %}</button>
+      {% endif %}
+    </form>
+  {% endif %}
+
   {% if post.situacao == 'sugerido' or post.situacao == 'gerando' %}
     <p class="pre-visualizacao">{% translate "Escrevendo... (recarregue em instantes)" %}{% if post.erro %} — {{ post.erro|truncatechars:200 }}{% endif %}</p>
   {% elif post.situacao == 'falhou' and not post.texto %}

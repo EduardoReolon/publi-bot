@@ -35,7 +35,7 @@ class ConfiguracaoSocial(models.Model):
     id = models.SmallAutoField(primary_key=True)
     ligado = models.BooleanField(
         _("sugerir posts sozinho"),
-        default=False,
+        default=True,
         help_text=_(
             "Ligado, o PubliBot escolhe os artigos e escreve os posts uma vez por dia. "
             "Desligado, so quando voce pede ('Levar as redes', no artigo)."
@@ -63,6 +63,15 @@ class ConfiguracaoSocial(models.Model):
     )
     espacamento_dias = models.PositiveSmallIntegerField(
         _("minimo de dias entre posts do mesmo artigo na mesma rede"), default=30
+    )
+    link_da_oferta = models.URLField(
+        _("pagina da oferta (landing page)"),
+        max_length=500,
+        blank=True,
+        help_text=_(
+            "Opcional. Aparece como destino possivel do link de um post, junto da "
+            "pagina inicial e dos artigos."
+        ),
     )
     instrucoes = models.TextField(
         _("instrucoes para todas as redes"),
@@ -380,6 +389,7 @@ class Post(models.Model):
         CASO = "caso", _("Caso ou novidade sua")
         FOTOS = "fotos", _("Do banco de fotos")
         HISTORICO = "historico", _("Antes do PubliBot (importado)")
+        IDEIA = "ideia", _("Ideia aprovada")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="posts")
@@ -614,6 +624,9 @@ class Entrada(models.Model):
     # Para onde o post leva: um artigo relacionado (id do nucleo) ou um endereco.
     artigo_id = models.UUIDField(null=True, blank=True)
     link = models.URLField(_("link"), max_length=500, blank=True)
+    # De onde veio, quando nao foi a pessoa aqui: "ideia:<id>" (caixa de ideias).
+    # E o que impede a mesma ideia de virar dois posts na mesma conta.
+    origem = models.CharField(max_length=80, blank=True, db_index=True)
     # Paginas de terceiros que o PubliBot le (noticia, estudo): [{"url", "titulo",
     # "site", "texto"} ou {"url", "erro"}]. Sem "texto" nem "erro": ainda lendo.
     referencias = models.JSONField(default=list, blank=True)

@@ -39,6 +39,13 @@ ESQUEMA = {
         "texto": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
         "primeiro_comentario": {"type": "string"},
+        "enquete": {
+            "type": "object",
+            "properties": {
+                "pergunta": {"type": "string"},
+                "opcoes": {"type": "array", "items": {"type": "string"}},
+            },
+        },
         "laminas": {
             "type": "array",
             "items": {
@@ -163,6 +170,19 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     if rodape:
         texto = f"{texto}\n\n{rodape}"
     extras = {"gancho": gancho, "hashtags": hashtags}
+    if e_enquete(post):
+        extras["formato"] = "enquete"
+        enquete = enquete_limpa(dados)
+        if enquete is not None:
+            extras["enquete"] = enquete
+            if post.destino.rede != "linkedin":
+                # Sem enquete na API desta rede: post comum, com a pergunta e as
+                # opcoes para responder nos comentarios.
+                letras = "ABCD"
+                opcoes = "\n".join(f"{letras[i]}) {o}" for i, o in enumerate(enquete["opcoes"]))
+                pergunta = f"{enquete['pergunta']}\n{opcoes}\nResponda nos comentarios com a letra."
+                texto = _cortar(texto, f.max_caracteres - len(pergunta) - 2)
+                texto = f"{texto}\n\n{pergunta}"
     if f.link == "comentario":
         chamada = _URL.sub("", str(dados.get("primeiro_comentario") or "")).strip()
         extras["primeiro_comentario"] = chamada or "O artigo completo, com as fontes:"
@@ -180,6 +200,38 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
                 )
         extras["laminas"] = laminas
     return texto, extras
+
+
+# Enquete: no LinkedIn sai como enquete de verdade (Posts API, `content.poll`);
+# nas outras redes, como post comum que termina na pergunta, com as opcoes para
+# responder nos comentarios. Limites do LinkedIn: pergunta ate 140 caracteres,
+# de 2 a 4 opcoes de ate 30.
+PERGUNTA_MAXIMA = 140
+OPCAO_MAXIMA = 30
+INSTRUCAO_DA_ENQUETE = (
+    "FORMATO ENQUETE: o post termina numa PERGUNTA ao leitor sobre o assunto, que "
+    "ele responde escolhendo uma opcao. Devolva tambem 'enquete': {'pergunta': ate "
+    f"{PERGUNTA_MAXIMA} caracteres, 'opcoes': de 2 a 4, cada uma com ate {OPCAO_MAXIMA} "
+    "caracteres}. As opcoes sao respostas plausiveis e sem pegadinha; nenhuma e a "
+    "'certa' pelo texto. O texto do post apresenta o assunto e leva a pergunta.\n"
+)
+
+
+def e_enquete(post: Post) -> bool:
+    return (post.extras or {}).get("formato") == "enquete"
+
+
+def enquete_limpa(dados: dict) -> dict | None:
+    bruta = dados.get("enquete") if isinstance(dados.get("enquete"), dict) else {}
+    pergunta = _URL.sub("", str(bruta.get("pergunta") or "")).strip()[:PERGUNTA_MAXIMA]
+    opcoes = [
+        _URL.sub("", str(o)).strip()[:OPCAO_MAXIMA]
+        for o in bruta.get("opcoes") or []
+        if str(o).strip()
+    ][:4]
+    if not pergunta or len(opcoes) < 2:
+        return None
+    return {"pergunta": pergunta, "opcoes": opcoes}
 
 
 def _textos_das_laminas(extras: dict) -> list[str]:
@@ -280,6 +332,8 @@ def escrever(post: Post) -> Post:
         )
     if entrada is not None:
         base = proprio.instrucao_para_quem_escreve(entrada, artigo) + "\n" + base
+    if e_enquete(post):
+        base = INSTRUCAO_DA_ENQUETE + base
     base = (
         fontes.instrucoes_sensiveis(f"{artigo.titulo}\n{artigo.texto}")
         + "\nHashtags com cada palavra iniciando em maiuscula (#SaudeMental, nao "
@@ -302,6 +356,8 @@ def escrever(post: Post) -> Post:
             dados["laminas"] = []  # as imagens sao as fotos reais
         texto, extras = montar(post, dados)
         avisos = conferir(post, texto, extras, artigo, com_fotos=com_fotos)
+        if e_enquete(post) and "enquete" not in extras:
+            avisos.append("a enquete veio sem pergunta ou com menos de 2 opcoes")
         if entrada is not None:
             avisos += [
                 f"pode identificar alguem: {a}"
@@ -319,6 +375,7 @@ def escrever(post: Post) -> Post:
     # O que veio da sugestao (ideia, recado em teste) continua no post.
     post.extras = {
         **extras,
+        **({"formato": "enquete"} if e_enquete(post) else {}),
         **({"ideia": ideia} if ideia else {}),
         **({"recado": recado} if recado else {}),
     }

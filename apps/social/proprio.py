@@ -295,7 +295,7 @@ def ler_referencias(entrada: Entrada) -> None:
 
 
 def criar_comentario(
-    *, texto: str, referencias: list[dict], destinos: list[str], por=None
+    *, texto: str, referencias: list[dict], destinos: list[str], por=None, origem: str = ""
 ) -> Entrada:
     """Post de "noticia ou estudo comentado" com o material ja lido (vem da
     caixa de ideias, com o papel de cada referencia: discurso ou evidencia)."""
@@ -303,15 +303,39 @@ def criar_comentario(
         raise EntradaInvalida("Escolha pelo menos uma conta.")
     if not referencias:
         raise EntradaInvalida("Nenhuma fonte aprovada ainda: faca a curadoria primeiro.")
+    # O link leva ao artigo publicado mais parecido (a pessoa troca no post).
+    parecido = fontes.artigo_mais_parecido(texto)
     entrada = Entrada.objects.create(
         tipo=Entrada.Tipo.COMENTARIO,
         texto=texto[:10000],
         referencias=referencias,
         destinos=[str(d) for d in destinos],
         criada_por=por,
+        origem=origem[:80],
+        link=parecido[1] if parecido else "",
     )
     levar(entrada)
     return entrada
+
+
+def ideia_da_vez(destino: Destino) -> dict | None:
+    """A ideia aprovada que ainda nao virou post nesta conta (a mais recente)."""
+    for ideia in fontes.ideias_aprovadas():
+        if not Post.objects.filter(
+            destino=destino, entrada__origem=f"ideia:{ideia['id']}"
+        ).exists():
+            return ideia
+    return None
+
+
+def post_de_ideia(destino: Destino, ideia: dict) -> list[Post]:
+    entrada = criar_comentario(
+        texto=ideia["texto"],
+        referencias=ideia["referencias"],
+        destinos=[str(destino.pk)],
+        origem=f"ideia:{ideia['id']}",
+    )
+    return list(Post.objects.filter(entrada=entrada))
 
 
 def contas_para_comentar() -> list[tuple[str, str]]:
@@ -328,11 +352,19 @@ def levar(entrada: Entrada) -> list[Post]:
     from apps.social import escolha
 
     artigo = como_artigo(entrada)
-    motivo = Post.Motivo.FOTOS if entrada.tipo == Entrada.Tipo.FOTOS else Post.Motivo.CASO
+    motivo = (
+        Post.Motivo.FOTOS
+        if entrada.tipo == Entrada.Tipo.FOTOS
+        else Post.Motivo.IDEIA
+        if entrada.origem.startswith("ideia:")
+        else Post.Motivo.CASO
+    )
     por_que = {
         Entrada.Tipo.CASO: "Caso real que voce mandou.",
         Entrada.Tipo.NOVIDADE: "Novidade que voce mandou.",
-        Entrada.Tipo.COMENTARIO: "Noticia ou estudo que voce mandou comentar.",
+        Entrada.Tipo.COMENTARIO: "Ideia aprovada, com as fontes curadas."
+        if entrada.origem.startswith("ideia:")
+        else "Noticia ou estudo que voce mandou comentar.",
         Entrada.Tipo.FOTOS: f"Fotos do banco ({entrada.midias.count()}).",
     }[entrada.tipo]
     posts = []

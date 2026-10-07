@@ -117,7 +117,11 @@ artigo no ar ─▶ escolha (regras) ─▶ material (vetores) ─▶ abordagem 
 ### 1. Escolha (sem modelo) — `escolha.py`
 
 Cada conta recebe ate o **teto da semana** (padrao 3), um por dia, sem empilhar
-o que ja espera revisao. Candidatos:
+o que ja espera revisao. A sugestao diaria vem **ligada de fabrica** (desliga em
+Configurar). Antes de tudo, uma **ideia aprovada** na caixa de ideias (ultimos
+30 dias, sem artigo publicado; extensao `ideias_para_as_redes`) vira post de
+"noticia ou estudo comentado", uma vez por conta (`Entrada.origem`). Depois, os
+candidatos:
 
 - **artigo novo** (no ar ha menos de 30 dias, ainda nao foi para a conta);
 - **traz clientes** (aparece na jornada de quem converteu, 90 dias): volta depois
@@ -196,6 +200,24 @@ Google nao tem comentario em post). Pergunta e decidida por algoritmo
 (termina em "?" ou comeca como pergunta). Pergunta vira **Pergunta** do
 PubliBot (a mesma fila das do site, com a pesquisa do OpenAlex); aprovada a
 resposta, o PubliBot responde no comentario com o comeco dela e o link.
+
+### Para onde o link leva
+
+Post de artigo leva ao artigo; post sem artigo (ideia, caso), ao artigo
+publicado mais parecido (vetores, `fontes.artigo_mais_parecido`) ou a pagina
+inicial. Em qualquer post ainda nao publicado, "Para onde o link leva" troca o
+destino: a pagina inicial, a **pagina da oferta** (Configurar > "pagina da
+oferta (landing page)", opcional), qualquer artigo publicado ou um endereco
+colado. O clique continua passando pelo PubliBot (contado e com utm).
+
+### Pergunta / enquete
+
+"Refazer como pergunta/enquete" reescreve o post terminando numa pergunta com
+2 a 4 opcoes. No **LinkedIn** sai como enquete de verdade (Posts API,
+`content.poll`, 3 dias; pergunta ate 140 caracteres, opcoes ate 30). Instagram
+e Google nao tem enquete pela API: sai como **post comum**, com a pergunta e as
+opcoes (A, B, C...) para responder nos comentarios. "Voltar a post comum"
+desfaz.
 
 ## Regras que valem sempre
 

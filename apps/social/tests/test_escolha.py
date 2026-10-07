@@ -67,7 +67,9 @@ def test_rodada_sugere_artigo_novo_uma_vez_por_conta(
     linkedin = Destino.objects.create(rede="linkedin", nome="Perfil", publico="adultos cansados")
     Destino.objects.create(rede="gmn", nome="Google", ligado=False)
 
-    assert escolha.rodada() == 0  # "sugerir sozinho" desligado
+    config.ligado = False
+    config.save()
+    assert escolha.rodada() == 0  # "sugerir sozinho" desligado (de fabrica, vem ligado)
     config.ligado = True
     config.save()
     with django_capture_on_commit_callbacks(execute=True):
