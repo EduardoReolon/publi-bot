@@ -175,8 +175,22 @@ def _fotos_reais(post) -> list[dict]:
         default_storage.save(
             caminho, ContentFile(fotos.versao_para(midia, rede_, carrossel=len(escolhidas) > 1))
         )
-        saida.append({"caminho": caminho, "url": _endereco(post, n), "tipo": "foto"})
+        saida.append(
+            {
+                "caminho": caminho,
+                "url": _endereco(post, n),
+                "tipo": "foto",
+                "alt": (midia.descricao or midia.nota or "").strip()[:500],
+            }
+        )
     return saida
+
+
+def _alt_da_lamina(laminas: list[dict], n: int, chamada: str) -> str:
+    if n <= len(laminas):
+        lamina = laminas[n - 1]
+        return " ".join(x for x in [lamina.get("titulo", ""), lamina.get("texto", "")] if x)[:500]
+    return chamada[:500]
 
 
 def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
@@ -186,16 +200,17 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
     if post.entrada_id and (reais := _fotos_reais(post)):
         imagens = reais
     elif r.formato.imagem == "capa" and artigo.capa:
-        imagens = [{"caminho": artigo.capa, "url": artigo.capa_url}]
+        imagens = [{"caminho": artigo.capa, "url": artigo.capa_url, "alt": artigo.titulo[:500]}]
     elif r.formato.imagem == "laminas":
         laminas = (post.extras or {}).get("laminas") or []
         if laminas:
+            chamada = post.destino.chamada_final or CHAMADA
             pngs = desenhar(
                 laminas,
                 capa=artigo.capa,
                 cores=post.destino.cores,
                 marca=post.destino.conta_nome or post.destino.nome,
-                chamada=post.destino.chamada_final or CHAMADA,
+                chamada=chamada,
             )
             for n, png in enumerate(pngs, start=1):
                 caminho = caminho_da_imagem(post, n)
@@ -208,6 +223,8 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
                         "url": fontes.endereco_publico(
                             reverse("social:imagem", args=[post.chave_publica, n])
                         ),
+                        # Texto alternativo (leitor de tela): o que a lamina diz.
+                        "alt": _alt_da_lamina(laminas, n, chamada),
                     }
                 )
     post.imagens = imagens

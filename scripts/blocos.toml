@@ -229,13 +229,16 @@ resumo = """
 Como o site fala. O perfil editorial entra nos prompts que escrevem texto
 publicado (estrutura so no planejamento, convite so no fecho) e confere o texto
 antes da aprovacao: termo proibido bloqueia, marca de texto de maquina avisa.
+Cuidados de linguagem (estigma, temas sensiveis com o CVV, regras do CFM/CFO)
+em linguagem.py valem para artigos e redes, sempre como aviso.
 """
-entrada = ["apps/editorial/services.py", "apps/editorial/models.py"]
+entrada = ["apps/editorial/services.py", "apps/editorial/models.py", "apps/editorial/linguagem.py"]
 relacionados = ["geracao-texto", "revisao-telas"]
 padroes = [
   "apps/editorial/**",
   "templates/editorial/**",
   "tests/test_editorial.py",
+  "tests/test_linguagem.py",
   "tests/test_negocio.py",
   "tests/test_primeiros_passos.py",
 ]

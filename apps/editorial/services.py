@@ -95,6 +95,10 @@ def texto_do_guia(
             troca = f' (use "{termo["troca"]}")' if termo.get("troca") else ""
             linhas.append(f'  - "{termo["termo"]}"{troca}')
 
+    from apps.editorial.linguagem import INSTRUCAO_GERAL, todos_os_temas_sensiveis
+
+    linhas.append(INSTRUCAO_GERAL)
+    linhas.append(todos_os_temas_sensiveis())
     linhas.append(
         "- Evite frases de texto de maquina: 'vale ressaltar', 'e importante "
         "destacar', 'no cenario atual', 'desempenha um papel crucial', "
@@ -160,6 +164,8 @@ class Conferencia:
     marcas: list[Achado] = field(default_factory=list)
     travessoes: int = 0
     repeticoes: list[Achado] = field(default_factory=list)
+    # Linguagem que estigmatiza e temas sensiveis sem o cuidado (linguagem.py): avisam.
+    cuidados: list[Achado] = field(default_factory=list)
 
     @property
     def bloqueia(self) -> bool:
@@ -167,7 +173,9 @@ class Conferencia:
 
     @property
     def vazia(self) -> bool:
-        return not (self.proibidos or self.marcas or self.travessoes or self.repeticoes)
+        return not (
+            self.proibidos or self.marcas or self.travessoes or self.repeticoes or self.cuidados
+        )
 
 
 # Acima disto, o travessao deixa de ser pontuacao e vira tique.
@@ -210,6 +218,10 @@ def conferir_texto(texto: str, perfil) -> Conferencia:
         Achado(expressao=frase, sugestao="", vezes=vezes)
         for frase, vezes in expressoes_repetidas(texto or "")
     ]
+    from apps.editorial.linguagem import cuidados
+
+    ja = {_normalizar(a.expressao) for a in resultado.proibidos}
+    resultado.cuidados = [a for a in cuidados(texto) if _normalizar(a.expressao) not in ja]
     return resultado
 
 

@@ -279,6 +279,14 @@
             {% if conferencia.travessoes %}
               <div>{% blocktranslate trimmed with n=conferencia.travessoes %}{{ n }} travessoes no texto: acima de tres, vira tique.{% endblocktranslate %}</div>
             {% endif %}
+            {% if conferencia.cuidados %}
+              <strong>{% translate "Cuidados de linguagem (aviso; confira o contexto):" %}</strong>
+              <ul>
+                {% for achado in conferencia.cuidados %}
+                  <li>"{{ achado.expressao }}"{% if achado.vezes > 1 %} ({{ achado.vezes }}x){% endif %}{% if achado.sugestao %} — {% translate "prefira" %} "{{ achado.sugestao }}"{% endif %}{% if achado.motivo %} · {{ achado.motivo }}{% endif %}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
             {% if conferencia.repeticoes %}
               <strong>{% translate "Expressoes que se repetem (o texto pode estar reafirmando a mesma ideia):" %}</strong>
               <ul>

@@ -284,6 +284,23 @@ def termos_a_evitar(texto: str) -> list[str]:
     ]
 
 
+def cuidados_de_linguagem(texto: str) -> list[str]:
+    """Linguagem que estigmatiza e temas sensiveis sem o cuidado (aviso)."""
+    from apps.editorial.linguagem import cuidados
+
+    return [
+        f'"{a.expressao}"' + (f' (prefira "{a.sugestao}")' if a.sugestao else "") + f": {a.motivo}"
+        for a in cuidados(texto)
+    ]
+
+
+def instrucoes_sensiveis(texto: str) -> str:
+    """As instrucoes dos temas sensiveis presentes no material."""
+    from apps.editorial.linguagem import INSTRUCAO_GERAL, instrucoes_sensiveis
+
+    return "\n".join(x for x in [INSTRUCAO_GERAL.lstrip("- "), instrucoes_sensiveis(texto)] if x)
+
+
 # -- Perguntas ------------------------------------------------------------------------
 def criar_pergunta(texto: str, referencia: str) -> str | None:
     """Uma pergunta vinda de comentario vira Pergunta do PubliBot (a mesma fila

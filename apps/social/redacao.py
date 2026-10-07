@@ -200,6 +200,9 @@ def conferir(post: Post, texto: str, extras: dict, artigo, *, com_fotos: bool = 
     termos = fontes.termos_a_evitar(tudo)
     if termos:
         avisos.append(f"termo que o guia editorial proibe: {', '.join(termos)}")
+    cuidados = fontes.cuidados_de_linguagem(tudo)
+    if cuidados:
+        avisos.append(f"cuidado de linguagem: {'; '.join(cuidados)}")
     if f.dobra and len(extras.get("gancho", "")) > f.dobra:
         avisos.append(
             f"a primeira linha tem {len(extras['gancho'])} caracteres; so {f.dobra} aparecem "
@@ -277,6 +280,11 @@ def escrever(post: Post) -> Post:
         )
     if entrada is not None:
         base = proprio.instrucao_para_quem_escreve(entrada, artigo) + "\n" + base
+    base = (
+        fontes.instrucoes_sensiveis(f"{artigo.titulo}\n{artigo.texto}")
+        + "\nHashtags com cada palavra iniciando em maiuscula (#SaudeMental, nao "
+        "#saudemental): o leitor de tela le palavra por palavra.\n" + base
+    )
     com_fotos = entrada is not None and entrada.midias.exists()
     ajuste, avisos, texto, extras = base, [], "", {}
     for _tentativa in range(2):

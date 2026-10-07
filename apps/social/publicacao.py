@@ -76,7 +76,10 @@ def publicar(post: Post, *, http=None) -> Post:
     publicador = r.publicador(post.destino, http=http)
     imagens = [
         ImagemPublica(
-            url=i.get("url", ""), caminho=i.get("caminho", ""), video=i.get("tipo") == "video"
+            url=i.get("url", ""),
+            caminho=i.get("caminho", ""),
+            video=i.get("tipo") == "video",
+            alt=i.get("alt", ""),
         )
         for i in post.imagens
     ]
