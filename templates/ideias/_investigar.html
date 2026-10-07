@@ -58,6 +58,27 @@
     </details>
   {% endfor %}
 
+  {% if inv.frentes %}
+    <details class="secao" id="veredito" data-carregar="{% url 'ideias:dossie' p.pk %}">
+      <summary><strong>{% translate "Pedir um veredito a outra IA" %}</strong></summary>
+      <p class="ajuda">{% blocktranslate trimmed %}
+        Um dossie com a afirmacao, a suspeita, as frentes e o CONTEUDO de cada fonte (nao so o link:
+        um modelo de fora abre dois ou tres links, no maximo), cada uma com o meio em que saiu — video,
+        texto publicado, orgao oficial, estudo. O pedido manda separar o que a fonte mostra do que ela
+        diz e comparar como cada meio conta a historia e para que publico. Entram as aprovadas e as que
+        esperam decisao (marcadas), nao as recusadas.
+      {% endblocktranslate %}</p>
+      <div class="acoes">
+        <button type="button" class="botao secundario pequeno" data-copiar="dossie-{{ p.pk }}">{% translate "Copiar o dossie" %}</button>
+      </div>
+      <textarea id="dossie-{{ p.pk }}" readonly rows="12" style="width:100%">{% translate "Carregando..." %}</textarea>
+      <form method="post" action="{% url 'ideias:capturar_textos' p.pk %}" class="acoes" data-em-segundo-plano="{% translate 'Capturando...' %}">
+        {% csrf_token %}
+        <button type="submit" class="botao discreto pequeno" title="{% translate 'Baixa o texto das paginas que so tem o resumo da busca, para o dossie levar o conteudo' %}">{% translate "Capturar o texto das paginas que faltam" %}</button>
+      </form>
+    </details>
+  {% endif %}
+
   {% if ideia %}<p class="ajuda"><a href="{% url 'ideias:inicio' %}#ideia-{{ ideia.pk }}">{% translate "Ver em Ideias" %}</a></p>{% endif %}
   <details>
     <summary>{% if p.debate.frentes %}{% translate "Investigar de novo" %}{% else %}{% translate "Ligar o modo investigativo" %}{% endif %}</summary>
