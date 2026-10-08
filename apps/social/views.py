@@ -166,23 +166,103 @@ def previa_da_lamina(request: HttpRequest, pk) -> HttpResponse:
     """A 1a lamina com o enquadramento da tela (?zoom=&x=&y=&escuro=), sem
     gravar: a previa que muda enquanto a pessoa mexe nos controles."""
     from apps.social import laminas
-    from apps.social.proprio import como_artigo
 
     post = get_object_or_404(Post.objects.select_related("destino"), pk=pk)
-    artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+    artigo = _artigo_do_post(post)
     if artigo is None:
         raise Http404
-    jpg = laminas.previa_da_primeira(post, artigo, laminas.ajuste_limpo(request.GET))
+    jpg = laminas.previa_da_primeira(
+        post,
+        artigo,
+        laminas.ajuste_limpo(request.GET),
+        titulo=request.GET.get("titulo"),
+        texto=request.GET.get("texto"),
+    )
     return HttpResponse(jpg, content_type="image/jpeg")
+
+
+def _artigo_do_post(post):
+    from apps.social.proprio import como_artigo
+
+    return como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+
+
+@login_required
+def editar_lamina(request: HttpRequest, pk) -> HttpResponse:
+    """O editor da 1a lamina: arrastar a foto e o texto, tamanho, alinhamento,
+    cor e escurecimento, com o desenho na hora no navegador. Salvar grava o
+    ajuste e o texto e refaz as imagens no servidor (que e o que vai ao ar)."""
+    import json
+
+    from apps.social import laminas
+
+    post = get_object_or_404(Post.objects.select_related("destino"), pk=pk)
+    artigo = _artigo_do_post(post)
+    if artigo is None:
+        raise Http404
+    if request.method == "POST":
+        try:
+            ajuste = json.loads(request.POST.get("ajuste") or "{}")
+        except ValueError:
+            ajuste = {}
+        extras = dict(post.extras or {})
+        lista = [dict(lamina) for lamina in extras.get("laminas") or []]
+        if lista:
+            lista[0]["titulo"] = request.POST.get("titulo", lista[0].get("titulo", "")).strip()[
+                :120
+            ]
+            lista[0]["texto"] = request.POST.get("texto", lista[0].get("texto", "")).strip()[:220]
+            extras["laminas"] = lista
+        extras["ajuste_da_capa"] = laminas.ajuste_limpo(ajuste)
+        post.extras = extras
+        post.save(update_fields=["extras", "atualizado_em"])
+        _refazer_imagens(post)
+        messages.success(request, _("Primeira lamina salva e imagens refeitas."))
+        return redirect("social:editar_lamina", pk=post.pk)
+    return render(
+        request,
+        "social/editar_lamina.html",
+        {"post": post, "editor": laminas.dados_do_editor(post, artigo)},
+    )
+
+
+@login_required
+@require_GET
+def foto_da_lamina(request: HttpRequest, pk) -> HttpResponse:
+    """A foto de fundo da 1a lamina (a enviada ou a capa do artigo), para o editor."""
+    import mimetypes
+
+    from apps.social import laminas
+
+    post = get_object_or_404(Post.objects.select_related("destino"), pk=pk)
+    artigo = _artigo_do_post(post)
+    caminho = laminas.foto_de_fundo(post, artigo) if artigo is not None else ""
+    if not caminho or not default_storage.exists(caminho):
+        raise Http404
+    tipo = mimetypes.guess_type(caminho)[0] or "image/jpeg"
+    return FileResponse(default_storage.open(caminho, "rb"), content_type=tipo)
+
+
+@login_required
+@require_GET
+def fonte_da_lamina(request: HttpRequest, peso: str) -> HttpResponse:
+    """A mesma fonte das laminas, para o editor medir e quebrar o texto igual."""
+    from apps.social import laminas
+
+    caminho = laminas.caminho_da_fonte(negrito=peso == "negrito")
+    if not caminho:
+        raise Http404
+    resposta = FileResponse(open(caminho, "rb"), content_type="font/ttf")
+    resposta["Cache-Control"] = "private, max-age=86400"
+    return resposta
 
 
 def _refazer_imagens(post) -> bool:
     """Monta de novo as imagens do post (laminas, capa ou fotos do material
     proprio) com o texto e a foto atuais. Falso se o artigo sumiu."""
     from apps.social import laminas
-    from apps.social.proprio import como_artigo
 
-    artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+    artigo = _artigo_do_post(post)
     if artigo is None:
         return False
     laminas.preparar_imagens(post, artigo)
@@ -231,14 +311,6 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             post.save(update_fields=["extras", "atualizado_em"])
             _refazer_imagens(post)
             messages.success(request, _("Foto trocada e imagens refeitas."))
-    elif acao == "ajustar_capa":
-        post.extras = {
-            **(post.extras or {}),
-            "ajuste_da_capa": laminas.ajuste_limpo(request.POST),
-        }
-        post.save(update_fields=["extras", "atualizado_em"])
-        _refazer_imagens(post)
-        messages.success(request, _("Enquadramento salvo e imagens refeitas."))
     elif acao == "imagem_do_artigo":
         extras = dict(post.extras or {})
         extras.pop("imagem_propria", None)

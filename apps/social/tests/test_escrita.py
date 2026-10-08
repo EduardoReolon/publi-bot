@@ -250,12 +250,22 @@ def test_regerar_e_trocar_a_foto_das_laminas(ambiente, modulo, settings, tmp_pat
 def test_ajuste_limpo_fica_nos_limites():
     from apps.social import laminas
 
-    assert laminas.ajuste_limpo({"zoom": "9", "x": "-1", "y": "abc", "outra": 5}) == {
-        "zoom": 4.0,
-        "x": 0.0,
-        "y": 0.5,
-        "escuro": 0.55,
-    }
+    ajuste = laminas.ajuste_limpo(
+        {
+            "zoom": "9",
+            "x": "-1",
+            "y": "abc",
+            "outra": 5,
+            "alinhamento": "diagonal",
+            "cor_titulo": "red;",
+            "largura": "0.9",
+            "texto_x": "0.5",
+        }
+    )
+    assert ajuste["zoom"] == 4.0 and ajuste["x"] == 0.0 and ajuste["y"] == 0.5
+    assert "outra" not in ajuste
+    assert ajuste["alinhamento"] == "esquerda" and ajuste["cor_titulo"] == ""
+    assert ajuste["texto_x"] == pytest.approx(0.1)  # o bloco nao sai do quadro
 
 
 @pytest.mark.django_db
@@ -297,10 +307,26 @@ def test_enquadrar_a_primeira_lamina_com_previa(ambiente, modulo, settings, tmp_
     assert esquerda[0] > esquerda[2]  # encostada a esquerda: vermelho
     assert direita.convert("RGB").getpixel((135, 100))[2] > 150  # a direita: azul
 
-    client.post(acao, {"acao": "ajustar_capa", "x": "1", "escuro": "0", "zoom": "1", "y": "0.5"})
+    editor = reverse("social:editar_lamina", args=[post.pk], urlconf="core.urls_tenants")
+    pagina = client.get(editor).content.decode()
+    assert "dados-do-editor" in pagina and "Gancho" in pagina
+    client.post(
+        editor,
+        {
+            "ajuste": '{"x": 1, "escuro": 0, "alinhamento": "centro", "tamanho_titulo": 120}',
+            "titulo": "Gancho novo",
+            "texto": "",
+        },
+    )
     post.refresh_from_db()
     assert post.extras["ajuste_da_capa"]["x"] == 1.0
+    assert post.extras["ajuste_da_capa"]["alinhamento"] == "centro"
+    assert post.extras["laminas"][0]["titulo"] == "Gancho novo"
     primeira = Image.open(default_storage.open(post.imagens[0]["caminho"])).convert("RGB")
     assert primeira.getpixel((540, 200))[2] > 150
     tela = client.get(reverse("social:inicio", urlconf="core.urls_tenants")).content.decode()
-    assert "Enquadrar a primeira lamina" in tela and "Regerar as imagens" in tela
+    assert "Editar a primeira lamina" in tela and "Regerar as imagens" in tela
+    foto = reverse("social:foto_da_lamina", args=[post.pk], urlconf="core.urls_tenants")
+    assert client.get(foto).status_code == 200
+    fonte = reverse("social:fonte_da_lamina", args=["negrito"], urlconf="core.urls_tenants")
+    assert client.get(fonte)["Content-Type"] == "font/ttf"
