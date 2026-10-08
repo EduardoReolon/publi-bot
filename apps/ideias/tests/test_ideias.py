@@ -813,4 +813,3 @@ def test_sugestoes_aplicadas_e_pedidos_de_pdf(ambiente, modelo, buscador, monkey
     trechos = referencias.trechos_da_pauta(pauta)
     assert len(trechos) == 2 and pedidas[1]["documentos"] == [documento.pk]
     assert pedidas[1]["consulta"].startswith("o valor desperdicado")
-    assert Article
