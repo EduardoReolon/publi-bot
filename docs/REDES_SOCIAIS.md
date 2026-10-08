@@ -179,6 +179,18 @@ Carrossel 1080 x 1350 montado por **Pillow** (modelo de imagem escreve texto
 mal): a capa do artigo escurecida com o gancho, uma ideia por lamina nas cores
 da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha).
 
+- **Fonte:** a do sistema com acentos (DejaVu, instalada pelo `release.sh`); a
+  embutida no Pillow nao tem acento. O caractere que a fonte nao tiver (emoji)
+  vira um equivalente simples ou sai, nunca um quadradinho.
+- **Na revisao:** clicar na lamina abre grande, com anterior/proxima; "Regerar
+  as imagens" refaz com o texto atual; "Trocar a foto" usa uma foto enviada no
+  lugar da capa do artigo (fundo da 1a lamina, ou a imagem nas redes de capa).
+- **Enquadrar a primeira lamina:** zoom, posicao e escurecimento, com previa ao
+  vivo (`previa_da_lamina`, a lamina real com o texto, sem gravar). O ajuste
+  fica em `extras["ajuste_da_capa"]`; um controle novo e uma chave a mais em
+  `AJUSTE_PADRAO`/`LIMITES_DO_AJUSTE`, e a previa do `base.html`
+  (`form[data-previa]`) manda qualquer controle do formulario.
+
 ### 6. Medicao — `medicao.py`, `views.clique`
 
 - **Cliques:** o link do post passa pelo PubliBot (`/redes/r/<chave>/`), que

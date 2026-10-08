@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n l10n %}
 <section class="secao" id="post-{{ post.pk }}">
   <div class="acoes" style="margin-top:0; justify-content:space-between">
     <div>
@@ -118,17 +118,48 @@
     <div class="acoes" style="gap:.4rem" data-galeria>
       {% for i in post.imagens %}
         {% if i.tipo == 'video' %}
-          <video src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" controls preload="metadata" style="width:200px; border-radius:.4rem"></video>
-          <a class="ajuda" href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" download>{% translate "baixar o video" %}</a>
+          <video src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" controls preload="metadata" style="width:200px; border-radius:.4rem"></video>
+          <a class="ajuda" href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" download>{% translate "baixar o video" %}</a>
         {% elif i.tipo == 'foto' %}
-          <span style="display:inline-flex; flex-direction:column; align-items:center"><a href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" alt="{% translate 'foto' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda); cursor:zoom-in"></a><a class="ajuda" href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" download>{% translate "baixar" %}</a></span>
+          <span style="display:inline-flex; flex-direction:column; align-items:center"><a href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" alt="{% translate 'foto' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda); cursor:zoom-in"></a><a class="ajuda" href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" download>{% translate "baixar" %}</a></span>
         {% elif post.destino.rede == 'instagram' %}
-          <span style="display:inline-flex; flex-direction:column; align-items:center"><a href="{% url 'social:imagem' post.chave_publica forloop.counter %}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{% url 'social:imagem' post.chave_publica forloop.counter %}" alt="{% translate 'lamina' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda); cursor:zoom-in"></a><a class="ajuda" href="{% url 'social:imagem' post.chave_publica forloop.counter %}" download>{% translate "baixar" %}</a></span>
+          <span style="display:inline-flex; flex-direction:column; align-items:center"><a href="{% url 'social:imagem' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{% url 'social:imagem' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" alt="{% translate 'lamina' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda); cursor:zoom-in"></a><a class="ajuda" href="{% url 'social:imagem' post.chave_publica forloop.counter %}?v={{ post.atualizado_em|date:'U' }}" download>{% translate "baixar" %}</a></span>
         {% elif i.url %}
           <a href="{{ i.url }}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{{ i.url }}" alt="{% translate 'capa' %}" style="width:180px; border-radius:.4rem; border:1px solid var(--borda)"></a>
         {% endif %}
       {% endfor %}
     </div>
+  {% endif %}
+  {% if post.situacao != 'publicado' %}
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="gap:.4rem; margin-top:.3rem">
+      {% csrf_token %}
+      <button type="submit" name="acao" value="regerar_imagens" class="botao discreto pequeno" title="{% translate 'Monta as imagens de novo com o texto atual (ex.: depois de corrigir uma lamina ou se a imagem saiu com defeito)' %}">{% translate "Regerar as imagens" %}</button>
+      {% if not post.entrada_id %}
+        <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp" style="width:auto">
+        <button type="submit" name="acao" value="trocar_imagem" class="botao discreto pequeno" title="{% if post.destino.rede == 'instagram' %}{% translate 'A foto vira o fundo da primeira lamina, no lugar da capa do artigo' %}{% else %}{% translate 'A foto vai no post, no lugar da capa do artigo' %}{% endif %}">{% translate "Trocar a foto" %}</button>
+        {% if post.extras.imagem_propria %}<button type="submit" name="acao" value="imagem_do_artigo" class="botao discreto pequeno">{% translate "Voltar a capa do artigo" %}</button>{% endif %}
+      {% endif %}
+    </form>
+    {% if post.destino.rede == 'instagram' and not post.entrada_id and post.extras.laminas %}
+      <details class="ajuste-da-capa" style="margin-top:.3rem">
+        <summary>{% translate "Enquadrar a primeira lamina" %}</summary>
+        <form method="post" action="{% url 'social:acao_no_post' post.pk %}" data-previa="{% url 'social:previa_da_lamina' post.pk %}" style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start; margin-top:.4rem">
+          {% csrf_token %}
+          <img alt="{% translate 'Previa da primeira lamina' %}" data-previa-img style="width:270px; max-width:100%; border-radius:.4rem; border:1px solid var(--borda); background:var(--borda)">
+          <div style="min-width:220px; flex:1">
+            <p class="ajuda">{% translate "A previa mostra a lamina como vai sair, com o texto. Mexa e confira; nada muda ate salvar." %}</p>
+            <label>{% translate "Zoom" %} <input type="range" name="zoom" min="1" max="4" step="0.05" value="{{ post.extras.ajuste_da_capa.zoom|default:'1'|unlocalize }}" data-padrao="1"></label>
+            <label>{% translate "Esquerda / direita" %} <input type="range" name="x" min="0" max="1" step="0.01" value="{{ post.extras.ajuste_da_capa.x|default:'0.5'|unlocalize }}" data-padrao="0.5"></label>
+            <label>{% translate "Cima / baixo" %} <input type="range" name="y" min="0" max="1" step="0.01" value="{{ post.extras.ajuste_da_capa.y|default:'0.5'|unlocalize }}" data-padrao="0.5"></label>
+            <label>{% translate "Escurecer (para o texto aparecer)" %} <input type="range" name="escuro" min="0" max="0.9" step="0.05" value="{{ post.extras.ajuste_da_capa.escuro|default:'0.55'|unlocalize }}" data-padrao="0.55"></label>
+            <div class="acoes" style="gap:.4rem">
+              <button type="submit" name="acao" value="ajustar_capa" class="botao secundario pequeno">{% translate "Salvar o enquadramento" %}</button>
+              <button type="button" class="botao discreto pequeno" data-previa-padrao>{% translate "Voltar ao padrao" %}</button>
+            </div>
+          </div>
+        </form>
+      </details>
+    {% endif %}
   {% endif %}
 
   {% if post.situacao == 'aprovado' or post.situacao == 'publicando' %}

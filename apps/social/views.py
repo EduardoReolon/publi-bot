@@ -20,7 +20,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.social import experimentos, fontes
 from apps.social.abordagens import garantir_abordagens
@@ -161,6 +161,35 @@ def _laminas_do_formulario(texto: str) -> list[dict]:
 
 
 @login_required
+@require_GET
+def previa_da_lamina(request: HttpRequest, pk) -> HttpResponse:
+    """A 1a lamina com o enquadramento da tela (?zoom=&x=&y=&escuro=), sem
+    gravar: a previa que muda enquanto a pessoa mexe nos controles."""
+    from apps.social import laminas
+    from apps.social.proprio import como_artigo
+
+    post = get_object_or_404(Post.objects.select_related("destino"), pk=pk)
+    artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+    if artigo is None:
+        raise Http404
+    jpg = laminas.previa_da_primeira(post, artigo, laminas.ajuste_limpo(request.GET))
+    return HttpResponse(jpg, content_type="image/jpeg")
+
+
+def _refazer_imagens(post) -> bool:
+    """Monta de novo as imagens do post (laminas, capa ou fotos do material
+    proprio) com o texto e a foto atuais. Falso se o artigo sumiu."""
+    from apps.social import laminas
+    from apps.social.proprio import como_artigo
+
+    artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+    if artigo is None:
+        return False
+    laminas.preparar_imagens(post, artigo)
+    return True
+
+
+@login_required
 @require_POST
 def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
     from apps.social import laminas, publicacao
@@ -179,12 +208,45 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         post.extras = extras
         post.save(update_fields=["texto", "extras", "atualizado_em"])
         if "laminas" in request.POST:
-            from apps.social.proprio import como_artigo
-
-            artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
-            if artigo is not None:
-                laminas.preparar_imagens(post, artigo)
+            _refazer_imagens(post)
         messages.success(request, _("Post salvo."))
+    elif acao == "regerar_imagens":
+        if _refazer_imagens(post):
+            messages.success(request, _("Imagens refeitas com o texto atual."))
+        else:
+            messages.error(request, _("O artigo deste post nao existe mais: nao ha como refazer."))
+    elif acao == "trocar_imagem":
+        arquivo = request.FILES.get("imagem")
+        try:
+            caminho = laminas.guardar_imagem_propria(post, arquivo) if arquivo else ""
+        except Exception:
+            caminho = ""
+        if not caminho:
+            messages.error(request, _("Envie uma imagem (JPG, PNG ou WebP)."))
+        else:
+            # Foto nova, enquadramento novo: o ajuste da anterior nao serve.
+            extras = {**(post.extras or {}), "imagem_propria": caminho}
+            extras.pop("ajuste_da_capa", None)
+            post.extras = extras
+            post.save(update_fields=["extras", "atualizado_em"])
+            _refazer_imagens(post)
+            messages.success(request, _("Foto trocada e imagens refeitas."))
+    elif acao == "ajustar_capa":
+        post.extras = {
+            **(post.extras or {}),
+            "ajuste_da_capa": laminas.ajuste_limpo(request.POST),
+        }
+        post.save(update_fields=["extras", "atualizado_em"])
+        _refazer_imagens(post)
+        messages.success(request, _("Enquadramento salvo e imagens refeitas."))
+    elif acao == "imagem_do_artigo":
+        extras = dict(post.extras or {})
+        extras.pop("imagem_propria", None)
+        extras.pop("ajuste_da_capa", None)
+        post.extras = extras
+        post.save(update_fields=["extras", "atualizado_em"])
+        _refazer_imagens(post)
+        messages.success(request, _("De volta a capa do artigo."))
     elif acao == "aprovar":
         quando = parse_datetime(request.POST.get("quando", "") or "")
         if quando is not None and timezone.is_naive(quando):
