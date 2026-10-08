@@ -65,14 +65,18 @@ SUBSTITUTOS = {
 }
 
 
-def _fonte(tamanho: int, *, negrito: bool = False):
+def caminho_da_fonte(*, negrito: bool = False) -> str:
+    """O arquivo da fonte das laminas ("" se o sistema nao tem nenhuma)."""
     import os
 
+    return next((c for c in FONTES[negrito] if os.path.exists(c)), "")
+
+
+def _fonte(tamanho: int, *, negrito: bool = False):
     from PIL import ImageFont
 
-    for caminho in FONTES[negrito]:
-        if os.path.exists(caminho):
-            return ImageFont.truetype(caminho, tamanho)
+    if caminho := caminho_da_fonte(negrito=negrito):
+        return ImageFont.truetype(caminho, tamanho)
     return ImageFont.load_default(size=tamanho)
 
 
@@ -125,15 +129,34 @@ def _quebrar(desenho, texto: str, fonte, largura: int) -> list[str]:
     return linhas
 
 
-def _bloco(desenho, texto, fonte, cor, y: int, *, espaco: float = 1.25) -> int:
-    for linha in _quebrar(desenho, texto, fonte, LARGURA - 2 * MARGEM):
-        desenho.text((MARGEM, y), linha, font=fonte, fill=cor)
+# Onde a linha comeca dentro do bloco, pelo alinhamento.
+POSICAO_DA_LINHA = {"esquerda": 0.0, "centro": 0.5, "direita": 1.0}
+
+
+def _bloco(
+    desenho,
+    texto,
+    fonte,
+    cor,
+    y: int,
+    *,
+    espaco: float = 1.25,
+    x: int = MARGEM,
+    largura: int = LARGURA - 2 * MARGEM,
+    alinhamento: str = "esquerda",
+) -> int:
+    peso = POSICAO_DA_LINHA.get(alinhamento, 0.0)
+    for linha in _quebrar(desenho, texto, fonte, largura):
+        sobra = largura - desenho.textlength(linha, font=fonte)
+        desenho.text((x + int(sobra * peso), y), linha, font=fonte, fill=cor)
         y += int(fonte.size * espaco)
     return y
 
 
-def _altura(desenho, texto, fonte, espaco: float = 1.25) -> int:
-    return len(_quebrar(desenho, texto, fonte, LARGURA - 2 * MARGEM)) * int(fonte.size * espaco)
+def _altura(
+    desenho, texto, fonte, espaco: float = 1.25, largura: int = LARGURA - 2 * MARGEM
+) -> int:
+    return len(_quebrar(desenho, texto, fonte, largura)) * int(fonte.size * espaco)
 
 
 def _rodape(desenho, cores: dict, marca: str, n: int, total: int) -> None:
@@ -151,23 +174,65 @@ def _rodape(desenho, cores: dict, marca: str, n: int, total: int) -> None:
     )
 
 
-# Ajuste da foto da 1a lamina, guardado em `extras["ajuste_da_capa"]`. Um
-# dicionario de proposito: um controle novo (brilho, girar, outra lamina) e so
-# mais uma chave aqui, com o padrao e o limite dela; quem nao tem a chave fica
-# no padrao, e o que ja foi gerado continua igual.
-AJUSTE_PADRAO = {"zoom": 1.0, "x": 0.5, "y": 0.5, "escuro": 0.55}
-LIMITES_DO_AJUSTE = {"zoom": (1.0, 4.0), "x": (0.0, 1.0), "y": (0.0, 1.0), "escuro": (0.0, 0.9)}
+# Ajuste da 1a lamina (foto e texto), guardado em `extras["ajuste_da_capa"]`.
+# Um dicionario de proposito: um controle novo e so mais uma chave aqui, com o
+# padrao e o limite dela; quem nao tem a chave fica no padrao, e o que ja foi
+# gerado continua igual. O editor (templates/social/editar_lamina.html) desenha
+# a mesma conta no navegador; o servidor e quem grava.
+#  - zoom, x, y: a foto (x/y: 0 = encostada a esquerda/em cima, 1 = ao contrario);
+#  - escuro, degrade: o escurecimento (no degrade, mais forte embaixo);
+#  - tamanho_titulo, tamanho_texto: em px, no quadro de 1080;
+#  - texto_x, texto_y, largura: o bloco de texto, em fracao do quadro
+#    (texto_y < 0: automatico, encostado embaixo);
+#  - alinhamento, cor_titulo ("" = a cor da conta).
+AJUSTE_PADRAO = {
+    "zoom": 1.0,
+    "x": 0.5,
+    "y": 0.5,
+    "escuro": 0.55,
+    "degrade": 0.0,
+    "tamanho_titulo": 78.0,
+    "tamanho_texto": 46.0,
+    "texto_x": MARGEM / LARGURA,
+    "texto_y": -1.0,
+    "largura": (LARGURA - 2 * MARGEM) / LARGURA,
+    "alinhamento": "esquerda",
+    "cor_titulo": "",
+}
+LIMITES_DO_AJUSTE = {
+    "zoom": (1.0, 4.0),
+    "x": (0.0, 1.0),
+    "y": (0.0, 1.0),
+    "escuro": (0.0, 0.9),
+    "degrade": (0.0, 1.0),
+    "tamanho_titulo": (36.0, 160.0),
+    "tamanho_texto": (24.0, 90.0),
+    "texto_x": (0.0, 0.6),
+    "texto_y": (-1.0, 0.95),
+    "largura": (0.4, 1.0),
+}
+ESCOLHAS_DO_AJUSTE = {"alinhamento": tuple(POSICAO_DA_LINHA)}
 
 
 def ajuste_limpo(dados) -> dict:
     """O ajuste com so as chaves conhecidas, cada uma dentro do seu limite."""
+    import re
+
+    dados = dados or {}
     saida = dict(AJUSTE_PADRAO)
     for chave, (minimo, maximo) in LIMITES_DO_AJUSTE.items():
         try:
-            valor = float((dados or {}).get(chave, saida[chave]))
+            valor = float(dados.get(chave, saida[chave]))
         except (TypeError, ValueError):
             continue
         saida[chave] = min(max(valor, minimo), maximo)
+    for chave, opcoes in ESCOLHAS_DO_AJUSTE.items():
+        if dados.get(chave) in opcoes:
+            saida[chave] = dados[chave]
+    cor = str(dados.get("cor_titulo") or "")
+    saida["cor_titulo"] = cor if re.fullmatch(r"#[0-9a-fA-F]{6}", cor) else ""
+    # O bloco nao sai do quadro pela direita.
+    saida["texto_x"] = min(saida["texto_x"], max(0.0, 1.0 - saida["largura"]))
     return saida
 
 
@@ -193,7 +258,28 @@ def _capa(caminho: str, cores: dict, ajuste: dict | None = None):
     y = int((imagem.height - ALTURA) * ajuste["y"])
     imagem = imagem.crop((x, y, x + LARGURA, y + ALTURA))
     escuro = Image.new("RGB", (LARGURA, ALTURA), (0, 0, 0))
-    return Image.blend(imagem, escuro, ajuste["escuro"])
+    if not ajuste["degrade"]:
+        return Image.blend(imagem, escuro, ajuste["escuro"])
+    # Degrade: nada em cima, ate 1,5x o escuro embaixo (onde fica o texto).
+    fundo = min(0.95, ajuste["escuro"] * 1.5)
+    mascara = Image.linear_gradient("L").resize((LARGURA, ALTURA))
+    mascara = mascara.point(lambda v: int(v * fundo))
+    return Image.composite(escuro, imagem, mascara)
+
+
+# Entre o titulo e o texto da lamina.
+ESPACO_DO_TEXTO = 40
+
+
+def com_a_chamada(laminas: list[dict], chamada: str) -> list[dict]:
+    """As laminas com a chamada final (no lugar da ultima, se ela ja fala da bio)."""
+    itens = list(laminas)
+    if chamada:
+        if itens and "bio" in f"{itens[-1].get('titulo', '')} {itens[-1].get('texto', '')}".lower():
+            itens[-1] = {"titulo": chamada, "texto": ""}
+        else:
+            itens.append({"titulo": chamada, "texto": ""})
+    return itens
 
 
 def desenhar(
@@ -211,13 +297,9 @@ def desenhar(
     from PIL import Image, ImageDraw
 
     cores = {**CORES, **{k: v for k, v in (cores or {}).items() if v}}
-    itens = list(laminas)
-    if chamada:
-        if itens and "bio" in f"{itens[-1].get('titulo', '')} {itens[-1].get('texto', '')}".lower():
-            itens[-1] = {"titulo": chamada, "texto": ""}
-        else:
-            itens.append({"titulo": chamada, "texto": ""})
+    itens = com_a_chamada(laminas, chamada)
     total = len(itens)
+    primeira = ajuste_limpo(ajuste)
     saida = []
     for n, item in enumerate(itens, start=1):
         if apenas is not None and n != apenas:
@@ -229,17 +311,33 @@ def desenhar(
         )
         desenho = ImageDraw.Draw(imagem)
         titulo, texto = item.get("titulo", ""), item.get("texto", "")
-        grande = _fonte(78 if n == 1 or n == total else 64, negrito=True)
-        normal = _fonte(46)
-        altura = _altura(desenho, titulo, grande) + (
-            40 + _altura(desenho, texto, normal) if texto else 0
+        if n == 1:
+            # A primeira segue o ajuste do editor (tamanho, posicao, alinhamento).
+            grande = _fonte(int(primeira["tamanho_titulo"]), negrito=True)
+            normal = _fonte(int(primeira["tamanho_texto"]))
+            largura = int(LARGURA * primeira["largura"])
+            x = int(LARGURA * primeira["texto_x"])
+            alinhamento = primeira["alinhamento"]
+        else:
+            grande = _fonte(78 if n == total else 64, negrito=True)
+            normal = _fonte(46)
+            largura, x, alinhamento = LARGURA - 2 * MARGEM, MARGEM, "esquerda"
+        altura = _altura(desenho, titulo, grande, largura=largura) + (
+            ESPACO_DO_TEXTO + _altura(desenho, texto, normal, largura=largura) if texto else 0
         )
-        # A primeira, embaixo (a capa aparece em cima); as outras, no meio.
-        y = ALTURA - MARGEM * 2 - altura if n == 1 else (ALTURA - altura) // 2
+        if n == 1:
+            # Embaixo (a capa aparece em cima), ou onde a pessoa pos o texto.
+            automatico = ALTURA - MARGEM * 2 - altura
+            y = automatico if primeira["texto_y"] < 0 else int(ALTURA * primeira["texto_y"])
+        else:
+            y = (ALTURA - altura) // 2
         cor_do_titulo = cores["texto"] if n in (1, total) else cores["destaque"]
-        y = _bloco(desenho, titulo, grande, cor_do_titulo, y)
+        if n == 1 and primeira["cor_titulo"]:
+            cor_do_titulo = primeira["cor_titulo"]
+        bloco = {"x": x, "largura": largura, "alinhamento": alinhamento}
+        y = _bloco(desenho, titulo, grande, cor_do_titulo, y, **bloco)
         if texto:
-            _bloco(desenho, texto, normal, cores["texto"], y + 40)
+            _bloco(desenho, texto, normal, cores["texto"], y + ESPACO_DO_TEXTO, **bloco)
         _rodape(desenho, cores, marca, n, total)
         buffer = io.BytesIO()
         imagem.save(buffer, format="PNG", optimize=True)
@@ -318,7 +416,7 @@ def guardar_imagem_propria(post, arquivo) -> str:
     return caminho
 
 
-def _foto_de_fundo(post, artigo) -> str:
+def foto_de_fundo(post, artigo) -> str:
     """A foto da 1a lamina: a que a pessoa enviou, ou a capa do artigo."""
     propria = (post.extras or {}).get("imagem_propria") or ""
     if propria and default_storage.exists(propria):
@@ -326,15 +424,47 @@ def _foto_de_fundo(post, artigo) -> str:
     return artigo.capa
 
 
-def previa_da_primeira(post, artigo, ajuste: dict, *, largura: int = 540) -> bytes:
-    """A 1a lamina com o ajuste pedido, em tamanho de tela: o que a tela de
-    enquadramento mostra enquanto a pessoa mexe, sem gravar nada."""
+def dados_do_editor(post, artigo) -> dict:
+    """O que o editor da 1a lamina precisa para desenhar no navegador a mesma
+    conta do servidor (`desenhar`): quadro, cores, textos e o ajuste salvo."""
+    extras = post.extras or {}
+    laminas = extras.get("laminas") or [{"titulo": artigo.titulo, "texto": ""}]
+    itens = com_a_chamada(laminas, post.destino.chamada_final or CHAMADA)
+    return {
+        "largura": LARGURA,
+        "altura": ALTURA,
+        "margem": MARGEM,
+        "espaco_do_texto": ESPACO_DO_TEXTO,
+        "cores": {**CORES, **{k: v for k, v in (post.destino.cores or {}).items() if v}},
+        "marca": (post.destino.conta_nome or post.destino.nome)[:40],
+        "total": len(itens),
+        "titulo": laminas[0].get("titulo", ""),
+        "texto": laminas[0].get("texto", ""),
+        "ajuste": ajuste_limpo(extras.get("ajuste_da_capa")),
+        "padrao": dict(AJUSTE_PADRAO),
+        "limites": LIMITES_DO_AJUSTE,
+        "tem_foto": bool(foto_de_fundo(post, artigo)),
+    }
+
+
+def previa_da_primeira(
+    post, artigo, ajuste: dict, *, largura: int = 540, titulo=None, texto=None
+) -> bytes:
+    """A 1a lamina com o ajuste pedido, em tamanho de tela, sem gravar nada.
+    `titulo`/`texto`: os do editor, ainda nao salvos."""
     from PIL import Image
 
-    laminas = (post.extras or {}).get("laminas") or [{"titulo": artigo.titulo, "texto": ""}]
+    laminas = [
+        dict(lamina)
+        for lamina in (post.extras or {}).get("laminas") or [{"titulo": artigo.titulo, "texto": ""}]
+    ]
+    if titulo is not None:
+        laminas[0]["titulo"] = titulo
+    if texto is not None:
+        laminas[0]["texto"] = texto
     png = desenhar(
         laminas,
-        capa=_foto_de_fundo(post, artigo),
+        capa=foto_de_fundo(post, artigo),
         cores=post.destino.cores,
         marca=post.destino.conta_nome or post.destino.nome,
         chamada=post.destino.chamada_final or CHAMADA,
@@ -352,7 +482,7 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
     """Grava as imagens do post e o endereco publico de cada uma."""
     r = rede(post.destino.rede)
     imagens = []
-    capa = _foto_de_fundo(post, artigo)
+    capa = foto_de_fundo(post, artigo)
     propria = capa if capa != artigo.capa else ""
     if post.entrada_id and (reais := _fotos_reais(post)):
         imagens = reais

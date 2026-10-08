@@ -185,11 +185,16 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
 - **Na revisao:** clicar na lamina abre grande, com anterior/proxima; "Regerar
   as imagens" refaz com o texto atual; "Trocar a foto" usa uma foto enviada no
   lugar da capa do artigo (fundo da 1a lamina, ou a imagem nas redes de capa).
-- **Enquadrar a primeira lamina:** zoom, posicao e escurecimento, com previa ao
-  vivo (`previa_da_lamina`, a lamina real com o texto, sem gravar). O ajuste
-  fica em `extras["ajuste_da_capa"]`; um controle novo e uma chave a mais em
-  `AJUSTE_PADRAO`/`LIMITES_DO_AJUSTE`, e a previa do `base.html`
-  (`form[data-previa]`) manda qualquer controle do formulario.
+- **Editor da primeira lamina** (`views.editar_lamina`, `social/editar_lamina.html`):
+  arrastar a foto (enquadrar) e o texto (posicao, com guia no centro), roda do
+  mouse ou pinca para zoom, setas para ajuste fino; tamanho do titulo e da
+  frase, largura do bloco, alinhamento, cor do titulo, escurecer (inteiro ou em
+  degrade), texto da lamina, desfazer. O navegador desenha com a mesma fonte
+  (`fonte_da_lamina`) e as mesmas contas de `desenhar`; "Conferir" mostra a
+  imagem do servidor (`previa_da_lamina`). Salvar grava `extras["ajuste_da_capa"]`
+  e refaz as imagens. Controle novo: uma chave em `AJUSTE_PADRAO` (com limite em
+  `LIMITES_DO_AJUSTE` ou opcoes em `ESCOLHAS_DO_AJUSTE`), o uso em `desenhar` e
+  o mesmo no `desenhar()` do editor.
 
 ### 6. Medicao — `medicao.py`, `views.clique`
 

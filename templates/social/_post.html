@@ -141,24 +141,8 @@
       {% endif %}
     </form>
     {% if post.destino.rede == 'instagram' and not post.entrada_id and post.extras.laminas %}
-      <details class="ajuste-da-capa" style="margin-top:.3rem">
-        <summary>{% translate "Enquadrar a primeira lamina" %}</summary>
-        <form method="post" action="{% url 'social:acao_no_post' post.pk %}" data-previa="{% url 'social:previa_da_lamina' post.pk %}" style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start; margin-top:.4rem">
-          {% csrf_token %}
-          <img alt="{% translate 'Previa da primeira lamina' %}" data-previa-img style="width:270px; max-width:100%; border-radius:.4rem; border:1px solid var(--borda); background:var(--borda)">
-          <div style="min-width:220px; flex:1">
-            <p class="ajuda">{% translate "A previa mostra a lamina como vai sair, com o texto. Mexa e confira; nada muda ate salvar." %}</p>
-            <label>{% translate "Zoom" %} <input type="range" name="zoom" min="1" max="4" step="0.05" value="{{ post.extras.ajuste_da_capa.zoom|default:'1'|unlocalize }}" data-padrao="1"></label>
-            <label>{% translate "Esquerda / direita" %} <input type="range" name="x" min="0" max="1" step="0.01" value="{{ post.extras.ajuste_da_capa.x|default:'0.5'|unlocalize }}" data-padrao="0.5"></label>
-            <label>{% translate "Cima / baixo" %} <input type="range" name="y" min="0" max="1" step="0.01" value="{{ post.extras.ajuste_da_capa.y|default:'0.5'|unlocalize }}" data-padrao="0.5"></label>
-            <label>{% translate "Escurecer (para o texto aparecer)" %} <input type="range" name="escuro" min="0" max="0.9" step="0.05" value="{{ post.extras.ajuste_da_capa.escuro|default:'0.55'|unlocalize }}" data-padrao="0.55"></label>
-            <div class="acoes" style="gap:.4rem">
-              <button type="submit" name="acao" value="ajustar_capa" class="botao secundario pequeno">{% translate "Salvar o enquadramento" %}</button>
-              <button type="button" class="botao discreto pequeno" data-previa-padrao>{% translate "Voltar ao padrao" %}</button>
-            </div>
-          </div>
-        </form>
-      </details>
+      <p style="margin:.3rem 0"><a class="botao secundario pequeno" href="{% url 'social:editar_lamina' post.pk %}">{% translate "Editar a primeira lamina" %}</a>
+        <span class="ajuda">{% translate "foto, posicao e tamanho do texto, alinhamento, cor — arrastando, com o resultado na hora" %}</span></p>
     {% endif %}
   {% endif %}
 

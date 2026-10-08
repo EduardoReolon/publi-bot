@@ -1,0 +1,297 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Editar a primeira lamina" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block cabeca %}
+<style>
+  .editor-lamina { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+  .editor-lamina .quadro { flex: 0 0 auto; width: min(432px, 100%); position: sticky; top: 1rem; }
+  .editor-lamina canvas { width: 100%; height: auto; border-radius: .6rem; box-shadow: 0 6px 24px rgba(0,0,0,.25); touch-action: none; cursor: grab; display: block; }
+  .editor-lamina canvas.no-texto { cursor: move; }
+  .editor-lamina canvas:active { cursor: grabbing; }
+  .editor-lamina .controles { flex: 1 1 320px; min-width: 280px; }
+  .editor-lamina fieldset { border: 1px solid var(--borda); border-radius: .5rem; padding: .6rem .8rem; margin: 0 0 .8rem; }
+  .editor-lamina legend { font-weight: 600; padding: 0 .3rem; }
+  .editor-lamina .linha { display: grid; grid-template-columns: 9rem 1fr 3.2rem; gap: .5rem; align-items: center; margin: .3rem 0; }
+  .editor-lamina .linha output { font-variant-numeric: tabular-nums; text-align: right; color: var(--suave, #666); }
+  .editor-lamina .segmento { display: inline-flex; border: 1px solid var(--borda); border-radius: .4rem; overflow: hidden; }
+  .editor-lamina .segmento button { border: 0; border-radius: 0; background: transparent; padding: .3rem .7rem; cursor: pointer; color: inherit; }
+  .editor-lamina .segmento button[aria-pressed="true"] { background: var(--destaque, #2563eb); color: #fff; }
+  .editor-lamina textarea, .editor-lamina input[type=text] { width: 100%; }
+  .editor-lamina .dica { font-size: .85rem; color: var(--suave, #666); margin: .4rem 0 0; }
+</style>
+{% endblock %}
+{% block conteudo %}
+  <p><a href="{% url 'social:inicio' %}">← {% translate "Voltar aos posts" %}</a></p>
+  <h1>{% translate "Editar a primeira lamina" %}</h1>
+  <p class="sub">{% blocktranslate trimmed with c=post.destino %}{{ c }} · a capa do carrossel, a que para o dedo no feed.{% endblocktranslate %}</p>
+
+  <form method="post" class="editor-lamina" id="editor-lamina">
+    {% csrf_token %}
+    <input type="hidden" name="ajuste" id="campo-ajuste">
+    <div class="quadro">
+      <canvas id="lamina" width="{{ editor.largura }}" height="{{ editor.altura }}" tabindex="0" aria-label="{% translate 'Primeira lamina: arraste a foto ou o texto' %}"></canvas>
+      <p class="dica">{% translate "Arraste a foto para enquadrar e o texto para mudar de lugar. Roda do mouse (ou pinça): zoom. Setas do teclado: ajuste fino do texto." %}</p>
+      {% if not editor.tem_foto %}<p class="dica">{% translate "Sem foto: envie uma em “Trocar a foto”, na lista de posts." %}</p>{% endif %}
+    </div>
+
+    <div class="controles">
+      <fieldset>
+        <legend>{% translate "Texto" %}</legend>
+        <label>{% translate "Titulo" %}<input type="text" name="titulo" id="campo-titulo" maxlength="120" value="{{ editor.titulo }}"></label>
+        <label>{% translate "Frase (opcional)" %}<textarea name="texto" id="campo-texto" rows="2" maxlength="220">{{ editor.texto }}</textarea></label>
+        <div class="linha"><span>{% translate "Tamanho do titulo" %}</span><input type="range" data-chave="tamanho_titulo" step="1"><output></output></div>
+        <div class="linha"><span>{% translate "Tamanho da frase" %}</span><input type="range" data-chave="tamanho_texto" step="1"><output></output></div>
+        <div class="linha"><span>{% translate "Largura do bloco" %}</span><input type="range" data-chave="largura" step="0.01" data-pct><output></output></div>
+        <div class="linha"><span>{% translate "Alinhamento" %}</span>
+          <span class="segmento" role="group">
+            <button type="button" data-alinhar="esquerda" title="{% translate 'A esquerda' %}">⯇ {% translate "esq." %}</button>
+            <button type="button" data-alinhar="centro" title="{% translate 'Centro' %}">{% translate "centro" %}</button>
+            <button type="button" data-alinhar="direita" title="{% translate 'A direita' %}">{% translate "dir." %} ⯈</button>
+          </span><span></span></div>
+        <div class="linha"><span>{% translate "Cor do titulo" %}</span>
+          <span><input type="color" id="campo-cor" style="width:3rem; height:2rem; padding:0; vertical-align:middle">
+            <button type="button" class="botao discreto pequeno" id="cor-da-conta">{% translate "a da conta" %}</button></span><span></span></div>
+        <div class="acoes" style="gap:.4rem; margin-top:.4rem">
+          <button type="button" class="botao discreto pequeno" id="texto-embaixo">{% translate "Texto embaixo" %}</button>
+          <button type="button" class="botao discreto pequeno" id="texto-no-meio">{% translate "Texto no meio" %}</button>
+          <button type="button" class="botao discreto pequeno" id="texto-em-cima">{% translate "Texto em cima" %}</button>
+          <button type="button" class="botao discreto pequeno" id="centralizar">{% translate "Centralizar" %}</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{% translate "Foto" %}</legend>
+        <div class="linha"><span>{% translate "Zoom" %}</span><input type="range" data-chave="zoom" step="0.01" data-pct><output></output></div>
+        <div class="linha"><span>{% translate "Escurecer" %}</span><input type="range" data-chave="escuro" step="0.01" data-pct><output></output></div>
+        <label><input type="checkbox" id="campo-degrade"> {% translate "Em degrade (escurece mais embaixo, onde costuma ficar o texto)" %}</label>
+      </fieldset>
+
+      <div class="acoes" style="gap:.5rem">
+        <button type="submit" class="botao">{% translate "Salvar e refazer as imagens" %}</button>
+        <button type="button" class="botao discreto" id="desfazer">{% translate "Desfazer" %}</button>
+        <button type="button" class="botao discreto" id="padrao">{% translate "Voltar ao padrao" %}</button>
+        <a class="botao discreto" id="conferir" href="{% url 'social:previa_da_lamina' post.pk %}" data-ampliar>{% translate "Conferir como o servidor gera" %}</a>
+      </div>
+      <p class="dica">{% translate "O desenho aqui e feito no navegador com a mesma fonte e as mesmas contas do servidor. “Conferir” mostra a imagem que o servidor gera de fato, antes de salvar." %}</p>
+    </div>
+  </form>
+
+  {{ editor|json_script:"dados-do-editor" }}
+  <script>
+  (function () {
+    var D = JSON.parse(document.getElementById("dados-do-editor").textContent);
+    var W = D.largura, H = D.altura, M = D.margem;
+    var canvas = document.getElementById("lamina"), ctx = canvas.getContext("2d");
+    var estado = Object.assign({}, D.ajuste), historico = [];
+    var titulo = document.getElementById("campo-titulo"), texto = document.getElementById("campo-texto");
+    var foto = null, guia = false;
+    var FONTE = "LaminaPubliBot, DejaVu Sans, Verdana, sans-serif";
+
+    function limitar(chave, valor) {
+      var l = D.limites[chave];
+      return l ? Math.min(Math.max(valor, l[0]), l[1]) : valor;
+    }
+    function guardarHistorico() {
+      historico.push(JSON.stringify(estado));
+      if (historico.length > 50) historico.shift();
+    }
+
+    // Fontes e foto: as mesmas do servidor.
+    var carregando = [];
+    if (window.FontFace) {
+      [["{% url 'social:fonte_da_lamina' 'normal' %}", "400"], ["{% url 'social:fonte_da_lamina' 'negrito' %}", "700"]].forEach(function (f) {
+        var face = new FontFace("LaminaPubliBot", "url(" + f[0] + ")", { weight: f[1] });
+        carregando.push(face.load().then(function (ok) { document.fonts.add(ok); }, function () {}));
+      });
+    }
+    if (D.tem_foto) {
+      carregando.push(new Promise(function (pronto) {
+        var img = new Image();
+        img.onload = function () { foto = img; pronto(); };
+        img.onerror = pronto;
+        img.src = "{% url 'social:foto_da_lamina' post.pk %}";
+      }));
+    }
+
+    // A mesma conta de `laminas._quebrar`: palavra por palavra, ate a largura.
+    function quebrar(txt, fonte, largura) {
+      ctx.font = fonte;
+      var linhas = [], atual = "";
+      (txt || "").split(/\s+/).filter(Boolean).forEach(function (palavra) {
+        var teste = atual ? atual + " " + palavra : palavra;
+        if (ctx.measureText(teste).width <= largura) { atual = teste; }
+        else { if (atual) linhas.push(atual); atual = palavra; }
+      });
+      if (atual) linhas.push(atual);
+      return linhas;
+    }
+
+    function bloco() {
+      var largura = Math.round(W * estado.largura);
+      var x = Math.round(W * estado.texto_x);
+      var fT = "700 " + Math.round(estado.tamanho_titulo) + "px " + FONTE;
+      var fX = "400 " + Math.round(estado.tamanho_texto) + "px " + FONTE;
+      var lT = quebrar(titulo.value, fT, largura), lX = quebrar(texto.value, fX, largura);
+      var aT = Math.floor(estado.tamanho_titulo * 1.25), aX = Math.floor(estado.tamanho_texto * 1.25);
+      var altura = lT.length * aT + (lX.length ? D.espaco_do_texto + lX.length * aX : 0);
+      var y = estado.texto_y < 0 ? H - M * 2 - altura : Math.round(H * estado.texto_y);
+      return { x: x, y: y, largura: largura, altura: altura, lT: lT, lX: lX, fT: fT, fX: fX, aT: aT, aX: aX };
+    }
+
+    function linhas(lista, fonte, altura, cor, b, y) {
+      var peso = { esquerda: 0, centro: 0.5, direita: 1 }[estado.alinhamento] || 0;
+      ctx.font = fonte; ctx.fillStyle = cor; ctx.textBaseline = "alphabetic";
+      lista.forEach(function (linha) {
+        var medida = ctx.measureText(linha);
+        var sobe = medida.fontBoundingBoxAscent || parseInt(fonte.split(" ")[1], 10) * 0.93;
+        ctx.fillText(linha, b.x + Math.round((b.largura - medida.width) * peso), y + sobe);
+        y += altura;
+      });
+      return y;
+    }
+
+    function desenhar() {
+      ctx.fillStyle = D.cores.fundo; ctx.fillRect(0, 0, W, H);
+      if (foto) {
+        var escala = Math.max(W / foto.width, H / foto.height) * estado.zoom;
+        var dw = foto.width * escala, dh = foto.height * escala;
+        ctx.drawImage(foto, -(dw - W) * estado.x, -(dh - H) * estado.y, dw, dh);
+        if (estado.degrade) {
+          var g = ctx.createLinearGradient(0, 0, 0, H);
+          g.addColorStop(0, "rgba(0,0,0,0)");
+          g.addColorStop(1, "rgba(0,0,0," + Math.min(0.95, estado.escuro * 1.5) + ")");
+          ctx.fillStyle = g;
+        } else {
+          ctx.fillStyle = "rgba(0,0,0," + estado.escuro + ")";
+        }
+        ctx.fillRect(0, 0, W, H);
+      }
+      var b = bloco();
+      var y = linhas(b.lT, b.fT, b.aT, estado.cor_titulo || D.cores.texto, b, b.y);
+      if (b.lX.length) linhas(b.lX, b.fX, b.aX, D.cores.texto, b, y + D.espaco_do_texto);
+      // Rodape: a marca e o contador, como no servidor.
+      var pequena = "400 30px " + FONTE;
+      ctx.font = pequena; ctx.fillStyle = D.cores.destaque; ctx.textBaseline = "alphabetic";
+      var sobe = ctx.measureText("Ag").fontBoundingBoxAscent || 28;
+      ctx.fillText(D.marca, M, H - M + sobe);
+      var contador = "1/" + D.total;
+      ctx.fillStyle = D.cores.texto;
+      ctx.fillText(contador, W - M - ctx.measureText(contador).width, H - M + sobe);
+      if (arrasto && arrasto.modo === "texto") {
+        ctx.setLineDash([12, 10]); ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.7)";
+        ctx.strokeRect(b.x - 8, b.y - 8, b.largura + 16, b.altura + 16);
+        if (guia) { ctx.strokeStyle = "#38bdf8"; ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); }
+        ctx.setLineDash([]);
+      }
+      sincronizar();
+    }
+
+    // Controles <-> estado.
+    var faixas = document.querySelectorAll("input[type=range][data-chave]");
+    faixas.forEach(function (f) {
+      var l = D.limites[f.dataset.chave]; f.min = l[0]; f.max = l[1];
+      f.addEventListener("pointerdown", guardarHistorico);
+      f.addEventListener("input", function () { estado[f.dataset.chave] = parseFloat(f.value); desenhar(); });
+    });
+    function sincronizar() {
+      faixas.forEach(function (f) {
+        f.value = estado[f.dataset.chave];
+        var v = estado[f.dataset.chave];
+        f.nextElementSibling.textContent = f.hasAttribute("data-pct") ? Math.round(v * 100) + "%" : Math.round(v);
+      });
+      document.querySelectorAll("[data-alinhar]").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.dataset.alinhar === estado.alinhamento));
+      });
+      document.getElementById("campo-degrade").checked = !!estado.degrade;
+      document.getElementById("campo-cor").value = estado.cor_titulo || D.cores.texto;
+      document.getElementById("campo-ajuste").value = JSON.stringify(estado);
+      var dados = new URLSearchParams(estado);
+      dados.set("titulo", titulo.value); dados.set("texto", texto.value);
+      document.getElementById("conferir").href = "{% url 'social:previa_da_lamina' post.pk %}?" + dados.toString();
+    }
+    function mudar(fn) { return function () { guardarHistorico(); fn.apply(this, arguments); desenhar(); }; }
+    document.querySelectorAll("[data-alinhar]").forEach(function (b) {
+      b.addEventListener("click", mudar(function () { estado.alinhamento = b.dataset.alinhar; }));
+    });
+    document.getElementById("campo-degrade").addEventListener("change", mudar(function (e) { estado.degrade = e.target.checked ? 1 : 0; }));
+    document.getElementById("campo-cor").addEventListener("input", function (e) { estado.cor_titulo = e.target.value; desenhar(); });
+    document.getElementById("campo-cor").addEventListener("pointerdown", guardarHistorico);
+    document.getElementById("cor-da-conta").addEventListener("click", mudar(function () { estado.cor_titulo = ""; }));
+    titulo.addEventListener("input", desenhar); texto.addEventListener("input", desenhar);
+    document.getElementById("texto-embaixo").addEventListener("click", mudar(function () { estado.texto_y = -1; }));
+    document.getElementById("texto-no-meio").addEventListener("click", mudar(function () { estado.texto_y = limitar("texto_y", (H - bloco().altura) / 2 / H); }));
+    document.getElementById("texto-em-cima").addEventListener("click", mudar(function () { estado.texto_y = (M * 1.5) / H; }));
+    document.getElementById("centralizar").addEventListener("click", mudar(function () {
+      estado.texto_x = (1 - estado.largura) / 2; estado.alinhamento = "centro";
+    }));
+    document.getElementById("padrao").addEventListener("click", mudar(function () { estado = Object.assign({}, D.padrao); }));
+    document.getElementById("desfazer").addEventListener("click", function () {
+      if (historico.length) { estado = JSON.parse(historico.pop()); desenhar(); }
+    });
+
+    // Arrastar: no texto, move o bloco (com guia no centro); fora, a foto.
+    var arrasto = null, toques = {};
+    function ponto(e) {
+      var r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+    }
+    function noTexto(p) {
+      var b = bloco();
+      return p.x >= b.x - 20 && p.x <= b.x + b.largura + 20 && p.y >= b.y - 20 && p.y <= b.y + b.altura + 20;
+    }
+    canvas.addEventListener("pointerdown", function (e) {
+      toques[e.pointerId] = ponto(e);
+      canvas.setPointerCapture(e.pointerId);
+      guardarHistorico();
+      var p = ponto(e), b = bloco();
+      arrasto = noTexto(p) ? { modo: "texto", p: p, x: b.x, y: b.y } : { modo: "foto", p: p, x: estado.x, y: estado.y };
+      if (Object.keys(toques).length === 2) arrasto = { modo: "pinca", zoom: estado.zoom, d: distancia() };
+      desenhar();
+    });
+    function distancia() {
+      var t = Object.values(toques); return Math.hypot(t[0].x - t[1].x, t[0].y - t[1].y);
+    }
+    canvas.addEventListener("pointermove", function (e) {
+      if (!arrasto) { canvas.classList.toggle("no-texto", noTexto(ponto(e))); return; }
+      toques[e.pointerId] = ponto(e);
+      var p = ponto(e), dx = p.x - (arrasto.p ? arrasto.p.x : 0), dy = p.y - (arrasto.p ? arrasto.p.y : 0);
+      if (arrasto.modo === "pinca" && Object.keys(toques).length === 2) {
+        estado.zoom = limitar("zoom", arrasto.zoom * distancia() / arrasto.d);
+      } else if (arrasto.modo === "texto") {
+        var b = bloco(), x = arrasto.x + dx;
+        guia = Math.abs(x + b.largura / 2 - W / 2) < 18;
+        if (guia) x = (W - b.largura) / 2;
+        estado.texto_x = limitar("texto_x", Math.min(x / W, 1 - estado.largura));
+        estado.texto_y = limitar("texto_y", Math.max(0, (arrasto.y + dy) / H));
+      } else if (arrasto.modo === "foto" && foto) {
+        var escala = Math.max(W / foto.width, H / foto.height) * estado.zoom;
+        var sobraX = foto.width * escala - W, sobraY = foto.height * escala - H;
+        if (sobraX > 1) estado.x = limitar("x", arrasto.x - dx / sobraX);
+        if (sobraY > 1) estado.y = limitar("y", arrasto.y - dy / sobraY);
+      }
+      desenhar();
+    });
+    function soltar(e) { delete toques[e.pointerId]; arrasto = null; guia = false; desenhar(); }
+    canvas.addEventListener("pointerup", soltar);
+    canvas.addEventListener("pointercancel", soltar);
+    canvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      estado.zoom = limitar("zoom", estado.zoom * Math.exp(-e.deltaY * 0.0015));
+      desenhar();
+    }, { passive: false });
+    canvas.addEventListener("keydown", function (e) {
+      var passo = e.shiftKey ? 20 : 4, b = bloco();
+      var mov = { ArrowLeft: [-passo, 0], ArrowRight: [passo, 0], ArrowUp: [0, -passo], ArrowDown: [0, passo] }[e.key];
+      if (!mov) return;
+      e.preventDefault();
+      estado.texto_x = limitar("texto_x", Math.min((b.x + mov[0]) / W, 1 - estado.largura));
+      estado.texto_y = limitar("texto_y", Math.max(0, (b.y + mov[1]) / H));
+      desenhar();
+    });
+
+    desenhar();
+    Promise.all(carregando).then(desenhar);
+  })();
+  </script>
+{% endblock %}
