@@ -115,17 +115,17 @@
   {% endif %}
 
   {% if post.imagens %}
-    <div class="acoes" style="gap:.4rem">
+    <div class="acoes" style="gap:.4rem" data-galeria>
       {% for i in post.imagens %}
         {% if i.tipo == 'video' %}
           <video src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" controls preload="metadata" style="width:200px; border-radius:.4rem"></video>
           <a class="ajuda" href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" download>{% translate "baixar o video" %}</a>
         {% elif i.tipo == 'foto' %}
-          <a href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" target="_blank" rel="noopener noreferrer" download><img src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" alt="{% translate 'foto' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda)"></a>
+          <span style="display:inline-flex; flex-direction:column; align-items:center"><a href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" alt="{% translate 'foto' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda); cursor:zoom-in"></a><a class="ajuda" href="{% url 'social:midia_publica' post.chave_publica forloop.counter %}" download>{% translate "baixar" %}</a></span>
         {% elif post.destino.rede == 'instagram' %}
-          <a href="{% url 'social:imagem' post.chave_publica forloop.counter %}" target="_blank" rel="noopener noreferrer" download><img src="{% url 'social:imagem' post.chave_publica forloop.counter %}" alt="{% translate 'lamina' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda)"></a>
+          <span style="display:inline-flex; flex-direction:column; align-items:center"><a href="{% url 'social:imagem' post.chave_publica forloop.counter %}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{% url 'social:imagem' post.chave_publica forloop.counter %}" alt="{% translate 'lamina' %} {{ forloop.counter }}" style="width:120px; border-radius:.4rem; border:1px solid var(--borda); cursor:zoom-in"></a><a class="ajuda" href="{% url 'social:imagem' post.chave_publica forloop.counter %}" download>{% translate "baixar" %}</a></span>
         {% elif i.url %}
-          <a href="{{ i.url }}" target="_blank" rel="noopener noreferrer"><img src="{{ i.url }}" alt="{% translate 'capa' %}" style="width:180px; border-radius:.4rem; border:1px solid var(--borda)"></a>
+          <a href="{{ i.url }}" data-ampliar title="{% translate 'Ver maior' %}"><img src="{{ i.url }}" alt="{% translate 'capa' %}" style="width:180px; border-radius:.4rem; border:1px solid var(--borda)"></a>
         {% endif %}
       {% endfor %}
     </div>

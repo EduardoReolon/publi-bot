@@ -15,6 +15,7 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
+from django_tenants.utils import get_public_schema_name
 
 from apps.accounts.enderecos import url_do_tenant
 from apps.accounts.forms import SignupForm, criar_tenant_e_dono
@@ -38,16 +39,27 @@ def landing(request: HttpRequest) -> HttpResponse:
         # o subdominio nao e adivinhavel a partir do que a tela mostrava. O
         # tenant `acme` responde em `acme.publibot.localhost`, e nao em
         # `acme.localhost`, e nada na pagina dizia isso.
-        for vinculo in vinculos:
-            pronto = vinculo.tenant.status == Tenant.Status.ACTIVE
+        papeis = {v.tenant_id: (v.tenant, v.get_role_display()) for v in vinculos}
+        if request.user.is_superuser:
+            # O superusuario entra em todos os ambientes (o middleware ja deixa):
+            # a lista mostra todos, inclusive os em que ele nao tem vinculo.
+            for tenant in (
+                Tenant.objects.exclude(schema_name=get_public_schema_name())
+                .prefetch_related("domains")
+                .order_by("name")
+            ):
+                papeis.setdefault(tenant.pk, (tenant, _("superusuario")))
+            papeis = dict(sorted(papeis.items(), key=lambda item: item[1][0].name.lower()))
+        for tenant, papel in papeis.values():
+            pronto = tenant.status == Tenant.Status.ACTIVE
             ambientes.append(
                 {
-                    "tenant": vinculo.tenant,
-                    "papel": vinculo.get_role_display(),
+                    "tenant": tenant,
+                    "papel": papel,
                     "pronto": pronto,
-                    "url": url_do_tenant(request, vinculo.tenant)
+                    "url": url_do_tenant(request, tenant)
                     if pronto
-                    else reverse("accounts:provisioning", args=[vinculo.tenant.slug]),
+                    else reverse("accounts:provisioning", args=[tenant.slug]),
                 }
             )
     return render(
@@ -75,10 +87,11 @@ def _contato_comercial() -> dict:
 
 def signup(request: HttpRequest) -> HttpResponse:
     """Cadastro autonomo de um novo tenant."""
+    logado = request.user if request.user.is_authenticated else None
     if request.method != "POST":
-        return render(request, "accounts/signup.html", {"form": SignupForm()})
+        return render(request, "accounts/signup.html", {"form": SignupForm(usuario=logado)})
 
-    form = SignupForm(request.POST)
+    form = SignupForm(request.POST, usuario=logado)
     if not form.is_valid():
         return render(request, "accounts/signup.html", {"form": form}, status=400)
 
@@ -91,9 +104,10 @@ def signup(request: HttpRequest) -> HttpResponse:
         tenant, usuario = criar_tenant_e_dono(
             subdomain=dados["subdomain"],
             organization=dados["organization"],
-            full_name=dados["full_name"],
-            email=dados["email"],
-            senha=dados["password1"],
+            full_name=dados.get("full_name", ""),
+            email=dados.get("email", ""),
+            senha=dados.get("password1", ""),
+            usuario=logado,
             root_domain=settings.ROOT_DOMAIN,
         )
         # `on_commit` garante que a task so seja despachada depois do COMMIT.
@@ -102,7 +116,8 @@ def signup(request: HttpRequest) -> HttpResponse:
         # de forma intermitente e e desagradavel de diagnosticar.
         transaction.on_commit(lambda: despachar_provisionamento(str(tenant.pk), tenant.schema_name))
 
-    login(request, usuario, backend="django.contrib.auth.backends.ModelBackend")
+    if logado is None:
+        login(request, usuario, backend="django.contrib.auth.backends.ModelBackend")
     return redirect(reverse("accounts:provisioning", args=[tenant.slug]))
 
 

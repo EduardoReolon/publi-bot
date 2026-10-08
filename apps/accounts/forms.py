@@ -101,6 +101,17 @@ class SignupForm(forms.Form):
         label=_("Confirme a senha"), widget=forms.PasswordInput, strip=False
     )
 
+    # Quem ja esta logado cria o ambiente com a propria conta: sem nome, e-mail
+    # e senha de novo (o dono do PubliBot nao precisa de um usuario por cliente).
+    CAMPOS_DA_CONTA = ("full_name", "email", "password1", "password2")
+
+    def __init__(self, *args, usuario=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.usuario = usuario if usuario is not None and usuario.is_authenticated else None
+        if self.usuario is not None:
+            for campo in self.CAMPOS_DA_CONTA:
+                del self.fields[campo]
+
     def clean_subdomain(self) -> str:
         valor = self.cleaned_data["subdomain"].strip().lower()
 
@@ -134,6 +145,8 @@ class SignupForm(forms.Form):
 
     def clean(self):
         dados = super().clean()
+        if self.usuario is not None:
+            return dados
         senha1, senha2 = dados.get("password1"), dados.get("password2")
 
         if senha1 and senha2 and senha1 != senha2:
@@ -167,9 +180,17 @@ def dominio_do_tenant(subdomain: str, root_domain: str) -> str:
 
 
 def criar_tenant_e_dono(
-    *, subdomain: str, organization: str, full_name: str, email: str, senha: str, root_domain: str
+    *,
+    subdomain: str,
+    organization: str,
+    root_domain: str,
+    full_name: str = "",
+    email: str = "",
+    senha: str = "",
+    usuario: User | None = None,
 ) -> tuple[Tenant, User]:
-    """Cria Tenant, Domain, User e o vinculo, tudo no schema public.
+    """Cria Tenant, Domain, User e o vinculo, tudo no schema public. Com
+    `usuario` (quem ja esta logado), nao cria conta: ele vira o dono.
 
     Nao cria o schema fisico: isso e trabalho da task de provisionamento.
     """
@@ -187,9 +208,10 @@ def criar_tenant_e_dono(
         domain=dominio_do_tenant(subdomain, root_domain), tenant=tenant, is_primary=True
     )
 
-    usuario = User.objects.create_user(
-        email=email, password=senha, full_name=full_name, role=User.Role.OWNER
-    )
+    if usuario is None:
+        usuario = User.objects.create_user(
+            email=email, password=senha, full_name=full_name, role=User.Role.OWNER
+        )
     TenantMembership.objects.create(tenant=tenant, user=usuario, role=User.Role.OWNER)
 
     return tenant, usuario

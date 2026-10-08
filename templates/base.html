@@ -512,6 +512,57 @@
       selecionar();
     }
   });
+
+  /* Ver imagens grandes sem baixar: <a href="imagem" data-ampliar>, dentro de
+     um <div data-galeria> para passar entre elas (setas na tela ou do teclado).
+     Clicar fora, no X ou Esc fecha. */
+  var galeria = [], atual = 0;
+  function mostrar(n) {
+    var caixa = document.getElementById("ampliada");
+    atual = (n + galeria.length) % galeria.length;
+    var link = galeria[atual];
+    var img = caixa.querySelector("img");
+    img.src = link.getAttribute("href");
+    img.alt = (link.querySelector("img") || {}).alt || "";
+    caixa.querySelector("[data-contagem]").textContent = galeria.length > 1 ? (atual + 1) + " / " + galeria.length : "";
+    caixa.querySelectorAll("[data-passo]").forEach(function (b) { b.hidden = galeria.length < 2; });
+  }
+  function caixaAmpliada() {
+    var caixa = document.getElementById("ampliada");
+    if (caixa) return caixa;
+    caixa = document.createElement("dialog");
+    caixa.id = "ampliada";
+    caixa.style.cssText = "padding:0;border:0;background:transparent;max-width:98vw;max-height:98vh";
+    caixa.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.3rem">' +
+      '<span data-contagem style="color:#fff;font-weight:600;text-shadow:0 1px 2px #000"></span>' +
+      '<form method="dialog"><button class="botao discreto pequeno" aria-label="Fechar">✕</button></form></div>' +
+      '<div style="display:flex;align-items:center;gap:.4rem">' +
+      '<button type="button" class="botao secundario" data-passo="-1" aria-label="Anterior">‹</button>' +
+      '<img alt="" style="display:block;max-width:86vw;max-height:86vh;border-radius:.4rem">' +
+      '<button type="button" class="botao secundario" data-passo="1" aria-label="Proxima">›</button></div>';
+    caixa.addEventListener("click", function (e) {
+      if (e.target === caixa) { caixa.close(); return; }
+      var passo = e.target.closest && e.target.closest("[data-passo]");
+      if (passo) mostrar(atual + parseInt(passo.getAttribute("data-passo"), 10));
+    });
+    caixa.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight") { e.preventDefault(); mostrar(atual + 1); }
+      if (e.key === "ArrowLeft") { e.preventDefault(); mostrar(atual - 1); }
+    });
+    document.body.appendChild(caixa);
+    return caixa;
+  }
+  document.addEventListener("click", function (evento) {
+    var link = evento.target.closest && evento.target.closest("a[data-ampliar]");
+    if (!link) return;
+    evento.preventDefault();
+    var grupo = link.closest("[data-galeria]");
+    galeria = grupo ? Array.prototype.slice.call(grupo.querySelectorAll("a[data-ampliar]")) : [link];
+    var caixa = caixaAmpliada();
+    mostrar(galeria.indexOf(link));
+    caixa.showModal();
+  });
 </script>
 </body>
 </html>
