@@ -152,7 +152,8 @@ def test_painel_na_tela_de_pautas(ambiente, monkeypatch):  # noqa: F811
     ).content.decode()
     assert "2 paginas de veiculos e sites" in html and "1 videos" in html
     assert "ainda nao sustenta" in html and "nada novo encontrado" in html
-    assert "1 aguardando conferencia" in html and "Verificar referencias de novo" in html
+    assert "1 sugestao(oes) para decidir" in html and "Verificar referencias de novo" in html
+    assert "Decidir as fontes sugeridas" in html
     assert "Ignorar falta de artigos" in html
 
     _acervo(monkeypatch, artigos=3, suficiente=True)
@@ -371,3 +372,44 @@ def test_gerar_sem_recarregar_responde_json_sem_mensagem(
     assert "geracao iniciada" not in pagina
     tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants"))
     assert "data-em-segundo-plano" in tela.content.decode()
+
+
+def test_aprovada_esperando_curadoria_leva_aos_documentos(ambiente):  # noqa: F811
+    from apps.knowledge.models import Document, DocumentCategory
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(
+        title="Retencao",
+        busca_de_fontes={"acervo": {"pagina": 1, "video": 0, "artigo": 0, "documento": 0}},
+    )
+    categoria = DocumentCategory.objects.first() or DocumentCategory.objects.create(
+        name="Veiculos", slug="veiculos"
+    )
+    documento = Document.objects.create(
+        category=categoria,
+        file_sha256="d" * 64,
+        title="Pagina aprovada",
+        status=Document.Status.PENDING_CURATION,
+    )
+    CandidatoDeFonte.objects.create(
+        url="https://site.com/p",
+        titulo="Pagina aprovada",
+        pauta=pauta,
+        situacao=CandidatoDeFonte.Situacao.APROVADO,
+        documento=documento,
+    )
+    html = client.get(
+        reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    documentos = reverse("knowledge:documentos", urlconf="core.urls_tenants")
+    assert "1 aprovada(s), documento esperando curadoria" in html
+    assert f"{documentos}?pauta={pauta.pk}" in html and "Curar os documentos aprovados" in html
+    assert "Decidir as fontes sugeridas" not in html
+
+    lista = client.get(f"{documentos}?pauta={pauta.pk}").content.decode()
+    assert "esperam a curadoria" in lista and "Pagina aprovada" in lista
+    sugeridas = client.get(
+        reverse("knowledge:fontes_sugeridas", urlconf="core.urls_tenants") + f"?pauta={pauta.pk}"
+    ).content.decode()
+    assert "Nenhuma fonte sugerida esperando decisao" in sugeridas
+    assert "ja aprovada espera a curadoria do documento" in sugeridas

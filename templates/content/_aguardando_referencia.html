@@ -1,3 +1,3 @@
-{% load i18n %}{% if a.conferencia %}<span class="selo alerta">{{ a.conferencia }} {% translate "aguardando conferencia" %}</span>{% endif %}
+{% load i18n %}{% if a.conferencia %}<a class="selo alerta" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}" title="{% translate 'Sugestoes ainda nao decididas: aprovar ou recusar, em Fontes sugeridas' %}">{{ a.conferencia }} {% translate "sugestao(oes) para decidir" %}</a>{% endif %}
 {% if a.arquivo %}<a class="selo alerta" href="{% url 'knowledge:fontes_sugeridas' %}#aguardando-pdf" title="{% translate 'Aprovado, mas sem PDF (ou audio) para ler: envie o arquivo em Fontes sugeridas' %}">{{ a.arquivo }} {% translate "aguardando o arquivo (PDF)" %}</a>{% endif %}
-{% if a.curadoria %}<span class="selo alerta">{{ a.curadoria }} {% translate "aguardando curadoria" %}</span>{% endif %}
+{% if a.curadoria %}<a class="selo alerta" href="{% url 'knowledge:documentos' %}?pauta={{ pauta.pk }}" title="{% translate 'Ja aprovadas: o documento esta no acervo e falta conferir os blocos, em Documentos' %}">{{ a.curadoria }} {% translate "aprovada(s), documento esperando curadoria" %}</a>{% endif %}
