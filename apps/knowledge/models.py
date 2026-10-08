@@ -782,6 +782,10 @@ class CandidatoDeFonte(models.Model):
         PENDENTE = "pendente", _("Aguardando curadoria")
         APROVADO = "aprovado", _("Aprovado")
         RECUSADO = "recusado", _("Recusado")
+        # Modo investigativo: nao serve para a pauta (a frente) em que apareceu,
+        # mas nao e lixo. Nao volta nela; outra pauta que a ache a recebe
+        # (`fontes_web.reaproveitar`).
+        FORA_DA_PAUTA = "fora", _("Nao serve para a pauta dela")
         FALHOU = "falhou", _("Nao foi possivel buscar")
         # Video aprovado cuja legenda nao veio (sem legenda, ou o YouTube
         # bloqueou este servidor): espera a pessoa enviar o audio.

@@ -280,9 +280,11 @@ def _pendentes() -> int:
 
 def registrar(trabalho: Trabalho, *, consulta: str, origem: str, pauta=None):
     """O trabalho como candidato a fonte. None se ja conhecido ou bloqueado."""
-    from apps.knowledge.fontes_web import _ja_conhecida, bloqueada
+    from apps.knowledge.fontes_web import _ja_conhecida, bloqueada, reaproveitar
 
     url = trabalho.url[:500]
+    if url and (reaproveitado := reaproveitar(url, pauta)) is not None:
+        return reaproveitado
     if not url or _ja_conhecida(url) or bloqueada(trabalho.pagina_url or url):
         return None
     if trabalho.metricas.get("retratado"):

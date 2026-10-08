@@ -88,7 +88,7 @@ Responda com estas partes:
        {"fonte": "F4", "o_que": "o dado que falta, em poucas palavras"}
      ],
      "sugestoes_de_curadoria": [
-       {"fonte": "F5", "acao": "aprovar | recusar | discurso", "motivo": "..."},
+       {"fonte": "F5", "acao": "aprovar | recusar | fora_da_pauta | discurso", "motivo": "..."},
        "... uma para CADA fonte ainda nao curada"
      ]
    }
@@ -103,9 +103,11 @@ Responda com estas partes:
 
    "sugestoes_de_curadoria" e a FAXINA COMPLETA: uma sugestao para CADA fonte
    marcada "ainda nao curada", sem pular nenhuma. Opine em todas:
-   - recusar: lixo, duplicata (diga de qual [Fn]), fonte velha que outra mais
-     nova substitui, fora do escopo da pauta, pagina sem conteudo (so menu,
-     propaganda, chamada para outro link);
+   - recusar: LIXO, que nao serve para nenhuma pauta (nunca mais e sugerida):
+     duplicata (diga de qual [Fn]), pagina sem conteudo (so menu, propaganda,
+     chamada para outro link), fonte velha que outra mais nova substitui;
+   - fora_da_pauta: material bom, mas que nao serve para ESTA pauta ou frente
+     (fora do escopo, outro recorte): sai daqui e fica livre para outras pautas;
    - discurso: o "o que se diz" (materia, post, video de opiniao), mesmo que a
      frente dela seja de evidencia;
    - aprovar: evidencia que serve (dado, estudo, relatorio, documento oficial),
@@ -317,7 +319,7 @@ class VereditoInvalido(ValueError):
 
 
 _BLOCO_JSON = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-ACOES_DE_CURADORIA = {"aprovar", "recusar", "discurso"}
+ACOES_DE_CURADORIA = {"aprovar", "recusar", "fora_da_pauta", "discurso"}
 
 
 def ler_resposta(texto: str) -> tuple[str, dict]:
@@ -495,15 +497,20 @@ def pedidos_de_pdf_da_pauta(pauta) -> list[tuple]:
 
 
 def aplicar_sugestoes(pauta, *, por=None) -> dict:
-    """As sugestoes de curadoria do veredito, aplicadas. Recusar e discurso,
-    sempre; aprovar, so quando a IA viu o texto (nao so o resumo da busca) —
+    """As sugestoes de curadoria do veredito, aplicadas. Recusar, fora da pauta
+    e discurso, sempre; aprovar, so quando a IA viu o texto (nao so o resumo da busca) —
     as outras continuam como sugestao. Estudo sem PDF aberto e video sem
     legenda seguem o caminho de sempre (esperando o arquivo, na frente)."""
-    from apps.knowledge.fontes_web import aprovar, aprovar_como_discurso, recusar
+    from apps.knowledge.fontes_web import (
+        aprovar,
+        aprovar_como_discurso,
+        dispensar_da_pauta,
+        recusar,
+    )
     from apps.knowledge.models import CandidatoDeFonte
     from apps.knowledge.perfis import categoria_da_natureza
 
-    feitos = {"aprovadas": 0, "recusadas": 0, "discurso": 0, "ficaram": 0}
+    feitos = {"aprovadas": 0, "recusadas": 0, "fora": 0, "discurso": 0, "ficaram": 0}
     for candidato in CandidatoDeFonte.objects.filter(
         pauta=pauta,
         situacao=CandidatoDeFonte.Situacao.PENDENTE,
@@ -513,6 +520,9 @@ def aplicar_sugestoes(pauta, *, por=None) -> dict:
         if acao == "recusar":
             recusar(candidato, por=por, motivo="sugestao do veredito da outra IA")
             feitos["recusadas"] += 1
+        elif acao == "fora_da_pauta":
+            dispensar_da_pauta(candidato, por=por, motivo="sugestao do veredito da outra IA")
+            feitos["fora"] += 1
         elif acao == "discurso":
             aprovar_como_discurso(candidato, por=por)
             feitos["discurso"] += 1

@@ -365,12 +365,17 @@ def _marcar(candidatos: list, frente: dict) -> int:
 
 def _links_colados(urls: list[str], pauta, *, discurso: bool, do_autor=()) -> list:
     """Os links que a pessoa mandou, como sugestao da frente deles."""
-    from apps.knowledge.fontes_web import _ja_conhecida, normalizar_caminho
+    from apps.knowledge.fontes_web import _ja_conhecida, normalizar_caminho, reaproveitar
     from apps.knowledge.models import CandidatoDeFonte
     from apps.knowledge.videos import tratar_como_video
 
     novos = []
     for url in urls:
+        if (reaproveitado := reaproveitar(url, pauta)) is not None:
+            reaproveitado.papel = CandidatoDeFonte.Papel.DISCURSO if discurso else ""
+            reaproveitado.save(update_fields=["papel"])
+            novos.append(reaproveitado)
+            continue
         if _ja_conhecida(url):
             continue
         novos.append(

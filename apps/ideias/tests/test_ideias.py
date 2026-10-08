@@ -814,3 +814,55 @@ def test_sugestoes_aplicadas_e_pedidos_de_pdf(ambiente, modelo, buscador, monkey
     trechos = referencias.trechos_da_pauta(pauta)
     assert len(trechos) == 2 and pedidas[1]["documentos"] == [documento.pk]
     assert pedidas[1]["consulta"].startswith("o valor desperdicado")
+
+
+@pytest.mark.django_db
+def test_nao_serve_para_esta_pauta_libera_para_as_outras(ambiente, modelo, buscador, monkeypatch):
+    from apps.knowledge.fontes_web import _buscar_paginas
+    from apps.radar.provedores import ItemDeBusca, ResultadoDeBusca
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    monkeypatch.setattr("apps.knowledge.tasks.verificar_legendas_da_pauta.delay", lambda pk: None)
+    client.post(reverse("ideias:inicio", urlconf=U), {"texto": "Falta mao de obra para IA?"})
+    tasks.processar_ideia(str(Ideia.objects.get().pk))
+    pauta = Ideia.objects.get().pauta
+    candidato = CandidatoDeFonte.objects.filter(pauta=pauta, papel="").first()
+    url_da_pauta = reverse("content:pauta", args=[pauta.pk], urlconf=U)
+    tela = client.get(url_da_pauta).content.decode()
+    assert "Nao serve para esta pauta" in tela and "Recusar de vez (lixo)" in tela
+
+    client.post(
+        reverse("knowledge:decidir_candidato", args=[candidato.pk], urlconf=U),
+        {"decisao": "fora_da_pauta", "voltar": url_da_pauta},
+    )
+    candidato.refresh_from_db()
+    assert candidato.situacao == CandidatoDeFonte.Situacao.FORA_DA_PAUTA
+    assert "1 fora desta pauta" in client.get(url_da_pauta).content.decode()
+
+    def achar(consulta, finalidade=None):
+        return ResultadoDeBusca(
+            provedor="teste", resultados=[ItemDeBusca(url=candidato.url, titulo="Mesma pagina")]
+        )
+
+    monkeypatch.setattr("apps.radar.provedores.buscar", achar)
+    # Na mesma pauta, nao volta.
+    assert _buscar_paginas(pauta, ["x"], 3) == []
+    # Outra pauta que a ache recebe a sugestao.
+    outra = Topic.objects.create(title="Orcamento de projetos de IA")
+    [recebida] = _buscar_paginas(outra, ["x"], 3)
+    recebida.refresh_from_db()
+    assert recebida.pk == candidato.pk and recebida.pauta == outra
+    assert recebida.situacao == CandidatoDeFonte.Situacao.PENDENTE
+    assert "frente" not in recebida.metricas and str(pauta.pk) in recebida.metricas["fora_de"]
+
+    # O veredito: "fora_da_pauta" e diferente de "recusar" (lixo, global).
+    from apps.ideias import veredito
+
+    outro = CandidatoDeFonte.objects.filter(pauta=pauta, situacao="pendente").first()
+    outro.metricas = {**outro.metricas, "sugestao_da_ia": {"acao": "fora_da_pauta", "motivo": "x"}}
+    outro.save()
+    assert veredito.aplicar_sugestoes(pauta)["fora"] == 1
+    outro.refresh_from_db()
+    assert outro.situacao == CandidatoDeFonte.Situacao.FORA_DA_PAUTA
+    assert "fora_da_pauta" in veredito.INSTRUCOES

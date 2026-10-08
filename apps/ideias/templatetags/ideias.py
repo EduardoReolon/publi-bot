@@ -24,6 +24,7 @@ def frentes_da_pauta(pauta) -> dict:
             "falharam": [],
             "aprovadas": [],
             "recusadas": 0,
+            "fora": 0,
         }
         for n, f in enumerate((getattr(pauta, "debate", None) or {}).get("frentes") or [], 1)
     ]
@@ -44,6 +45,8 @@ def frentes_da_pauta(pauta) -> dict:
                 total_esperando += 1
             elif candidato.situacao == CandidatoDeFonte.Situacao.RECUSADO:
                 frente["recusadas"] += 1
+            elif candidato.situacao == CandidatoDeFonte.Situacao.FORA_DA_PAUTA:
+                frente["fora"] += 1
             elif candidato.situacao in (
                 CandidatoDeFonte.Situacao.AGUARDANDO_AUDIO,
                 CandidatoDeFonte.Situacao.AGUARDANDO_PDF,
