@@ -159,14 +159,49 @@ def basta_o_curado(trechos, *, por_escolha: bool = False) -> bool:
     return len(documentos) >= MINIMO_DE_DOCUMENTOS_CURADOS and sustenta(curados)
 
 
-def a_curar(trechos, *, por_escolha: bool = False) -> list:
-    """O que a geracao pede para curar: nada, se o curado ja basta; senao, as
-    primeiras nao curadas (poucas de uma vez)."""
+def da_pauta(pauta) -> set:
+    """Os documentos que as buscas DESTA pauta trouxeram (fontes aprovadas nela)."""
+    from apps.knowledge.models import Document
+
+    return set(Document.objects.filter(candidatos__pauta=pauta).values_list("pk", flat=True))
+
+
+def a_curar(trechos, pauta=None, *, por_escolha: bool = False) -> list:
+    """O que a geracao pede para curar, poucas de uma vez:
+
+    - nada, se as curadas ja bastam (o minimo, ou qualquer quantidade quando a
+      pessoa escolheu "so com as curadas");
+    - primeiro as que a busca DESTA pauta trouxe (um conjunto que acaba);
+    - as nao curadas vindas de outras pautas so sao pedidas quando nenhuma
+      curada sustenta a pauta — senao ficam de fora, e a busca nao fica
+      puxando outra a cada uma que sai.
+    """
     from apps.knowledge.provisorias import por_curar
 
     if basta_o_curado(trechos, por_escolha=por_escolha):
         return []
-    return por_curar(trechos)[:POR_CURAR_DE_UMA_VEZ]
+    faltam = por_curar(trechos)
+    if pauta is not None:
+        proprias = da_pauta(pauta)
+        desta = [d for d in faltam if d.pk in proprias]
+        if desta:
+            return desta[:POR_CURAR_DE_UMA_VEZ]
+        if sustenta(so_os_curados(trechos)):
+            return []
+    return faltam[:POR_CURAR_DE_UMA_VEZ]
+
+
+def na_fila(pauta) -> int:
+    """Quantos documentos trazidos por esta pauta ainda esperam curadoria (fora
+    os tirados dela): o fim da lista "Para gerar, cure estas fontes"."""
+    from apps.knowledge.models import Document
+
+    return (
+        Document.objects.filter(candidatos__pauta=pauta, status__in=_EM_CURADORIA)
+        .exclude(pk__in=fora_da_pauta(pauta))
+        .distinct()
+        .count()
+    )
 
 
 def sustenta(trechos) -> bool:
@@ -216,9 +251,12 @@ def no_acervo(pauta) -> dict:
     contagem["curadas_sustentam"] = sustenta(so_os_curados(usados))
     contagem["so_curadas"] = basta_o_curado(usados, por_escolha=escolha)
     contagem["por_escolha"] = escolha
+    contagem["curadas"] = len({_chunk(t).document_id for t in so_os_curados(usados)})
+    contagem["minimo_de_curadas"] = MINIMO_DE_DOCUMENTOS_CURADOS
+    contagem["na_fila"] = na_fila(pauta)
     contagem["por_curar"] = [
         {"id": str(d.pk), "titulo": (d.title or d.nome_do_arquivo)[:200]}
-        for d in a_curar(usados, por_escolha=escolha)
+        for d in a_curar(usados, pauta, por_escolha=escolha)
     ]
     contagem["em"] = timezone.now().isoformat()
     return contagem

@@ -558,6 +558,10 @@ def test_gerar_so_com_as_ja_curadas(ambiente, monkeypatch):  # noqa: F811
     docs = _documentos(S.EMBEDDED, *[S.PENDING_CURATION] * 4)
     _acervo_falso(monkeypatch, docs)
     pauta = Topic.objects.create(title="Pauta com uma curada")
+    for n, documento in enumerate(docs[1:]):
+        CandidatoDeFonte.objects.create(
+            url=f"https://exemplo.org/{n}", titulo=f"Achada {n}", pauta=pauta, documento=documento
+        )
     with pytest.raises(FontesPorCurar):
         fontes_da_pauta(pauta)
 
@@ -577,3 +581,31 @@ def test_gerar_so_com_as_ja_curadas(ambiente, monkeypatch):  # noqa: F811
     )
     pauta.refresh_from_db()
     assert pauta.busca_de_fontes["acervo"]["por_curar"]
+
+
+def test_so_pede_as_desta_pauta_quando_ha_curada(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.services import FontesPorCurar, fontes_da_pauta
+    from apps.knowledge.models import Document
+
+    S = Document.Status
+    docs = _documentos(S.EMBEDDED, S.PENDING_CURATION, S.PENDING_CURATION, S.PENDING_CURATION)
+    _acervo_falso(monkeypatch, docs)
+    pauta = Topic.objects.create(title="Pauta investigada")
+    CandidatoDeFonte.objects.create(
+        url="https://exemplo.org/desta",
+        titulo="Desta pauta",
+        pauta=pauta,
+        documento=docs[2],
+        situacao=CandidatoDeFonte.Situacao.APROVADO,
+    )
+    acervo = referencias.conferir(pauta)
+    assert [d["id"] for d in acervo["por_curar"]] == [str(docs[2].pk)]
+    assert acervo["na_fila"] == 1 and acervo["curadas"] == 1
+    with pytest.raises(FontesPorCurar):
+        fontes_da_pauta(pauta)
+
+    # Curada a desta pauta, as de outras ficam de fora: nada mais a curar.
+    Document.objects.filter(pk=docs[2].pk).update(status=S.EMBEDDED)
+    docs[2].status = S.EMBEDDED
+    assert referencias.conferir(pauta)["por_curar"] == []
+    assert {t.chunk.document_id for t in fontes_da_pauta(pauta)} == {docs[0].pk, docs[2].pk}

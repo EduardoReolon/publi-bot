@@ -25,7 +25,9 @@
     {% if r.acervo.por_curar %}
       <div class="aviso espera" style="margin:.3rem 0">
         <strong>{% translate "Para gerar, cure estas fontes" %}</strong>
-        <span class="ajuda">{% translate "(no maximo 3 por vez; quando as curadas bastarem, a lista some)" %}</span>
+        <div class="ajuda">{% blocktranslate trimmed with c=r.acervo.curadas|default:0 m=r.acervo.minimo_de_curadas|default:3 %}Fontes curadas que o artigo usaria: <strong>{{ c }} de {{ m }}</strong>. Com {{ m }}, a lista some e o artigo sai so com elas.{% endblocktranslate %}
+          {% if r.acervo.na_fila %}{% blocktranslate trimmed count n=r.acervo.na_fila %}Desta pauta, falta {{ n }} documento aprovado por curar (a lista nao passa disso; as de outras pautas so entram se nenhuma curada sustentar).{% plural %}Desta pauta, faltam {{ n }} documentos aprovados por curar (a lista nao passa disso; as de outras pautas so entram se nenhuma curada sustentar).{% endblocktranslate %}{% endif %}
+          {% translate "No maximo 3 por vez." %}</div>
         <ul>{% for d in r.acervo.por_curar %}<li><a href="{% url 'knowledge:curar' d.id %}">{{ d.titulo }}</a>
           <form method="post" action="{% url 'content:nao_usar_na_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
             <input type="hidden" name="documento" value="{{ d.id }}">
