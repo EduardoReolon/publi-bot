@@ -15,16 +15,29 @@
       {% if r.acervo.suficiente %}<span class="selo ok">{% translate "sustenta a pauta" %}</span>{% else %}<span class="selo ruim">{% translate "ainda nao sustenta" %}</span>{% endif %}
       {% if r.acervo.nao_curados %}<span class="ajuda">({% blocktranslate trimmed count n=r.acervo.nao_curados %}{{ n }} ainda nao curado{% plural %}{{ n }} ainda nao curados{% endblocktranslate %})</span>{% endif %}
     </div>
+    {% if r.acervo.so_curadas %}
+      <div class="ajuda" style="margin:.3rem 0"><span class="selo ok">{% translate "gera so com as curadas" %}</span>
+        {% if r.acervo.por_escolha %}{% translate "Voce encerrou a curadoria desta pauta: as nao curadas que a busca trouxer ficam de fora." %}
+          <form method="post" action="{% url 'content:so_com_as_curadas' pauta.pk %}" style="display:inline">{% csrf_token %}<input type="hidden" name="desfazer" value="1"><button type="submit" class="botao discreto pequeno">{% translate "Voltar a pedir curadoria" %}</button></form>
+        {% else %}{% translate "As fontes ja curadas sustentam a pauta: as nao curadas ficam de fora, sem travar a geracao." %}{% endif %}
+      </div>
+    {% endif %}
     {% if r.acervo.por_curar %}
       <div class="aviso espera" style="margin:.3rem 0">
         <strong>{% translate "Para gerar, cure estas fontes" %}</strong>
-        <span class="ajuda">{% translate "(sao as que o artigo usaria; recusar uma faz a pauta procurar outra)" %}</span>
+        <span class="ajuda">{% translate "(no maximo 3 por vez; quando as curadas bastarem, a lista some)" %}</span>
         <ul>{% for d in r.acervo.por_curar %}<li><a href="{% url 'knowledge:curar' d.id %}">{{ d.titulo }}</a>
           <form method="post" action="{% url 'content:nao_usar_na_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
             <input type="hidden" name="documento" value="{{ d.id }}">
             <button type="submit" class="botao discreto pequeno" title="{% translate 'Sem curar nem recusar: a fonte continua no acervo para as outras pautas, so este artigo nao a usa. A busca puxa a proxima.' %}">{% translate "Nao usar nesta pauta" %}</button>
           </form></li>{% endfor %}</ul>
-        <div class="ajuda">{% translate "Curar: abra o titulo. Ja tem material suficiente e nao quer analisar? “Nao usar nesta pauta” tira a fonte so deste artigo (ela continua no acervo); a busca pode puxar outra no lugar." %}</div>
+        <div class="ajuda">{% translate "Curar: abra o titulo. “Nao usar nesta pauta” tira a fonte so deste artigo (ela continua no acervo), mas a busca pode puxar outra no lugar." %}</div>
+        {% if r.acervo.curadas_sustentam %}
+          <form method="post" action="{% url 'content:so_com_as_curadas' pauta.pk %}" style="margin-top:.3rem">{% csrf_token %}
+            <button type="submit" class="botao secundario pequeno">{% translate "Gerar so com as ja curadas" %}</button>
+            <span class="ajuda">{% translate "Ja tem material suficiente? Encerra a curadoria desta pauta: a busca para de puxar outras." %}</span>
+          </form>
+        {% endif %}
       </div>
     {% endif %}
     {% if r.fora %}

@@ -405,6 +405,30 @@ def nao_usar_na_pauta(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
+def so_com_as_curadas(request: HttpRequest, pk) -> HttpResponse:
+    """Encerra a curadoria desta pauta: o artigo sai so com as fontes ja curadas,
+    e a busca para de pedir as proximas (ou desfaz, com `desfazer`)."""
+    from apps.knowledge.referencias import fixar_nas_curadas
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    ligar = not request.POST.get("desfazer")
+    acervo = fixar_nas_curadas(pauta, ligar=ligar)
+    if not ligar:
+        messages.info(request, _("A pauta volta a pedir curadoria das fontes que a busca trouxer."))
+    elif acervo.get("por_curar"):
+        messages.warning(
+            request,
+            _("Ainda nao ha fonte curada que sustente a pauta: cure ao menos uma da lista."),
+        )
+    else:
+        messages.success(
+            request, _("Pronto: o artigo sai so com as fontes ja curadas. Pode gerar.")
+        )
+    return redirect(f"{reverse('content:pauta', args=[pauta.pk])}#fluxo-a")
+
+
+@login_required
+@require_POST
 def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
     """Busca referencias para a pauta; com `variar`, com palavras ainda nao usadas."""
     from apps.knowledge.tasks import buscar_fontes_da_pauta

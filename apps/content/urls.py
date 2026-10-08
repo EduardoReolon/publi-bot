@@ -29,6 +29,7 @@ urlpatterns = [
     path("pautas/<uuid:pk>/rejeitar/", views.rejeitar_pauta, name="rejeitar_pauta"),
     path("pautas/<uuid:pk>/fontes/", views.buscar_fontes, name="buscar_fontes"),
     path("pautas/<uuid:pk>/nao-usar/", views.nao_usar_na_pauta, name="nao_usar_na_pauta"),
+    path("pautas/<uuid:pk>/so-curadas/", views.so_com_as_curadas, name="so_com_as_curadas"),
     path("pautas/<uuid:pk>/pesquisar/", views.pesquisar_artigos, name="pesquisar_artigos"),
     path(
         "pautas/<uuid:pk>/pesquisa/<uuid:candidato>/pdf/",

@@ -169,10 +169,20 @@ def fontes_da_pauta(topic, *, fluxo: str = "") -> list:
             f"a ideia central). Acrescente um artigo de referencia sobre o tema."
         )
     from apps.content.models import Topic
-    from apps.knowledge.provisorias import por_curar
-    from apps.knowledge.referencias import conferir
+    from apps.knowledge.referencias import (
+        a_curar,
+        basta_o_curado,
+        conferir,
+        so_curadas_por_escolha,
+        so_os_curados,
+    )
 
-    faltam = por_curar(trechos)
+    escolha = so_curadas_por_escolha(topic)
+    if basta_o_curado(trechos, por_escolha=escolha):
+        # Ja ha fonte curada que sustenta a pauta: o artigo sai so com ela, e as
+        # nao curadas ficam de fora (sem travar a geracao).
+        return so_os_curados(trechos)
+    faltam = a_curar(trechos, por_escolha=escolha)
     if faltam:
         # A pauta espera a curadoria; `conferir` registra a lista e a tela a mostra.
         Topic.objects.filter(pk=topic.pk).update(status=Topic.Status.WAITING_SOURCES)
