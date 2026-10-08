@@ -66,6 +66,16 @@ MINIMO_DE_PALAVRAS_NO_TITULO = 4
 PADRAO_DE_NOTA_NO_TITULO = re.compile(r"(?<=[a-z\u00e0-\u00ff])\d{1,2}$|(?<=[A-Z])\d{1,2}$")
 
 
+def _so_os_trechos(document) -> bool:
+    from apps.knowledge.academicos import guardar_so_os_trechos
+
+    try:
+        return guardar_so_os_trechos(document)
+    except Exception:
+        logger.exception("So os trechos do documento %s: falhou.", document.pk)
+        return False
+
+
 def passo_converter(job: GenerationJob) -> dict:
     """Converte o arquivo em Markdown e pre-preenche o que der.
 
@@ -193,6 +203,8 @@ def passo_converter(job: GenerationJob) -> dict:
             extrair_do_pdf(document)
         except Exception:
             logger.exception("Extracao do que foi pedido no PDF %s falhou.", document.pk)
+    elif _so_os_trechos(document):
+        pass  # documento grande com pedidos: ficaram so os trechos, ja no indice
     else:
         # Com worker que vetoriza, a fonte entra no indice ja, como provisoria;
         # a curadoria e pedida quando uma pauta for usa-la.

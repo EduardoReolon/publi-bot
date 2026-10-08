@@ -627,3 +627,69 @@ def receber_pdf(candidato, arquivo, *, categoria, por=None) -> Document:
     candidato.decidido_em = timezone.now()
     candidato.save()
     return documento
+
+
+# -- Documento grande com pedidos: so os trechos que respondem ----------------------
+# Um livro ou relatorio enorme, enviado so por causa de um dado: guardar tudo
+# poluiria o acervo (apareceria em pautas sem nada a ver) e pediria a curadoria
+# de centenas de blocos. Com pedidos na fonte ("o que procurar no texto
+# completo"), ficam so os paragrafos que respondem, achados por vetor (sem
+# modelo, como na pesquisa do B), ja no indice.
+CARACTERES_POR_PAGINA = 2500
+PAGINAS_DE_DOCUMENTO_GRANDE = 60
+
+
+def documento_grande(documento: Document) -> bool:
+    return len(documento.markdown_full or "") > CARACTERES_POR_PAGINA * PAGINAS_DE_DOCUMENTO_GRANDE
+
+
+def guardar_so_os_trechos(documento: Document) -> bool:
+    """Documento grande de uma fonte com pedidos: o texto vira so os trechos que
+    respondem, e eles entram no indice. Devolve se fez (senao, segue o caminho
+    de sempre: curadoria, ou provisoria)."""
+    from django.core.files.base import ContentFile
+
+    from apps.knowledge.blocos import preparar_blocos
+    from apps.knowledge.pesquisa import trechos_pedidos
+    from apps.knowledge.tasks import pedir_indexacao
+
+    if not documento_grande(documento):
+        return False
+    candidato = next(
+        (c for c in documento.candidatos.all() if (c.metricas or {}).get("pedidos_de_pdf")),
+        None,
+    )
+    if candidato is None:
+        return False
+    pedidos = candidato.metricas["pedidos_de_pdf"]
+    try:
+        achados = trechos_pedidos(documento, pedidos, titulo=candidato.titulo)
+    except Exception:  # sem vetor agora: o documento segue o caminho de sempre
+        logger.exception("Trechos pedidos no documento %s nao achados.", documento.pk)
+        return False
+    if not achados:
+        return False
+    paginas = len(documento.markdown_full) // CARACTERES_POR_PAGINA
+    partes = [
+        f"# {candidato.titulo or documento.title}",
+        f"Trechos do texto completo (cerca de {paginas} paginas) que respondem ao que foi "
+        "pedido; o resto do documento nao foi guardado.",
+    ]
+    for pedido, paragrafos in achados.items():
+        partes.append(f"## {pedido}\n\n" + "\n\n".join(paragrafos))
+    markdown = "\n\n".join(partes) + "\n"
+    documento.markdown_full = markdown
+    documento.original_file.save(
+        f"trechos-{documento.pk}.md", ContentFile(markdown.encode("utf-8")), save=False
+    )
+    documento.file_size_bytes = len(markdown.encode("utf-8"))
+    documento.save(update_fields=["markdown_full", "original_file", "file_size_bytes"])
+    candidato.metricas = {
+        **candidato.metricas,
+        "trechos_pedidos": {**(candidato.metricas.get("trechos_pedidos") or {}), **achados},
+        "so_os_trechos": paginas,
+    }
+    candidato.save(update_fields=["metricas"])
+    blocos = {b.ordem for b in preparar_blocos(documento) if b.paragrafos}
+    pedir_indexacao(documento, blocos=blocos, concluir=True, por=None, local=True)
+    return True

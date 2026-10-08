@@ -61,7 +61,7 @@ niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
 
   {% if candidato.metricas.pedidos_de_pdf %}
     <div class="aviso espera"><strong>{% translate "A IA quer deste texto completo" %}:</strong> {{ candidato.metricas.pedidos_de_pdf|join:"; " }}
-      <span class="ajuda">({% if candidato.tipo == 'artigo' and not candidato.pdf_url %}{% translate "sem PDF aberto: ao aprovar, envie o PDF; os paragrafos que respondem sao achados sozinhos" %}{% else %}{% translate "os paragrafos que respondem sao achados sozinhos quando o texto completo estiver no acervo" %}{% endif %})</span>
+      <span class="ajuda">({% if candidato.tipo == 'artigo' and not candidato.pdf_url %}{% translate "sem PDF aberto: ao aprovar, envie o PDF; os paragrafos que respondem sao achados sozinhos, e de um documento grande (livro, relatorio) so eles ficam" %}{% else %}{% translate "os paragrafos que respondem sao achados sozinhos quando o texto completo estiver no acervo" %}{% endif %})</span>
     </div>
   {% endif %}
   {% with sugestao=candidato.metricas.sugestao_da_ia %}{% if sugestao %}

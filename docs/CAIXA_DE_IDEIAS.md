@@ -119,6 +119,13 @@ sem decidir nada. Os [Fn] valem pela lista guardada quando o dossie foi gerado
   `pesquisa.trechos_pedidos` do B): entram no proximo dossie e na geracao do A
   (`referencias.trechos_pedidos_da_pauta`, pela extensao `pedidos_de_texto`).
 
+- **Documento grande** (livro, relatorio: mais de ~60 paginas) que chega para
+  uma fonte com pedidos: depois da conversao, ficam so os paragrafos que
+  respondem aos pedidos (`academicos.guardar_so_os_trechos`, por vetor, sem
+  modelo), ja no indice e sem curadoria — como os trechos pedidos da pesquisa
+  do B. O resto nao e guardado (nem como provisoria). Na frente, a fonte mostra
+  "so os trechos (de ~N paginas)".
+
 ## A geracao com a investigacao
 
 - **A** leva a investigacao: as evidencias aprovadas nas frentes (pelo acervo),
