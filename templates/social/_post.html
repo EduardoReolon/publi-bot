@@ -152,6 +152,15 @@
       {% if post.extras.so_copiar %}{% translate "Este post sai pelo copiar e postar:" %} {{ post.extras.so_copiar }}{% elif post.destino.conectado %}{% translate "Sai sozinho na hora (conta conectada)." %}{% else %}{% translate "Conta sem API: na hora, copie e poste." %}{% endif %}
       {% if post.erro %}<br>{{ post.erro|truncatechars:240 }}{% endif %}
     </p>
+    {% if post.destino.rede == 'instagram' %}
+      <div class="aviso" style="margin:.3rem 0">
+        <strong>{% translate "Link na bio" %}:</strong>
+        {% translate "o Instagram nao deixa link clicavel na legenda; por isso o post diz “link na bio”. A bio e do perfil: ponha nela, uma vez so, este endereco — ele lista os artigos dos seus posts, o mais novo em cima." %}
+        <input id="bio-{{ post.pk }}" type="text" readonly value="{{ request.scheme }}://{{ request.get_host }}{% url 'social:bio' post.destino.chave_publica %}" style="width:100%; margin:.3rem 0">
+        <button type="button" class="botao discreto pequeno" data-copiar="bio-{{ post.pk }}">{% translate "Copiar o link da bio" %}</button>
+        <span class="ajuda">{% translate "O artigo so entra nessa pagina depois de “Ja postei” (ou de publicado pela API)." %}</span>
+      </div>
+    {% endif %}
     <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
       {% csrf_token %}
       <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
