@@ -15,7 +15,7 @@
   {% if pauta %}
     <div class="aviso espera">
       <strong>{% translate "Mostrando so os documentos da pauta que esperam a curadoria" %}:</strong> {{ pauta.title }}
-      <div class="ajuda">{% translate "Sao fontes que voce ja aprovou: o texto ja esta no acervo e falta conferir os blocos (o que entra e o que fica de fora). Sem isso, o artigo nao as usa." %}</div>
+      <div class="ajuda">{% translate "Sao fontes que voce ja aprovou para esta pauta e as do acervo que o artigo usaria: o texto ja esta no acervo e falta conferir os blocos (o que entra e o que fica de fora). Sem isso, o artigo nao as usa. Nao quer analisar uma? Na pauta, “Nao usar nesta pauta” a tira so deste artigo." %}</div>
       <div class="acoes">
         <a class="botao pequeno" href="{% url 'content:pauta' pauta.pk %}">← {% translate "Voltar para a pauta" %}</a>
         <a class="botao discreto pequeno" href="{% url 'knowledge:documentos' %}">{% translate "Ver o acervo inteiro" %}</a>

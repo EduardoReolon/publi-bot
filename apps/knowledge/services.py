@@ -325,6 +325,7 @@ def recuperar(
     distancia_maxima: float | None = None,
     deduplicar_por_documento: bool = True,
     documentos: list | None = None,
+    excluir_documentos: list | None = None,
 ) -> tuple[RetrievalQuery, list[TrechoRecuperado]]:
     """Busca trechos relevantes e registra a consulta.
 
@@ -382,6 +383,9 @@ def recuperar(
     # So estes documentos (o fluxo da pesquisa: os artigos achados para a pauta).
     if documentos is not None:
         base = base.filter(document_id__in=documentos)
+    # Fora DESTA busca (a pessoa tirou da pauta: "nao usar nesta pauta").
+    if excluir_documentos:
+        base = base.exclude(document_id__in=excluir_documentos)
 
     por_vetor = list(
         base.filter(distancia__lte=distancia_maxima).order_by("distancia")[:limite_bruto]

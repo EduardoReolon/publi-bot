@@ -48,6 +48,23 @@ def consulta_da_pauta(pauta) -> str:
     return " ".join(filter(None, [pauta.title, pauta.target_keyword, orientacao]))
 
 
+def fora_da_pauta(pauta) -> list[str]:
+    """Os documentos do acervo que a pessoa tirou DESTA pauta ("nao usar nesta
+    pauta"): continuam no acervo, curados ou nao, para as outras."""
+    return list((pauta.busca_de_fontes or {}).get("documentos_fora") or [])
+
+
+def tirar_da_pauta(pauta, documento_id, *, voltar: bool = False) -> dict:
+    """Tira (ou devolve) um documento das referencias da pauta e reconfere: a
+    busca puxa o proximo, que pode pedir curadoria tambem."""
+    fora = [d for d in fora_da_pauta(pauta) if d != str(documento_id)]
+    if not voltar:
+        fora.append(str(documento_id))
+    pauta.busca_de_fontes = {**(pauta.busca_de_fontes or {}), "documentos_fora": fora}
+    type(pauta).objects.filter(pk=pauta.pk).update(busca_de_fontes=pauta.busca_de_fontes)
+    return conferir(pauta)
+
+
 def trechos_da_pauta(pauta, *, top_k: int | None = None, fluxo: str = "") -> list:
     """Os trechos que sustentam a pauta. No fluxo da pesquisa, so os dos artigos
     achados para ela (`knowledge.pesquisa`), sem limiar: foram escolhidos para a
@@ -65,6 +82,7 @@ def trechos_da_pauta(pauta, *, top_k: int | None = None, fluxo: str = "") -> lis
         consulta=consulta_da_pauta(pauta),
         origem=RetrievalQuery.Origin.ARTICLE,
         top_k=top_k,
+        excluir_documentos=fora_da_pauta(pauta),
         **extra,
     )
     if fluxo != "pesquisa":
@@ -319,6 +337,17 @@ def conferir_as_que_esperam() -> int:
     return liberadas
 
 
+def _titulos(ids: list[str]) -> list[dict]:
+    from apps.knowledge.models import Document
+
+    if not ids:
+        return []
+    return [
+        {"id": str(d.pk), "titulo": (d.title or d.nome_do_arquivo)[:200]}
+        for d in Document.objects.filter(pk__in=ids)
+    ]
+
+
 def painel(pauta) -> dict:
     """O que a tela mostra, sem consultar o acervo de novo (usa a ultima conferencia)."""
     from apps.radar.models import ConfiguracaoDoRadar
@@ -332,6 +361,7 @@ def painel(pauta) -> dict:
         "artigos": artigos,
         "videos": busca.get("videos") or {},
         "aguardando": aguardando(pauta),
+        "fora": _titulos(fora_da_pauta(pauta)),
         "falta_artigos": (
             ConfiguracaoDoRadar.carregar().artigos_cientificos
             and not artigos.get("ignorado")

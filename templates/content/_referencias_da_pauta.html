@@ -19,8 +19,23 @@
       <div class="aviso espera" style="margin:.3rem 0">
         <strong>{% translate "Para gerar, cure estas fontes" %}</strong>
         <span class="ajuda">{% translate "(sao as que o artigo usaria; recusar uma faz a pauta procurar outra)" %}</span>
-        <ul>{% for d in r.acervo.por_curar %}<li><a href="{% url 'knowledge:curar' d.id %}">{{ d.titulo }}</a></li>{% endfor %}</ul>
+        <ul>{% for d in r.acervo.por_curar %}<li><a href="{% url 'knowledge:curar' d.id %}">{{ d.titulo }}</a>
+          <form method="post" action="{% url 'content:nao_usar_na_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
+            <input type="hidden" name="documento" value="{{ d.id }}">
+            <button type="submit" class="botao discreto pequeno" title="{% translate 'Sem curar nem recusar: a fonte continua no acervo para as outras pautas, so este artigo nao a usa. A busca puxa a proxima.' %}">{% translate "Nao usar nesta pauta" %}</button>
+          </form></li>{% endfor %}</ul>
+        <div class="ajuda">{% translate "Curar: abra o titulo. Ja tem material suficiente e nao quer analisar? “Nao usar nesta pauta” tira a fonte so deste artigo (ela continua no acervo); a busca pode puxar outra no lugar." %}</div>
       </div>
+    {% endif %}
+    {% if r.fora %}
+      <details class="ajuda" style="margin:.3rem 0">
+        <summary>{% blocktranslate trimmed count n=r.fora|length %}{{ n }} fonte tirada desta pauta{% plural %}{{ n }} fontes tiradas desta pauta{% endblocktranslate %}</summary>
+        <ul>{% for d in r.fora %}<li>{{ d.titulo }}
+          <form method="post" action="{% url 'content:nao_usar_na_pauta' pauta.pk %}" style="display:inline">{% csrf_token %}
+            <input type="hidden" name="documento" value="{{ d.id }}"><input type="hidden" name="voltar_a_usar" value="1">
+            <button type="submit" class="botao discreto pequeno">{% translate "Voltar a usar" %}</button>
+          </form></li>{% endfor %}</ul>
+      </details>
     {% endif %}
   {% else %}
     <div>{% translate "O acervo ainda nao foi conferido para esta pauta." %}</div>

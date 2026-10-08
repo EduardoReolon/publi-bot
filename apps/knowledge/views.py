@@ -54,7 +54,17 @@ def documentos(request: HttpRequest) -> HttpResponse:
 
         pauta = Topic.objects.filter(pk=request.GET["pauta"]).first()
         if pauta is not None:
-            consulta = consulta.filter(candidatos__pauta=pauta, status__in=_EM_CURADORIA).distinct()
+            from django.db.models import Q
+
+            # As das frentes/buscas desta pauta e as do acervo que a geracao
+            # pede para curar ("Para gerar, cure estas fontes").
+            por_curar = [
+                d["id"]
+                for d in ((pauta.busca_de_fontes or {}).get("acervo") or {}).get("por_curar") or []
+            ]
+            consulta = consulta.filter(
+                Q(candidatos__pauta=pauta) | Q(pk__in=por_curar), status__in=_EM_CURADORIA
+            ).distinct()
 
     # A contagem por situacao vem da tabela inteira, e nao do resultado
     # filtrado: senao o filtro escolhido zera todos os outros na tela.
