@@ -563,6 +563,38 @@
     mostrar(galeria.indexOf(link));
     caixa.showModal();
   });
+
+  /* Previa ao vivo: <form data-previa="url"> com <img data-previa-img> e
+     controles; a cada mudanca (com uma pausa curta), a imagem e pedida de novo
+     com os valores do formulario na URL. Abre ja carregada quando o <details>
+     em volta e aberto. Serve para qualquer previa futura do mesmo jeito. */
+  function atualizarPrevia(form) {
+    var img = form.querySelector("[data-previa-img]");
+    if (!img) return;
+    var dados = new URLSearchParams();
+    form.querySelectorAll("input[type=range], input[type=number], select").forEach(function (c) { dados.set(c.name, c.value); });
+    img.src = form.getAttribute("data-previa") + "?" + dados.toString();
+  }
+  var esperaDaPrevia;
+  document.addEventListener("input", function (evento) {
+    var form = evento.target.closest && evento.target.closest("form[data-previa]");
+    if (!form) return;
+    clearTimeout(esperaDaPrevia);
+    esperaDaPrevia = setTimeout(function () { atualizarPrevia(form); }, 250);
+  });
+  document.addEventListener("toggle", function (evento) {
+    var caixa = evento.target;
+    if (!caixa.open || !caixa.querySelector) return;
+    var form = caixa.querySelector("form[data-previa]");
+    if (form && !form.querySelector("[data-previa-img]").src) atualizarPrevia(form);
+  }, true);
+  document.addEventListener("click", function (evento) {
+    var botao = evento.target.closest && evento.target.closest("[data-previa-padrao]");
+    if (!botao) return;
+    var form = botao.closest("form[data-previa]");
+    form.querySelectorAll("input[type=range]").forEach(function (c) { if (c.hasAttribute("data-padrao")) c.value = c.getAttribute("data-padrao"); });
+    atualizarPrevia(form);
+  });
 </script>
 </body>
 </html>

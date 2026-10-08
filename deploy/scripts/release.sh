@@ -70,6 +70,8 @@ fi
 pacotes=(
     "python$PYTHON_VERSAO" "python$PYTHON_VERSAO-venv" "python$PYTHON_VERSAO-dev"
     build-essential rsync gettext curl postgresql-client
+    # Fonte com acentos para as laminas das redes (a embutida no Pillow nao tem).
+    fonts-dejavu-core
 )
 faltando=()
 for pacote in "${pacotes[@]}"; do
