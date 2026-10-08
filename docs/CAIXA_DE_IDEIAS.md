@@ -105,6 +105,10 @@ as frentes novas e as marcadas; as sugestoes de curadoria aparecem nos cartoes,
 sem decidir nada. Os [Fn] valem pela lista guardada quando o dossie foi gerado
 (`debate.codigos_do_dossie`), mesmo que novas fontes cheguem depois.
 
+- O pedido manda a IA fazer a **faxina completa**: uma sugestao (aprovar,
+  recusar, discurso, com motivo de uma linha) para CADA fonte ainda nao curada
+  — lixo, duplicata, velha, fora do escopo; nas ja aprovadas, so aponta o que
+  for claramente lixo ("a IA sugere recusar", na lista de aprovadas).
 - **Aplicar as sugestoes da IA** (botao no bloco do veredito): recusar e
   discurso sao aplicados; aprovar, so quando a IA viu o texto da fonte (nao so o
   resumo da busca) — as outras continuam como sugestao. Estudo sem PDF e video

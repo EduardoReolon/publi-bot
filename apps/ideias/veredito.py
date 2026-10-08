@@ -88,7 +88,8 @@ Responda com estas partes:
        {"fonte": "F4", "o_que": "o dado que falta, em poucas palavras"}
      ],
      "sugestoes_de_curadoria": [
-       {"fonte": "F5", "acao": "aprovar | recusar | discurso", "motivo": "..."}
+       {"fonte": "F5", "acao": "aprovar | recusar | discurso", "motivo": "..."},
+       "... uma para CADA fonte ainda nao curada"
      ]
    }
    ```
@@ -98,9 +99,22 @@ Responda com estas partes:
    buscada sempre. "capturar_texto": as fontes que vieram "so o resumo da
    busca" e merecem o texto completo. "pedidos_de_pdf": o que procurar dentro do
    texto completo de um estudo (o sistema extrai os paragrafos que respondem,
-   sem modelo, quando o PDF estiver no acervo). "sugestoes_de_curadoria" sao so
-   sugestoes: quem decide e o autor. Nunca invente link. Sem nada a refinar,
-   devolva {"frentes": []}.
+   sem modelo, quando o PDF estiver no acervo). Nunca invente link.
+
+   "sugestoes_de_curadoria" e a FAXINA COMPLETA: uma sugestao para CADA fonte
+   marcada "ainda nao curada", sem pular nenhuma. Opine em todas:
+   - recusar: lixo, duplicata (diga de qual [Fn]), fonte velha que outra mais
+     nova substitui, fora do escopo da pauta, pagina sem conteudo (so menu,
+     propaganda, chamada para outro link);
+   - discurso: o "o que se diz" (materia, post, video de opiniao), mesmo que a
+     frente dela seja de evidencia;
+   - aprovar: evidencia que serve (dado, estudo, relatorio, documento oficial),
+     mesmo que so o resumo tenha vindo (diga no motivo se o texto completo e
+     indispensavel).
+   O motivo e curto (uma linha) e e o que o autor le para decidir: ele aplica
+   tudo de uma vez ou confere uma por uma. Fontes ja aprovadas: so sugira
+   "recusar" se uma delas for claramente lixo ou duplicata.
+   Sem frente a mudar, devolva "frentes": [] (o resto do bloco vale igual).
 """
 
 
