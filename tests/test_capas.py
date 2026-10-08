@@ -23,6 +23,7 @@ from apps.content.capas import (
 )
 from apps.content.models import Article, ArticleImage
 from apps.inference.providers.base import ImagemGerada
+from tests.test_interface import ambiente  # noqa: F401
 
 
 def _png(cor=(20, 90, 160)) -> bytes:
@@ -380,3 +381,50 @@ def test_o_texto_ocupando_a_placa_tambem_bloqueia_a_imagem(artigo):
 
     with pytest.raises(GeradorDeImagemOcupado):
         gerar_opcoes(artigo)
+
+
+def _jpeg_deitado(largura=2000, altura=1000) -> bytes:
+    """Foto de celular: gravada deitada, com a orientacao no EXIF (6 = girar)."""
+    imagem = Image.new("RGB", (largura, altura), (200, 30, 30))
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    exif[0x8825] = {1: "S", 2: (25.0, 26.0, 27.0)}  # GPS: nao pode sair
+    saida = io.BytesIO()
+    imagem.save(saida, format="JPEG", exif=exif)
+    return saida.getvalue()
+
+
+@pytest.mark.django_db
+def test_capa_enviada_gira_corta_converte_e_e_escolhida(ambiente):  # noqa: F811
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from django.urls import reverse
+
+    from apps.content.capas import LOTE_DAS_ENVIADAS, _proporcao
+
+    _, _, client = ambiente
+    artigo = Article.objects.create(title="Capa minha")
+    url = reverse("content:enviar_capa", args=[artigo.pk], urlconf="core.urls_tenants")
+    client.post(url, {"capa": SimpleUploadedFile("foto.jpg", _jpeg_deitado(), "image/jpeg")})
+    imagem = ArticleImage.objects.get(article=artigo)
+    assert imagem.batch == LOTE_DAS_ENVIADAS and imagem.is_chosen
+    assert imagem.image.name.endswith(".webp") and imagem.alt_text == "Capa minha"
+    with imagem.image.open("rb") as arquivo:
+        pronta = Image.open(arquivo)
+        pronta.load()
+        largura, altura = pronta.size
+        assert pronta.format == "WEBP" and not pronta.getexif()
+    # Girada (2000x1000 deitada vira 1000x2000) e cortada na proporcao da capa.
+    assert abs(largura / altura - _proporcao()) < 0.02 and largura <= 1000
+
+    # Inteira, sem cortar; a anterior deixa de ser a capa; arquivo que nao e imagem avisa.
+    client.post(
+        url,
+        {"capa": SimpleUploadedFile("b.png", _png(), "image/png"), "inteira": "1", "alt": "Mesa"},
+    )
+    assert ArticleImage.objects.filter(article=artigo, is_chosen=True).get().alt_text == "Mesa"
+    client.post(url, {"capa": SimpleUploadedFile("x.png", b"nao e imagem", "image/png")})
+    assert ArticleImage.objects.filter(article=artigo).count() == 2
+    tela = client.get(
+        reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Enviadas por voce" in tela and "Enviar uma imagem sua" in tela

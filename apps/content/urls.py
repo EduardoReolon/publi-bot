@@ -63,6 +63,7 @@ urlpatterns = [
     path("artigos/<uuid:pk>/indexacao/", views.conferir_indexacao, name="conferir_indexacao"),
     path("artigos/<uuid:pk>/capas/", views.gerar_capas, name="gerar_capas"),
     path("artigos/<uuid:pk>/capas/escolher/", views.escolher_capa, name="escolher_capa"),
+    path("artigos/<uuid:pk>/capas/enviar/", views.enviar_capa, name="enviar_capa"),
     # Sem sessao: quem busca e o site de destino, do outro lado da internet.
     path("capas/<uuid:pk>.webp", views.capa_publica, name="capa_publica"),
     path("autores/", views.autores, name="autores"),
