@@ -353,6 +353,9 @@ def colar_veredito(request: HttpRequest, pk) -> HttpResponse:
         partes.append(_("buscar de novo: %(f)s") % {"f": ", ".join(resumo["rebuscar"])})
     if capturar:
         partes.append(_("%(n)s fonte(s) para capturar o texto") % {"n": len(capturar)})
+    if resumo["pedidos_de_pdf"]:
+        n = resumo["pedidos_de_pdf"]
+        partes.append(_("%(n)s pedido(s) de PDF nos estudos") % {"n": n})
     if resumo["sugestoes"]:
         partes.append(
             _("%(n)s sugestao(oes) de curadoria nos cartoes") % {"n": resumo["sugestoes"]}
@@ -363,3 +366,29 @@ def colar_veredito(request: HttpRequest, pk) -> HttpResponse:
         % {"o": "; ".join(partes) or _("nada a refinar")},
     )
     return destino
+
+
+@login_required
+@require_POST
+def aplicar_sugestoes(request: HttpRequest, pk) -> HttpResponse:
+    """As sugestoes de curadoria do veredito, de uma vez (aprovar so quando a
+    IA viu o texto; o resto continua como sugestao)."""
+    from apps.content.models import Topic
+    from apps.ideias.veredito import aplicar_sugestoes as aplicar
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    feitos = aplicar(pauta, por=request.user)
+    messages.success(
+        request,
+        _(
+            "Aplicadas: %(a)s aprovada(s), %(r)s recusada(s), %(d)s como discurso. "
+            "Ficaram para voce: %(f)s (a IA viu so o resumo, ou a acao nao se aplica)."
+        )
+        % {
+            "a": feitos["aprovadas"],
+            "r": feitos["recusadas"],
+            "d": feitos["discurso"],
+            "f": feitos["ficaram"],
+        },
+    )
+    return redirect(f"{reverse('content:pauta', args=[pauta.pk])}#investigar")

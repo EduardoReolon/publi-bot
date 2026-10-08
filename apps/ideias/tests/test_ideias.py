@@ -715,3 +715,102 @@ def test_pauta_comum_investiga_e_refina_com_outra_ia(
     ideia.refresh_from_db()
     assert [f["nome"] for f in ideia.leitura["frentes"]][: len(nomes)] == nomes
     assert ideia.refino["buscar"] == ["Letramento"]
+
+
+@pytest.mark.django_db
+def test_sugestoes_aplicadas_e_pedidos_de_pdf(ambiente, modelo, buscador, monkeypatch):
+    from apps.ideias import veredito
+    from apps.knowledge import referencias
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    monkeypatch.setattr("apps.knowledge.tasks.verificar_legendas_da_pauta.delay", lambda pk: None)
+    monkeypatch.setattr(tasks.depois_do_veredito, "delay", lambda *a: None)
+    client.post(reverse("ideias:inicio", urlconf=U), {"texto": "Falta mao de obra para IA?"})
+    ideia = Ideia.objects.get()
+    tasks.processar_ideia(str(ideia.pk))
+    pauta = Ideia.objects.get().pauta
+    veredito.dossie(pauta)
+    pauta.refresh_from_db()
+    ids = pauta.debate["codigos_do_dossie"]
+    vista, so_resumo, ruim, estudo = (CandidatoDeFonte.objects.get(pk=i) for i in ids[:4])
+    vista.texto_extraido = "Texto capturado de verdade, bem maior que o resumo da busca."
+    vista.save()
+
+    resposta = (
+        "1. VEREDITO\n```json\n"
+        + json.dumps(
+            {
+                "frentes": [],
+                "sugestoes_de_curadoria": [
+                    {"fonte": "F1", "acao": "aprovar"},
+                    {"fonte": "F2", "acao": "aprovar"},
+                    {"fonte": "F3", "acao": "recusar", "motivo": "opiniao"},
+                ],
+                "pedidos_de_pdf": [{"fonte": "F4", "o_que": "o valor desperdicado"}],
+            }
+        )
+        + "\n```"
+    )
+    client.post(
+        reverse("ideias:colar_veredito", args=[pauta.pk], urlconf=U), {"resposta": resposta}
+    )
+    estudo.refresh_from_db()
+    assert estudo.metricas["pedidos_de_pdf"] == ["o valor desperdicado"]
+    tela = client.get(reverse("content:pauta", args=[pauta.pk], urlconf=U)).content.decode()
+    assert (
+        "Aplicar as sugestoes da IA (3 fontes)" in tela and "A IA quer deste texto completo" in tela
+    )
+    # Rotulos dos caminhos: o B nao leva a investigacao; o A recomenda a IA grande.
+    assert "a investigacao nao entra aqui (so o debate)" in tela
+    assert "muito material: recomendado gerar com a IA grande" in tela
+
+    aprovadas = []
+    monkeypatch.setattr(
+        "apps.knowledge.fontes_web.aprovar",
+        lambda c, **kw: aprovadas.append(c.pk) or c,
+    )
+    client.post(reverse("ideias:aplicar_sugestoes", args=[pauta.pk], urlconf=U))
+    ruim.refresh_from_db()
+    so_resumo.refresh_from_db()
+    assert aprovadas == [vista.pk]  # so a que a IA viu o texto
+    assert ruim.situacao == CandidatoDeFonte.Situacao.RECUSADO
+    assert so_resumo.situacao == CandidatoDeFonte.Situacao.PENDENTE  # ficou para voce
+
+    # O PDF chega: o dossie leva os paragrafos que respondem, e o A os busca.
+    from apps.knowledge.models import Document, DocumentCategory
+
+    categoria = DocumentCategory.objects.first() or DocumentCategory.objects.create(
+        name="Estudos", slug="estudos"
+    )
+    documento = Document.objects.create(
+        category=categoria,
+        file_sha256="f" * 64,
+        title="Estudo",
+        markdown_full="Texto completo do estudo.",
+        extraction_method="pdf",
+    )
+    estudo.documento = documento
+    estudo.situacao = CandidatoDeFonte.Situacao.APROVADO
+    estudo.save()
+    monkeypatch.setattr(
+        "apps.knowledge.pesquisa.trechos_pedidos",
+        lambda doc, pedidos, titulo="": {
+            p: ["Foram desperdicados 40% do orcamento."] for p in pedidos
+        },
+    )
+    assert "Foram desperdicados 40% do orcamento." in veredito.dossie(pauta)
+    assert veredito.pedidos_de_pdf_da_pauta(pauta) == [(documento, "o valor desperdicado")]
+
+    pedidas = []
+
+    def recuperar(**kw):
+        pedidas.append(kw)
+        trecho = types.SimpleNamespace(chunk=types.SimpleNamespace(pk=len(pedidas)))
+        return None, [trecho]
+
+    monkeypatch.setattr("apps.knowledge.services.recuperar", recuperar)
+    trechos = referencias.trechos_da_pauta(pauta)
+    assert len(trechos) == 2 and pedidas[1]["documentos"] == [documento.pk]
+    assert pedidas[1]["consulta"].startswith("o valor desperdicado")
+    assert Article

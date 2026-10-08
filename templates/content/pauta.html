@@ -49,7 +49,18 @@
           {% elif not f.fluxo and pauta.status == 'waiting_sources' %}<span class="selo alerta">{% translate "aguardando fontes" %}</span>
           {% else %}{% translate "sem artigo" %}{% endif %}
         </span>
+        {% if pauta.debate.frentes %}
+          {% if f.fluxo %}<span class="selo ruim" title="{% translate 'O B escreve so com a pesquisa cientifica dele: as fontes aprovadas nas frentes da investigacao nao entram. Do debate, recebe o que se diz, a suspeita e os exemplos do discurso.' %}">{% translate "a investigacao nao entra aqui (so o debate)" %}</span>
+          {% else %}<span class="selo ruim" title="{% translate 'Pauta investigada: confrontar versoes com muitas fontes e o texto mais dificil para um modelo pequeno. Use Artigo com outra IA (A).' %}">{% translate "muito material: recomendado gerar com a IA grande" %}</span>{% endif %}
+        {% endif %}
       </summary>
+      {% if pauta.debate.frentes %}
+        {% if f.fluxo %}
+          <div class="aviso ruim">{% blocktranslate trimmed %}<strong>O B nao leva a investigacao.</strong> Ele escreve so com os artigos cientificos da pesquisa dele; as fontes aprovadas nas frentes (paginas, videos, estudos, pedidos de PDF) ficam de fora. Do debate, recebe o que se diz, a suspeita e os exemplos do discurso. Para o artigo com a investigacao, use o A.{% endblocktranslate %}</div>
+        {% else %}
+          <div class="aviso alerta">{% blocktranslate trimmed %}<strong>O A leva a investigacao</strong>: as evidencias aprovadas nas frentes, os paragrafos dos pedidos de PDF e o debate, com as secoes na ordem das frentes. E muito material para o modelo daqui: o recomendado e "Artigo com outra IA (A)" (a IA grande recebe o mesmo, com as mesmas travas).{% endblocktranslate %}</div>
+        {% endif %}
+      {% endif %}
       {% include "content/_fluxo.html" with completo=True %}
       {% if not f.fluxo and pauta.referencias %}
         <details class="secao">

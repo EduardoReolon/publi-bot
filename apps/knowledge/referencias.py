@@ -67,7 +67,38 @@ def trechos_da_pauta(pauta, *, top_k: int | None = None, fluxo: str = "") -> lis
         top_k=top_k,
         **extra,
     )
+    if fluxo != "pesquisa":
+        trechos += trechos_pedidos_da_pauta(pauta, ja=trechos)
     return trechos
+
+
+TRECHOS_POR_PEDIDO = 2
+
+
+def trechos_pedidos_da_pauta(pauta, *, ja=()) -> list:
+    """Os paragrafos que respondem ao que foi pedido dentro do texto completo
+    de uma fonte (pedidos de PDF do veredito, via extensao), alem dos trechos
+    perto da pauta: o dado especifico que a busca pela pauta nao alcancaria."""
+    from apps.knowledge.models import RetrievalQuery
+    from apps.knowledge.services import recuperar
+    from apps.ops.extensoes import pedidos_de_texto
+
+    vistos = {_chunk(t).pk for t in ja}
+    extras = []
+    for documento, pedido in pedidos_de_texto(pauta):
+        _, achados = recuperar(
+            consulta=f"{pedido}. {pauta.title}",
+            origem=RetrievalQuery.Origin.ARTICLE,
+            top_k=TRECHOS_POR_PEDIDO,
+            distancia_maxima=2.0,
+            deduplicar_por_documento=False,
+            documentos=[documento.pk],
+        )
+        for trecho in achados:
+            if _chunk(trecho).pk not in vistos:
+                vistos.add(_chunk(trecho).pk)
+                extras.append(trecho)
+    return extras
 
 
 def _chunk(trecho):

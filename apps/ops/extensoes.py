@@ -18,6 +18,7 @@ le essas declaracoes daqui:
         contas_das_redes = "apps.meu.x.contas"            # () -> [(id, nome)]
         comentar_nas_redes = "apps.meu.x.comentar"        # (texto, referencias, destinos, por)
         ideias_para_as_redes = "apps.meu.x.aprovadas"     # () -> [{id, titulo, texto, referencias}]
+        pedidos_de_texto = "apps.meu.x.pedidos"           # (pauta) -> [(documento, pedido)]
 
 Tirar o modulo de INSTALLED_APPS tira tudo junto: o nucleo continua igual.
 """
@@ -138,4 +139,14 @@ def ideias_para_as_redes() -> list[dict]:
     saida: list[dict] = []
     for caminho in _declaracoes("ideias_para_as_redes"):
         saida += list(import_string(caminho)() or [])
+    return saida
+
+
+def pedidos_de_texto(pauta) -> list[tuple]:
+    """O que um modulo pediu para achar dentro do texto completo de fontes da
+    pauta (a caixa de ideias: os pedidos de PDF do veredito): [(documento,
+    pedido)]. A geracao do A busca neles o paragrafo que responde."""
+    saida: list[tuple] = []
+    for caminho in _declaracoes("pedidos_de_texto"):
+        saida += list(import_string(caminho)(pauta) or [])
     return saida

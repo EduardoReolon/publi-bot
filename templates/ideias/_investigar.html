@@ -121,6 +121,13 @@
         <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Guardar o veredito e refinar" %}</button></div>
       </form>
     </details>
+    {% if inv.sugeridas %}
+      <form method="post" action="{% url 'ideias:aplicar_sugestoes' p.pk %}" class="acoes">
+        {% csrf_token %}
+        <button type="submit" class="botao secundario pequeno">{% blocktranslate trimmed count n=inv.sugeridas %}Aplicar a sugestao da IA ({{ n }} fonte){% plural %}Aplicar as sugestoes da IA ({{ n }} fontes){% endblocktranslate %}</button>
+        <span class="ajuda">{% translate "Recusar e discurso sao aplicados; aprovar, so quando a IA viu o texto (nao so o resumo da busca). Estudo sem PDF e video sem legenda ficam esperando o arquivo na frente, como sempre." %}</span>
+      </form>
+    {% endif %}
     {% if p.debate.veredito %}
       <details class="secao" id="ultimo-veredito">
         <summary><strong>{% translate "Ultimo veredito" %}</strong> <span class="ajuda">{{ p.debate.veredito.em|slice:":10" }}</span></summary>

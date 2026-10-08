@@ -68,6 +68,10 @@ def motivos_de_peso(pauta) -> list[str]:
     comercial = (evidencia.get("parcelas") or {}).get("comercial") or 0
     if comercial >= COMERCIAL_DE_PESO:
         motivos.append("valor comercial alto")
+    if (getattr(pauta, "debate", None) or {}).get("frentes"):
+        # Confrontar versoes com muitas fontes e o texto mais dificil para um
+        # modelo pequeno.
+        motivos.append("pauta investigada (frentes e debate: muito material)")
     return motivos
 
 
@@ -188,6 +192,10 @@ def pedido(artigo) -> str:
 
         orientacao = "\n\n".join(p for p in (orientacao, orientacao_dos_angulos(pauta)) if p)
     regras_da_pesquisa = f"\n{REGRAS_DA_PESQUISA}\n" if da_pesquisa else ""
+    from apps.content.debate import bloco as bloco_do_debate
+
+    debate = bloco_do_debate(pauta)
+    debate = f"\n{debate}\n" if debate else ""
     bloco_de_pedidos = BLOCO_DE_PEDIDOS if da_pesquisa else ""
     return f"""\
 Voce vai escrever um artigo de blog completo, SO com as fontes abaixo.
@@ -205,7 +213,7 @@ A pauta:
 - Palavra-chave: {artigo.focus_keyword or artigo.title}
 - Publico: {artigo.audience or _publico_padrao(None)}
 - Orientacao: {orientacao or "(sem orientacao)"}
-
+{debate}
 {guia}
 
 {chamada}

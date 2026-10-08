@@ -103,7 +103,28 @@ frentes passam pelas mesmas regras do refinamento (nenhuma e apagada nem
 renomeada); a tarefa `depois_do_veredito` captura os textos pedidos e busca so
 as frentes novas e as marcadas; as sugestoes de curadoria aparecem nos cartoes,
 sem decidir nada. Os [Fn] valem pela lista guardada quando o dossie foi gerado
-(`debate.codigos_do_dossie`), mesmo que novas fontes cheguem depois. "Capturar o texto das paginas que faltam" baixa, em
+(`debate.codigos_do_dossie`), mesmo que novas fontes cheguem depois.
+
+- **Aplicar as sugestoes da IA** (botao no bloco do veredito): recusar e
+  discurso sao aplicados; aprovar, so quando a IA viu o texto da fonte (nao so o
+  resumo da busca) — as outras continuam como sugestao. Estudo sem PDF e video
+  sem legenda caem no "esperando o arquivo" da frente, como sempre.
+- **Pedidos de PDF** (`pedidos_de_pdf` no JSON: a fonte e o que procurar): ficam
+  na fonte ("A IA quer deste texto completo"). Com o texto completo no acervo, os
+  paragrafos que respondem sao achados por vetor, sem modelo (o mesmo
+  `pesquisa.trechos_pedidos` do B): entram no proximo dossie e na geracao do A
+  (`referencias.trechos_pedidos_da_pauta`, pela extensao `pedidos_de_texto`).
+
+## A geracao com a investigacao
+
+- **A** leva a investigacao: as evidencias aprovadas nas frentes (pelo acervo),
+  os paragrafos dos pedidos de PDF e o bloco do debate, com o **plano das secoes
+  na ordem das frentes** (`debate.plano`: o cenario, a favor, contra, outras
+  explicacoes, conclusao). Na pauta, um rotulo vermelho recomenda a IA grande
+  ("Artigo com outra IA (A)"), cujo pedido leva o mesmo debate; "pauta
+  investigada" e um dos motivos de peso.
+- **B** nao leva a investigacao: so a pesquisa cientifica dele, mais o debate (o
+  que se diz, a suspeita, os exemplos do discurso). Rotulo vermelho na pauta. "Capturar o texto das paginas que faltam" baixa, em
 segundo plano, o texto das paginas que so tinham o resumo da busca.
 
 ## Videos e estudos: o que acontece ao aprovar
