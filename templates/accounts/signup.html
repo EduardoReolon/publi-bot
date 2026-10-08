@@ -8,6 +8,9 @@
     <div class="aviso ruim">{{ form.non_field_errors }}</div>
   {% endif %}
 
+  {% if user.is_authenticated %}
+    <div class="aviso">{% blocktranslate trimmed with e=user.email %}Voce esta logado como <strong>{{ e }}</strong>: o ambiente novo fica com esta conta, sem criar outro usuario.{% endblocktranslate %}</div>
+  {% endif %}
   <form method="post" novalidate>
     {% csrf_token %}
     {% for campo in form %}

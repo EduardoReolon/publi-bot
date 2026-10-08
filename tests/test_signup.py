@@ -300,3 +300,30 @@ def test_dominio_de_desenvolvimento_precisa_de_dois_rotulos():
 
 def test_cookie_de_sessao_abrange_os_subdominios():
     assert settings.SESSION_COOKIE_DOMAIN == f".{settings.ROOT_DOMAIN}"
+
+
+@pytest.mark.django_db
+def test_logado_cria_ambiente_sem_novo_usuario(public_tenant, cliente_publico, settings):
+    settings.CELERY_TASK_ALWAYS_EAGER = False
+    dono = User.objects.create_superuser(email="dono@publibot.com.br", password="x-Senha-forte-9")
+    cliente_publico.force_login(dono)
+    tela = cliente_publico.get(url_publica("accounts:signup")).content.decode()
+    assert "dono@publibot.com.br" in tela and 'name="password1"' not in tela
+
+    usuarios = User.objects.count()
+    resposta = cliente_publico.post(
+        url_publica("accounts:signup"), {"subdomain": "clinica", "organization": "Clinica X"}
+    )
+    assert resposta.status_code == 302
+    tenant = Tenant.objects.get(slug="clinica")
+    assert User.objects.count() == usuarios
+    assert TenantMembership.objects.filter(tenant=tenant, user=dono, role=User.Role.OWNER).exists()
+
+
+@pytest.mark.django_db
+def test_superusuario_ve_todos_os_ambientes(public_tenant, cliente_publico, tenant_factory):
+    tenant_factory("outro_cliente")
+    chefe = User.objects.create_superuser(email="chefe@publibot.com.br", password="x-Senha-forte-9")
+    cliente_publico.force_login(chefe)
+    tela = cliente_publico.get(url_publica("accounts:landing")).content.decode()
+    assert "Outro Cliente" in tela and "superusuario" in tela
