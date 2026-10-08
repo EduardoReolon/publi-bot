@@ -413,3 +413,73 @@ def test_aprovada_esperando_curadoria_leva_aos_documentos(ambiente):  # noqa: F8
     ).content.decode()
     assert "Nenhuma fonte sugerida esperando decisao" in sugeridas
     assert "ja aprovada espera a curadoria do documento" in sugeridas
+
+
+def test_nao_usar_nesta_pauta_tira_so_dela(ambiente, monkeypatch):  # noqa: F811
+    import types
+
+    from apps.knowledge.models import Document, DocumentCategory
+
+    _, _, client = ambiente
+    categoria = DocumentCategory.objects.first() or DocumentCategory.objects.create(
+        name="Veiculos", slug="veiculos"
+    )
+    docs = [
+        Document.objects.create(
+            category=categoria,
+            file_sha256=c * 64,
+            title=t,
+            status=Document.Status.PENDING_CURATION,
+        )
+        for c, t in (("e", "meu metodo de 5 prompts"), ("f", "Relatorio bom"))
+    ]
+    pedidos = []
+
+    def recuperar(**kw):
+        pedidos.append(kw.get("excluir_documentos"))
+        fora = {str(x) for x in kw.get("excluir_documentos") or []}
+        trechos = [
+            types.SimpleNamespace(
+                chunk=types.SimpleNamespace(
+                    pk=n, document_id=d.pk, document=d, supports_central_idea=True
+                ),
+                distancia=0.1,
+            )
+            for n, d in enumerate(docs)
+            if str(d.pk) not in fora
+        ]
+        return None, trechos
+
+    monkeypatch.setattr("apps.knowledge.services.recuperar", recuperar)
+    pauta = Topic.objects.create(title="O mito do operador de IA")
+    acervo = referencias.conferir(pauta)
+    assert {d["titulo"] for d in acervo["por_curar"]} == {
+        "meu metodo de 5 prompts",
+        "Relatorio bom",
+    }
+
+    url_da_pauta = reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    assert "Nao usar nesta pauta" in client.get(url_da_pauta).content.decode()
+    client.post(
+        reverse("content:nao_usar_na_pauta", args=[pauta.pk], urlconf="core.urls_tenants"),
+        {"documento": str(docs[0].pk)},
+    )
+    pauta.refresh_from_db()
+    assert [d["titulo"] for d in pauta.busca_de_fontes["acervo"]["por_curar"]] == ["Relatorio bom"]
+    assert pedidos[-1] == [str(docs[0].pk)]
+    tela = client.get(url_da_pauta).content.decode()
+    assert "1 fonte tirada desta pauta" in tela and "Voltar a usar" in tela
+    # Documentos da pauta: inclui a que o artigo usaria (veio do acervo, nao das frentes).
+    documentos = reverse("knowledge:documentos", urlconf="core.urls_tenants")
+    lista = client.get(f"{documentos}?pauta={pauta.pk}").content.decode()
+    assert "Relatorio bom" in lista and "meu metodo de 5 prompts" not in lista
+
+    # Outra pauta nao e afetada; e da para devolver.
+    outra = Topic.objects.create(title="Outra")
+    assert len(referencias.conferir(outra)["por_curar"]) == 2
+    client.post(
+        reverse("content:nao_usar_na_pauta", args=[pauta.pk], urlconf="core.urls_tenants"),
+        {"documento": str(docs[0].pk), "voltar_a_usar": "1"},
+    )
+    pauta.refresh_from_db()
+    assert len(pauta.busca_de_fontes["acervo"]["por_curar"]) == 2

@@ -381,6 +381,30 @@ def gerar(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
+def nao_usar_na_pauta(request: HttpRequest, pk) -> HttpResponse:
+    """Tira um documento do acervo das referencias DESTA pauta (ou devolve), sem
+    curar nem recusar: ele continua no acervo para as outras."""
+    from apps.knowledge.referencias import tirar_da_pauta
+
+    pauta = get_object_or_404(Topic, pk=pk)
+    documento = request.POST.get("documento", "")
+    voltar = bool(request.POST.get("voltar_a_usar"))
+    if documento:
+        acervo = tirar_da_pauta(pauta, documento, voltar=voltar)
+        if voltar:
+            messages.info(request, _("A fonte voltou para as referencias desta pauta."))
+        elif acervo.get("por_curar"):
+            messages.info(
+                request,
+                _("Fora desta pauta. A busca puxou outra(s) no lugar: confira a lista."),
+            )
+        else:
+            messages.success(request, _("Fora desta pauta. Nada mais a curar para gerar."))
+    return redirect(f"{reverse('content:pauta', args=[pauta.pk])}#fluxo-a")
+
+
+@login_required
+@require_POST
 def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
     """Busca referencias para a pauta; com `variar`, com palavras ainda nao usadas."""
     from apps.knowledge.tasks import buscar_fontes_da_pauta
