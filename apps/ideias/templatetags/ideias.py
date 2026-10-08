@@ -55,4 +55,12 @@ def frentes_da_pauta(pauta) -> dict:
                 frente["falharam"].append(candidato)
             else:
                 frente["aprovadas"].append(candidato)
-    return {"frentes": frentes, "esperando": total_esperando, **contexto_da_curadoria()}
+    sugeridas = sum(
+        1 for f in frentes for c in f["pendentes"] if (c.metricas or {}).get("sugestao_da_ia")
+    )
+    return {
+        "frentes": frentes,
+        "esperando": total_esperando,
+        "sugeridas": sugeridas,
+        **contexto_da_curadoria(),
+    }

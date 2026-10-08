@@ -84,6 +84,9 @@ Responda com estas partes:
        }
      ],
      "capturar_texto": ["F3", "F7"],
+     "pedidos_de_pdf": [
+       {"fonte": "F4", "o_que": "o dado que falta, em poucas palavras"}
+     ],
      "sugestoes_de_curadoria": [
        {"fonte": "F5", "acao": "aprovar | recusar | discurso", "motivo": "..."}
      ]
@@ -93,7 +96,9 @@ Responda com estas partes:
    ficam como estao; nenhuma frente e apagada nem renomeada). "buscar_de_novo"
    numa frente que ja existe faz o sistema buscar de novo nela; frente nova e
    buscada sempre. "capturar_texto": as fontes que vieram "so o resumo da
-   busca" e merecem o texto completo. "sugestoes_de_curadoria" sao so
+   busca" e merecem o texto completo. "pedidos_de_pdf": o que procurar dentro do
+   texto completo de um estudo (o sistema extrai os paragrafos que respondem,
+   sem modelo, quando o PDF estiver no acervo). "sugestoes_de_curadoria" sao so
    sugestoes: quem decide e o autor. Nunca invente link. Sem nada a refinar,
    devolva {"frentes": []}.
 """
@@ -208,8 +213,64 @@ def dossie(pauta, *, limite: int = LIMITE_DO_DOSSIE) -> str:
         partes.append(
             "\n".join(cabecalho)
             + f"\nConteudo{nota}:\n{_cortar(fonte['texto'], por_fonte) or '(vazio)'}"
+            + _texto_dos_pedidos(c)
         )
     return "\n\n".join(partes) + "\n"
+
+
+# -- Pedidos de PDF: o que procurar dentro do texto completo de um estudo -----------
+TRECHOS_POR_PEDIDO_NO_DOSSIE = 3
+
+
+def documento_completo(candidato):
+    """O documento com o texto completo do estudo (o PDF), ou None."""
+    for documento in (candidato.documento_completo, candidato.documento):
+        if (
+            documento is not None
+            and documento.markdown_full
+            and (documento.extraction_method != "resumo")
+        ):
+            return documento
+    return None
+
+
+def trechos_dos_pedidos(candidato) -> dict:
+    """{pedido: [paragrafos]} dos pedidos de PDF desta fonte, achados por vetor
+    no texto completo (o mesmo mecanismo da pesquisa do B, sem modelo). Feito
+    uma vez por pedido e guardado na fonte; sem PDF ainda, vazio."""
+    pedidos = (candidato.metricas or {}).get("pedidos_de_pdf") or []
+    guardados = (candidato.metricas or {}).get("trechos_pedidos") or {}
+    faltam = [p for p in pedidos if p not in guardados]
+    documento = documento_completo(candidato)
+    if faltam and documento is not None:
+        from apps.knowledge.pesquisa import trechos_pedidos
+
+        try:
+            achados = trechos_pedidos(documento, faltam, titulo=candidato.titulo)
+        except Exception:  # sem embedding agora: tenta da proxima vez
+            achados = {}
+        if achados:
+            guardados = {**guardados, **achados}
+            candidato.metricas = {**(candidato.metricas or {}), "trechos_pedidos": guardados}
+            candidato.save(update_fields=["metricas"])
+    return {p: guardados[p] for p in pedidos if p in guardados}
+
+
+def _texto_dos_pedidos(candidato) -> str:
+    pedidos = (candidato.metricas or {}).get("pedidos_de_pdf") or []
+    if not pedidos:
+        return ""
+    trechos = trechos_dos_pedidos(candidato)
+    linhas = []
+    for pedido in pedidos:
+        if pedido in trechos:
+            corpo = "\n".join(
+                _cortar(p, 1200) for p in trechos[pedido][:TRECHOS_POR_PEDIDO_NO_DOSSIE]
+            )
+            linhas.append(f"Do texto completo, sobre '{pedido}':\n{corpo}")
+        else:
+            linhas.append(f"Pedido '{pedido}': o texto completo ainda nao esta no acervo.")
+    return "\n" + "\n".join(linhas)
 
 
 def capturar_textos(pauta) -> int:
@@ -342,7 +403,26 @@ def aplicar_veredito(pauta, texto: str) -> dict:
         candidato.save(update_fields=["metricas"])
         sugeridas += 1
 
+    pedidos = [p for p in dados.get("pedidos_de_pdf") or [] if isinstance(p, dict)]
+    por_codigo_pdf = _candidatos_por_codigo(pauta, [p.get("fonte") for p in pedidos])
+    pedidos_feitos = 0
+    for pedido in pedidos:
+        codigo = re.sub(r"[^\dF]", "", str(pedido.get("fonte", "")).upper())
+        candidato = por_codigo_pdf.get(codigo)
+        o_que = str(pedido.get("o_que") or "").strip()[:200]
+        if candidato is None or not o_que:
+            continue
+        atuais = (candidato.metricas or {}).get("pedidos_de_pdf") or []
+        if o_que not in atuais:
+            candidato.metricas = {
+                **(candidato.metricas or {}),
+                "pedidos_de_pdf": [*atuais, o_que],
+            }
+            candidato.save(update_fields=["metricas"])
+        pedidos_feitos += 1
+
     resumo = {
+        "pedidos_de_pdf": pedidos_feitos,
         "frentes_novas": [f for f in a_buscar if f not in antes],
         "rebuscar": [f for f in a_buscar if f in antes],
         "capturar": [str(c.pk) for c in capturar.values()],
@@ -379,3 +459,56 @@ def capturar_fontes(ids: list[str]) -> int:
             continue
         feitas += 1
     return feitas
+
+
+def pedidos_de_pdf_da_pauta(pauta) -> list[tuple]:
+    """[(documento, pedido)] dos pedidos de PDF das fontes aprovadas da pauta
+    com o texto completo no acervo: a geracao do A busca neles o paragrafo
+    que responde (`referencias.trechos_da_pauta`)."""
+    from apps.knowledge.models import CandidatoDeFonte
+
+    saida = []
+    for candidato in CandidatoDeFonte.objects.filter(
+        pauta=pauta,
+        situacao=CandidatoDeFonte.Situacao.APROVADO,
+        metricas__has_key="pedidos_de_pdf",
+    ).select_related("documento", "documento_completo"):
+        documento = documento_completo(candidato)
+        if documento is None:
+            continue
+        saida += [(documento, p) for p in candidato.metricas.get("pedidos_de_pdf") or []]
+    return saida
+
+
+def aplicar_sugestoes(pauta, *, por=None) -> dict:
+    """As sugestoes de curadoria do veredito, aplicadas. Recusar e discurso,
+    sempre; aprovar, so quando a IA viu o texto (nao so o resumo da busca) —
+    as outras continuam como sugestao. Estudo sem PDF aberto e video sem
+    legenda seguem o caminho de sempre (esperando o arquivo, na frente)."""
+    from apps.knowledge.fontes_web import aprovar, aprovar_como_discurso, recusar
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.perfis import categoria_da_natureza
+
+    feitos = {"aprovadas": 0, "recusadas": 0, "discurso": 0, "ficaram": 0}
+    for candidato in CandidatoDeFonte.objects.filter(
+        pauta=pauta,
+        situacao=CandidatoDeFonte.Situacao.PENDENTE,
+        metricas__has_key="sugestao_da_ia",
+    ).select_related("documento"):
+        acao = (candidato.metricas.get("sugestao_da_ia") or {}).get("acao")
+        if acao == "recusar":
+            recusar(candidato, por=por, motivo="sugestao do veredito da outra IA")
+            feitos["recusadas"] += 1
+        elif acao == "discurso":
+            aprovar_como_discurso(candidato, por=por)
+            feitos["discurso"] += 1
+        elif acao == "aprovar" and not _conteudo(candidato)[1]:
+            aprovar(
+                candidato,
+                categoria=categoria_da_natureza(natureza_sugerida(candidato)),
+                por=por,
+            )
+            feitos["aprovadas"] += 1
+        else:
+            feitos["ficaram"] += 1
+    return feitos

@@ -181,3 +181,30 @@ def test_so_fonte_de_contexto_para_como_no_caminho_de_sempre(tenant_com_acervo):
     pauta.refresh_from_db()
     assert pauta.status == Topic.Status.WAITING_SOURCES
     assert not pauta.articles.exists()
+
+
+@pytest.mark.django_db
+def test_pauta_investigada_leva_o_debate_e_o_plano_por_frentes(artigo):
+    pauta = artigo.topic
+    pauta.debate = {
+        "afirmacao": "Todo mundo precisa estudar IA.",
+        "tese": "Falta especialista da area, nao quem estude IA.",
+        "frentes": [
+            {"nome": "Contra", "papel": "contra", "descricao": "a"},
+            {"nome": "O que a midia diz", "papel": "discurso", "descricao": "b"},
+            {"nome": "Especialista confere", "papel": "a_favor", "descricao": "c"},
+        ],
+    }
+    pauta.save()
+    pedido = outra_ia.pedido(artigo)
+    assert "DEBATE DESTA PAUTA" in pedido and "Todo mundo precisa estudar IA." in pedido
+    plano = pedido[pedido.index("Plano sugerido") :].split("\n")[0]
+    # O cenario primeiro; depois a favor, contra; a conclusao por ultimo.
+    assert (
+        plano.index("o cenario")
+        < plano.index("'Especialista confere'")
+        < plano.index("'Contra'")
+        < plano.index("conclusao honesta")
+    )
+    assert "'O que a midia diz'" not in plano
+    assert "pauta investigada (frentes e debate: muito material)" in outra_ia.motivos_de_peso(pauta)

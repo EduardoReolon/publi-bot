@@ -33,6 +33,8 @@ class IdeiasConfig(AppConfig):
     blocos_do_artigo = ["ideias/_investigar_no_artigo.html"]
     # As ideias aprovadas, para a escolha do dia das redes.
     ideias_para_as_redes = "apps.ideias.investigacao.para_as_redes"
+    # Os pedidos de PDF do veredito: a geracao do A acha o paragrafo pedido.
+    pedidos_de_texto = "apps.ideias.veredito.pedidos_de_pdf_da_pauta"
 
     def ready(self) -> None:
         from django.db.models.signals import post_save

@@ -34,6 +34,36 @@ def discursos(pauta) -> list:
     )
 
 
+# A ordem em que as frentes costumam render o melhor texto: o cenario (o que
+# se diz), o que sustenta a suspeita, a melhor evidencia contra, as outras
+# explicacoes e, por fim, a conclusao.
+ORDEM_DOS_PAPEIS = ("discurso", "a_favor", "contra", "alternativa")
+
+
+def plano(debate: dict) -> str:
+    """O plano sugerido das secoes, na ordem das frentes (por algoritmo: o
+    modelo pequeno segue um roteiro melhor do que monta um)."""
+    frentes = debate.get("frentes") or []
+    if not frentes:
+        return (
+            "- Estrutura que costuma funcionar: o que se diz -> por que isso convence -> o "
+            "que a evidencia mostra (a favor e contra) -> conclusao honesta."
+        )
+    ordem = {papel: n for n, papel in enumerate(ORDEM_DOS_PAPEIS)}
+    passos = ["o cenario: o que se diz e por que convence"]
+    for frente in sorted(frentes, key=lambda f: ordem.get(f.get("papel"), len(ordem))):
+        if frente.get("papel") == "discurso":
+            continue
+        passos.append(f"'{frente.get('nome', '')}'")
+    passos.append("conclusao honesta: o que a evidencia sustenta e o que nao permite dizer")
+    return (
+        "- Plano sugerido das secoes, nesta ordem (uma secao por passo, ou duas se o "
+        "passo tiver muito material; o titulo de cada secao e seu, nao o nome da frente): "
+        + " -> ".join(passos)
+        + "."
+    )
+
+
 def bloco(pauta) -> str:
     """O bloco do debate para os prompts do artigo, ou vazio na pauta comum."""
     if pauta is None:
@@ -66,8 +96,7 @@ def bloco(pauta) -> str:
         "- A conclusao sai das FONTES (evidencia), e so delas. Se elas sustentam o que se "
         "diz, diga isso com clareza; se sustentam o autor, mostre como; se apontam outra "
         "explicacao, apresente-a. Diga tambem o que a evidencia NAO permite concluir.",
-        "- Estrutura que costuma funcionar: o que se diz -> por que isso convence -> o que "
-        "a evidencia mostra (a favor e contra) -> conclusao honesta.",
+        plano(debate),
         "- Critique a afirmacao, nunca as pessoas; quem disse X costuma ter visto parte do "
         "quadro, nao estar mentindo.",
     ]
