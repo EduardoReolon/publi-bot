@@ -493,6 +493,16 @@ mensagem que aponta para esse arquivo.
 **Reordenador da busca** (opcional): `RAG_RERANKER_MODEL=jinaai/jina-reranker-v2-base-multilingual`
 baixa ~1,1 GB na primeira busca. Deixe vazio em maquina com pouca memoria.
 
+**Outro tenant com as mesmas contas:** a tela nunca mostra a chave de novo (e o
+YouTube nao deixa ver de novo no Google). Copie de um tenant para o outro, sem
+mostrar nada (as chaves vao cifradas, a cifra e a mesma no servidor todo):
+
+```bash
+venv/bin/python manage.py copiar_contas_externas --de <schema_origem> --para <schema_novo>
+# --sobrescrever: troca tambem o que o novo ja tem (sem isto, so preenche o vazio)
+# --mostrar (sem --para): imprime as chaves da origem, para usar fora do PubliBot
+```
+
 ### Passo 6c — Redes sociais e paginas publicas (opcionais)
 
 Sem nada disto as redes funcionam no "copiar e postar". Para publicar sozinho,
