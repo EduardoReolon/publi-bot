@@ -181,7 +181,8 @@ def fontes_da_pauta(topic, *, fluxo: str = "") -> list:
         raise FontesPorCurar(
             f"a pauta {topic.title!r} usaria {len(faltam)} fonte(s) ainda nao curada(s): "
             + "; ".join(d.title or d.nome_do_arquivo for d in faltam)
-            + ". Cure-as (Pautas > Referencias) e gere de novo.",
+            + '. Cure-as na pauta (Artigo A > Referencias do acervo > "Para gerar, cure '
+            'estas fontes"; a que nao servir, recuse) e gere de novo.',
             faltam,
         )
     return trechos
