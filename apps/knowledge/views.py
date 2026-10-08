@@ -45,6 +45,16 @@ def documentos(request: HttpRequest) -> HttpResponse:
         consulta = consulta.filter(status=situacao)
     if request.GET.get("extracao") == "marcada":
         consulta = consulta.filter(extraction_flagged_at__isnull=False)
+    # Os documentos das fontes aprovadas de uma pauta (vindo de "aguardando
+    # curadoria" na pauta): os que ainda esperam a curadoria dos blocos.
+    pauta = None
+    if request.GET.get("pauta"):
+        from apps.content.models import Topic
+        from apps.knowledge.referencias import _EM_CURADORIA
+
+        pauta = Topic.objects.filter(pk=request.GET["pauta"]).first()
+        if pauta is not None:
+            consulta = consulta.filter(candidatos__pauta=pauta, status__in=_EM_CURADORIA).distinct()
 
     # A contagem por situacao vem da tabela inteira, e nao do resultado
     # filtrado: senao o filtro escolhido zera todos os outros na tela.
@@ -59,6 +69,7 @@ def documentos(request: HttpRequest) -> HttpResponse:
             "aba": "documentos",
             "documentos": consulta[:200],
             "situacao": situacao,
+            "pauta": pauta,
             "situacoes": [
                 (valor, rotulo, contagens.get(valor, 0))
                 for valor, rotulo in Document.Status.choices
@@ -862,11 +873,24 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
                 CandidatoDeFonte.objects.filter(situacao=CandidatoDeFonte.Situacao.AGUARDANDO_PDF)
             ),
             "pauta": pauta,
+            "documentos_em_curadoria": _documentos_em_curadoria(pauta),
             "recentes": recentes,
             "so_recusados": so_recusados,
             "frente": frente,
             **contexto_da_curadoria(),
         },
+    )
+
+
+def _documentos_em_curadoria(pauta) -> int:
+    if pauta is None:
+        return 0
+    from apps.knowledge.referencias import _EM_CURADORIA
+
+    return (
+        Document.objects.filter(candidatos__pauta=pauta, status__in=_EM_CURADORIA)
+        .distinct()
+        .count()
     )
 
 

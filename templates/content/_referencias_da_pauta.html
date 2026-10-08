@@ -31,6 +31,7 @@
     {% if r.paginas.em %}
       {% translate "feita" %}{% if r.paginas.variada %} {% translate "com outras palavras" %}{% endif %} —
       {% if r.paginas.novos %}{{ r.paginas.novos }} {% translate "nova(s)" %}{% else %}{% translate "nada novo encontrado" %}{% endif %}.
+    {% elif pauta.debate.frentes %}{% translate "a busca geral nao foi feita; as paginas vieram da investigacao (frentes)" %}.
     {% else %}{% translate "ainda nao feita" %}.{% endif %}
     {% include "content/_aguardando_referencia.html" with a=r.aguardando.pagina %}
   </div>
@@ -83,6 +84,16 @@
         <button class="botao discreto pequeno">{% translate "Seguir sem videos" %}</button>
       </form>
     {% endif %}
-    <a class="botao" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Conferir as fontes sugeridas" %}</a>
+    {% with a=r.aguardando %}
+      {% if a.pagina.conferencia or a.artigo.conferencia or a.video.conferencia %}
+        <a class="botao" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Decidir as fontes sugeridas" %}</a>
+      {% endif %}
+      {% if a.pagina.curadoria or a.artigo.curadoria or a.video.curadoria %}
+        <a class="botao" href="{% url 'knowledge:documentos' %}?pauta={{ pauta.pk }}">{% translate "Curar os documentos aprovados" %}</a>
+      {% endif %}
+      {% if not a.pagina.conferencia and not a.artigo.conferencia and not a.video.conferencia and not a.pagina.curadoria and not a.artigo.curadoria and not a.video.curadoria %}
+        <a class="botao discreto" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Ver as fontes desta pauta" %}</a>
+      {% endif %}
+    {% endwith %}
   </div>
 </div>

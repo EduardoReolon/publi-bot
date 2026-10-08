@@ -12,6 +12,17 @@
     {% endblocktranslate %}
   </p>
 
+  {% if pauta %}
+    <div class="aviso espera">
+      <strong>{% translate "Mostrando so os documentos da pauta que esperam a curadoria" %}:</strong> {{ pauta.title }}
+      <div class="ajuda">{% translate "Sao fontes que voce ja aprovou: o texto ja esta no acervo e falta conferir os blocos (o que entra e o que fica de fora). Sem isso, o artigo nao as usa." %}</div>
+      <div class="acoes">
+        <a class="botao pequeno" href="{% url 'content:pauta' pauta.pk %}">← {% translate "Voltar para a pauta" %}</a>
+        <a class="botao discreto pequeno" href="{% url 'knowledge:documentos' %}">{% translate "Ver o acervo inteiro" %}</a>
+      </div>
+    </div>
+  {% endif %}
+
   <div class="acoes">
     <a class="botao" href="{% url 'knowledge:enviar' %}">{% translate "Enviar documento" %}</a>
     <a class="botao secundario" href="{% url 'knowledge:categorias' %}">{% translate "Categorias" %}</a>

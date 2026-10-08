@@ -52,6 +52,10 @@
     {% include "knowledge/_candidato.html" %}
   {% empty %}
     <p class="vazio">{% translate "Nenhuma fonte sugerida esperando decisao." %}</p>
+    {% if pauta and documentos_em_curadoria %}
+      <div class="aviso espera">{% blocktranslate trimmed count n=documentos_em_curadoria %}{{ n }} fonte desta pauta ja aprovada espera a curadoria do documento (conferir os blocos).{% plural %}{{ n }} fontes desta pauta ja aprovadas esperam a curadoria do documento (conferir os blocos).{% endblocktranslate %}
+        <a class="botao pequeno" href="{% url 'knowledge:documentos' %}?pauta={{ pauta.pk }}">{% translate "Curar os documentos" %}</a></div>
+    {% endif %}
   {% endfor %}
 
   {% if recentes %}
