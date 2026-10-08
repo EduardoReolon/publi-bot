@@ -72,7 +72,7 @@
               {% if candidato.bloqueio %}<div class="ajuda">{% blocktranslate with p=candidato.bloqueio.prefixo %}{{ p }} esta bloqueado{% endblocktranslate %} — <a href="{% url 'knowledge:caminhos' %}">{% translate "desfazer em Caminhos confiaveis" %}</a></div>{% endif %}</td>
             <td>
               {% if candidato.documento %}<a href="{% url 'knowledge:curar' candidato.documento.pk %}">{% translate "curadoria" %}</a>{% endif %}
-              {% if candidato.situacao == 'recusado' or candidato.situacao == 'falhou' %}
+              {% if candidato.situacao == 'recusado' or candidato.situacao == 'falhou' or candidato.situacao == 'fora' %}
                 <form method="post" action="{% url 'knowledge:voltar_a_sugestao' candidato.pk %}">{% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">
                   <button type="submit" class="botao discreto pequeno">{% translate "Voltar para as sugestoes" %}</button>
                 </form>

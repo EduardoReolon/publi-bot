@@ -275,11 +275,18 @@ def _registrar_candidato(
 ):
     """O video como candidato a fonte. Canal confiavel (APROVAR) ja aprova —
     menos como DISCURSO ("o que se diz", caixa de ideias): ai so a pessoa decide."""
-    from apps.knowledge.fontes_web import _ja_conhecida, aprovar, caminho_do_canal
+    from apps.knowledge.fontes_web import (
+        _ja_conhecida,
+        aprovar,
+        caminho_do_canal,
+        reaproveitar,
+    )
     from apps.knowledge.models import CandidatoDeFonte
     from apps.knowledge.videos import data_do_youtube, url_do_video
 
     url = url_do_video(video["id"])
+    if (reaproveitado := reaproveitar(url, pauta)) is not None:
+        return reaproveitado
     if _ja_conhecida(url):
         return None
     caminho = caminho_do_canal(video["canal_id"])

@@ -923,6 +923,19 @@ def decidir_candidato(request: HttpRequest, pk) -> HttpResponse:
             messages.success(request, _("Recusado. Esta pagina nao sera sugerida de novo."))
         return _voltar_as_fontes(request)
 
+    if request.POST.get("decisao") == "fora_da_pauta":
+        from apps.knowledge.fontes_web import dispensar_da_pauta
+
+        dispensar_da_pauta(candidato, por=request.user)
+        messages.success(
+            request,
+            _(
+                "Fora desta pauta: nao volta nela, mas outra pauta que a encontrar "
+                "recebe a sugestao."
+            ),
+        )
+        return _voltar_as_fontes(request)
+
     # O papel: "discurso" (o que se diz, nunca prova) ou "evidencia".
     if request.POST.get("decisao") == "discurso":
         from apps.knowledge.fontes_web import aprovar_como_discurso

@@ -183,6 +183,24 @@ artigo ja escrito nao muda sozinho: as frentes entram na proxima geracao
 ("Gerar de novo do zero"). Ligado ao nucleo pelos pontos de extensao
 `blocos_da_pauta` e `blocos_do_artigo` (`apps/ops/extensoes.py`).
 
+## Dispensar uma fonte da frente: "nao serve aqui" x "lixo"
+
+Cada link existe uma vez so no sistema. Nas frentes (pauta com investigacao),
+dispensar tem dois botoes:
+
+- **Nao serve para esta pauta** (`fontes_web.dispensar_da_pauta`, situacao
+  "fora"): sai da frente e nao volta NESTA pauta (nem no refinamento), mas nao
+  e recusada: a busca de outra pauta que achar o mesmo link a recebe, esperando
+  decisao (`fontes_web.reaproveitar`, chamado nas buscas da web, de videos, de
+  estudos, nos links colados e nas citacoes seguidas). A fonte guarda de quais
+  pautas ja saiu (`metricas.fora_de`) e nunca volta para elas.
+- **Recusar de vez (lixo)**: o recusar de sempre, global (com os bloqueios de
+  site e de pasta).
+
+Fora das frentes (Fontes sugeridas comuns), o "Recusar" continua global. No
+veredito, "recusar" e so para lixo e "fora_da_pauta" para o material bom que
+nao serve aqui; "Aplicar as sugestoes" aplica cada um do seu jeito.
+
 ## Os dois tipos de fonte (e a trava)
 
 - **Evidencia** — sustenta o que o texto afirma. Vai para o acervo, com

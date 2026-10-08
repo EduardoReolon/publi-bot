@@ -66,7 +66,7 @@ niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
   {% endif %}
   {% with sugestao=candidato.metricas.sugestao_da_ia %}{% if sugestao %}
     <div class="aviso espera"><strong>{% translate "Sugestao do veredito da outra IA" %}:</strong>
-      {% if sugestao.acao == 'aprovar' %}{% translate "aprovar" %}{% elif sugestao.acao == 'recusar' %}{% translate "recusar" %}{% else %}{% translate "usar como discurso" %}{% endif %}{% if sugestao.motivo %} — {{ sugestao.motivo }}{% endif %}
+      {% if sugestao.acao == 'aprovar' %}{% translate "aprovar" %}{% elif sugestao.acao == 'recusar' %}{% translate "recusar de vez (lixo)" %}{% elif sugestao.acao == 'fora_da_pauta' %}{% translate "nao serve para esta pauta" %}{% else %}{% translate "usar como discurso" %}{% endif %}{% if sugestao.motivo %} — {{ sugestao.motivo }}{% endif %}
       <span class="ajuda">({% translate "so sugestao: quem decide e voce" %})</span>
     </div>
   {% endif %}{% endwith %}
@@ -78,7 +78,12 @@ niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
     <form method="post" action="{% url 'knowledge:decidir_candidato' candidato.pk %}" class="acoes">
       {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}
       <button type="submit" name="decisao" value="discurso">{% translate "Aprovar como discurso" %}</button>
-      <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+      {% if candidato.pauta.debate.frentes %}
+        <button type="submit" name="decisao" value="fora_da_pauta" class="botao secundario" title="{% translate 'Sai desta pauta e nao volta nela; outra pauta que a encontrar recebe a sugestao' %}">{% translate "Nao serve para esta pauta" %}</button>
+        <button type="submit" name="decisao" value="recusar" class="botao discreto" title="{% translate 'Lixo: nunca mais sugerida, em pauta nenhuma' %}">{% translate "Recusar de vez (lixo)" %}</button>
+      {% else %}
+        <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+      {% endif %}
       <button type="submit" name="decisao" value="evidencia" class="botao discreto" title="{% translate 'Quando a pagina e, na verdade, uma boa fonte de informacao' %}">{% translate "E evidencia, na verdade" %}</button>
     </form>
   {% else %}
@@ -95,7 +100,12 @@ niveis, aviso (ver knowledge.views.contexto_da_curadoria).{% endcomment %}
       {% endfor %}
     </select>
     <button type="submit" name="decisao" value="aprovar">{% translate "Aprovar e enviar para a curadoria" %}</button>
-    <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+    {% if candidato.pauta.debate.frentes %}
+      <button type="submit" name="decisao" value="fora_da_pauta" class="botao secundario" title="{% translate 'Sai desta pauta e nao volta nela; outra pauta que a encontrar recebe a sugestao' %}">{% translate "Nao serve para esta pauta" %}</button>
+      <button type="submit" name="decisao" value="recusar" class="botao discreto" title="{% translate 'Lixo: nunca mais sugerida, em pauta nenhuma' %}">{% translate "Recusar de vez (lixo)" %}</button>
+    {% else %}
+      <button type="submit" name="decisao" value="recusar" class="botao secundario">{% translate "Recusar" %}</button>
+    {% endif %}
     <button type="submit" name="decisao" value="bloquear_caminho" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere paginas desta pasta do site' %}">{% translate "Recusar esta area do site" %}</button>
     <button type="submit" name="decisao" value="bloquear_site" class="botao discreto" title="{% translate 'Recusa e nunca mais sugere nada deste site' %}">{% translate "Recusar o site inteiro" %}</button>
     {% if candidato.pauta.debate %}<button type="submit" name="decisao" value="discurso" class="botao discreto" title="{% translate 'O que se diz sobre o tema: citado e analisado no artigo, nunca usado como prova' %}">{% translate "Usar como discurso" %}</button>{% endif %}

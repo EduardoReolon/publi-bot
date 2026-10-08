@@ -62,7 +62,7 @@
       <summary>
         <strong>{{ f.nome }}</strong>
         {% if f.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso (o que se diz)" %}</span>{% elif f.papel == 'a_favor' %}<span class="selo ok">{% translate "a favor" %}</span>{% elif f.papel == 'contra' %}<span class="selo ruim">{% translate "contra" %}</span>{% else %}<span class="selo">{% translate "outra explicacao" %}</span>{% endif %}
-        <span class="ajuda">{{ f.pendentes|length }} {% translate "esperando" %}{% if f.esperando_arquivo %} · <strong>{{ f.esperando_arquivo|length }} {% translate "esperando PDF ou audio" %}</strong>{% endif %} · {{ f.aprovadas|length }} {% translate "aprovadas" %}{% if f.recusadas %} · {{ f.recusadas }} {% translate "recusadas" %}{% endif %}</span>
+        <span class="ajuda">{{ f.pendentes|length }} {% translate "esperando" %}{% if f.esperando_arquivo %} · <strong>{{ f.esperando_arquivo|length }} {% translate "esperando PDF ou audio" %}</strong>{% endif %} · {{ f.aprovadas|length }} {% translate "aprovadas" %}{% if f.fora %} · {{ f.fora }} {% translate "fora desta pauta" %}{% endif %}{% if f.recusadas %} · {{ f.recusadas }} {% translate "recusadas de vez" %}{% endif %}</span>
       </summary>
       {% if f.descricao %}<p class="ajuda">{{ f.descricao }}</p>{% endif %}
       {% for candidato in f.pendentes %}
@@ -125,7 +125,7 @@
       <form method="post" action="{% url 'ideias:aplicar_sugestoes' p.pk %}" class="acoes">
         {% csrf_token %}
         <button type="submit" class="botao secundario pequeno">{% blocktranslate trimmed count n=inv.sugeridas %}Aplicar a sugestao da IA ({{ n }} fonte){% plural %}Aplicar as sugestoes da IA ({{ n }} fontes){% endblocktranslate %}</button>
-        <span class="ajuda">{% translate "Recusar e discurso sao aplicados; aprovar, so quando a IA viu o texto (nao so o resumo da busca). Estudo sem PDF e video sem legenda ficam esperando o arquivo na frente, como sempre." %}</span>
+        <span class="ajuda">{% translate "Recusar de vez, fora desta pauta e discurso sao aplicados; aprovar, so quando a IA viu o texto (nao so o resumo da busca). Estudo sem PDF e video sem legenda ficam esperando o arquivo na frente, como sempre." %}</span>
       </form>
     {% endif %}
     {% if p.debate.veredito %}

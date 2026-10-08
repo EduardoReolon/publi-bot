@@ -164,6 +164,46 @@ def _de_instituicao_confiavel(url: str) -> bool:
         return False
 
 
+def dispensar_da_pauta(candidato: CandidatoDeFonte, *, por=None, motivo: str = "") -> None:
+    """ "Nao serve para esta pauta": sai da frente e nao volta NESTA pauta, mas
+    nao e recusada — a busca de outra pauta que a achar a recebe."""
+    candidato.situacao = CandidatoDeFonte.Situacao.FORA_DA_PAUTA
+    fora_de = (candidato.metricas or {}).get("fora_de") or []
+    if candidato.pauta_id and str(candidato.pauta_id) not in fora_de:
+        fora_de = [*fora_de, str(candidato.pauta_id)]
+    candidato.metricas = {**(candidato.metricas or {}), "fora_de": fora_de}
+    candidato.motivo = motivo[:2000]
+    candidato.decidido_por = por
+    candidato.decidido_em = timezone.now()
+    candidato.save()
+
+
+def reaproveitar(url: str, pauta) -> CandidatoDeFonte | None:
+    """A fonte que uma pauta dispensou ("nao serve para esta pauta") e que a
+    busca de OUTRA pauta achou: passa para ela, esperando decisao. Nunca volta
+    para uma pauta que ja a dispensou."""
+    if pauta is None:
+        return None
+    candidato = CandidatoDeFonte.objects.filter(
+        url=url, situacao=CandidatoDeFonte.Situacao.FORA_DA_PAUTA
+    ).first()
+    if candidato is None or str(pauta.pk) in ((candidato.metricas or {}).get("fora_de") or []):
+        return None
+    metricas = {
+        k: v
+        for k, v in (candidato.metricas or {}).items()
+        if k not in ("frente", "lado", "sugestao_da_ia")
+    }
+    candidato.pauta = pauta
+    candidato.situacao = CandidatoDeFonte.Situacao.PENDENTE
+    candidato.metricas = metricas
+    candidato.motivo = ""
+    candidato.decidido_por = None
+    candidato.decidido_em = None
+    candidato.save()
+    return candidato
+
+
 def _ja_conhecida(url: str) -> bool:
     return (
         CandidatoDeFonte.objects.filter(url=url).exists()
@@ -277,6 +317,11 @@ def _buscar_paginas(
             if len(novos) >= limite:
                 break
             url = item.url[:500]
+            if (reaproveitado := reaproveitar(url, pauta)) is not None:
+                reaproveitado.papel = papel
+                reaproveitado.save(update_fields=["papel"])
+                novos.append(reaproveitado)
+                continue
             if _ja_conhecida(url) or (bloqueada(url) and not discurso):
                 continue
             caminho = caminho_de(url)
@@ -435,6 +480,9 @@ def seguir_citacoes(candidato: CandidatoDeFonte, html: bytes | str) -> list[Cand
             r"\.(gov|edu|ac|org)(\.[a-z]{2})?$", anfitriao
         ) or _de_instituicao_confiavel(url)
         if not (_PRIMARIA.search(url) or oficial):
+            continue
+        if (reaproveitado := reaproveitar(url, candidato.pauta)) is not None:
+            achados.append(reaproveitado)
             continue
         if _ja_conhecida(url) or bloqueada(url):
             continue

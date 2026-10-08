@@ -381,12 +381,14 @@ def aplicar_sugestoes(request: HttpRequest, pk) -> HttpResponse:
     messages.success(
         request,
         _(
-            "Aplicadas: %(a)s aprovada(s), %(r)s recusada(s), %(d)s como discurso. "
+            "Aplicadas: %(a)s aprovada(s), %(r)s recusada(s) de vez, %(o)s fora desta "
+            "pauta, %(d)s como discurso. "
             "Ficaram para voce: %(f)s (a IA viu so o resumo, ou a acao nao se aplica)."
         )
         % {
             "a": feitos["aprovadas"],
             "r": feitos["recusadas"],
+            "o": feitos["fora"],
             "d": feitos["discurso"],
             "f": feitos["ficaram"],
         },
