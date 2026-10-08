@@ -22,7 +22,8 @@ frentes da pauta.{% endcomment %}
   <strong><a href="{{ candidato.url }}" target="_blank" rel="noopener noreferrer">{{ candidato.titulo|default:candidato.url }}</a></strong>
   {% if candidato.autores %}<span class="ajuda">{{ candidato.autores|truncatechars:80 }}{% if candidato.ano %} · {{ candidato.ano }}{% endif %}</span>{% endif %}
   <div class="pre-visualizacao">{{ candidato.motivo }}</div>
-  {% if candidato.metricas.pedidos_de_pdf %}<div class="aviso espera"><strong>{% translate "A IA quer deste PDF" %}:</strong> {{ candidato.metricas.pedidos_de_pdf|join:"; " }}</div>{% endif %}
+  {% if candidato.metricas.pedidos_de_pdf %}<div class="aviso espera"><strong>{% translate "A IA quer deste PDF" %}:</strong> {{ candidato.metricas.pedidos_de_pdf|join:"; " }}
+    <div class="ajuda">{% translate "Pode enviar o arquivo inteiro, mesmo um livro: de um documento grande (mais de ~60 paginas) ficam so os paragrafos que respondem, ja no indice, sem curadoria; o resto nao e guardado." %}</div></div>{% endif %}
   <form method="post" enctype="multipart/form-data" action="{% url 'knowledge:enviar_pdf' candidato.pk %}" class="acoes">
     {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}">{% if ancora_de_volta %}<input type="hidden" name="ancora" value="#{{ ancora_de_volta }}">{% endif %}
     <input type="file" name="pdf" accept="application/pdf,.pdf" required>

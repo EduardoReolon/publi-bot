@@ -866,3 +866,53 @@ def test_nao_serve_para_esta_pauta_libera_para_as_outras(ambiente, modelo, busca
     outro.refresh_from_db()
     assert outro.situacao == CandidatoDeFonte.Situacao.FORA_DA_PAUTA
     assert "fora_da_pauta" in veredito.INSTRUCOES
+
+
+@pytest.mark.django_db
+def test_documento_grande_guarda_so_os_trechos_pedidos(ambiente, monkeypatch, embedding_falso):
+    from apps.knowledge import academicos, flows
+    from apps.knowledge.models import DocumentCategory
+
+    categoria = DocumentCategory.objects.first() or DocumentCategory.objects.create(
+        name="Estudos", slug="estudos"
+    )
+    livro = "Paragrafo de um livro enorme sobre outra coisa qualquer. " * 4000
+    documento = Document.objects.create(
+        category=categoria, file_sha256="b" * 64, title="O livro", markdown_full=livro
+    )
+    pauta = Topic.objects.create(title="IA nas empresas")
+    candidato = CandidatoDeFonte.objects.create(
+        url="https://editora.com/livro",
+        tipo=CandidatoDeFonte.Tipo.ARTIGO,
+        titulo="O livro",
+        pauta=pauta,
+        situacao=CandidatoDeFonte.Situacao.APROVADO,
+        documento=documento,
+        metricas={"pedidos_de_pdf": ["por que 80% a 95% dos projetos travam"]},
+    )
+    indexados = []
+    monkeypatch.setattr(
+        "apps.knowledge.tasks.pedir_indexacao", lambda doc, **kw: indexados.append(kw)
+    )
+    monkeypatch.setattr(
+        "apps.knowledge.pesquisa.trechos_pedidos",
+        lambda doc, pedidos, titulo="": {
+            p: ["Entre 80% e 95% dos projetos param por dados ruins, nao por falta de habilidade."]
+            for p in pedidos
+        },
+    )
+    assert flows._so_os_trechos(documento) is True
+    documento.refresh_from_db()
+    candidato.refresh_from_db()
+    assert "80% e 95%" in documento.markdown_full and "outra coisa qualquer" not in (
+        documento.markdown_full
+    )
+    assert len(documento.markdown_full) < 1000
+    assert candidato.metricas["so_os_trechos"] > 60
+    assert indexados and indexados[0]["concluir"] is True and indexados[0]["blocos"]
+
+    # Pequeno, ou sem pedidos: o caminho de sempre.
+    pequeno = Document.objects.create(
+        category=categoria, file_sha256="c" * 64, title="Artigo", markdown_full="Curto."
+    )
+    assert academicos.guardar_so_os_trechos(pequeno) is False
