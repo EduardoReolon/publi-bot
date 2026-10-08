@@ -117,3 +117,12 @@ a publicacao acontece dias depois. Seria uma imagem quebrada garantida.
 sessao nem credencial no PubliBot; ele precisa de um GET simples. A protecao
 correta aqui e o escopo (so a escolhida, so de artigo aprovado, id nao
 enumeravel), nao a autenticacao.
+
+## Adendo: a capa que a pessoa envia
+
+Na aba Capa, "Enviar uma imagem sua" (`capas.enviar_capa`): a foto e girada pela
+orientacao da camera, cortada no centro na proporcao das geradas
+(`IMAGEM_TAMANHO`; ha a opcao de manter inteira), reduzida e convertida para
+WebP sem metadados (localizacao inclusive). Fica no lote 0 ("Enviadas por
+voce"), fora do teto de lotes gerados, e ja entra escolhida: quem envia a
+propria imagem quer usa-la. Abaixo de 1200 pixels de largura, a tela avisa.

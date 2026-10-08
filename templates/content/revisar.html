@@ -446,7 +446,7 @@
     </p>
 
     {% for lote in lotes_de_capa %}
-      <h3>{% blocktranslate with n=lote.numero %}Lote {{ n }}{% endblocktranslate %}</h3>
+      <h3>{% if lote.numero == 0 %}{% translate "Enviadas por voce" %}{% else %}{% blocktranslate with n=lote.numero %}Lote {{ n }}{% endblocktranslate %}{% endif %}</h3>
 
       {% comment %}
         O prompt inteiro, e num campo de onde da para copiar. Truncado, ele so
@@ -551,6 +551,23 @@
         {% endif %}
       </div>
     {% endif %}
+
+    <details class="secao" style="margin:.6rem 0">
+      <summary><strong>{% translate "Enviar uma imagem sua" %}</strong></summary>
+      <form method="post" enctype="multipart/form-data" action="{% url 'content:enviar_capa' artigo.pk %}">
+        {% csrf_token %}
+        <div class="campo">
+          <input type="file" name="capa" accept="image/*" required>
+          <div class="ajuda">{% translate "JPEG, PNG, WebP ou GIF, de qualquer tamanho. O PubliBot gira a foto de celular para a posicao certa, corta no centro na proporcao da capa, reduz o tamanho e converte para WebP, sem os dados da foto (localizacao inclusive). Ela ja entra como a capa." %}</div>
+        </div>
+        <div class="campo">
+          <label>{% translate "Descricao da imagem (opcional)" %}</label>
+          <input type="text" name="alt" maxlength="300" placeholder="{% translate 'o que aparece na imagem, para quem usa leitor de tela; vazio usa o titulo' %}">
+        </div>
+        <label class="ajuda" style="display:block"><input type="checkbox" name="inteira" value="1" style="width:auto"> {% translate "manter a imagem inteira (nao cortar na proporcao da capa)" %}</label>
+        <div class="acoes"><button type="submit" class="botao secundario">{% translate "Enviar e usar como capa" %}</button></div>
+      </form>
+    </details>
 
     <form method="post" action="{% url 'content:gerar_capas' artigo.pk %}">
       {% csrf_token %}

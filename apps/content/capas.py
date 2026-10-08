@@ -407,3 +407,81 @@ def digest_da_capa(imagem: ArticleImage) -> str:
         for pedaco in iter(lambda: arquivo.read(65_536), b""):
             digest.update(pedaco)
     return digest.hexdigest()
+
+
+# -- Capa enviada pela pessoa ------------------------------------------------------
+# Lote 0: as enviadas ficam juntas, fora da contagem de lotes gerados (o teto de
+# `MAXIMO_DE_LOTES` e da geracao, que custa; enviar a propria foto nao custa).
+LOTE_DAS_ENVIADAS = 0
+LARGURA_BOA = 1200  # abaixo disto a capa tende a ficar borrada em tela grande
+
+
+def _proporcao() -> float:
+    largura, altura = (int(x) for x in _tamanho().lower().split("x"))
+    return largura / altura
+
+
+def preparar_capa_enviada(arquivo, *, cortar: bool = True):
+    """(arquivo WebP, avisos). Gira pela orientacao da camera (foto de celular
+    deitada), corta no centro na proporcao da capa (a mesma das geradas) e
+    passa pela padronizacao de sempre (tamanho maximo, WebP, sem os metadados
+    da foto — localizacao inclusive)."""
+    import io
+
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        arquivo.seek(0)
+        imagem = Image.open(arquivo)
+        imagem.load()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ImagemInvalida(
+            "nao foi possivel ler este arquivo como imagem. Envie JPEG, PNG, WebP ou GIF."
+        ) from exc
+    imagem = ImageOps.exif_transpose(imagem)
+    avisos = []
+    if cortar:
+        largura, altura = imagem.size
+        alvo = _proporcao()
+        if largura / altura > alvo:  # larga demais: corta dos lados
+            nova = round(altura * alvo)
+            esquerda = (largura - nova) // 2
+            imagem = imagem.crop((esquerda, 0, esquerda + nova, altura))
+        elif largura / altura < alvo:  # alta demais: corta em cima e embaixo
+            nova = round(largura / alvo)
+            topo = (altura - nova) // 2
+            imagem = imagem.crop((0, topo, largura, topo + nova))
+    if imagem.size[0] < LARGURA_BOA:
+        avisos.append(
+            f"a imagem tem {imagem.size[0]} pixels de largura; abaixo de {LARGURA_BOA} "
+            "ela pode ficar borrada em tela grande."
+        )
+    saida = io.BytesIO()
+    imagem.save(saida, format="PNG")
+    return converter_para_webp(saida, nome="capa-enviada"), avisos
+
+
+@transaction.atomic
+def enviar_capa(article: Article, arquivo, *, alt: str = "", cortar: bool = True):
+    """Grava a imagem enviada como opcao (lote das enviadas) e ja a escolhe:
+    quem envia a propria foto quer usa-la. Devolve (imagem, avisos)."""
+    from django.core.files.base import ContentFile
+
+    webp, avisos = preparar_capa_enviada(arquivo, cortar=cortar)
+    ultima = (
+        article.images.filter(batch=LOTE_DAS_ENVIADAS)
+        .order_by("-order")
+        .values_list("order", flat=True)
+        .first()
+    )
+    imagem = ArticleImage(
+        article=article,
+        batch=LOTE_DAS_ENVIADAS,
+        order=(ultima or 0) + 1,
+        prompt="",
+        alt_text=(alt.strip() or article.title)[:300],
+    )
+    imagem.image.save(webp.name, ContentFile(webp.read()), save=False)
+    imagem.save()
+    escolher_capa(article, imagem)
+    return imagem, avisos

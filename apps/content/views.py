@@ -1499,6 +1499,35 @@ def escolher_capa(request: HttpRequest, pk) -> HttpResponse:
     return _ao_artigo(artigo, "capa")
 
 
+@login_required
+@require_POST
+def enviar_capa(request: HttpRequest, pk) -> HttpResponse:
+    """A capa que a pessoa tem: convertida (orientacao, corte na proporcao da
+    capa, tamanho, WebP sem metadados) e ja escolhida."""
+    from apps.content.capas import enviar_capa as gravar
+    from apps.content.imagens import ImagemInvalida
+
+    artigo = get_object_or_404(Article, pk=pk)
+    arquivo = request.FILES.get("capa")
+    if arquivo is None:
+        messages.error(request, _("Escolha o arquivo da imagem."))
+        return _ao_artigo(artigo, "capa")
+    try:
+        _imagem, avisos = gravar(
+            artigo,
+            arquivo,
+            alt=request.POST.get("alt", ""),
+            cortar=not request.POST.get("inteira"),
+        )
+    except ImagemInvalida as exc:
+        messages.error(request, _("Nao deu para usar a imagem: %(e)s") % {"e": exc})
+        return _ao_artigo(artigo, "capa")
+    messages.success(request, _("Capa enviada e escolhida."))
+    for aviso in avisos:
+        messages.warning(request, aviso)
+    return _ao_artigo(artigo, "capa")
+
+
 def capa_publica(request: HttpRequest, pk) -> HttpResponse:
     """Serve a capa escolhida, sem sessao. E a unica midia publica do sistema.
 
