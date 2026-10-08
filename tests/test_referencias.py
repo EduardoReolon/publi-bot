@@ -483,3 +483,97 @@ def test_nao_usar_nesta_pauta_tira_so_dela(ambiente, monkeypatch):  # noqa: F811
     )
     pauta.refresh_from_db()
     assert len(pauta.busca_de_fontes["acervo"]["por_curar"]) == 2
+
+
+def _acervo_falso(monkeypatch, docs):
+    import types
+
+    def recuperar(**kw):
+        fora = {str(x) for x in kw.get("excluir_documentos") or []}
+        vivos = [d for d in docs if str(d.pk) not in fora]
+        trechos = [
+            types.SimpleNamespace(
+                chunk=types.SimpleNamespace(
+                    pk=n, document_id=d.pk, document=d, supports_central_idea=True
+                ),
+                distancia=0.1,
+            )
+            for n, d in enumerate(vivos)
+        ]
+        return None, trechos
+
+    monkeypatch.setattr("apps.knowledge.services.recuperar", recuperar)
+
+
+def _documentos(*situacoes):
+    from apps.knowledge.models import Document, DocumentCategory
+
+    categoria = DocumentCategory.objects.first() or DocumentCategory.objects.create(
+        name="Veiculos", slug="veiculos"
+    )
+    return [
+        Document.objects.create(
+            category=categoria, file_sha256=f"{n:064x}", title=f"Doc {n}", status=situacao
+        )
+        for n, situacao in enumerate(situacoes)
+    ]
+
+
+def test_curadas_bastam_e_as_nao_curadas_ficam_de_fora(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.services import fontes_da_pauta
+    from apps.knowledge.models import Document
+
+    S = Document.Status
+    docs = _documentos(S.EMBEDDED, S.EMBEDDED, S.CURATED, *[S.PENDING_CURATION] * 5)
+    _acervo_falso(monkeypatch, docs)
+    pauta = Topic.objects.create(title="Pauta com curadas")
+
+    acervo = referencias.conferir(pauta)
+    assert acervo["so_curadas"] and acervo["por_curar"] == []
+    usados = {t.chunk.document_id for t in fontes_da_pauta(pauta)}
+    assert usados == {d.pk for d in docs[:3]}
+
+
+def test_por_curar_tem_limite_e_some_quando_excluido(ambiente, monkeypatch):  # noqa: F811
+    from apps.knowledge.models import Document
+
+    docs = _documentos(*[Document.Status.PENDING_CURATION] * 6)
+    _acervo_falso(monkeypatch, docs)
+    pauta = Topic.objects.create(title="Pauta sem curadas")
+    acervo = referencias.conferir(pauta)
+    assert len(acervo["por_curar"]) == referencias.POR_CURAR_DE_UMA_VEZ
+
+    # Recusado ou excluido sai da lista da tela sem precisar conferir de novo.
+    Document.objects.filter(pk=docs[0].pk).update(status=Document.Status.REJECTED)
+    Document.objects.filter(pk=docs[1].pk).delete()
+    pauta.refresh_from_db()
+    assert [d["id"] for d in referencias.painel(pauta)["acervo"]["por_curar"]] == [str(docs[2].pk)]
+
+
+def test_gerar_so_com_as_ja_curadas(ambiente, monkeypatch):  # noqa: F811
+    from apps.content.services import FontesPorCurar, fontes_da_pauta
+    from apps.knowledge.models import Document
+
+    S = Document.Status
+    docs = _documentos(S.EMBEDDED, *[S.PENDING_CURATION] * 4)
+    _acervo_falso(monkeypatch, docs)
+    pauta = Topic.objects.create(title="Pauta com uma curada")
+    with pytest.raises(FontesPorCurar):
+        fontes_da_pauta(pauta)
+
+    _, _, client = ambiente
+    url_da_pauta = reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    assert "Gerar so com as ja curadas" in client.get(url_da_pauta).content.decode()
+    client.post(reverse("content:so_com_as_curadas", args=[pauta.pk], urlconf="core.urls_tenants"))
+    pauta.refresh_from_db()
+    assert pauta.busca_de_fontes["acervo"]["por_curar"] == []
+    assert pauta.status == Topic.Status.APPROVED
+    assert [t.chunk.document_id for t in fontes_da_pauta(pauta)] == [docs[0].pk]
+    assert "Voltar a pedir curadoria" in client.get(url_da_pauta).content.decode()
+
+    client.post(
+        reverse("content:so_com_as_curadas", args=[pauta.pk], urlconf="core.urls_tenants"),
+        {"desfazer": "1"},
+    )
+    pauta.refresh_from_db()
+    assert pauta.busca_de_fontes["acervo"]["por_curar"]

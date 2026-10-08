@@ -123,6 +123,52 @@ def _chunk(trecho):
     return trecho.chunk if hasattr(trecho, "chunk") else trecho
 
 
+# Com isto de fontes JA CURADAS sustentando a pauta, o artigo e gerado so com
+# elas: as nao curadas que a busca traz sao ignoradas, em vez de travar a
+# geracao (curar ou recusar uma puxava a proxima — um ciclo sem fim).
+MINIMO_DE_DOCUMENTOS_CURADOS = 3
+# Quantas a geracao pede para curar de uma vez, quando as curadas nao bastam.
+POR_CURAR_DE_UMA_VEZ = 3
+
+
+def so_os_curados(trechos) -> list:
+    from apps.knowledge.provisorias import CURADO
+
+    return [t for t in trechos if _chunk(t).document.status in CURADO]
+
+
+def so_curadas_por_escolha(pauta) -> bool:
+    """A pessoa mandou gerar so com o que ja curou ("Gerar so com as curadas")."""
+    return bool((pauta.busca_de_fontes or {}).get("so_curadas"))
+
+
+def fixar_nas_curadas(pauta, *, ligar: bool = True) -> dict:
+    """Liga (ou desliga) o "so com as curadas" desta pauta e reconfere."""
+    pauta.busca_de_fontes = {**(pauta.busca_de_fontes or {}), "so_curadas": ligar}
+    type(pauta).objects.filter(pk=pauta.pk).update(busca_de_fontes=pauta.busca_de_fontes)
+    return conferir(pauta)
+
+
+def basta_o_curado(trechos, *, por_escolha: bool = False) -> bool:
+    """As fontes curadas entre os trechos ja sustentam a pauta sozinhas: pelo
+    minimo de documentos ou, se a pessoa escolheu, com qualquer quantidade."""
+    curados = so_os_curados(trechos)
+    if por_escolha:
+        return sustenta(curados)
+    documentos = {_chunk(t).document_id for t in curados}
+    return len(documentos) >= MINIMO_DE_DOCUMENTOS_CURADOS and sustenta(curados)
+
+
+def a_curar(trechos, *, por_escolha: bool = False) -> list:
+    """O que a geracao pede para curar: nada, se o curado ja basta; senao, as
+    primeiras nao curadas (poucas de uma vez)."""
+    from apps.knowledge.provisorias import por_curar
+
+    if basta_o_curado(trechos, por_escolha=por_escolha):
+        return []
+    return por_curar(trechos)[:POR_CURAR_DE_UMA_VEZ]
+
+
 def sustenta(trechos) -> bool:
     """A mesma regra da geracao: algum trecho, e algum que sustente a ideia central."""
     return bool(trechos) and any(getattr(_chunk(t), "supports_central_idea", True) for t in trechos)
@@ -146,7 +192,8 @@ def no_acervo(pauta) -> dict:
     "nao_curados": n, "por_curar": [{id, titulo}]}.
 
     "por_curar": os ainda nao curados entre os que a geracao usaria (os
-    primeiros `top_k`). Enquanto houver, a pauta nao e gerada."""
+    primeiros `top_k`), no maximo `POR_CURAR_DE_UMA_VEZ`. Vazio quando as ja
+    curadas bastam ("so_curadas"): ai o artigo sai so com elas."""
     from apps.knowledge.models import Document, RetrievalSettings
 
     trechos = trechos_da_pauta(pauta, top_k=TRECHOS_CONTADOS)
@@ -156,17 +203,22 @@ def no_acervo(pauta) -> dict:
         documento_id = getattr(_chunk(trecho), "document_id", None)
         if documento_id and documento_id not in ids:
             ids.append(documento_id)
-    from apps.knowledge.provisorias import CURADO, por_curar
+    from apps.knowledge.provisorias import CURADO
 
     contagem = dict.fromkeys(TIPOS, 0)
     contagem["nao_curados"] = 0
     for documento in Document.objects.filter(pk__in=ids).prefetch_related("candidatos"):
         contagem[tipo_do_documento(documento)] += 1
         contagem["nao_curados"] += documento.status not in CURADO
-    contagem["suficiente"] = sustenta(trechos[:top_k])
+    usados = trechos[:top_k]
+    escolha = so_curadas_por_escolha(pauta)
+    contagem["suficiente"] = sustenta(usados)
+    contagem["curadas_sustentam"] = sustenta(so_os_curados(usados))
+    contagem["so_curadas"] = basta_o_curado(usados, por_escolha=escolha)
+    contagem["por_escolha"] = escolha
     contagem["por_curar"] = [
         {"id": str(d.pk), "titulo": (d.title or d.nome_do_arquivo)[:200]}
-        for d in por_curar(trechos[:top_k])
+        for d in a_curar(usados, por_escolha=escolha)
     ]
     contagem["em"] = timezone.now().isoformat()
     return contagem
@@ -353,8 +405,20 @@ def painel(pauta) -> dict:
     from apps.radar.models import ConfiguracaoDoRadar
 
     busca = pauta.busca_de_fontes or {}
-    acervo = busca.get("acervo") or {}
+    acervo = dict(busca.get("acervo") or {})
     artigos = busca.get("artigos") or {}
+    if acervo.get("por_curar"):
+        # A lista e da ultima conferencia: o que ja foi curado, recusado ou
+        # excluido desde entao sai na hora, sem precisar conferir de novo.
+        from apps.knowledge.models import Document
+
+        ainda = {
+            str(pk)
+            for pk in Document.objects.filter(
+                pk__in=[d["id"] for d in acervo["por_curar"]], status__in=_EM_CURADORIA
+            ).values_list("pk", flat=True)
+        }
+        acervo["por_curar"] = [d for d in acervo["por_curar"] if d["id"] in ainda]
     return {
         "acervo": acervo,
         "paginas": busca.get("paginas") or {},

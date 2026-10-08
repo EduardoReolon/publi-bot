@@ -708,7 +708,7 @@ Duas cargas a mais que a conexao do worker pode marcar em **Inferencia**:
 
 | Carga | Rota no worker | O que muda |
 |---|---|---|
-| Vetorizacao de documentos (`embedding`) | `/v1/embeddings` — [WORKER_VETORIZACAO.md](WORKER_VETORIZACAO.md) | a indexacao sai do servidor (1 CPU) e vai para a placa; a consulta continua no servidor. Liga tambem as **fontes provisorias**: pagina e resumo de artigo entram no indice antes da curadoria, e a curadoria so e pedida quando uma pauta for usa-los. |
+| Vetorizacao de documentos (`embedding`) | `/v1/embeddings` — [WORKER_VETORIZACAO.md](WORKER_VETORIZACAO.md) | a indexacao sai do servidor (1 CPU) e vai para a placa; a consulta continua no servidor. Liga tambem as **fontes provisorias**: pagina e resumo de artigo entram no indice antes da curadoria, e a curadoria so e pedida quando uma pauta for usa-los — e so se as ja curadas nao bastarem (3+ documentos curados que sustentam a pauta: o artigo sai so com eles), no maximo 3 por vez; na pauta, “Gerar so com as ja curadas” encerra a curadoria dela. |
 | Legenda do YouTube (`youtube`) | `/v1/youtube/legenda` — [WORKER_YOUTUBE.md](WORKER_YOUTUBE.md) | a legenda e lida pelo IP de casa, que o YouTube costuma aceitar. |
 
 Para marcar, no `.env` do servidor (o segredo `PRODUCTION_ENV_FILE`), quando o
