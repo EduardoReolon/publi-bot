@@ -594,6 +594,7 @@ def test_veredito_colado_guarda_e_refina(
     pauta = Ideia.objects.get().pauta
     texto_do_dossie = veredito.dossie(pauta)
     assert "5. REFINAMENTO" in texto_do_dossie and '"buscar_de_novo"' in texto_do_dossie
+    assert "FAXINA COMPLETA" in texto_do_dossie and "CADA fonte" in texto_do_dossie
     pauta.refresh_from_db()
     codigos = pauta.debate["codigos_do_dossie"]
     f1, f2 = codigos[0], codigos[1]
