@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -52,16 +53,24 @@ def _proximo_horario():
     esperando um horario que ninguem gera. Publicar no proximo tick e um
     default previsivel; a cadencia continua sendo o caminho recomendado.
     """
+    livre = _horario_livre()
+    return livre.slot_at if livre else timezone.now()
+
+
+def _horario_livre():
+    """O primeiro horario futuro da cadencia sem artigo agendado nele (o artigo
+    que voltou para revisao ou foi rejeitado libera o horario)."""
     from apps.integrations.models import PublicationSlot
 
-    livre = (
-        PublicationSlot.objects.filter(
-            article__isnull=True, answer__isnull=True, slot_at__gte=timezone.now()
-        )
+    ocupado = Q(
+        article__status__in=[Article.Status.APPROVED_SCHEDULED, Article.Status.PUBLISHED]
+    ) | Q(answer__isnull=False)
+    return (
+        PublicationSlot.objects.filter(slot_at__gte=timezone.now())
+        .exclude(ocupado)
         .order_by("slot_at")
         .first()
     )
-    return livre.slot_at if livre else timezone.now()
 
 
 # ---------------------------------------------------------------------------
@@ -69,11 +78,19 @@ def _proximo_horario():
 # ---------------------------------------------------------------------------
 @login_required
 def pautas(request: HttpRequest) -> HttpResponse:
+    """A lista abre no que da trabalho: "a fazer", na ordem do menor esforco
+    (revisar, gerar com um clique, o que precisa de voce, o que esta andando).
+    Publicadas/agendadas e rejeitadas ficam nas abas delas."""
     situacao = request.GET.get("situacao", "")
+    from django.db.models import Exists, OuterRef
+
     from apps.radar.models import ConfiguracaoDoRadar
 
     config = ConfiguracaoDoRadar.carregar()
-    consulta = Topic.objects.annotate(artigos=Count("articles")).order_by("-created_at")
+    no_ar = Article.objects.filter(topic=OuterRef("pk"), status__in=NO_AR)
+    consulta = Topic.objects.annotate(artigos=Count("articles"), concluida=Exists(no_ar)).order_by(
+        "-created_at"
+    )
     if situacao:
         consulta = consulta.filter(status=situacao)
     # A etiqueta que a outra IA deu ao tema de origem (Radar > Ajustar com outra IA).
@@ -81,12 +98,26 @@ def pautas(request: HttpRequest) -> HttpResponse:
     if ia in {"boa", "ruim"}:
         consulta = consulta.filter(grupos_de_demanda__avaliacao_ia=ia).distinct()
 
+    rejeitada = Q(status=Topic.Status.REJECTED, concluida=False)
+    abas = {
+        "afazer": consulta.filter(concluida=False).exclude(status=Topic.Status.REJECTED),
+        "concluidas": consulta.filter(concluida=True),
+        "rejeitadas": consulta.filter(rejeitada),
+        "todas": consulta,
+    }
+    ver = request.GET.get("ver") if request.GET.get("ver") in abas else "afazer"
+    contagem = {chave: q.count() for chave, q in abas.items()}
+
     lista = list(
-        consulta.select_related("artigo_parecido").prefetch_related(
-            "articles", "grupos_de_demanda", "links_quebrados"
-        )[:200]
+        abas[ver]
+        .select_related("artigo_parecido")
+        .prefetch_related("articles", "grupos_de_demanda", "links_quebrados")[:200]
     )
     _preparar_pautas(lista, config, completo=False)
+    for item in lista:
+        item.etapa = etapa_da_pauta(item)
+    if ver == "afazer":
+        lista.sort(key=lambda item: item.etapa[0])  # estavel: dentro da etapa, mais novas
     return render(
         request,
         "content/pautas.html",
@@ -96,9 +127,62 @@ def pautas(request: HttpRequest) -> HttpResponse:
             "config": config,
             "situacao": situacao,
             "ia": ia,
+            "ver": ver,
+            "contagem": contagem,
             "form": PautaForm(),
         },
     )
+
+
+# Artigo "no ar" (ou indo): a pauta esta concluida, so uma versao vai ao ar.
+NO_AR = (
+    Article.Status.PUBLISHED,
+    Article.Status.APPROVED_SCHEDULED,
+    Article.Status.SUPERSEDED,
+)
+# (ordem, chave, rotulo, explicacao): a ordem e a do menor esforco.
+ETAPAS = {
+    "revisar": (1, "Revisar e aprovar", "o artigo esta pronto: leia e aprove"),
+    "gerar": (2, "Gerar com um clique", "nada falta: e so por na fila"),
+    "precisa": (
+        3,
+        "Precisa de voce",
+        "fontes para curar ou decidir, PDF pedido, geracao que falhou",
+    ),
+    "andando": (4, "Em andamento", "gerando ou esperando a vez: nada a fazer agora"),
+    "concluida": (5, "Publicada ou agendada", ""),
+    "rejeitada": (6, "Rejeitada", ""),
+}
+
+
+def etapa_da_pauta(item) -> tuple:
+    """(ordem, rotulo, explicacao, chave) do proximo passo da pauta, para a
+    lista abrir no que da menos trabalho. Usa o que `_preparar_pautas` montou."""
+    artigos = list(item.articles.all())
+    estados = {a.status for a in artigos}
+    fluxos = getattr(item, "fluxos", [])
+    if estados & set(NO_AR):
+        chave = "concluida"
+    elif item.status == Topic.Status.REJECTED:
+        chave = "rejeitada"
+    elif Article.Status.PENDING_REVIEW in estados:
+        chave = "revisar"
+    elif (
+        item.por_curar
+        or item.pdfs_esperando
+        or item.status == Topic.Status.WAITING_SOURCES
+        or any(f.get("falhou") for f in fluxos)
+        or estados & {Article.Status.NEEDS_MORE_SOURCES, Article.Status.PUSH_FAILED}
+    ):
+        chave = "precisa"
+    elif any(f.get("trabalho") for f in fluxos) or Article.Status.DRAFTING in estados:
+        chave = "andando"
+    elif any(f.get("falta") for f in fluxos) or not fluxos:
+        chave = "gerar"
+    else:
+        chave = "andando"
+    ordem, rotulo, explicacao = ETAPAS[chave]
+    return (ordem, rotulo, explicacao, chave)
 
 
 @login_required
@@ -1128,7 +1212,26 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
         )
         return redirect("content:revisar", pk=artigo.pk)
 
-    messages.success(request, _("Artigo aprovado e agendado."))
+    if not agendamento.cleaned_data["quando"] and not artigo.e_atualizacao:
+        # O horario da cadencia fica reservado para este artigo.
+        livre = _horario_livre()
+        if livre is not None and livre.slot_at == artigo.scheduled_for:
+            livre.article = artigo
+            livre.save(update_fields=["article"])
+    quando = timezone.localtime(artigo.scheduled_for)
+    if artigo.scheduled_for <= timezone.now() + timedelta(minutes=2):
+        messages.success(
+            request,
+            _(
+                "Artigo aprovado. Nao ha horario livre na cadencia (Site e cadencia), entao "
+                "ele sai no proximo minuto."
+            ),
+        )
+    else:
+        messages.success(
+            request,
+            _("Artigo aprovado e agendado para %(q)s.") % {"q": quando.strftime("%d/%m %H:%M")},
+        )
     return redirect("content:artigos")
 
 

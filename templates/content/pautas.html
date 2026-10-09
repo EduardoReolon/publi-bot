@@ -12,10 +12,17 @@
   </p>
 
   <div class="acoes" style="align-items:center">
+    <a class="botao {% if ver == 'afazer' %}{% else %}discreto{% endif %} pequeno" href="?ver=afazer{% if ia %}&ia={{ ia }}{% endif %}">{% translate "A fazer" %} ({{ contagem.afazer }})</a>
+    <a class="botao {% if ver == 'concluidas' %}{% else %}discreto{% endif %} pequeno" href="?ver=concluidas{% if ia %}&ia={{ ia }}{% endif %}">{% translate "Publicadas ou agendadas" %} ({{ contagem.concluidas }})</a>
+    <a class="botao {% if ver == 'rejeitadas' %}{% else %}discreto{% endif %} pequeno" href="?ver=rejeitadas{% if ia %}&ia={{ ia }}{% endif %}">{% translate "Rejeitadas" %} ({{ contagem.rejeitadas }})</a>
+    <a class="botao {% if ver == 'todas' %}{% else %}discreto{% endif %} pequeno" href="?ver=todas{% if ia %}&ia={{ ia }}{% endif %}">{% translate "Todas" %} ({{ contagem.todas }})</a>
+  </div>
+  {% if ver == 'afazer' %}<p class="ajuda">{% translate "Na ordem do menor esforco: o que so falta aprovar, o que se gera com um clique, o que precisa de voce e, por ultimo, o que ja esta andando." %}</p>{% endif %}
+  <div class="acoes" style="align-items:center">
     <span class="pre-visualizacao">{% translate "Avaliacao da outra IA (Radar):" %}</span>
-    <a href="?" {% if not ia %}class="ativo"{% endif %}>{% translate "todas" %}</a> ·
-    <a href="?ia=ruim" {% if ia == 'ruim' %}class="ativo"{% endif %}>{% translate "ruins" %}</a> ·
-    <a href="?ia=boa" {% if ia == 'boa' %}class="ativo"{% endif %}>{% translate "boas" %}</a>
+    <a href="?ver={{ ver }}" {% if not ia %}class="ativo"{% endif %}>{% translate "todas" %}</a> ·
+    <a href="?ver={{ ver }}&ia=ruim" {% if ia == 'ruim' %}class="ativo"{% endif %}>{% translate "ruins" %}</a> ·
+    <a href="?ver={{ ver }}&ia=boa" {% if ia == 'boa' %}class="ativo"{% endif %}>{% translate "boas" %}</a>
   </div>
   {% if pautas %}
     <div class="rolagem">
@@ -30,6 +37,9 @@
         </thead>
         <tbody>
           {% for pauta in pautas %}
+            {% if ver == 'afazer' %}{% ifchanged pauta.etapa.0 %}
+              <tr class="grupo"><th colspan="4" style="padding-top:1rem">{{ pauta.etapa.1 }} <span class="ajuda" style="font-weight:normal">— {{ pauta.etapa.2 }}</span></th></tr>
+            {% endifchanged %}{% endif %}
             <tr id="pauta-{{ pauta.pk }}">
               <td>
                 <a href="{% url 'content:pauta' pauta.pk %}"><strong>{{ pauta.title }}</strong></a>
@@ -58,7 +68,7 @@
       </table>
     </div>
   {% else %}
-    <p class="vazio">{% translate "Nenhuma pauta ainda." %}</p>
+    <p class="vazio">{% if ver == 'afazer' %}{% translate "Nada a fazer: todas as pautas estao publicadas, agendadas ou rejeitadas." %}{% else %}{% translate "Nenhuma pauta aqui." %}{% endif %}</p>
   {% endif %}
 
   <h2>{% translate "Nova pauta" %}</h2>

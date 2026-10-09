@@ -457,6 +457,38 @@ def test_aprovar_agenda_e_sai_da_fila_de_revisao(ambiente, artigo_para_revisar):
     assert artigo_para_revisar.reviewed_by is not None
 
 
+@pytest.mark.django_db
+def test_aprovar_reserva_o_horario_da_cadencia(ambiente, artigo_para_revisar):
+    """O horario livre da cadencia fica com o artigo: o proximo aprovado vai
+    para o horario seguinte, e a mensagem diz quando sai."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.integrations.models import PublicationSlot
+
+    pronto_para_aprovar(artigo_para_revisar)
+    _, _, client = ambiente
+    site = Site.objects.create(name="Site", slug="site", base_url="https://site.exemplo.org")
+    amanha = timezone.now() + timedelta(days=1)
+    primeiro = PublicationSlot.objects.create(site=site, slot_at=amanha)
+    PublicationSlot.objects.create(site=site, slot_at=amanha + timedelta(days=2))
+
+    resposta = client.post(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
+        _dados_de_aprovacao(),
+        follow=True,
+    )
+    artigo_para_revisar.refresh_from_db()
+    primeiro.refresh_from_db()
+    assert artigo_para_revisar.scheduled_for == amanha and primeiro.article == artigo_para_revisar
+    assert "agendado para" in resposta.content.decode()
+
+    from apps.content.views import _proximo_horario
+
+    assert _proximo_horario() == amanha + timedelta(days=2)
+
+
 # ---------------------------------------------------------------------------
 # Titulo sugerido e meta description
 # ---------------------------------------------------------------------------
