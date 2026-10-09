@@ -311,6 +311,28 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             post.save(update_fields=["extras", "atualizado_em"])
             _refazer_imagens(post)
             messages.success(request, _("Foto trocada e imagens refeitas."))
+    elif acao == "duplicar":
+        copia = Post.objects.create(
+            destino=post.destino,
+            artigo_id=post.artigo_id,
+            artigo_titulo=post.artigo_titulo,
+            artigo_url=post.artigo_url,
+            abordagem=post.abordagem,
+            entrada=post.entrada,
+            tema=post.tema,
+            motivo=post.motivo,
+            por_que=post.por_que,
+            texto=post.texto,
+            extras={**(post.extras or {}), "copia_de": str(post.pk)},
+            material=post.material,
+            situacao=Post.Situacao.RASCUNHO,
+        )
+        _refazer_imagens(copia)
+        messages.success(
+            request,
+            _("Copia criada em Revisar: edite a foto, as laminas e o texto, e aprove para postar."),
+        )
+        return redirect(f"{reverse('social:inicio')}?aba=revisar#post-{copia.pk}")
     elif acao == "imagem_do_artigo":
         extras = dict(post.extras or {})
         extras.pop("imagem_propria", None)
@@ -644,7 +666,17 @@ def bio(request: HttpRequest, chave: str) -> HttpResponse:
         .exclude(artigo_url="")
         .order_by("-publicado_em")[:12]
     )
-    return render(request, "social/bio.html", {"destino": destino, "posts": posts})
+    from apps.social.models import ConfiguracaoSocial
+
+    return render(
+        request,
+        "social/bio.html",
+        {
+            "destino": destino,
+            "posts": posts,
+            "oferta": ConfiguracaoSocial.carregar().link_da_oferta,
+        },
+    )
 
 
 # -- Estrategia --------------------------------------------------------------------
