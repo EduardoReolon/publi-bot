@@ -207,3 +207,19 @@ def test_conectar_e_voltar_da_rede(ambiente, monkeypatch, settings):
     )
     destino.refresh_from_db()
     assert destino.conectado and destino.conta_nome == "@b (B)"
+
+    # Conta que a rede nao ofereceu nao entra.
+    client.post(reverse("social:escolher_conta", args=[destino.pk], urlconf=U), {"conta": "9"})
+    destino.refresh_from_db()
+    assert destino.conta_id == "2"
+
+    # Reconectar (o acesso vence) mantem a conta, sem perguntar; "trocar" pergunta.
+    estado = assinar(connection.schema_name, "/redes/conectar/retorno/", destino=str(destino.pk))
+    client.get(retorno, {"state": estado, "code": "x"})
+    destino.refresh_from_db()
+    assert destino.conta_id == "2"
+    estado = assinar(
+        connection.schema_name, "/redes/conectar/retorno/", destino=str(destino.pk), trocar=True
+    )
+    pagina = client.get(retorno, {"state": estado, "code": "x"}).content.decode()
+    assert "Qual conta?" in pagina and "a atual" in pagina

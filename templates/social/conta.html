@@ -4,13 +4,13 @@
 {% block conteudo %}
   <h1>{% translate "Qual conta?" %}</h1>
   <p class="sub">{% blocktranslate trimmed with n=destino.nome %}O acesso alcanca mais de uma conta. Escolha a que "{{ n }}" vai usar.{% endblocktranslate %}</p>
+  <p class="ajuda">{% translate "Cada ambiente do PubliBot usa a sua: o mesmo login pode servir a varias empresas, e aqui voce diz qual e a deste ambiente. Ao reconectar depois, esta escolha se mantem." %}</p>
   <form method="post" action="{% url 'social:escolher_conta' destino.pk %}" class="secao">
     {% csrf_token %}
     {% for id, nome in contas %}
       <div class="campo caixa">
-        <input type="radio" name="conta" value="{{ id }}" id="conta-{{ forloop.counter }}" {% if forloop.first %}checked{% endif %}>
-        <label for="conta-{{ forloop.counter }}">{{ nome }}</label>
-        <input type="hidden" name="nome_{{ id }}" value="{{ nome }}">
+        <input type="radio" name="conta" value="{{ id }}" id="conta-{{ forloop.counter }}" {% if id == destino.conta_id or not destino.conta_id and forloop.first %}checked{% endif %}>
+        <label for="conta-{{ forloop.counter }}">{{ nome }}{% if id == destino.conta_id %} <span class="selo">{% translate "a atual" %}</span>{% endif %}</label>
       </div>
     {% endfor %}
     <div class="acoes"><button type="submit" class="botao">{% translate "Usar esta conta" %}</button></div>
