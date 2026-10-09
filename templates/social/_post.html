@@ -86,9 +86,10 @@
         {% endif %}
         {% if post.destino.rede == 'instagram' and not post.imagens.0.tipo %}
           <div class="campo">
-            <label>{% translate "Laminas (uma por linha: titulo | texto)" %}</label>
-            <textarea name="laminas" class="curto" rows="6">{% for l in post.extras.laminas %}{{ l.titulo }} | {{ l.texto }}
+            <label>{% translate "Laminas (uma por linha: titulo | texto | fonte)" %}</label>
+            <textarea name="laminas" class="curto" rows="6">{% for l in post.extras.laminas %}{{ l.titulo }} | {{ l.texto }}{% if l.fonte %} | {{ l.fonte }}{% endif %}
 {% endfor %}</textarea>
+            <div class="ajuda">{% translate "A fonte (opcional) sai pequena no pe da lamina, como “Fonte: Silva et al., 2021”. O PubliBot ja poe a da frase do artigo quando a lamina traz o mesmo numero; apague ou escreva a sua." %}</div>
           </div>
         {% endif %}
         <div class="acoes">

@@ -179,6 +179,15 @@ Carrossel 1080 x 1350 montado por **Pillow** (modelo de imagem escreve texto
 mal): a capa do artigo escurecida com o gancho, uma ideia por lamina nas cores
 da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha).
 
+- **Fonte citada na lamina:** a lamina que traz um numero ganha "Fonte: Autor, ano",
+  pequena no pe — o texto do link que o artigo pos na frase com o mesmo numero
+  (`fontes.fontes_das_frases` + `laminas.com_as_fontes`, sem modelo). Sem numero,
+  sem fonte. Editavel na revisao ("titulo | texto | fonte") e no editor.
+- **Ultima lamina:** "Mande para quem precisa ver isso | ... link na bio" (envios
+  por mensagem pesam no alcance; "siga para mais" nao tem evidencia). A conta
+  troca em "chamada final", no formato "titulo | texto".
+- **Gancho:** havendo numero, o mais surpreendente abre o carrossel; a segunda
+  lamina tambem prende (quem nao arrasta, ve o carrossel de novo ja nela).
 - **Fonte:** a do sistema com acentos (DejaVu, instalada pelo `release.sh`); a
   embutida no Pillow nao tem acento. O caractere que a fonte nao tiver (emoji)
   vira um equivalente simples ou sai, nunca um quadradinho.

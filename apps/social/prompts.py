@@ -21,8 +21,10 @@ _CAMPOS = {
         '  "texto": o resto da legenda, curto, terminando com a chamada para o link na bio;\n'
         '  "hashtags": ate {hashtags} hashtags, sem o #;\n'
         '  "laminas": de {min_laminas} a {max_laminas} itens {{"titulo": ate 8 palavras, '
-        '"texto": ate 20 palavras}}. A primeira e o gancho (texto pode ser vazio); uma '
-        "ideia por lamina; a ultima chama para o link na bio."
+        '"texto": ate 20 palavras}}. A primeira e o gancho (texto pode ser vazio): '
+        "se houver achado com numero, abra com o mais surpreendente, copiado exato. A "
+        "segunda tambem prende sozinha. Uma ideia por lamina; a ultima convida a mandar "
+        "o post para quem precisa ver isso e lembra o link na bio."
     ),
     "gmn": (
         '  "gancho": a primeira frase (ate {dobra} caracteres);\n'

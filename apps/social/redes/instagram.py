@@ -431,9 +431,14 @@ REDE = Rede(
         "parar. Isso vem de identificacao ('e o meu caso': uma situacao concreta que a "
         "pessoa vive, nas palavras dela) ou de surpresa ('nossa, isso e incrivel': um "
         "achado contra a intuicao, com o numero). O carrossel conta UMA ideia por lamina, "
-        "frases curtas (ate 20 palavras), a primeira lamina e o gancho, a ultima chama "
-        "para o link na bio. Legenda curta (300 a 600 caracteres), primeira linha forte, "
-        "linguagem do dia a dia, sem jargao. Sem link na legenda (nao e clicavel)."
+        "frases curtas (ate 20 palavras). A primeira lamina e o gancho; a SEGUNDA tambem "
+        "precisa prender sozinha (quem nao arrasta, o Instagram mostra o carrossel de novo "
+        "ja na segunda). Havendo achado com numero, o gancho abre com o mais surpreendente, "
+        "copiado exato: espanto e curiosidade, nunca alarme, exagero ou promessa (em saude "
+        "o sensacionalismo e vedado). A ultima convida a mandar o post para quem precisa "
+        "ver isso e lembra o link na bio. Legenda curta (300 a 600 caracteres), primeira "
+        "linha forte, linguagem do dia a dia, sem jargao. Sem link na legenda (nao e "
+        "clicavel). Nada de 'siga para mais' ou 'este post vai sumir'."
     ),
     publico_padrao="Pessoas comuns que vivem o problema que o negocio resolve.",
     tom_padrao="proximo, simples, acolhedor",
