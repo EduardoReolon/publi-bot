@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -28,7 +29,11 @@ logger = logging.getLogger("publibot.social")
 LARGURA, ALTURA = 1080, 1350
 MARGEM = 90
 CORES = {"fundo": "#0f172a", "texto": "#ffffff", "destaque": "#38bdf8"}
-CHAMADA = "Leia o artigo completo — link na bio"
+# A ultima lamina: "titulo | texto". Mandar para alguem e o que mais espalha
+# um post (os envios por mensagem pesam no alcance, segundo o proprio
+# Instagram); o link na bio fica para quem quer o artigo. A conta pode trocar
+# (Redes > Configurar > chamada final), no mesmo formato.
+CHAMADA = "Mande para quem precisa ver isso | O artigo completo, com as fontes: link na bio"
 
 
 # A fonte embutida no Pillow (Aileron) nao tem acento nem aspas curvas: "ação"
@@ -159,6 +164,20 @@ def _altura(
     return len(_quebrar(desenho, texto, fonte, largura)) * int(fonte.size * espaco)
 
 
+# A linha "Fonte: ...", pequena, logo acima do rodape.
+TAMANHO_DA_FONTE_CITADA = 26
+ALTURA_DA_FONTE_CITADA = MARGEM + 52
+
+
+def _fonte_da_lamina(desenho, cores: dict, rotulo: str) -> None:
+    pequena = _fonte(TAMANHO_DA_FONTE_CITADA)
+    linhas = _quebrar(desenho, f"Fonte: {rotulo}", pequena, LARGURA - 2 * MARGEM)
+    if linhas:
+        desenho.text(
+            (MARGEM, ALTURA - ALTURA_DA_FONTE_CITADA), linhas[0], font=pequena, fill=cores["texto"]
+        )
+
+
 def _rodape(desenho, cores: dict, marca: str, n: int, total: int) -> None:
     pequena = _fonte(30)
     desenho.text(
@@ -272,14 +291,42 @@ ESPACO_DO_TEXTO = 40
 
 
 def com_a_chamada(laminas: list[dict], chamada: str) -> list[dict]:
-    """As laminas com a chamada final (no lugar da ultima, se ela ja fala da bio)."""
+    """As laminas com a chamada final ("titulo | texto"), no lugar da ultima se
+    ela ja fala da bio."""
     itens = list(laminas)
     if chamada:
+        titulo, _sep, texto = chamada.partition("|")
+        final = {"titulo": titulo.strip(), "texto": texto.strip()}
         if itens and "bio" in f"{itens[-1].get('titulo', '')} {itens[-1].get('texto', '')}".lower():
-            itens[-1] = {"titulo": chamada, "texto": ""}
+            itens[-1] = final
         else:
-            itens.append({"titulo": chamada, "texto": ""})
+            itens.append(final)
     return itens
+
+
+# Numero que vale procurar no artigo: com virgula/ponto, %, ou 2+ digitos.
+_NUMERO = re.compile(r"\d+(?:[.,]\d+)*\s?%|\d+[.,]\d+|\d{2,}")
+
+
+def com_as_fontes(laminas: list[dict], fontes_das_frases: list) -> list[dict]:
+    """A lamina que traz um numero ganha a fonte da frase do artigo que tem o
+    mesmo numero (a citacao que o artigo pos ali). Sem numero, ou sem frase
+    citada com ele, fica sem fonte: nem toda lamina vem de estudo."""
+    saida = []
+    for lamina in laminas:
+        lamina = dict(lamina)
+        if not lamina.get("fonte"):
+            texto = f"{lamina.get('titulo', '')} {lamina.get('texto', '')}"
+            for numero in _NUMERO.findall(texto):
+                alvo = numero.replace(" ", "")
+                rotulo = next(
+                    (r for frase, r in fontes_das_frases if alvo in frase.replace(" ", "")), ""
+                )
+                if rotulo:
+                    lamina["fonte"] = rotulo[:90]
+                    break
+        saida.append(lamina)
+    return saida
 
 
 def desenhar(
@@ -338,6 +385,8 @@ def desenhar(
         y = _bloco(desenho, titulo, grande, cor_do_titulo, y, **bloco)
         if texto:
             _bloco(desenho, texto, normal, cores["texto"], y + ESPACO_DO_TEXTO, **bloco)
+        if item.get("fonte"):
+            _fonte_da_lamina(desenho, cores, item["fonte"])
         _rodape(desenho, cores, marca, n, total)
         buffer = io.BytesIO()
         imagem.save(buffer, format="PNG", optimize=True)
@@ -440,6 +489,9 @@ def dados_do_editor(post, artigo) -> dict:
         "total": len(itens),
         "titulo": laminas[0].get("titulo", ""),
         "texto": laminas[0].get("texto", ""),
+        "fonte": laminas[0].get("fonte", ""),
+        "tamanho_da_fonte_citada": TAMANHO_DA_FONTE_CITADA,
+        "altura_da_fonte_citada": ALTURA_DA_FONTE_CITADA,
         "ajuste": ajuste_limpo(extras.get("ajuste_da_capa")),
         "padrao": dict(AJUSTE_PADRAO),
         "limites": LIMITES_DO_AJUSTE,
@@ -448,7 +500,7 @@ def dados_do_editor(post, artigo) -> dict:
 
 
 def previa_da_primeira(
-    post, artigo, ajuste: dict, *, largura: int = 540, titulo=None, texto=None
+    post, artigo, ajuste: dict, *, largura: int = 540, titulo=None, texto=None, fonte=None
 ) -> bytes:
     """A 1a lamina com o ajuste pedido, em tamanho de tela, sem gravar nada.
     `titulo`/`texto`: os do editor, ainda nao salvos."""
@@ -462,6 +514,8 @@ def previa_da_primeira(
         laminas[0]["titulo"] = titulo
     if texto is not None:
         laminas[0]["texto"] = texto
+    if fonte is not None:
+        laminas[0]["fonte"] = fonte
     png = desenhar(
         laminas,
         capa=foto_de_fundo(post, artigo),

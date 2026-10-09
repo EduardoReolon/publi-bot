@@ -355,6 +355,8 @@ def escrever(post: Post) -> Post:
         if com_fotos:
             dados["laminas"] = []  # as imagens sao as fotos reais
         texto, extras = montar(post, dados)
+        if extras.get("laminas"):
+            extras["laminas"] = laminas.com_as_fontes(extras["laminas"], artigo.fontes_das_frases)
         avisos = conferir(post, texto, extras, artigo, com_fotos=com_fotos)
         if e_enquete(post) and "enquete" not in extras:
             avisos.append("a enquete veio sem pergunta ou com menos de 2 opcoes")

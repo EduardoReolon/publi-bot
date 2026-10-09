@@ -19,15 +19,36 @@ _FIM_DE_FRASE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÀ-Ú\"“(0-9])")
 _MARCAS = re.compile(r"\[[^\]]*\]\([^)]*\)|<[^>]+>|\*\*|__|`")
 
 
+def _corpo(markdown: str) -> str:
+    """O markdown sem a lista de referencias do fim."""
+    return re.split(r"\n#+\s*Refer[eê]ncias|\n<details", markdown or "")[0]
+
+
+def _ancora(achado: re.Match) -> str:
+    texto = achado.group(0)
+    return re.sub(r"^\[([^\]]*)\]\([^)]*\)$", r"\1", texto) if texto.startswith("[") else ""
+
+
 def _texto_limpo(markdown: str) -> str:
     """Markdown do artigo sem links, HTML e lista de referencias."""
-    corpo = re.split(r"\n#+\s*Refer[eê]ncias|\n<details", markdown or "")[0]
+    return _MARCAS.sub(_ancora, _corpo(markdown))
 
-    def ancora(achado: re.Match) -> str:
-        texto = achado.group(0)
-        return re.sub(r"^\[([^\]]*)\]\([^)]*\)$", r"\1", texto) if texto.startswith("[") else ""
 
-    return _MARCAS.sub(ancora, corpo)
+_LINK = re.compile(r"\[([^\]]+)\]\(https?://[^)]+\)")
+
+
+def fontes_das_frases(markdown: str) -> list[tuple[str, str]]:
+    """[(frase limpa, rotulo)] das frases com citacao: o texto do link que o
+    artigo pos nelas ("Silva et al., 2021"). Algoritmo, sem modelo."""
+    saida = []
+    for paragrafo in _corpo(markdown).split("\n"):
+        paragrafo = paragrafo.strip().lstrip("#-* ").strip()
+        for frase in _FIM_DE_FRASE.split(paragrafo):
+            rotulos = [m.group(1).strip() for m in _LINK.finditer(frase)]
+            if rotulos:
+                limpa = _MARCAS.sub(_ancora, frase).strip()
+                saida.append((limpa, "; ".join(dict.fromkeys(rotulos))))
+    return saida
 
 
 @dataclass
@@ -44,6 +65,9 @@ class ArtigoParaRedes:
     remote_id: str = ""
     capa: str = ""  # caminho no storage
     capa_url: str = ""  # URL publica
+    # [(frase limpa, "Autor, ano")]: a citacao que o artigo pos naquela frase
+    # (o texto do link). E de onde a lamina com numero tira a fonte.
+    fontes_das_frases: list = field(default_factory=list)
 
 
 def artigo(artigo_id) -> ArtigoParaRedes | None:
@@ -79,6 +103,7 @@ def artigo(artigo_id) -> ArtigoParaRedes | None:
         remote_id=obj.remote_id,
         capa=capa.image.name if capa and capa.image else "",
         capa_url=url_publica_da_capa(capa) if capa else "",
+        fontes_das_frases=fontes_das_frases(obj.body_markdown),
     )
 
 

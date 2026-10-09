@@ -40,6 +40,7 @@
         <legend>{% translate "Texto" %}</legend>
         <label>{% translate "Titulo" %}<input type="text" name="titulo" id="campo-titulo" maxlength="120" value="{{ editor.titulo }}"></label>
         <label>{% translate "Frase (opcional)" %}<textarea name="texto" id="campo-texto" rows="2" maxlength="220">{{ editor.texto }}</textarea></label>
+        <label>{% translate "Fonte (opcional, sai pequena no pe da lamina)" %}<input type="text" name="fonte" id="campo-fonte" maxlength="90" value="{{ editor.fonte }}" placeholder="{% translate 'ex.: Silva et al., 2021' %}"></label>
         <div class="linha"><span>{% translate "Tamanho do titulo" %}</span><input type="range" data-chave="tamanho_titulo" step="1"><output></output></div>
         <div class="linha"><span>{% translate "Tamanho da frase" %}</span><input type="range" data-chave="tamanho_texto" step="1"><output></output></div>
         <div class="linha"><span>{% translate "Largura do bloco" %}</span><input type="range" data-chave="largura" step="0.01" data-pct><output></output></div>
@@ -85,6 +86,7 @@
     var canvas = document.getElementById("lamina"), ctx = canvas.getContext("2d");
     var estado = Object.assign({}, D.ajuste), historico = [];
     var titulo = document.getElementById("campo-titulo"), texto = document.getElementById("campo-texto");
+    var fonteCitada = document.getElementById("campo-fonte");
     var foto = null, guia = false;
     var FONTE = "LaminaPubliBot, DejaVu Sans, Verdana, sans-serif";
 
@@ -170,6 +172,14 @@
       var b = bloco();
       var y = linhas(b.lT, b.fT, b.aT, estado.cor_titulo || D.cores.texto, b, b.y);
       if (b.lX.length) linhas(b.lX, b.fX, b.aX, D.cores.texto, b, y + D.espaco_do_texto);
+      // "Fonte: ...", pequena, acima do rodape (so a primeira linha, como no servidor).
+      if (fonteCitada.value.trim()) {
+        var fc = "400 " + D.tamanho_da_fonte_citada + "px " + FONTE;
+        var lf = quebrar("Fonte: " + fonteCitada.value.trim(), fc, W - 2 * M);
+        ctx.font = fc; ctx.fillStyle = D.cores.texto; ctx.textBaseline = "alphabetic";
+        var subeF = ctx.measureText("Ag").fontBoundingBoxAscent || D.tamanho_da_fonte_citada * 0.93;
+        if (lf.length) ctx.fillText(lf[0], M, H - D.altura_da_fonte_citada + subeF);
+      }
       // Rodape: a marca e o contador, como no servidor.
       var pequena = "400 30px " + FONTE;
       ctx.font = pequena; ctx.fillStyle = D.cores.destaque; ctx.textBaseline = "alphabetic";
@@ -207,7 +217,7 @@
       document.getElementById("campo-cor").value = estado.cor_titulo || D.cores.texto;
       document.getElementById("campo-ajuste").value = JSON.stringify(estado);
       var dados = new URLSearchParams(estado);
-      dados.set("titulo", titulo.value); dados.set("texto", texto.value);
+      dados.set("titulo", titulo.value); dados.set("texto", texto.value); dados.set("fonte", fonteCitada.value);
       document.getElementById("conferir").href = "{% url 'social:previa_da_lamina' post.pk %}?" + dados.toString();
     }
     function mudar(fn) { return function () { guardarHistorico(); fn.apply(this, arguments); desenhar(); }; }
@@ -219,6 +229,7 @@
     document.getElementById("campo-cor").addEventListener("pointerdown", guardarHistorico);
     document.getElementById("cor-da-conta").addEventListener("click", mudar(function () { estado.cor_titulo = ""; }));
     titulo.addEventListener("input", desenhar); texto.addEventListener("input", desenhar);
+    fonteCitada.addEventListener("input", desenhar);
     document.getElementById("texto-embaixo").addEventListener("click", mudar(function () { estado.texto_y = -1; }));
     document.getElementById("texto-no-meio").addEventListener("click", mudar(function () { estado.texto_y = limitar("texto_y", (H - bloco().altura) / 2 / H); }));
     document.getElementById("texto-em-cima").addEventListener("click", mudar(function () { estado.texto_y = (M * 1.5) / H; }));

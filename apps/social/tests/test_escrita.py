@@ -372,3 +372,35 @@ def test_postar_de_novo_cria_copia_editavel_e_bio_tem_a_oferta(
     bio = reverse("social:bio", args=[post.destino.chave_publica], urlconf="core.urls_tenants")
     pagina = client.get(bio).content.decode()
     assert "https://site.exemplo.org/agendar/" in pagina and ARTIGO.titulo in pagina
+
+
+def test_lamina_com_numero_ganha_a_fonte_da_frase_citada():
+    from apps.social import laminas
+
+    markdown = (
+        "Em um estudo com 2.300 adultos, 38% relataram cansaco persistente "
+        "([Silva et al., 2021](https://doi.org/10.1/x)). Dormir bem ajuda muito no dia a dia.\n"
+        "## Referencias\n- [Outra, 2020](https://exemplo.org)"
+    )
+    pares = fontes.fontes_das_frases(markdown)
+    assert pares and pares[0][1] == "Silva et al., 2021"
+    saida = laminas.com_as_fontes(
+        [
+            {"titulo": "38% dos adultos", "texto": "relatam cansaco"},
+            {"titulo": "Durma bem", "texto": "ajuda no dia a dia"},
+            {"titulo": "5 sinais", "texto": "x", "fonte": "a minha"},
+        ],
+        pares,
+    )
+    assert saida[0]["fonte"] == "Silva et al., 2021"
+    assert "fonte" not in saida[1]  # sem numero: sem fonte
+    assert saida[2]["fonte"] == "a minha"  # a que ja tinha fica
+    png = laminas.desenhar(saida, chamada=laminas.CHAMADA, apenas=1)
+    assert png and png[0][:4] == b"\x89PNG"
+
+
+def test_chamada_final_tem_titulo_e_texto():
+    from apps.social import laminas
+
+    itens = laminas.com_a_chamada([{"titulo": "A", "texto": ""}], laminas.CHAMADA)
+    assert itens[-1]["titulo"].startswith("Mande para quem") and "link na bio" in itens[-1]["texto"]

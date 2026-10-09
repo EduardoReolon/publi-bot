@@ -150,13 +150,17 @@ def inicio(request: HttpRequest) -> HttpResponse:
 
 # -- Posts ---------------------------------------------------------------------------
 def _laminas_do_formulario(texto: str) -> list[dict]:
-    """Uma lamina por linha: "titulo | texto"."""
+    """Uma lamina por linha: "titulo | texto | fonte" (a fonte e opcional)."""
     laminas = []
     for linha in (texto or "").splitlines():
         if not linha.strip():
             continue
-        titulo, _sep, corpo = linha.partition("|")
-        laminas.append({"titulo": titulo.strip()[:120], "texto": corpo.strip()[:220]})
+        titulo, _sep, resto = linha.partition("|")
+        corpo, _sep, fonte = resto.partition("|")
+        lamina = {"titulo": titulo.strip()[:120], "texto": corpo.strip()[:220]}
+        if fonte.strip():
+            lamina["fonte"] = fonte.strip()[:90]
+        laminas.append(lamina)
     return laminas
 
 
@@ -177,6 +181,7 @@ def previa_da_lamina(request: HttpRequest, pk) -> HttpResponse:
         laminas.ajuste_limpo(request.GET),
         titulo=request.GET.get("titulo"),
         texto=request.GET.get("texto"),
+        fonte=request.GET.get("fonte"),
     )
     return HttpResponse(jpg, content_type="image/jpeg")
 
@@ -212,6 +217,11 @@ def editar_lamina(request: HttpRequest, pk) -> HttpResponse:
                 :120
             ]
             lista[0]["texto"] = request.POST.get("texto", lista[0].get("texto", "")).strip()[:220]
+            fonte = request.POST.get("fonte", lista[0].get("fonte", "")).strip()[:90]
+            if fonte:
+                lista[0]["fonte"] = fonte
+            else:
+                lista[0].pop("fonte", None)
             extras["laminas"] = lista
         extras["ajuste_da_capa"] = laminas.ajuste_limpo(ajuste)
         post.extras = extras

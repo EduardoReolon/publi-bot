@@ -366,3 +366,14 @@ def test_quem_entrega_o_passado_e_ja_postei_nao_duplica(ambiente):
     )
     historico.importar(destino, http=_rede_do_instagram().cliente())
     assert destino.posts.filter(motivo=Post.Motivo.HISTORICO).count() == 2
+
+
+@pytest.mark.django_db
+def test_acesso_perto_de_vencer_vira_aviso(ambiente):
+    destino = _conectado("linkedin", "urn:li:person:1", sincronizado_em=timezone.now())
+    destino.expira_em = timezone.now() + timedelta(days=3)
+    destino.save()
+    assert "vence em" in painel.leitura_parada(destino)
+    destino.expira_em = timezone.now() + timedelta(days=40)
+    destino.save()
+    assert painel.leitura_parada(destino) == ""

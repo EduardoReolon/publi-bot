@@ -417,8 +417,16 @@ if REDIS_NAMESPACE and CELERY_RESULT_BACKEND.startswith(("redis://", "rediss://"
 
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
+from celery.schedules import crontab  # noqa: E402
+
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+# Diario e de hora em hora vao em HORARIO DE RELOGIO (crontab), nunca em
+# intervalo: cada implantacao reinicia o beat, e um intervalo de 24h que ainda
+# nao tinha rodado recomeca a contar do reinicio — com mais de uma implantacao
+# por dia, a tarefa diaria nunca rodava (foi o que parou a leitura das redes).
+# Horarios em UTC: 06h-08h UTC e madrugada no Brasil (03h-05h em Brasilia).
+#
 # O beat tem poucas entradas fixas, todas de INFRAESTRUTURA. A cadencia de cada
 # site vive no banco, em PublicationSchedule: o beat da o batimento cardiaco, o
 # banco da a cadencia. Fosse ao contrario, mudar o horario de um cliente
@@ -450,7 +458,7 @@ CELERY_BEAT_SCHEDULE = {
     "tick-radar": {
         "task": "apps.radar.tasks.tick_radar",
         # De hora em hora; a intensidade de cada tenant decide se roda.
-        "schedule": 3600.0,
+        "schedule": crontab(minute=5),
         "options": {"expires": 3000},
     },
     # Pedido de vetorizacao que ficou sem tarefa (despachado durante uma
@@ -463,44 +471,44 @@ CELERY_BEAT_SCHEDULE = {
     "procurar-links-quebrados": {
         "task": "apps.radar.tasks.procurar_links_quebrados",
         # Devagar de proposito: algumas paginas por tenant, a cada hora.
-        "schedule": 3600.0,
+        "schedule": crontab(minute=25),
         "options": {"expires": 3000},
     },
     "conferir-fontes-vencidas": {
         "task": "apps.radar.tasks.conferir_fontes_vencidas",
         # Artigo que cita tabela de preco vencida vira sugestao de atualizacao.
-        "schedule": 86400.0,
+        "schedule": crontab(minute=10, hour=6),
         "options": {"expires": 80000},
     },
     "varrer-dados-do-acervo": {
         "task": "apps.dados.tasks.varrer_dados_do_acervo",
         # Que dados as fontes citam: series sugeridas e pedidos de adaptador.
-        "schedule": 86400.0,
+        "schedule": crontab(minute=25, hour=6),
         "options": {"expires": 80000},
     },
     "conferir-indexacao": {
         "task": "apps.radar.tasks.conferir_indexacao",
         # O artigo no ar entrou no Google? URL Inspection, uma vez por dia.
-        "schedule": 86400.0,
+        "schedule": crontab(minute=40, hour=6),
         "options": {"expires": 80000},
     },
     "coletar-metricas-dos-sites": {
         "task": "apps.integrations.tasks.coletar_metricas_dos_sites",
         # Leitura e conversoes por artigo, contadas pelo site. Uma vez por dia.
-        "schedule": 86400.0,
+        "schedule": crontab(minute=55, hour=6),
         "options": {"expires": 80000},
     },
     "atualizar-contexto-dos-sites": {
         "task": "apps.integrations.tasks.atualizar_contexto_dos_sites",
         # Pagina inicial e publicacoes de cada site: base da canibalizacao e
         # da sugestao de sementes. Uma vez por dia basta.
-        "schedule": 86400.0,
+        "schedule": crontab(minute=10, hour=7),
         "options": {"expires": 80000},
     },
     "descrever-oportunidades": {
         "task": "apps.radar.tasks.descrever_oportunidades",
         # De hora em hora; sem placa no ar, tenta na proxima.
-        "schedule": 3600.0,
+        "schedule": crontab(minute=45),
         "options": {"expires": 3000},
     },
     "colher-fila-do-radar": {
@@ -513,7 +521,7 @@ CELERY_BEAT_SCHEDULE = {
     # venceu (e a resposta aos comentarios) e a medicao.
     "sugerir-posts": {
         "task": "apps.social.tasks.sugerir_posts",
-        "schedule": 86400.0,
+        "schedule": crontab(minute=15, hour=8),
         "options": {"expires": 80000},
     },
     "publicar-posts": {
@@ -523,23 +531,23 @@ CELERY_BEAT_SCHEDULE = {
     },
     "medir-posts": {
         "task": "apps.social.tasks.medir_posts",
-        "schedule": 86400.0,
+        "schedule": crontab(minute=25, hour=7),
         "options": {"expires": 80000},
     },
     "recalcular-temas": {
         "task": "apps.social.tasks.recalcular_temas",
-        "schedule": 86400.0,
+        "schedule": crontab(minute=40, hour=7),
         "options": {"expires": 80000},
     },
     "placar-coletivo": {
         "task": "apps.social.tasks.consolidar_placar_coletivo",
-        "schedule": 86400.0,
+        "schedule": crontab(minute=55, hour=7),
         "options": {"expires": 80000},
     },
     "purge-expired-questions": {
         "task": "apps.integrations.tasks.purge_expired_questions",
         # Uma vez por dia: e uma obrigacao de retencao, nao algo urgente.
-        "schedule": 86_400.0,
+        "schedule": crontab(minute=30, hour=5),
     },
 }
 

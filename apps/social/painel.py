@@ -12,12 +12,24 @@ DIAS_SEM_LER = 2
 DIAS_SEM_ANUNCIOS = 3
 # Sem API de anuncios: lembrete para mandar a planilha de novo.
 DIAS_DA_PLANILHA = 35
+# O acesso a rede vence (Instagram e LinkedIn: 60 dias). O Instagram renova
+# sozinho na ultima semana; faltando isto e ainda sem renovar — ou numa rede
+# que nao deixa renovar, como o LinkedIn do perfil — a pessoa e avisada.
+DIAS_PARA_RECONECTAR = 5
 
 
 def leitura_parada(destino) -> str:
     """O aviso de leitura automatica parada desta conta ('' se esta em dia)."""
     agora = timezone.now()
     avisos = []
+    if destino.ligado and destino.conectado and destino.expira_em:
+        if destino.expira_em <= agora + timedelta(days=DIAS_PARA_RECONECTAR):
+            quando = timezone.localtime(destino.expira_em).strftime("%d/%m")
+            verbo = "venceu em" if destino.expira_em <= agora else "vence em"
+            avisos.append(
+                f"{destino.nome}: o acesso a rede {verbo} {quando} (a rede so da 60 dias "
+                "de cada vez). Clique em Reconectar, em Redes > Configurar."
+            )
     if destino.ligado and destino.conectado:
         ultimo = destino.sincronizado_em or destino.conectado_em
         if ultimo and ultimo < agora - timedelta(days=DIAS_SEM_LER):
