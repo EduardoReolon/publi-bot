@@ -499,6 +499,8 @@ def conectar(request: HttpRequest, pk) -> HttpResponse:
         reverse("social:retorno"),
         destino=str(destino.pk),
         anuncios=anuncios,
+        # "Trocar a conta": pergunta qual, mesmo que a atual continue na lista.
+        trocar=request.GET.get("trocar") == "1",
     )
     try:
         extra = {"escopos_extras": "ads_read"} if anuncios else {}
@@ -550,8 +552,11 @@ def retorno(request: HttpRequest) -> HttpResponse:
     if estado.get("anuncios") and destino.conta_id:
         # Reconexao so para ler anuncios: a conta do Instagram ja esta escolhida.
         return _depois_de_conectar(request, destino, anuncios=True)
-    if len(contas) == 1:
-        destino.conta_id, destino.conta_nome = contas[0]
+    atual = next((c for c in contas if c[0] == destino.conta_id), None)
+    if len(contas) == 1 or (atual and not estado.get("trocar")):
+        # Uma conta so, ou a reconexao (o acesso vence a cada 60 dias) que
+        # continua alcancando a conta ja escolhida: nao pergunta de novo.
+        destino.conta_id, destino.conta_nome = atual or contas[0]
         destino.save(update_fields=["conta_id", "conta_nome"])
         messages.success(request, _("Conectado: %(c)s.") % {"c": destino.conta_nome})
         return _depois_de_conectar(request, destino, anuncios=estado.get("anuncios", False))
@@ -565,6 +570,8 @@ def retorno(request: HttpRequest) -> HttpResponse:
             + (f" {oauth.sem_contas}" if oauth.sem_contas else ""),
         )
         return redirect(f"{reverse('social:inicio')}?aba=configurar")
+    # As que a rede ofereceu: a escolha so aceita uma delas.
+    request.session[f"contas_oferecidas_{destino.pk}"] = [list(c) for c in contas]
     return render(
         request, "social/conta.html", {"aba": "redes", "destino": destino, "contas": contas}
     )
@@ -575,7 +582,12 @@ def retorno(request: HttpRequest) -> HttpResponse:
 def escolher_conta(request: HttpRequest, pk) -> HttpResponse:
     destino = get_object_or_404(Destino, pk=pk)
     conta_id = request.POST.get("conta", "")
-    nome = request.POST.get(f"nome_{conta_id}", conta_id)
+    oferecidas = dict(request.session.get(f"contas_oferecidas_{destino.pk}") or [])
+    if conta_id not in oferecidas:
+        messages.error(request, _("Essa conta nao veio da rede. Conecte de novo e escolha."))
+        return redirect(f"{reverse('social:inicio')}?aba=configurar")
+    request.session.pop(f"contas_oferecidas_{destino.pk}", None)
+    nome = oferecidas[conta_id]
     destino.conta_id, destino.conta_nome = conta_id[:200], nome[:200]
     destino.save(update_fields=["conta_id", "conta_nome"])
     messages.success(request, _("Conectado: %(c)s.") % {"c": destino.conta_nome})

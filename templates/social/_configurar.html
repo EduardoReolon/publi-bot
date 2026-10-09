@@ -24,6 +24,7 @@
       </form>
       <div class="acoes">
         <a class="botao secundario" href="{% url 'social:conectar' d.pk %}">{% if d.conectado %}{% translate "Reconectar" %}{% else %}{% translate "Conectar a API" %}{% endif %}</a>
+        {% if d.conectado %}<a class="botao discreto" href="{% url 'social:conectar' d.pk %}?trocar=1" title="{% translate 'Entra de novo na rede e pergunta qual pagina/conta este ambiente usa' %}">{% translate "Trocar a conta" %}</a>{% endif %}
         {% if d.conectado %}
           <form method="post" action="{% url 'social:desconectar' d.pk %}">{% csrf_token %}<button type="submit" class="botao discreto">{% translate "Desconectar" %}</button></form>
         {% endif %}
