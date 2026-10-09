@@ -838,7 +838,11 @@ def fontes_sugeridas(request: HttpRequest) -> HttpResponse:
     def da_pauta(qs):
         if pauta is None:
             return qs
-        da_pesquisa = ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("candidatos") or []
+        da_pesquisa = [
+            c
+            for c in ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("candidatos") or []
+            if c
+        ]
         qs = qs.filter(pauta=pauta).exclude(pk__in=da_pesquisa)
         return qs.filter(metricas__frente=frente) if frente else qs
 

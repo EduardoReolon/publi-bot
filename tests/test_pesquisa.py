@@ -719,3 +719,46 @@ def test_pesquisa_com_falha_passageira_volta_sozinha(
     vetores.refresh_from_db()
     assert vetores.busca_de_fontes["pesquisa"]["situacao"] == "na_fila"
     assert vetores.busca_de_fontes["pesquisa"]["retomadas"] == 1
+
+
+def test_pesquisa_antiga_com_candidatos_desalinhados_e_realinhada(ambiente):  # noqa: F811
+    """Antes, artigo sem registro era pulado na lista de candidatos: o N pegava
+    o candidato do N+1 e os ultimos ficavam sem. A pagina dos PDFs realinha
+    (DOI ou titulo) e cria o candidato que falta, para o PDF poder vir."""
+    from apps.knowledge.models import CandidatoDeFonte
+
+    a2 = CandidatoDeFonte.objects.create(
+        url="https://doi.org/10.1/b", tipo="artigo", titulo="Segundo", doi="10.1/b"
+    )
+    artigos = [
+        {
+            "numero": 1,
+            "titulo": "Primeiro",
+            "doi": "https://doi.org/10.1/a",
+            "candidato": str(a2.pk),
+        },
+        {"numero": 2, "titulo": "Segundo", "doi": "https://doi.org/10.1/b", "candidato": ""},
+    ]
+    artigos[0]["candidato"] = str(a2.pk)  # o do vizinho
+    pauta = Topic.objects.create(
+        title="Desalinhada",
+        busca_de_fontes={
+            "pesquisa": {
+                "situacao": "pronta",
+                "artigos": artigos,
+                "candidatos": [str(a2.pk)],
+                "angulos": [
+                    {
+                        "nome": "x",
+                        "pedidos": [{"artigo": 1, "o_que": "a"}, {"artigo": 2, "o_que": "b"}],
+                    }
+                ],
+            }
+        },
+    )
+    itens = pesquisa.pdfs_pedidos(pauta)
+    assert itens[1]["candidato"] == a2  # o "Segundo" volta para o seu
+    assert itens[0]["candidato"] is not None and itens[0]["candidato"].doi == "10.1/a"
+    pauta.refresh_from_db()
+    assert pauta.busca_de_fontes["pesquisa"]["artigos"][1]["candidato"] == str(a2.pk)
+    assert pesquisa.realinhar_candidatos(pauta) == 0  # ja alinhada
