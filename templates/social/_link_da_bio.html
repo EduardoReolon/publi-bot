@@ -1,0 +1,7 @@
+{% load i18n %}<div class="aviso" style="margin:.3rem 0">
+  <strong>{% translate "Link na bio" %}:</strong>
+  {% translate "o Instagram nao deixa link clicavel na legenda; por isso o post diz “link na bio”. A bio e do perfil e aceita poucos links: ponha nela, uma vez so, este endereco fixo. Ele abre uma pagina com a sua oferta (a landing page) no topo e, embaixo, os artigos dos seus posts, o mais novo em cima — nao e um link por artigo." %}
+  <input id="bio-{{ post.pk }}" type="text" readonly value="{{ request.scheme }}://{{ request.get_host }}{% url 'social:bio' post.destino.chave_publica %}" style="width:100%; margin:.3rem 0">
+  <button type="button" class="botao discreto pequeno" data-copiar="bio-{{ post.pk }}">{% translate "Copiar o link da bio" %}</button>
+  <span class="ajuda">{% translate "O artigo so entra nessa pagina depois de “Ja postei” (ou de publicado pela API)." %}</span>
+</div>

@@ -330,3 +330,45 @@ def test_enquadrar_a_primeira_lamina_com_previa(ambiente, modulo, settings, tmp_
     assert client.get(foto).status_code == 200
     fonte = reverse("social:fonte_da_lamina", args=["negrito"], urlconf="core.urls_tenants")
     assert client.get(fonte)["Content-Type"] == "font/ttf"
+
+
+@pytest.mark.django_db
+def test_postar_de_novo_cria_copia_editavel_e_bio_tem_a_oferta(
+    ambiente, modulo, settings, tmp_path
+):
+    from django.urls import reverse
+
+    from apps.social.models import ConfiguracaoSocial
+
+    settings.MEDIA_ROOT = tmp_path
+    _, _, client = ambiente
+    post = Post.objects.create(
+        destino=_destino("instagram"),
+        artigo_id=ARTIGO.id,
+        artigo_titulo=ARTIGO.titulo,
+        artigo_url=ARTIGO.url,
+        motivo=Post.Motivo.NOVO,
+        situacao=Post.Situacao.PUBLICADO,
+        publicado_em=timezone.now(),
+        texto="Legenda",
+        extras={"laminas": [{"titulo": "Gancho", "texto": ""}]},
+    )
+    publicados = client.get(
+        reverse("social:inicio", urlconf="core.urls_tenants") + "?aba=publicados"
+    ).content.decode()
+    assert "Copiar o link da bio" in publicados and "Postar de novo" in publicados
+
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf="core.urls_tenants")
+    client.post(acao, {"acao": "duplicar"})
+    copia = Post.objects.exclude(pk=post.pk).get()
+    assert copia.situacao == Post.Situacao.RASCUNHO and copia.texto == "Legenda"
+    assert copia.extras["copia_de"] == str(post.pk) and len(copia.imagens) == 2
+    post.refresh_from_db()
+    assert post.situacao == Post.Situacao.PUBLICADO
+
+    config = ConfiguracaoSocial.carregar()
+    config.link_da_oferta = "https://site.exemplo.org/agendar/"
+    config.save()
+    bio = reverse("social:bio", args=[post.destino.chave_publica], urlconf="core.urls_tenants")
+    pagina = client.get(bio).content.decode()
+    assert "https://site.exemplo.org/agendar/" in pagina and ARTIGO.titulo in pagina
