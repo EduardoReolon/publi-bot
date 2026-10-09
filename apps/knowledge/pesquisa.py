@@ -371,9 +371,14 @@ def registrar_fontes(pauta, escolhidos: list[dict], *, consulta: str = "") -> li
                 CandidatoDeFonte.objects.filter(doi=trabalho.doi).first() if trabalho.doi else None
             ) or CandidatoDeFonte.objects.filter(url=trabalho.url[:500]).first()
         if candidato is None:
+            # Lugar vazio, nunca pular: a lista anda junto com os escolhidos
+            # (o artigo N fica com o candidato N). Pulado, o N seguinte pegava
+            # o candidato do N+1 e os ultimos ficavam sem nenhum.
+            ids.append("")
             continue
         documento = candidato.documento or documento_do_resumo(candidato)
         if documento is None:
+            ids.append(str(candidato.pk))  # sem resumo, mas o PDF ainda pode vir
             continue
         if candidato.situacao == CandidatoDeFonte.Situacao.PENDENTE:
             candidato.situacao = CandidatoDeFonte.Situacao.APROVADO
@@ -400,7 +405,9 @@ def documentos_da_pesquisa(pauta) -> list:
     """Os documentos dos artigos da pesquisa (o PDF, quando ja substituiu o resumo)."""
     from apps.knowledge.models import CandidatoDeFonte
 
-    ids = ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("candidatos", [])
+    ids = [
+        i for i in ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get("candidatos", []) if i
+    ]
     return list(
         CandidatoDeFonte.objects.filter(pk__in=ids, documento__isnull=False).values_list(
             "documento_id", flat=True
@@ -547,9 +554,9 @@ def pesquisar_para_pergunta(texto: str, chave: str) -> dict:
     from apps.knowledge.models import CandidatoDeFonte
 
     documentos = list(
-        CandidatoDeFonte.objects.filter(pk__in=candidatos, documento__isnull=False).values_list(
-            "documento_id", flat=True
-        )
+        CandidatoDeFonte.objects.filter(
+            pk__in=[c for c in candidatos if c], documento__isnull=False
+        ).values_list("documento_id", flat=True)
     )
     return {
         "em": timezone.now().isoformat(),
@@ -899,11 +906,78 @@ def extrair_do_pdf(documento_pdf) -> int:
     return atendidos
 
 
+def _e_o_mesmo(candidato, artigo: dict) -> bool:
+    from apps.knowledge.academicos import _doi
+
+    doi = _doi(artigo.get("doi") or "")
+    if doi and candidato.doi:
+        return candidato.doi.lower() == doi.lower()
+    return (candidato.titulo or "").strip().lower()[:120] == (
+        (artigo.get("titulo") or "").strip().lower()[:120]
+    )
+
+
+def realinhar_candidatos(pauta) -> int:
+    """Pesquisa gravada antes do conserto da lista: confere se o candidato de
+    cada artigo e mesmo dele (DOI, ou titulo) e corrige; sem candidato, cria um
+    (sem ele nao ha onde receber o PDF). Devolve quantos mudou."""
+    from apps.knowledge.academicos import _doi
+    from apps.knowledge.models import CandidatoDeFonte
+    from apps.knowledge.referencias import registrar
+
+    pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    artigos = pesquisa.get("artigos") or []
+    if not artigos:
+        return 0
+    por_id = CandidatoDeFonte.objects.in_bulk(
+        [i for i in (_uuid(a.get("candidato")) for a in artigos) if i], field_name="pk"
+    )
+    mudados = 0
+    for artigo in artigos:
+        atual = por_id.get(_uuid(artigo.get("candidato")))
+        if atual is not None and _e_o_mesmo(atual, artigo):
+            continue
+        doi = _doi(artigo.get("doi") or "")
+        certo = (CandidatoDeFonte.objects.filter(doi__iexact=doi).first() if doi else None) or (
+            CandidatoDeFonte.objects.filter(
+                tipo=CandidatoDeFonte.Tipo.ARTIGO, titulo__iexact=(artigo.get("titulo") or "")
+            ).first()
+            if artigo.get("titulo")
+            else None
+        )
+        if certo is None and (doi or artigo.get("titulo")):
+            url = (f"https://doi.org/{doi}" if doi else "")[:500]
+            if not url or CandidatoDeFonte.objects.filter(url=url).exists():
+                url = f"https://openalex.org/pesquisa/{pauta.pk}/{artigo.get('numero')}"
+            certo = CandidatoDeFonte.objects.create(
+                url=url,
+                tipo=CandidatoDeFonte.Tipo.ARTIGO,
+                titulo=(artigo.get("titulo") or "")[:500],
+                doi=doi[:200],
+                pauta=pauta,
+                situacao=CandidatoDeFonte.Situacao.APROVADO,
+                motivo="Escolhido pela pesquisa da pauta.",
+            )
+        novo = str(certo.pk) if certo else ""
+        if novo != (artigo.get("candidato") or ""):
+            artigo["candidato"] = novo
+            mudados += 1
+    if mudados:
+        registrar(
+            pauta,
+            "pesquisa",
+            artigos=artigos,
+            candidatos=[a.get("candidato") or "" for a in artigos],
+        )
+    return mudados
+
+
 def pdfs_pedidos(pauta) -> list[dict]:
     """Os artigos da pesquisa de que a sintese pediu o texto completo, um por
     artigo, com os pedidos e em que pe esta cada um (para a pagina dos PDFs)."""
     from apps.knowledge.models import CandidatoDeFonte
 
+    realinhar_candidatos(pauta)
     pesquisa = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
     artigos = {a["numero"]: a for a in pesquisa.get("artigos", [])}
     por_numero: dict[int, dict] = {}
