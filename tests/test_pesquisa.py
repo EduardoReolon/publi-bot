@@ -673,3 +673,49 @@ def test_openalex_fora_tenta_de_novo_e_uma_hipotese_ruim_nao_derruba(ambiente, m
     hip_ruim = {"angulos": [{"angulo": "a", "paragrafo": "ruim"}], "contrarias": []}
     with pytest.raises(pesquisa.PesquisaIndisponivel):
         pesquisa._achados(hip_ruim)
+
+
+def test_pesquisa_com_falha_passageira_volta_sozinha(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    """'O servico de vetores nao respondeu' e passageiro: a varredura retoma,
+    ate o limite; erro de outro tipo fica para a pessoa ver."""
+    import datetime
+
+    from django.utils import timezone
+
+    from apps.content import fluxos
+
+    despachadas = []
+    monkeypatch.setattr(
+        "apps.knowledge.tasks.pesquisar_pauta.delay", lambda pk: despachadas.append(pk)
+    )
+    antiga = (timezone.now() - datetime.timedelta(hours=2)).isoformat()
+    vetores = Topic.objects.create(
+        title="Vetores",
+        busca_de_fontes={
+            "pesquisa": {
+                "situacao": "erro",
+                "em": antiga,
+                "erro": "VetorizacaoAdiada: o servico de vetores nao respondeu (ReadTimeout)",
+            }
+        },
+    )
+    Topic.objects.create(
+        title="Outro erro",
+        busca_de_fontes={"pesquisa": {"situacao": "erro", "em": antiga, "erro": "KeyError: x"}},
+    )
+    Topic.objects.create(
+        title="Esgotada",
+        busca_de_fontes={
+            "pesquisa": {"situacao": "erro", "em": antiga, "transitoria": True, "retomadas": 6}
+        },
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        assert fluxos.pesquisas_com_falha_passageira() == 1
+    assert despachadas == [str(vetores.pk)]
+    vetores.refresh_from_db()
+    assert vetores.busca_de_fontes["pesquisa"]["situacao"] == "na_fila"
+    assert vetores.busca_de_fontes["pesquisa"]["retomadas"] == 1

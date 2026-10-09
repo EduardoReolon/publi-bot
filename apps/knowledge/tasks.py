@@ -254,6 +254,7 @@ def pesquisar_pauta(self, topic_id: str) -> int:
     """A pesquisa de artigos da pauta (`knowledge.pesquisa`). Despachada de
     dentro do tenant."""
     from apps.content.models import Topic
+    from apps.knowledge.embeddings import VetorizacaoAdiada
     from apps.knowledge.pesquisa import PesquisaIndisponivel, pesquisar
     from apps.knowledge.referencias import registrar
 
@@ -262,19 +263,30 @@ def pesquisar_pauta(self, topic_id: str) -> int:
         return 0
     try:
         achados = len(pesquisar(pauta)["artigos"])
-    except PesquisaIndisponivel as exc:
-        # OpenAlex fora do ar: tenta a pesquisa inteira de novo daqui a 10 min,
-        # ate 3 vezes, antes de dar como falha.
+    except (PesquisaIndisponivel, VetorizacaoAdiada) as exc:
+        # Passageiro: OpenAlex fora do ar, ou o servico de vetores ocupado
+        # (um pedido por vez: vetorizando um documento grande, a consulta
+        # espera demais). Tenta de novo; esgotado, a varredura ainda retoma.
+        espera = getattr(exc, "retry_after", None) or (
+            300 if isinstance(exc, VetorizacaoAdiada) else 600
+        )
         if self.request.retries < self.max_retries and not self.request.called_directly:
             registrar(
                 pauta,
                 "pesquisa",
                 situacao="na_fila",
                 em=timezone.now().isoformat(),
-                erro=f"{str(exc)[:200]} Tentando de novo em 10 minutos.",
+                erro=f"{str(exc)[:200]} Tentando de novo em {espera // 60} minutos.",
             )
-            raise self.retry(countdown=600) from exc
-        registrar(pauta, "pesquisa", situacao="erro", erro=str(exc)[:300])
+            raise self.retry(countdown=espera) from exc
+        registrar(
+            pauta,
+            "pesquisa",
+            situacao="erro",
+            erro=str(exc)[:300],
+            transitoria=True,
+            em=timezone.now().isoformat(),
+        )
     except Exception as exc:
         logger.exception("Pesquisa da pauta %s falhou.", topic_id)
         registrar(pauta, "pesquisa", situacao="erro", erro=f"{type(exc).__name__}: {exc}"[:300])
