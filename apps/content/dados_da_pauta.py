@@ -170,14 +170,31 @@ def trocar_marcadores(texto: str, article) -> tuple[str, list]:
     """[[DADO_N]] vira "(IBGE, 2019)"; devolve tambem as referencias (Fonte).
     Marcador de dado que nao existe some (o modelo inventou um numero)."""
     from apps.content.rendering import Fonte
+    from apps.dados.catalogo import formas_do_numero
 
     fatos = {f["n"]: f for f in (article.dados_usados or [])}
     citados: list[int] = []
+
+    def numero_na_frase(achado: re.Match, fato: dict) -> bool:
+        # A frase que o marcador fecha: do fim da frase anterior ate ele.
+        antes = texto[: achado.start()]
+        inicio = max(antes.rfind(". "), antes.rfind("\n"), antes.rfind("! "), antes.rfind("? "))
+        frase = antes[inicio + 1 :]
+        try:
+            formas = formas_do_numero(Decimal(fato["valor_bruto"]))
+        except (KeyError, ArithmeticError, ValueError):
+            return True
+        return any(forma in frase for forma in formas)
 
     def trocar(achado: re.Match) -> str:
         n = int(achado.group(1))
         fato = fatos.get(n)
         if fato is None:
+            return ""
+        if not numero_na_frase(achado, fato):
+            # O modelo pos o marcador do dado numa frase que nao traz o numero
+            # dele (atribuiu ao IBGE algo que o IBGE nao disse): a citacao
+            # sai e a frase fica, sem travar a aprovacao.
             return ""
         if n not in citados:
             citados.append(n)
@@ -197,6 +214,26 @@ def trocar_marcadores(texto: str, article) -> tuple[str, list]:
         for n in citados
     ]
     return texto, referencias
+
+
+def consertar(article) -> bool:
+    """Artigo ja montado com dado citado sem o numero no texto: remonta das
+    secoes, e `trocar_marcadores` tira a citacao que nao cabe. Devolve se
+    consertou."""
+    if not pendencias(article) or not article.sections.exists():
+        return False
+    from apps.content.services import (
+        aplicar_edicao_humana,
+        markdown_com_links,
+        montar_markdown_das_secoes,
+    )
+
+    try:
+        markdown = markdown_com_links(article, montar_markdown_das_secoes(article))
+    except ValueError:
+        return False
+    aplicar_edicao_humana(article, markdown, editor=None)
+    return True
 
 
 def pendencias(article) -> list[str]:

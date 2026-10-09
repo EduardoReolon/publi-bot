@@ -184,6 +184,17 @@ def test_da_pauta_ao_artigo(ambiente, monkeypatch):  # noqa: F811
     artigo.body_markdown = artigo.body_markdown.replace("24,1", "24")
     assert "24,1" in pendencias(artigo)[0]
 
+    # Marcador do dado numa frase que nao traz o numero dele (o modelo
+    # atribuiu ao IBGE outra coisa): a citacao sai sozinha, a frase fica.
+    aplicar_rascunho(
+        artigo,
+        "## Quanto\n\nNo Parana, 24,1% dos adultos [[DADO_1]]. A latencia cai abaixo de "
+        "200 ms [[DADO_2]].",
+    )
+    artigo.refresh_from_db()
+    assert "200 ms." in artigo.body_markdown and artigo.body_markdown.count("(IBGE, 2019)") == 1
+    assert [f["citado"] for f in artigo.dados_usados] == [True, False]
+
 
 @pytest.mark.django_db
 def test_cada_trecho_recebe_poucos_dados(ambiente, monkeypatch):  # noqa: F811
