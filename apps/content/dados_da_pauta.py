@@ -202,9 +202,10 @@ def trocar_marcadores(texto: str, article) -> tuple[str, list]:
 
     texto = PADRAO_DADO.sub(trocar, texto)
     texto = re.sub(r"[ \t]+([.,;:!?)])", r"\1", texto)
-    if citados:
-        for f in article.dados_usados:
-            f["citado"] = f["n"] in citados
+    # Sempre, mesmo sem nenhum citado: a citacao que saiu (do texto ou por
+    # estar na frase errada) deixa de contar na conferencia do numero.
+    for f in article.dados_usados or []:
+        f["citado"] = f["n"] in citados
     referencias = [
         Fonte(
             url=fatos[n]["url"],

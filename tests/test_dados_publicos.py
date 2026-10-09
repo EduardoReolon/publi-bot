@@ -195,6 +195,12 @@ def test_da_pauta_ao_artigo(ambiente, monkeypatch):  # noqa: F811
     assert "200 ms." in artigo.body_markdown and artigo.body_markdown.count("(IBGE, 2019)") == 1
     assert [f["citado"] for f in artigo.dados_usados] == [True, False]
 
+    # Sem nenhuma citacao de dado que sobre, nada fica "citado" (e nada trava).
+    aplicar_rascunho(artigo, "## Quanto\n\nA latencia cai abaixo de 200 ms [[DADO_1]].")
+    artigo.refresh_from_db()
+    assert [f["citado"] for f in artigo.dados_usados] == [False, False]
+    assert pendencias(artigo) == []
+
 
 @pytest.mark.django_db
 def test_cada_trecho_recebe_poucos_dados(ambiente, monkeypatch):  # noqa: F811

@@ -440,6 +440,13 @@ CELERY_BEAT_SCHEDULE = {
         # (a consulta e por `<=`, nao por igualdade de minuto).
         "options": {"expires": 55},
     },
+    # Os horarios futuros da cadencia de cada site. Sem eles, o artigo
+    # aprovado nao tem vaga e sai na hora.
+    "gerar-horarios-da-cadencia": {
+        "task": "apps.integrations.tasks.generate_publication_slots",
+        "schedule": crontab(minute=35),
+        "options": {"expires": 3000},
+    },
     "check-publication-buffer": {
         "task": "apps.integrations.tasks.check_publication_buffer",
         "schedule": 900.0,

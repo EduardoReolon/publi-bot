@@ -352,14 +352,21 @@ def atualizar_contexto_dos_sites() -> int:
 
 @shared_task
 def generate_publication_slots() -> int:
-    """Mantem os horarios futuros preenchidos."""
+    """Mantem os horarios futuros preenchidos, em cada tenant. De hora em hora:
+    sem horario gerado, o artigo aprovado sai na hora (nao ha vaga na cadencia)."""
+    from apps.accounts.varredura import para_cada_tenant
+
+    return para_cada_tenant(gerar_horarios_do_tenant, "generate_publication_slots")
+
+
+def gerar_horarios_do_tenant() -> int:
+    """Os horarios futuros das cadencias ativas do tenant atual."""
     from apps.integrations.models import PublicationSchedule
     from apps.integrations.scheduling import gerar_horarios
 
     total = 0
     for schedule in PublicationSchedule.objects.filter(is_active=True).select_related("site"):
         total += len(gerar_horarios(schedule))
-
     return total
 
 
