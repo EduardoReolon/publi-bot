@@ -72,13 +72,15 @@ def test_coleta_pagina_e_refaz_os_ultimos_dias(site, monkeypatch):  # noqa: F811
         return paginas[cursor]
 
     monkeypatch.setattr(SiteClient, "insights", insights)
+    # "Hoje" na hora da coleta, nao na carga do arquivo: a suite pode virar a meia-noite.
+    hoje = timezone.localdate()
     assert coletar(site) == (2, 0)
-    assert pedidos[0] == (HOJE - timedelta(days=90), "")
+    assert pedidos[0] == (hoje - timedelta(days=90), "")
     assert pedidos[1][1] == "p2"
 
     pedidos.clear()
     coletar(site)
-    assert pedidos[0][0] == HOJE - timedelta(days=3)
+    assert pedidos[0][0] == timezone.localdate() - timedelta(days=3)
 
 
 @pytest.mark.django_db
