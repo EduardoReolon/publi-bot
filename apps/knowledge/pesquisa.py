@@ -623,6 +623,9 @@ def pesquisar(pauta) -> dict:
         "angulos": grupos,
         "candidatos": candidatos,
         "erro": "",
+        # Deu certo: a contagem de retomadas da falha passageira recomeca.
+        "transitoria": False,
+        "retomadas": 0,
     }
     registrar(pauta, "pesquisa", **resultado)
     return resultado

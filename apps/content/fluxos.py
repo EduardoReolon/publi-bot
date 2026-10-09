@@ -281,7 +281,45 @@ def pesquisas_paradas() -> int:
         if situacao_da_pesquisa(pauta)["parada"]:
             iniciar_pesquisa(pauta, gerar_depois=None)
             recomecadas += 1
-    return recomecadas
+    return recomecadas + pesquisas_com_falha_passageira()
+
+
+# A falha passageira (servico de vetores ocupado, OpenAlex fora) volta sozinha,
+# no maximo este tanto de vezes, com este intervalo minimo.
+TENTATIVAS_DA_FALHA_PASSAGEIRA = 6
+INTERVALO_DA_FALHA_PASSAGEIRA_MINUTOS = 30
+_SINAIS_DE_FALHA_PASSAGEIRA = ("VetorizacaoAdiada", "servico de vetores", "OpenAlex")
+
+
+def pesquisas_com_falha_passageira() -> int:
+    """Pesquisa que deu erro por algo passageiro recomeca sozinha (ate o
+    limite): nao fica "a pesquisa falhou" esperando alguem clicar."""
+    import datetime
+
+    from django.utils import timezone
+
+    from apps.content.models import Topic
+    from apps.knowledge.referencias import registrar
+
+    retomadas = 0
+    limite = timezone.now() - datetime.timedelta(minutes=INTERVALO_DA_FALHA_PASSAGEIRA_MINUTOS)
+    for pauta in Topic.objects.filter(busca_de_fontes__pesquisa__situacao="erro").exclude(
+        status=Topic.Status.REJECTED
+    ):
+        dados = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+        erro = str(dados.get("erro") or "")
+        if not (dados.get("transitoria") or any(s in erro for s in _SINAIS_DE_FALHA_PASSAGEIRA)):
+            continue
+        tentativas = int(dados.get("retomadas") or 0)
+        if tentativas >= TENTATIVAS_DA_FALHA_PASSAGEIRA:
+            continue
+        quando = situacao_da_pesquisa(pauta)["desde"]
+        if quando is not None and quando > limite:
+            continue
+        registrar(pauta, "pesquisa", retomadas=tentativas + 1)
+        iniciar_pesquisa(pauta, gerar_depois=None)
+        retomadas += 1
+    return retomadas
 
 
 def geracao_do_b_pendente(pauta) -> bool:
