@@ -54,6 +54,12 @@ def _proximo_horario():
     default previsivel; a cadencia continua sendo o caminho recomendado.
     """
     livre = _horario_livre()
+    if livre is None:
+        # Cadencia sem horarios gerados ainda (recem-salva): gera agora.
+        from apps.integrations.tasks import gerar_horarios_do_tenant
+
+        gerar_horarios_do_tenant()
+        livre = _horario_livre()
     return livre.slot_at if livre else timezone.now()
 
 

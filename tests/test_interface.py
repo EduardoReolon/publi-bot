@@ -489,6 +489,37 @@ def test_aprovar_reserva_o_horario_da_cadencia(ambiente, artigo_para_revisar):
     assert _proximo_horario() == amanha + timedelta(days=2)
 
 
+@pytest.mark.django_db
+def test_cadencia_salva_gera_os_horarios_e_aprovar_usa_o_proximo(ambiente):
+    """Sem horario gerado, o aprovado saia na hora: salvar a cadencia ja gera, e
+    aprovar sem vaga gera antes de desistir."""
+    from django.utils import timezone
+
+    from apps.content.views import _proximo_horario
+    from apps.integrations.models import PublicationSchedule, PublicationSlot
+
+    _, _, client = ambiente
+    site = Site.objects.create(name="Site", slug="site", base_url="https://site.exemplo.org")
+    client.post(
+        reverse("integrations:site", urlconf="core.urls_tenants"),
+        {
+            "secao": "cadencia",
+            "mode": PublicationSchedule.Mode.WEEKLY_SLOTS,
+            "interval_days": 7,
+            "max_per_day": 1,
+            "buffer_threshold": 2,
+            "qa_consumes_slot": "on",
+            "is_active": "on",
+            "dias": "0",
+            "horarios": "08:00",
+        },
+    )
+    assert PublicationSlot.objects.filter(site=site, slot_at__gt=timezone.now()).exists()
+
+    PublicationSlot.objects.all().delete()
+    assert _proximo_horario() > timezone.now()  # gerou na hora, nao "agora"
+
+
 # ---------------------------------------------------------------------------
 # Titulo sugerido e meta description
 # ---------------------------------------------------------------------------

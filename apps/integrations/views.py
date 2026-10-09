@@ -120,7 +120,23 @@ def _salvar_cadencia(request: HttpRequest, instancia: Site | None) -> HttpRespon
     cadencia = form.save(commit=False)
     cadencia.site = instancia
     cadencia.save()
-    messages.success(request, _("Cadencia salva."))
+    # Os horarios futuros ainda vazios seguem a cadencia nova, ja.
+    from apps.integrations.models import PublicationSlot
+    from apps.integrations.scheduling import gerar_horarios
+
+    PublicationSlot.objects.filter(
+        site=instancia, slot_at__gt=timezone.now(), article__isnull=True, answer__isnull=True
+    ).delete()
+    novos = gerar_horarios(cadencia)
+    proximo = min((h.slot_at for h in novos), default=None)
+    if proximo:
+        messages.success(
+            request,
+            _("Cadencia salva. Proximo horario: %(q)s.")
+            % {"q": timezone.localtime(proximo).strftime("%d/%m %H:%M")},
+        )
+    else:
+        messages.success(request, _("Cadencia salva."))
     return redirect("integrations:site")
 
 
@@ -155,8 +171,8 @@ def testar_conexao(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_POST
 def gerar_horarios(request: HttpRequest) -> HttpResponse:
-    from apps.integrations.tasks import generate_publication_slots
+    from apps.integrations.tasks import gerar_horarios_do_tenant
 
-    total = generate_publication_slots()
+    total = gerar_horarios_do_tenant()
     messages.success(request, _("%(total)s horario(s) gerado(s).") % {"total": total})
     return redirect("integrations:site")
