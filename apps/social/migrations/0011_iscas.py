@@ -8,9 +8,12 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+    # Ja foi "0010_iscas" (o deploy de 12/10 aplicou com esse nome nas contas
+    # sem impulso digitado): quem tem a antiga nao cria a tabela de novo.
+    replaces = [("social", "0010_iscas")]
 
     dependencies = [
-        ("social", "0010_impulsos_digitados"),
+        ("social", "0009_publico_do_impulso"),
     ]
 
     operations = [
