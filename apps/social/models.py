@@ -159,6 +159,33 @@ class Destino(models.Model):
     # Lâminas (carrossel): {"fundo": "#...", "texto": "#...", "destaque": "#..."}.
     cores = models.JSONField(_("cores das laminas"), default=dict, blank=True)
     chamada_final = models.CharField(_("ultima lamina / chamada"), max_length=160, blank=True)
+    # Identidade visual: o estilo das imagens das laminas (para a IA de imagem).
+    estilo_das_imagens = models.CharField(
+        _("estilo das imagens"),
+        max_length=12,
+        blank=True,
+        choices=[
+            ("", _("— (so cores e texto)")),
+            ("foto", _("Foto realista")),
+            ("ilustracao", _("Ilustracao (desenho)")),
+            ("quadrinhos", _("Quadrinhos (cenas com personagens)")),
+            ("misto", _("Misto: foto em alguns cenarios, desenho no resto")),
+        ],
+        help_text=_("Vai no pedido de imagens das laminas, para a conta ter uma linha so."),
+    )
+    descricao_do_estilo = models.TextField(
+        _("como sao as imagens"),
+        blank=True,
+        help_text=_(
+            "Traco, cores, luz, personagens que se repetem, o que evitar. Ex.: 'ilustracao "
+            "plana, tons de azul e areia, personagem: uma recepcionista de cabelo curto'."
+        ),
+    )
+    cenarios_de_foto = models.TextField(
+        _("quando usar foto realista (no misto)"),
+        blank=True,
+        help_text=_("Ex.: 'ambiente e equipamentos; nunca pessoas reconheciveis'."),
+    )
 
     # --- Estrategia -------------------------------------------------------------
     # Pela API (Instagram, pagina do LinkedIn) ou digitado (perfil pessoal).
@@ -468,6 +495,19 @@ class Post(models.Model):
         return f"{self.destino} — {self.artigo_titulo[:60]}"
 
     @property
+    def laminas_e_fundos(self) -> list[dict]:
+        """Cada lamina e de onde vem o fundo dela (ver `identidade`)."""
+        from apps.social import identidade
+
+        return identidade.situacao_das_laminas(self)
+
+    @property
+    def pedido_de_imagens(self) -> str:
+        from apps.social import identidade
+
+        return identidade.pedido(self)
+
+    @property
     def no_foco(self) -> dict:
         """Como foi no seu foco, contra os da conta com o mesmo foco."""
         from apps.social import focos
@@ -678,6 +718,45 @@ class Isca(models.Model):
 
     def __str__(self) -> str:
         return self.nome
+
+
+def _caminho_do_fundo(instancia, nome: str) -> str:
+    import os
+
+    extensao = os.path.splitext(nome)[1].lower()[:5] or ".png"
+    return f"social/fundos/{instancia.destino_id}/{instancia.pk}{extensao}"
+
+
+class FundoDeLamina(models.Model):
+    """Um fundo padrao das laminas da conta (o "modelo de slide"): o da capa,
+    o dos do meio, o da ultima — ou, entre os do meio, um por tipo ("dado",
+    "pergunta", "passo a passo"). O PubliBot escolhe qual vai em cada lamina e
+    escreve o texto por cima."""
+
+    class Papel(models.TextChoices):
+        CAPA = "capa", _("Capa (1a lamina)")
+        MEIO = "meio", _("Laminas do meio")
+        FINAL = "final", _("Ultima lamina")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="fundos")
+    papel = models.CharField(_("onde usar"), max_length=6, choices=Papel.choices)
+    etiqueta = models.CharField(
+        _("tipo (opcional)"),
+        max_length=40,
+        blank=True,
+        help_text=_("So nas do meio: dado, pergunta, lista, dica... Vazio: qualquer uma."),
+    )
+    arquivo = models.ImageField(upload_to=_caminho_do_fundo, max_length=300)
+    cor_texto = models.CharField(_("cor do texto neste fundo"), max_length=7, blank=True)
+    cor_destaque = models.CharField(_("cor do titulo neste fundo"), max_length=7, blank=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["papel", "etiqueta", "criado_em"]
+
+    def __str__(self) -> str:
+        return f"{self.get_papel_display()} {self.etiqueta}".strip()
 
 
 def _caminho_da_midia(instancia, nome: str) -> str:
