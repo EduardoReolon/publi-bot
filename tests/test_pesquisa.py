@@ -452,6 +452,15 @@ def test_pagina_dos_pdfs_mostra_o_pedido_e_recebe_o_arquivo(ambiente, openalex, 
     url = reverse("content:pdfs_da_pesquisa", args=[pauta.pk], urlconf="core.urls_tenants")
     html = client.get(url).content.decode()
     assert "Enviar o PDF" in html and itens[0]["pedidos"][0]["o_que"] in html
+    # Sem DOI, o titulo leva a pagina do artigo; sem PDF aberto, a busca no Academico.
+    pauta.refresh_from_db()
+    for artigo in pauta.busca_de_fontes["pesquisa"]["artigos"]:
+        artigo["doi"] = ""
+    pauta.save(update_fields=["busca_de_fontes"])
+    sem_doi = client.get(url).content.decode()
+    assert f'href="{itens[0]["candidato"].url}"' in sem_doi
+    if not itens[0]["pdf_aberto"]:
+        assert "scholar.google.com/scholar?q=" in sem_doi
 
     candidato = itens[0]["candidato"]
     resposta = client.post(

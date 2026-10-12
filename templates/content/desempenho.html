@@ -91,6 +91,30 @@
     {% if site.insights_synced_at %}{% translate "Coletado em" %} {{ site.insights_synced_at|date:"d/m H:i" }}.{% endif %}
   </p>
 
+  {% if painel.por_origem %}
+    <h2>{% translate "De onde vieram e quanto leram" %}</h2>
+    <p class="ajuda">{% translate "Por onde a pessoa entrou no site nesta visita (o link com utm, ou quem mandou: Google, Instagram, LinkedIn). Leram = 10 s ou mais de leitura ativa; metade e fim = ate onde rolaram. Quem e cada pessoa nao: so a soma (privacidade)." %}</p>
+    <div class="rolagem">
+      <table>
+        <thead><tr><th>{% translate "Canal" %}</th><th>{% translate "Fonte" %}</th><th class="numero">{% translate "Aberturas" %}</th><th class="numero">{% translate "Leram" %}</th><th class="numero">{% translate "Tempo ativo" %}</th><th class="numero">{% translate "Passaram da metade" %}</th><th class="numero">{% translate "Ate o fim" %}</th></tr></thead>
+        <tbody>
+          {% for o in painel.por_origem %}
+            <tr>
+              <td>{{ o.canal }}</td>
+              <td>{{ o.fonte|default:"—" }}</td>
+              <td class="numero">{{ o.aberturas }}</td>
+              <td class="numero">{{ o.leram }}{% if o.taxa_de_leitura is not None %} <span class="ajuda">{% widthratio o.taxa_de_leitura 1 100 %}%</span>{% endif %}</td>
+              <td class="numero">{% if o.tempo is not None %}{{ o.tempo|floatformat:0 }} s{% else %}—{% endif %}</td>
+              <td class="numero">{% if o.metade is not None %}{% widthratio o.metade 1 100 %}%{% else %}—{% endif %}</td>
+              <td class="numero">{% if o.fim is not None %}{% widthratio o.fim 1 100 %}%{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h2>{% translate "Por artigo" %}</h2>
+  {% endif %}
+
   {% if painel.linhas %}
     <div class="rolagem">
       <table>

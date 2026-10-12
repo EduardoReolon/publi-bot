@@ -60,6 +60,12 @@
 
   {% if post.situacao == 'sugerido' or post.situacao == 'gerando' %}
     <p class="pre-visualizacao">{% translate "Escrevendo... (recarregue em instantes)" %}{% if post.erro %} — {{ post.erro|truncatechars:200 }}{% endif %}</p>
+    {% if post.erro %}
+      <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+        <button type="submit" name="acao" value="tentar_de_novo" class="botao secundario pequeno" title="{% translate 'Testa na hora se o servidor do modelo responde e, se sim, escreve ja (sem esperar o disjuntor)' %}">{% translate "Tentar de novo agora" %}</button>
+      </form>
+    {% endif %}
   {% elif post.situacao == 'falhou' and not post.texto %}
     <div class="aviso ruim">{{ post.erro }}</div>
   {% endif %}

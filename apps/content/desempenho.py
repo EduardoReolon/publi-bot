@@ -99,6 +99,9 @@ class Painel:
         }
     )
     por_canal: dict = field(default_factory=dict)
+    # Quanto leram por origem da visita (Google, Instagram, LinkedIn, direto...):
+    # [{"canal", "fonte", "aberturas", "leram", "tempo", "metade", "fim"}].
+    por_origem: list = field(default_factory=list)
     cliques_organicos: int = 0
     valor_usd: float = 0.0
     comparacao: Comparacao | None = None
@@ -232,7 +235,44 @@ def painel(dias: int = 28) -> Painel:
         key=lambda d: (-d.atribuidas, -d.engaged_views, -d.cliques_organicos, d.titulo),
     )
     resultado.comparacao = _comparar(resultado, desde)
+    resultado.por_origem = _leitura_por_origem(desde)
     return resultado
+
+
+def _leitura_por_origem(desde) -> list[dict]:
+    """A leitura somada por canal e fonte da visita, no periodo: de onde vem
+    quem le de verdade (tempo, metade, fim), e nao so quem abre."""
+    from apps.integrations.models import ConversaoDoSite, LeituraPorOrigem
+
+    nomes = dict(ConversaoDoSite.Canal.choices)
+    linhas = []
+    somas = (
+        LeituraPorOrigem.objects.filter(dia__gte=desde)
+        .values("canal", "fonte")
+        .annotate(
+            aberturas=Sum("views"),
+            leram=Sum("engaged_views"),
+            segundos=Sum("engaged_seconds"),
+            metade=Sum("half_read"),
+            fim=Sum("read_to_end"),
+        )
+        .order_by("-aberturas")
+    )
+    for s in somas:
+        abertas = s["aberturas"] or 0
+        linhas.append(
+            {
+                "canal": nomes.get(s["canal"], s["canal"]),
+                "fonte": s["fonte"],
+                "aberturas": abertas,
+                "leram": s["leram"] or 0,
+                "taxa_de_leitura": (s["leram"] or 0) / abertas if abertas else None,
+                "tempo": (s["segundos"] or 0) / s["leram"] if s["leram"] else None,
+                "metade": (s["metade"] or 0) / abertas if abertas else None,
+                "fim": (s["fim"] or 0) / abertas if abertas else None,
+            }
+        )
+    return linhas
 
 
 def _somar_valor_do_trafego(linhas: dict, resultado: Painel) -> None:

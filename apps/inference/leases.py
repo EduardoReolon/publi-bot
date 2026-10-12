@@ -337,5 +337,30 @@ def registrar_sucesso(connection: InferenceConnection) -> None:
     )
 
 
+def testar_e_reabrir(*, segundos: float = 3.0) -> list[tuple[str, bool, str]]:
+    """Para o botao "tentar de novo": testa na hora se cada conexao com o
+    disjuntor aberto responde (so abrir a porta, sem gastar o modelo). A que
+    responde tem o disjuntor fechado ja, em vez de esperar os minutos; a que
+    nao responde fica como esta. Devolve [(nome, respondeu, motivo)]."""
+    import socket
+    from urllib.parse import urlsplit
+
+    saida = []
+    for conexao in InferenceConnection.objects.filter(is_active=True):
+        if not conexao.circuito_aberto:
+            continue
+        partes = urlsplit(conexao.base_url)
+        porta = partes.port or (443 if partes.scheme == "https" else 80)
+        try:
+            with socket.create_connection((partes.hostname, porta), timeout=segundos):
+                pass
+        except OSError as exc:
+            saida.append((conexao.name, False, f"{partes.hostname}:{porta} nao responde ({exc})"))
+            continue
+        InferenceConnection.objects.filter(pk=conexao.pk).update(circuit_open_until=None)
+        saida.append((conexao.name, True, ""))
+    return saida
+
+
 def gerar_owner_key() -> str:
     return str(uuid.uuid4())

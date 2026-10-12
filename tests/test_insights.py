@@ -266,6 +266,17 @@ def test_leitura_por_origem_vira_numero_do_post(site):  # noqa: F811
     insta = fontes.leitura_vinda_da_rede("a", "instagram", hoje)
     assert insta == {"aberturas": 8, "leram": 5, "segundos_por_leitura": 50, "metade": 4, "fim": 2}
     assert fontes.leitura_vinda_da_rede("a", "instagram", hoje + timedelta(days=1)) == {}
+    # No painel de Desempenho: quanto leram, por origem (Google, LinkedIn...).
+    from apps.content.desempenho import painel
+
+    [insta_, linkedin] = painel(28).por_origem
+    assert (insta_["canal"], insta_["fonte"], insta_["aberturas"]) == (
+        "Rede social",
+        "instagram",
+        8,
+    )
+    assert insta_["tempo"] == 80 and insta_["metade"] == 0.5 and insta_["fim"] == 0.25
+    assert linkedin["fonte"] == "linkedin" and linkedin["tempo"] is None
     # Site antigo (sem reading_by_source) continua funcionando.
     gravar(site, {"reading": [_leitura("a", views=11)]})
     assert LeituraDoDia.objects.get(remote_id="a").views == 11
