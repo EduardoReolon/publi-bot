@@ -10,7 +10,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("social", "0009_publico_do_impulso"),
+        ("social", "0010_impulsos_digitados"),
     ]
 
     operations = [
