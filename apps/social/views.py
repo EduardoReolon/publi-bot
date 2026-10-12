@@ -807,9 +807,96 @@ def acao_na_estrategia(request: HttpRequest) -> HttpResponse:
         post.impulsionado = True
         post.custo_impulso = valor
         post.impulso_em = timezone.now()
-        post.save(update_fields=["impulsionado", "custo_impulso", "impulso_em", "atualizado_em"])
+        post.publico_do_impulso = _publico_escolhido(request, post)
+        post.save(
+            update_fields=[
+                "impulsionado",
+                "custo_impulso",
+                "impulso_em",
+                "publico_do_impulso",
+                "atualizado_em",
+            ]
+        )
         messages.success(request, _("Impulso registrado: o resultado passa a contar como pago."))
+    elif acao == "publico_do_post":
+        post = get_object_or_404(Post, pk=request.POST.get("post"))
+        post.publico_do_impulso = _publico_escolhido(request, post)
+        post.save(update_fields=["publico_do_impulso", "atualizado_em"])
+        messages.success(request, _("Publico do impulso salvo."))
     return redirect(request.POST.get("voltar") or voltar)
+
+
+def _publico_escolhido(request: HttpRequest, post: Post):
+    from apps.social.models import PublicoDeImpulso
+
+    pk = request.POST.get("publico")
+    if not pk:
+        return None
+    return PublicoDeImpulso.objects.filter(pk=pk, destino=post.destino).first()
+
+
+@login_required
+def publicos(request: HttpRequest) -> HttpResponse:
+    """Os publicos de impulso salvos de uma conta, com o resultado de cada um,
+    e o pedido para outra IA sugerir o publico de um post."""
+    from apps.social import publicos as modulo
+    from apps.social.models import PublicoDeImpulso
+
+    dados = request.POST if request.method == "POST" else request.GET
+    destino = get_object_or_404(Destino, pk=dados.get("destino"))
+    post = (
+        Post.objects.filter(pk=dados.get("post"), destino=destino).first()
+        if dados.get("post")
+        else None
+    )
+    if request.method == "POST":
+        acao = request.POST.get("acao")
+        if acao == "resposta":
+            lidos, comentarios = modulo.ler(request.POST.get("resposta", ""))
+            if not lidos:
+                messages.error(
+                    request,
+                    _(
+                        "Nao achei o bloco PUBLICOS na resposta. Peca a IA 'pode gerar' e "
+                        "cole a resposta inteira."
+                    ),
+                )
+            else:
+                salvos = modulo.salvar(destino, lidos)
+                messages.success(
+                    request,
+                    _("Publicos salvos: %(n)s. Escolha o usado ao registrar o impulso.")
+                    % {"n": ", ".join(p.nome for p in salvos)},
+                )
+                if comentarios:
+                    messages.info(request, comentarios[:1000])
+        elif acao == "novo" and request.POST.get("nome", "").strip():
+            PublicoDeImpulso.objects.update_or_create(
+                destino=destino,
+                nome=request.POST["nome"].strip()[:80],
+                defaults={"descricao": request.POST.get("descricao", "").strip(), "ativo": True},
+            )
+            messages.success(request, _("Publico salvo."))
+        elif acao == "apagar":
+            PublicoDeImpulso.objects.filter(pk=request.POST.get("publico"), destino=destino).update(
+                ativo=False
+            )
+            messages.success(request, _("Publico tirado da lista (o historico fica)."))
+        url = f"{reverse('social:publicos')}?destino={destino.pk}"
+        return redirect(url + (f"&post={post.pk}" if post else ""))
+    return render(
+        request,
+        "social/publicos.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "estrategia",
+            "contagens": _contagens(),
+            "destino": destino,
+            "post": post,
+            "quadro": modulo.quadro(destino),
+            "pedido": modulo.pedido(post) if post else "",
+        },
+    )
 
 
 # -- Segunda opiniao de uma IA grande ---------------------------------------------------

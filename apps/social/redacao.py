@@ -299,7 +299,7 @@ def _do_tema(tema, principal):
 def escrever(post: Post) -> Post:
     """Escreve (ou reescreve) o post. Sem modelo agora: levanta, e quem chamou
     (a tarefa) tenta mais tarde."""
-    from apps.social import laminas, proprio
+    from apps.social import focos, laminas, proprio
 
     entrada = post.entrada if post.entrada_id else None
     artigo = proprio.como_artigo(entrada) if entrada else fontes.artigo(post.artigo_id)
@@ -334,6 +334,7 @@ def escrever(post: Post) -> Post:
         base = proprio.instrucao_para_quem_escreve(entrada, artigo) + "\n" + base
     if e_enquete(post):
         base = INSTRUCAO_DA_ENQUETE + base
+    base = focos.instrucao(post) + base
     base = (
         fontes.instrucoes_sensiveis(f"{artigo.titulo}\n{artigo.texto}")
         + "\nHashtags com cada palavra iniciando em maiuscula (#SaudeMental, nao "

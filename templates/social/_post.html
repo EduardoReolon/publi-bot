@@ -5,6 +5,7 @@
       <strong>{{ post.destino.nome }}</strong> <span class="selo">{{ post.destino.rede_nome }}</span>
       <span class="selo {% if post.situacao == 'rascunho' %}alerta{% elif post.situacao == 'publicado' %}ok{% elif post.situacao == 'falhou' %}ruim{% else %}espera{% endif %}">{{ post.get_situacao_display }}</span>
       {% if post.abordagem %}<span class="selo" title="{% translate 'abordagem' %}">{{ post.abordagem.nome }}</span>{% endif %}
+      {% if post.extras.foco %}<span class="selo espera" title="{% translate 'para que o post existe: alcance (quem nao segue), engajamento (quem ja segue) ou site (levar ao artigo)' %}">{% translate "foco" %}: {{ post.extras.foco }}</span>{% endif %}
       {% if post.tema_id %}<span class="selo espera" title="{{ post.tema.titulo }}">{% translate "tema" %}</span>{% endif %}
       {% if post.impulsionado %}<span class="selo alerta">{% translate "impulsionado" %} R$ {{ post.custo_impulso }}</span>{% endif %}
       {% if post.variante_de_id or post.variantes.exists %}<span class="selo" title="{% translate 'ha outra versao deste artigo para esta conta: aprove a que preferir' %}">{% translate "versao A/B" %}</span>{% endif %}
@@ -191,6 +192,7 @@
       {% if post.metricas.salvos %}<span class="selo ok">{{ post.metricas.salvos }} {% translate "salvos" %}</span>{% endif %}
       {% if post.metricas.visitas_ao_perfil is not None %}<span class="selo">{{ post.metricas.visitas_ao_perfil }} {% translate "visitas ao perfil" %}</span>{% endif %}
       {% if post.metricas.seguidores_ganhos is not None %}<span class="selo">{{ post.metricas.seguidores_ganhos }} {% translate "seguidores ganhos" %}</span>{% endif %}
+      {% with d=post.no_foco %}{% if d.posicao is not None %}<span class="selo {% if d.posicao >= 0.75 %}ok{% elif d.posicao < 0.25 %}ruim{% endif %}" title="{% blocktranslate with n=d.comparados %}contra {{ n }} posts organicos da conta com o mesmo foco{% endblocktranslate %}">{% translate "no foco" %} {{ d.foco }}: {% if d.posicao >= 0.75 %}{% translate "entre os 25% melhores" %}{% elif d.posicao < 0.25 %}{% translate "entre os 25% piores" %}{% else %}{% translate "na media" %}{% endif %}</span>{% endif %}{% endwith %}
       {% if post.sucesso is True %}<span class="selo ok">{% translate "funcionou" %}</span>{% elif post.sucesso is False %}<span class="selo">{% translate "abaixo da mediana" %}</span>{% endif %}
     </div>
     {% with s=post.metricas.site %}{% if s %}
@@ -202,6 +204,12 @@
     {% if post.impulsionado %}
       <div class="ajuda" style="margin:.3rem 0">
         <span class="selo alerta">{% translate "impulsionado" %}{% if post.custo_impulso %} · R$ {{ post.custo_impulso }}{% endif %}</span>
+        <form method="post" action="{% url 'social:acao_na_estrategia' %}" style="display:inline">
+          {% csrf_token %}<input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="publico_do_post">
+          <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+          {% include "social/_publico_do_impulso.html" %}
+          <button type="submit" class="botao discreto pequeno">{% translate "Salvar publico" %}</button>
+        </form>
         {% for a in post.anuncios.all %}
           · {% translate "anuncio" %}: {{ a.cliques|default:"—" }} {% translate "cliques no link" %}, {{ a.alcance|default:"—" }} {% translate "alcance" %}{% if a.custo_por_clique %} ({% translate "custo por clique" %} R$ {{ a.custo_por_clique }}){% endif %}
         {% empty %}
@@ -214,6 +222,7 @@
         {% csrf_token %}<input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="impulso">
         <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
         <input type="text" name="valor" placeholder="R$" style="width:6rem">
+        {% include "social/_publico_do_impulso.html" %}
         <button type="submit" class="botao discreto pequeno">{% translate "Registrei um impulso pago" %}</button>
         <a class="ajuda" href="{% url 'social:estrategia' %}?destino={{ post.destino_id }}">{% translate "o que impulsionar?" %}</a>
       </form>

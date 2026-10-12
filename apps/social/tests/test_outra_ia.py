@@ -22,7 +22,7 @@ def _resposta(artigo, tema) -> str:
     return f"""Achei a estrategia boa, mas falta conversa com quem ja trata.
 
 **PROPOSTAS:**
-- {outra_ia.codigo_do_tema(tema)} | Voce dorme 8 horas e acorda cansado? | tema com dor forte
+- {outra_ia.codigo_do_tema(tema)} | Voce dorme 8 horas e acorda cansado? | dor forte | Engajamento
 - {outra_ia.codigo_do_artigo(artigo.pk)} | O exame que quase ninguem pede | artigo novo
 - m-ffffff | codigo que nao existe | x
 
@@ -122,6 +122,7 @@ def test_resposta_vira_previa_e_so_aplica_o_marcado(ambiente, monkeypatch):
     assert len(posts) == 2
     assert all(p.motivo == Post.Motivo.OUTRA_IA for p in posts)
     assert posts[0].tema == tema and "Voce dorme 8 horas" in posts[0].extras["ideia"]
+    assert posts[0].extras["foco"] == "engajamento"  # a outra IA fixou
     assert "Outubro Rosa" in posts[1].por_que and "gov.br" in posts[1].por_que
     nova = Abordagem.objects.get(nome="Pergunta do consultorio")
     assert nova.origem == Abordagem.Origem.OUTRA_IA and nova.redes == ["instagram"]

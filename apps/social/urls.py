@@ -11,6 +11,7 @@ urlpatterns = [
     path("estrategia/ia/", views.revisar_resposta_ia, name="revisar_resposta_ia"),
     path("estrategia/ia/aplicar/", views.aplicar_resposta_ia, name="aplicar_resposta_ia"),
     path("diagnostico/", views.diagnostico, name="diagnostico"),
+    path("publicos/", views.publicos, name="publicos"),
     path("novo/", views.novo_post, name="novo_post"),
     path("fotos/", views.banco_de_fotos, name="banco_de_fotos"),
     path("fotos/<uuid:pk>/", views.midia_privada, name="midia_privada"),

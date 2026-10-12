@@ -219,6 +219,10 @@ class Destino(models.Model):
         return self.nome
 
     @property
+    def publicos_ativos(self):
+        return self.publicos.filter(ativo=True)
+
+    @property
     def rede_nome(self) -> str:
         from apps.social.redes import REDES
 
@@ -442,6 +446,14 @@ class Post(models.Model):
         _("valor do impulso (R$)"), max_digits=8, decimal_places=2, null=True, blank=True
     )
     impulso_em = models.DateTimeField(null=True, blank=True)
+    publico_do_impulso = models.ForeignKey(
+        "PublicoDeImpulso",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="posts",
+        verbose_name=_("publico do impulso"),
+    )
     aprovado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
@@ -457,6 +469,15 @@ class Post(models.Model):
 
     def __str__(self) -> str:
         return f"{self.destino} — {self.artigo_titulo[:60]}"
+
+    @property
+    def no_foco(self) -> dict:
+        """Como foi no seu foco, contra os da conta com o mesmo foco."""
+        from apps.social import focos
+
+        if self.situacao != self.Situacao.PUBLICADO:
+            return {}
+        return focos.desempenho(self)
 
     @property
     def gancho(self) -> str:
@@ -548,6 +569,38 @@ class Anuncio(models.Model):
         if not self.gasto or not self.cliques:
             return None
         return round(self.gasto / self.cliques, 2)
+
+
+class PublicoDeImpulso(models.Model):
+    """Um publico de impulso pago (o que se marca no Gerenciador de Anuncios:
+    local, idade, interesses), salvo para reaproveitar e comparar: cada post
+    impulsionado diz qual publico usou, e o resultado soma por publico."""
+
+    class Origem(models.TextChoices):
+        MANUAL = "manual", _("Digitado")
+        OUTRA_IA = "outra_ia", _("Outra IA")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="publicos")
+    nome = models.CharField(_("nome"), max_length=80)
+    descricao = models.TextField(
+        _("como marcar no Gerenciador"),
+        blank=True,
+        help_text=_("Local, idade, interesses, o que mais marcar."),
+    )
+    por_que = models.CharField(_("por que"), max_length=300, blank=True)
+    origem = models.CharField(max_length=10, choices=Origem.choices, default=Origem.MANUAL)
+    ativo = models.BooleanField(_("ativo"), default=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["nome"]
+        constraints = [
+            models.UniqueConstraint(fields=["destino", "nome"], name="uniq_publico_de_impulso")
+        ]
+
+    def __str__(self) -> str:
+        return self.nome
 
 
 def _caminho_da_midia(instancia, nome: str) -> str:

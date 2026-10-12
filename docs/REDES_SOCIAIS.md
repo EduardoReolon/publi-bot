@@ -99,6 +99,50 @@ minimo, dias para julgar, taxas de referencia, quantas abordagens no Comeco,
 peso do placar coletivo, pesos da nota dos temas, orcamento, valores do teste
 e do amplificar. Valor igual ao padrao volta a seguir o padrao.
 
+### Foco de cada post — `focos.py`
+
+Todo post nasce com um **foco** (em `extras["foco"]`), que muda como ele e
+escrito e como e julgado:
+
+| Foco | Para quem | Como e escrito | Medido por | Impulso |
+|---|---|---|---|---|
+| alcance | quem ainda nao segue | tema amplo da dor, valor inteiro no post, feito para ser mandado a alguem | alcance (ou visualizacoes) | Alcance / visitas ao perfil |
+| engajamento | quem ja segue | opiniao clara e uma pergunta facil de responder | (comentarios + salvos + envios) / alcance | Engajamento |
+| site | levar ao artigo | mostra o problema e deixa no ar o que so o artigo responde | cliques (ou aberturas no site) / alcance | Trafego para o site |
+
+A conta precisa dos tres, numa **mistura que muda com a fase** (`focos.MISTURA`;
+Comeco 50/35/15, Tracao 35/35/30, Crescimento 40/25/35, Escala 25/25/50). O
+foco de um post sugerido e o que esta mais abaixo da mistura nas ultimas 3
+semanas (algoritmo, sem modelo); a outra IA pode fixar o foco na proposta (4o
+campo). O par A/B tem o mesmo foco.
+
+O post publicado e comparado **so com os do mesmo foco** (organicos): o cartao
+mostra "no foco alcance: entre os 25% melhores (de N)". Com menos de 3 para
+comparar, nao diz nada. Post de 48 h a 7 dias entre os 25% melhores do seu foco
+vira recomendacao **"Aproveitar"** na Estrategia, com o objetivo de impulso do
+foco ("feito para alcance, ficou entre os 25% melhores... se quiser aproveitar").
+
+### Publico do impulso — `publicos.py`, `/redes/publicos/`
+
+A lista de interesses da Meta (direcionamento detalhado) so sai pela API com
+`ads_management`, que pede revisao do app e serve para CRIAR anuncios — o
+PubliBot nao cria. Entao:
+
+- **Publicos salvos** por conta (`PublicoDeImpulso`: nome e "como marcar" —
+  local, idade, interesses). Ao registrar o impulso, escolhe-se o publico usado
+  (`Post.publico_do_impulso`).
+- **Resultado por publico**: gasto, cliques e alcance do anuncio ligado ao post
+  (API ou planilha), ou o valor digitado. Custo por clique e por mil pessoas.
+- A recomendacao de impulso sugere **o publico salvo que rendeu mais barato no
+  foco do post** (alcance: por mil pessoas; os outros: por clique); sem
+  resultado, a regiao do negocio e o assunto.
+- **Pedido para outra IA** (link "qual publico usar?" no post): leva negocio,
+  regioes, o post (texto, laminas), o foco e os publicos ja usados com o
+  resultado; pede so interesses que existem na Meta e lembra que interesses de
+  saude e outros sensiveis nao sao aceitos desde 2022. A resposta colada
+  (`PUBLICOS:` nome | local | idade | interesses | por que) vira publico salvo;
+  nome repetido reaproveita o existente.
+
 ## O caminho de um post
 
 ```
