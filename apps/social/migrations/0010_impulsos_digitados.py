@@ -1,5 +1,7 @@
 # Separada da 0009: no Postgres, gravar linhas em social_anuncio e criar o indice
-# da tabela na mesma transacao falha ("pending trigger events").
+# da tabela na mesma transacao falha ("pending trigger events"). Vem DEPOIS da
+# 0011 (apesar do numero): contas que ja tinham a 0010_iscas antiga (hoje a
+# 0011) ficam com o historico coerente.
 
 import uuid
 
@@ -28,7 +30,7 @@ def impulsos_digitados(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("social", "0009_publico_do_impulso"),
+        ("social", "0011_iscas"),
     ]
 
     operations = [
