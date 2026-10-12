@@ -159,6 +159,26 @@
     {% if post.destino.rede == 'instagram' and not post.entrada_id and post.extras.laminas %}
       <p style="margin:.3rem 0"><a class="botao secundario pequeno" href="{% url 'social:editar_lamina' post.pk %}">{% translate "Editar a primeira lamina" %}</a>
         <span class="ajuda">{% translate "foto, posicao e tamanho do texto, alinhamento, cor — arrastando, com o resultado na hora" %}</span></p>
+      <details style="margin:.3rem 0">
+        <summary class="ajuda">{% translate "Imagens das laminas (IA de imagem)" %}</summary>
+        <p class="ajuda">{% blocktranslate trimmed %}
+          Copie o pedido e cole numa IA de imagem (ChatGPT, Gemini, Ideogram, Midjourney, Canva...): ela faz as
+          cenas, no estilo da conta, sem texto. Envie cada imagem na lamina dela: o PubliBot escreve o texto por
+          cima, com as letras certas. Estilo e fundos padrao: Configurar &gt; a conta &gt; Identidade visual.
+        {% endblocktranslate %}</p>
+        <div class="acoes"><button type="button" class="botao pequeno" data-copiar="pedido-imagens-{{ post.pk }}">{% translate "Copiar o pedido de imagens" %}</button></div>
+        <textarea id="pedido-imagens-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.pedido_de_imagens }}</textarea>
+        {% for l in post.laminas_e_fundos %}
+          <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin:.2rem 0">
+            {% csrf_token %}<input type="hidden" name="n" value="{{ l.n }}">
+            <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+            <span><strong>{{ l.n }}.</strong> {{ l.titulo|truncatechars:50 }} <span class="ajuda">— {% if l.fundo == 'enviado' %}{% translate "imagem enviada" %}{% elif l.fundo %}{% translate "fundo" %} {{ l.fundo }}{% elif l.n == 1 %}{% translate "capa do artigo" %}{% else %}{% translate "so a cor da conta" %}{% endif %}</span></span>
+            <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp" style="width:auto">
+            <button type="submit" name="acao" value="fundo_da_lamina" class="botao discreto pequeno">{% translate "Usar nesta lamina" %}</button>
+            {% if l.fundo == 'enviado' %}<button type="submit" name="acao" value="tirar_fundo_da_lamina" class="botao discreto pequeno">{% translate "Tirar" %}</button>{% endif %}
+          </form>
+        {% endfor %}
+      </details>
     {% endif %}
   {% endif %}
 

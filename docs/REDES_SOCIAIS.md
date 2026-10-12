@@ -279,6 +279,25 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
   e refaz as imagens. Controle novo: uma chave em `AJUSTE_PADRAO` (com limite em
   `LIMITES_DO_AJUSTE` ou opcoes em `ESCOLHAS_DO_AJUSTE`), o uso em `desenhar` e
   o mesmo no `desenhar()` do editor.
+- **Identidade visual** (`identidade.py`, `FundoDeLamina`, Configurar > a conta >
+  Identidade visual):
+  - **Fundos padrao** (como os modelos de uma apresentacao): um para a capa,
+    os do meio e o da ultima; os do meio podem ter um tipo ("dado", "pergunta",
+    "lista" ou uma palavra). O fundo de cada lamina e escolhido por algoritmo
+    (`escolher_fundo`): o do papel; no meio, o de tipo que bate com o texto
+    (numero = dado, "?" = pergunta, "1." ou "passo" = lista, ou a palavra no
+    texto), senao os sem tipo, revezando. Entra sem escurecer, com as cores de
+    texto e titulo do proprio fundo, se tiver.
+  - **Estilo das imagens** da conta (foto realista, ilustracao, quadrinhos ou
+    misto, "como sao as imagens", "quando usar foto"): vai igual em todo
+    pedido de imagens, para o perfil ter uma linha.
+  - **Pedido de imagens** (no post, "Imagens das laminas"): uma cena por
+    lamina sem fundo padrao, no estilo da conta, **sem texto** (o PubliBot
+    escreve por cima — IA de imagem troca letras). A imagem gerada fora
+    (ChatGPT, Gemini, Ideogram, Midjourney, Canva...) e enviada na lamina dela
+    (`extras["fundos"]`; a da 1a vira a foto da capa) e entra escurecida.
+  - Ordem do fundo: imagem enviada para a lamina > fundo padrao > capa do
+    artigo (so na 1a) > cor da conta.
 
 ### 6. Medicao — `medicao.py`, `views.clique`
 

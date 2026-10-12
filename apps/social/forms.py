@@ -55,8 +55,13 @@ class DestinoForm(forms.ModelForm):
             "hashtags_fixas",
             "hashtags_de_referencia",
             "chamada_final",
+            "estilo_das_imagens",
+            "descricao_do_estilo",
+            "cenarios_de_foto",
         ]
         widgets = {
+            "descricao_do_estilo": forms.Textarea(attrs={"rows": 3}),
+            "cenarios_de_foto": forms.Textarea(attrs={"rows": 2}),
             "publico": forms.Textarea(attrs={"rows": 3}),
             "instrucoes": forms.Textarea(attrs={"rows": 3}),
         }

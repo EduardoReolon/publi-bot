@@ -337,6 +337,39 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             post.save(update_fields=["extras", "atualizado_em"])
             _refazer_imagens(post)
             messages.success(request, _("Foto trocada e imagens refeitas."))
+    elif acao in ("fundo_da_lamina", "tirar_fundo_da_lamina"):
+        # A imagem de uma lamina (feita numa IA de imagem com o pedido do post).
+        try:
+            n = int(request.POST.get("n") or 0)
+        except ValueError:
+            n = 0
+        extras = dict(post.extras or {})
+        fundos = dict(extras.get("fundos") or {})
+        if acao == "tirar_fundo_da_lamina":
+            fundos.pop(str(n), None)
+            if n == 1:
+                extras.pop("imagem_propria", None)
+                extras.pop("ajuste_da_capa", None)
+        elif n >= 1 and (arquivo := request.FILES.get("imagem")):
+            try:
+                caminho = laminas.guardar_imagem_propria(
+                    post, arquivo, "propria" if n == 1 else f"fundo-{n}"
+                )
+            except Exception:
+                caminho = ""
+            if not caminho:
+                messages.error(request, _("Envie uma imagem (JPG, PNG ou WebP)."))
+                return redirect(request.POST.get("voltar") or "social:inicio")
+            if n == 1:
+                extras["imagem_propria"] = caminho
+                extras.pop("ajuste_da_capa", None)
+            else:
+                fundos[str(n)] = caminho
+        extras["fundos"] = fundos
+        post.extras = extras
+        post.save(update_fields=["extras", "atualizado_em"])
+        _refazer_imagens(post)
+        messages.success(request, _("Imagens refeitas."))
     elif acao == "duplicar":
         copia = Post.objects.create(
             destino=post.destino,
@@ -1360,6 +1393,65 @@ def banco_de_fotos(request: HttpRequest) -> HttpResponse:
             "config": ConfiguracaoSocial.carregar(),
         },
     )
+
+
+@login_required
+def fundo_privado(request: HttpRequest, pk) -> HttpResponse:
+    """Um fundo padrao das laminas, para a tela (com login)."""
+    from apps.social.models import FundoDeLamina
+
+    fundo = get_object_or_404(FundoDeLamina, pk=pk)
+    return FileResponse(fundo.arquivo.open("rb"))
+
+
+@login_required
+def identidade(request: HttpRequest, pk) -> HttpResponse:
+    """A identidade visual da conta: os fundos padrao das laminas (capa, meio
+    por tipo, final). O estilo das imagens fica no formulario da conta."""
+    from apps.social.models import FundoDeLamina
+
+    destino = get_object_or_404(Destino, pk=pk)
+    if request.method == "POST":
+        if request.POST.get("acao") == "apagar":
+            FundoDeLamina.objects.filter(pk=request.POST.get("fundo"), destino=destino).delete()
+            messages.success(request, _("Fundo tirado."))
+        else:
+            arquivo = request.FILES.get("arquivo")
+            papel = request.POST.get("papel")
+            if not arquivo or papel not in FundoDeLamina.Papel.values:
+                messages.error(request, _("Escolha a imagem e onde ela vai."))
+            else:
+                FundoDeLamina.objects.create(
+                    destino=destino,
+                    papel=papel,
+                    etiqueta=request.POST.get("etiqueta", "").strip()[:40]
+                    if papel == FundoDeLamina.Papel.MEIO
+                    else "",
+                    arquivo=arquivo,
+                    cor_texto=_cor(request.POST.get("cor_texto")),
+                    cor_destaque=_cor(request.POST.get("cor_destaque")),
+                )
+                messages.success(request, _("Fundo salvo: entra nos proximos posts."))
+        return redirect("social:identidade", destino.pk)
+    return render(
+        request,
+        "social/identidade.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "configurar",
+            "contagens": _contagens(),
+            "destino": destino,
+            "fundos": destino.fundos.all(),
+            "papeis": FundoDeLamina.Papel.choices,
+        },
+    )
+
+
+def _cor(valor) -> str:
+    import re
+
+    valor = (valor or "").strip()
+    return valor if re.fullmatch(r"#[0-9a-fA-F]{6}", valor) else ""
 
 
 @login_required

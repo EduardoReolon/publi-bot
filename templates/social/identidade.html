@@ -1,0 +1,59 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Identidade visual" %} — {{ destino.nome }} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+  <h2>{% blocktranslate with n=destino.nome %}Identidade visual — {{ n }}{% endblocktranslate %}</h2>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      Para o perfil ter uma linha: fundos padrao das laminas (como os modelos de uma apresentacao)
+      e o estilo das imagens. O PubliBot escolhe o fundo de cada lamina sozinho — a capa na 1a, o
+      final na ultima e, nas do meio, o do tipo que bater com o texto (dado, quando tem numero;
+      pergunta, quando tem "?"; lista, quando comeca com "1." ou "passo"; ou uma palavra do texto),
+      revezando os sem tipo — e escreve o texto por cima, nas cores escolhidas.
+    {% endblocktranslate %}
+  </p>
+
+  <section class="secao">
+    <h3>{% translate "Estilo das imagens" %}</h3>
+    <p>
+      <strong>{{ destino.get_estilo_das_imagens_display }}</strong>
+      {% if destino.descricao_do_estilo %}— {{ destino.descricao_do_estilo }}{% endif %}
+      {% if destino.estilo_das_imagens == 'misto' and destino.cenarios_de_foto %}<br><span class="ajuda">{% translate "Foto realista quando:" %} {{ destino.cenarios_de_foto }}</span>{% endif %}
+    </p>
+    <p class="ajuda">{% translate "Muda em Configurar > a conta (estilo, como sao as imagens, quando usar foto). Vai igual em todo pedido de imagens para a IA de imagem, no post (Imagens das laminas)." %}</p>
+  </section>
+
+  <section class="secao">
+    <h3>{% translate "Fundos padrao" %}</h3>
+    {% if fundos %}
+      <div style="display:flex; flex-wrap:wrap; gap:1rem">
+        {% for f in fundos %}
+          <div class="cartao" style="width:180px; padding:.5rem">
+            <img src="{% url 'social:fundo_privado' f.pk %}" alt="" style="width:100%; aspect-ratio:4/5; object-fit:cover">
+            <div><strong>{{ f.get_papel_display }}</strong>{% if f.etiqueta %} · {{ f.etiqueta }}{% endif %}</div>
+            {% if f.cor_texto or f.cor_destaque %}<div class="ajuda">{% translate "texto" %} {{ f.cor_texto|default:"—" }} · {% translate "titulo" %} {{ f.cor_destaque|default:"—" }}</div>{% endif %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="acao" value="apagar"><input type="hidden" name="fundo" value="{{ f.pk }}"><button type="submit" class="botao discreto pequeno">{% translate "Tirar" %}</button></form>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="vazio">{% translate "Nenhum fundo ainda: as laminas usam a cor de fundo da conta (e a capa do artigo na 1a)." %}</p>
+    {% endif %}
+    <h4>{% translate "Enviar um fundo" %}</h4>
+    <p class="ajuda">{% translate "1080 x 1350 px (4:5). Deixe a area do texto lisa: o centro nas do meio, a parte de baixo na capa. A foto que voce enviar num post vale mais que o fundo padrao." %}</p>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <label>{% translate "Imagem" %} <input type="file" name="arquivo" accept="image/jpeg,image/png,image/webp" required></label>
+      <label>{% translate "Onde usar" %}
+        <select name="papel">{% for valor, rotulo in papeis %}<option value="{{ valor }}">{{ rotulo }}</option>{% endfor %}</select>
+      </label>
+      <label>{% translate "Tipo (so nas do meio; opcional): dado, pergunta, lista, dica..." %} <input type="text" name="etiqueta" maxlength="40" style="width:14rem"></label>
+      <label>{% translate "Cor do texto neste fundo (opcional)" %} <input type="text" name="cor_texto" placeholder="#ffffff" style="width:8rem"></label>
+      <label>{% translate "Cor do titulo neste fundo (opcional)" %} <input type="text" name="cor_destaque" placeholder="#38bdf8" style="width:8rem"></label>
+      <div class="acoes"><button type="submit" class="botao">{% translate "Salvar o fundo" %}</button></div>
+    </form>
+  </section>
+{% endblock %}

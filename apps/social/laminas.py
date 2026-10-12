@@ -9,6 +9,11 @@ as cores da conta e uma frase curta que o modelo de TEXTO escreveu:
 3. a chamada final ("Leia o artigo completo — link na bio").
 
 1080 x 1350 (4:5), o formato que ocupa mais tela no feed do Instagram.
+
+Fundo de cada lamina, nesta ordem: a imagem enviada para ela (gerada numa IA de
+imagem com o pedido de `identidade.pedido`), o fundo padrao da conta para o
+papel dela (capa, meio, final; entre os do meio, o do tipo — dado, pergunta,
+lista — que bater com o texto) e, por ultimo, a cor de fundo da conta.
 """
 
 from __future__ import annotations
@@ -329,6 +334,66 @@ def com_as_fontes(laminas: list[dict], fontes_das_frases: list) -> list[dict]:
     return saida
 
 
+def _tipos_da_lamina(lamina: dict) -> set[str]:
+    """O que a lamina e, por algoritmo, para casar com a etiqueta do fundo:
+    as palavras dela e "dado" (numero), "pergunta" (?) ou "lista" (1., passo)."""
+    from apps.social.iscas import normalizar
+
+    titulo, texto = lamina.get("titulo", ""), lamina.get("texto", "")
+    tipos = set(normalizar(f"{titulo} {texto}").split())
+    if _NUMERO.search(f"{titulo} {texto}"):
+        tipos |= {"dado", "dados", "numero", "estatistica"}
+    if "?" in f"{titulo} {texto}":
+        tipos.add("pergunta")
+    if re.match(r"^\s*(\d+\s*[.)º°-]|passo\b)", titulo.lower()):
+        tipos |= {"lista", "passo", "passo a passo"}
+    return tipos
+
+
+def escolher_fundo(fundos: list, n: int, total: int, lamina: dict):
+    """O fundo padrao da lamina n (ou None): o do papel dela; entre os do
+    meio, o de etiqueta que bate com o texto, senao os sem etiqueta, revezando."""
+    from apps.social.iscas import normalizar
+
+    papel = "capa" if n == 1 else "final" if n == total and total > 1 else "meio"
+    candidatos = [f for f in fundos if f.papel == papel]
+    if papel == "meio" and candidatos:
+        tipos = _tipos_da_lamina(lamina)
+        batem = [f for f in candidatos if f.etiqueta and normalizar(f.etiqueta) in tipos]
+        gerais = [f for f in candidatos if not f.etiqueta]
+        candidatos = batem or gerais or candidatos
+    return candidatos[n % len(candidatos)] if candidatos else None
+
+
+def _cores_do_fundo(fundo) -> dict:
+    return {
+        chave: valor
+        for chave, valor in (("texto", fundo.cor_texto), ("destaque", fundo.cor_destaque))
+        if re.fullmatch(r"#[0-9a-fA-F]{6}", valor or "")
+    }
+
+
+def fundos_das_laminas(post, itens: list[dict]) -> dict[int, dict]:
+    """{n: {"caminho", "modelo", "cores"}} das laminas 2 em diante (a 1a e a
+    capa, ver `foto_de_fundo`): a enviada para ela ou o fundo padrao."""
+    enviados = (post.extras or {}).get("fundos") or {}
+    modelos = list(post.destino.fundos.all())
+    total, saida = len(itens), {}
+    for n, item in enumerate(itens, start=1):
+        if n == 1:
+            continue
+        caminho = enviados.get(str(n)) or ""
+        if caminho and default_storage.exists(caminho):
+            saida[n] = {"caminho": caminho, "modelo": False, "cores": {}}
+        elif fundo := escolher_fundo(modelos, n, total, item):
+            saida[n] = {
+                "caminho": fundo.arquivo.name,
+                "modelo": True,
+                "cores": _cores_do_fundo(fundo),
+            }
+    return saida
+
+
 def desenhar(
     laminas: list[dict],
     *,
@@ -338,9 +403,12 @@ def desenhar(
     chamada: str = "",
     ajuste: dict | None = None,
     apenas: int | None = None,
+    fundos: dict | None = None,
+    cores_da_capa: dict | None = None,
 ) -> list[bytes]:
     """As laminas em PNG. `laminas[0]` e o gancho, sobre a capa (com o
-    `ajuste` de enquadramento). `apenas`: so a lamina n (a previa)."""
+    `ajuste` de enquadramento). `fundos`: {n: {"caminho", "modelo", "cores"}}
+    das outras (ver `fundos_das_laminas`). `apenas`: so a lamina n (a previa)."""
     from PIL import Image, ImageDraw
 
     cores = {**CORES, **{k: v for k, v in (cores or {}).items() if v}}
@@ -348,14 +416,20 @@ def desenhar(
     total = len(itens)
     primeira = ajuste_limpo(ajuste)
     saida = []
+    base = cores
     for n, item in enumerate(itens, start=1):
         if apenas is not None and n != apenas:
             continue
-        imagem = (
-            _capa(capa, cores, ajuste)
-            if n == 1
-            else Image.new("RGB", (LARGURA, ALTURA), cores["fundo"])
-        )
+        fundo = (fundos or {}).get(n)
+        cores = {**base, **((cores_da_capa or {}) if n == 1 else (fundo or {}).get("cores", {}))}
+        if n == 1:
+            imagem = _capa(capa, cores, ajuste)
+        elif fundo:
+            # O fundo padrao ja vem desenhado para o texto; a imagem enviada
+            # (cena, foto) escurece como a capa, para o texto ser lido.
+            imagem = _capa(fundo["caminho"], cores, {"escuro": 0.0} if fundo["modelo"] else None)
+        else:
+            imagem = Image.new("RGB", (LARGURA, ALTURA), cores["fundo"])
         desenho = ImageDraw.Draw(imagem)
         titulo, texto = item.get("titulo", ""), item.get("texto", "")
         if n == 1:
@@ -448,7 +522,7 @@ def _alt_da_lamina(laminas: list[dict], n: int, chamada: str) -> str:
     return chamada[:500]
 
 
-def guardar_imagem_propria(post, arquivo) -> str:
+def guardar_imagem_propria(post, arquivo, nome: str = "propria") -> str:
     """A foto que a pessoa enviou no lugar da capa do artigo (fundo da 1a
     lamina, ou a imagem do post nas redes de capa). Desvira pela EXIF e grava
     em JPEG; devolve o caminho, guardado em `extras["imagem_propria"]`."""
@@ -458,19 +532,44 @@ def guardar_imagem_propria(post, arquivo) -> str:
     imagem.thumbnail((2400, 2400))
     buffer = io.BytesIO()
     imagem.save(buffer, format="JPEG", quality=88, optimize=True)
-    caminho = f"social/{post.pk}/propria.jpg"
+    caminho = f"social/{post.pk}/{nome}.jpg"
     if default_storage.exists(caminho):
         default_storage.delete(caminho)
     default_storage.save(caminho, ContentFile(buffer.getvalue()))
     return caminho
 
 
+def fundo_padrao_da_capa(post):
+    """O fundo padrao da capa da conta (None sem ele, ou com foto enviada)."""
+    propria = (post.extras or {}).get("imagem_propria") or ""
+    if propria and default_storage.exists(propria):
+        return None
+    return post.destino.fundos.filter(papel="capa").first()
+
+
 def foto_de_fundo(post, artigo) -> str:
-    """A foto da 1a lamina: a que a pessoa enviou, ou a capa do artigo."""
+    """A foto da 1a lamina: a que a pessoa enviou, o fundo padrao da capa da
+    conta, ou a capa do artigo."""
     propria = (post.extras or {}).get("imagem_propria") or ""
     if propria and default_storage.exists(propria):
         return propria
+    if modelo := fundo_padrao_da_capa(post):
+        return modelo.arquivo.name
     return artigo.capa
+
+
+def ajuste_da_capa(post) -> dict | None:
+    """O enquadramento salvo da 1a lamina; sem ele, sobre o fundo padrao da
+    capa, sem escurecer (o fundo ja vem desenhado para o texto)."""
+    salvo = (post.extras or {}).get("ajuste_da_capa")
+    if salvo is None and fundo_padrao_da_capa(post) is not None:
+        return {"escuro": 0.0}
+    return salvo
+
+
+def cores_da_capa(post) -> dict:
+    modelo = fundo_padrao_da_capa(post)
+    return _cores_do_fundo(modelo) if modelo else {}
 
 
 def dados_do_editor(post, artigo) -> dict:
@@ -484,7 +583,11 @@ def dados_do_editor(post, artigo) -> dict:
         "altura": ALTURA,
         "margem": MARGEM,
         "espaco_do_texto": ESPACO_DO_TEXTO,
-        "cores": {**CORES, **{k: v for k, v in (post.destino.cores or {}).items() if v}},
+        "cores": {
+            **CORES,
+            **{k: v for k, v in (post.destino.cores or {}).items() if v},
+            **cores_da_capa(post),
+        },
         "marca": (post.destino.conta_nome or post.destino.nome)[:40],
         "total": len(itens),
         "titulo": laminas[0].get("titulo", ""),
@@ -492,7 +595,7 @@ def dados_do_editor(post, artigo) -> dict:
         "fonte": laminas[0].get("fonte", ""),
         "tamanho_da_fonte_citada": TAMANHO_DA_FONTE_CITADA,
         "altura_da_fonte_citada": ALTURA_DA_FONTE_CITADA,
-        "ajuste": ajuste_limpo(extras.get("ajuste_da_capa")),
+        "ajuste": ajuste_limpo(ajuste_da_capa(post)),
         "padrao": dict(AJUSTE_PADRAO),
         "limites": LIMITES_DO_AJUSTE,
         "tem_foto": bool(foto_de_fundo(post, artigo)),
@@ -524,6 +627,7 @@ def previa_da_primeira(
         chamada=post.destino.chamada_final or CHAMADA,
         ajuste=ajuste,
         apenas=1,
+        cores_da_capa=cores_da_capa(post),
     )[0]
     imagem = Image.open(io.BytesIO(png))
     imagem.thumbnail((largura, largura * ALTURA // LARGURA))
@@ -537,7 +641,8 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
     r = rede(post.destino.rede)
     imagens = []
     capa = foto_de_fundo(post, artigo)
-    propria = capa if capa != artigo.capa else ""
+    # A foto que a pessoa enviou (o fundo padrao da capa so vale no carrossel).
+    propria = capa if capa == (post.extras or {}).get("imagem_propria") else ""
     if post.entrada_id and (reais := _fotos_reais(post)):
         imagens = reais
     elif r.formato.imagem == "capa" and propria:
@@ -551,10 +656,12 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
             pngs = desenhar(
                 laminas,
                 capa=capa,
-                ajuste=(post.extras or {}).get("ajuste_da_capa"),
+                ajuste=ajuste_da_capa(post),
                 cores=post.destino.cores,
                 marca=post.destino.conta_nome or post.destino.nome,
                 chamada=chamada,
+                fundos=fundos_das_laminas(post, com_a_chamada(laminas, chamada)),
+                cores_da_capa=cores_da_capa(post),
             )
             for n, png in enumerate(pngs, start=1):
                 caminho = caminho_da_imagem(post, n)
