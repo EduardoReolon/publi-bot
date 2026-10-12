@@ -15,7 +15,9 @@
   {% for item in itens %}
     {% with a=item.artigo c=item.candidato %}
     <section class="cartao" id="artigo-{{ a.numero }}">
-      <h2 style="margin-top:0">[{{ a.numero }}] {% if a.doi %}<a href="{{ a.doi }}" target="_blank" rel="noopener noreferrer">{{ a.titulo }}</a>{% else %}{{ a.titulo }}{% endif %}</h2>
+      {% with link=a.doi|default:c.url %}
+      <h2 style="margin-top:0">[{{ a.numero }}] {% if link %}<a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ a.titulo }}</a>{% else %}{{ a.titulo }}{% endif %}</h2>
+      {% endwith %}
       <div class="ajuda">
         {% if c.autores %}{{ c.autores }} · {% endif %}{{ a.ano|default:"?" }}{% if c.revista %} · {{ c.revista }}{% endif %} · {{ a.citacoes }} {% translate "cit." %}{% if a.contraria %} · <span class="selo alerta">{% translate "contraponto" %}</span>{% endif %}
       </div>
@@ -37,6 +39,9 @@
             <form method="post" action="{% url 'content:pdf_da_pesquisa' pauta.pk c.pk %}" style="display:inline">{% csrf_token %}
               <button type="submit" class="botao pequeno" title="{{ item.pdf_aberto }}">{% translate "Baixar o PDF aberto" %}</button>
             </form>
+          {% endif %}
+          {% if not item.pdf_aberto %}
+            <a class="botao discreto pequeno" href="https://scholar.google.com/scholar?q={{ a.titulo|urlencode }}" target="_blank" rel="noopener noreferrer" title="{% translate 'O Google Academico costuma achar o PDF em outro repositorio (link [PDF] a direita)' %}">{% translate "Procurar o PDF no Google Academico" %}</a>
           {% endif %}
           <form method="post" enctype="multipart/form-data" action="{% url 'content:enviar_pdf_da_pesquisa' pauta.pk c.pk %}" style="display:inline">{% csrf_token %}
             <input type="file" name="pdf" accept="application/pdf" required>
