@@ -3,12 +3,13 @@ publico, sugerido de volta pelo foco, e pedido/resposta da outra IA."""
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 from django.urls import reverse
 
-from apps.social import estrategia, fontes, publicos
+from apps.social import anuncios, estrategia, fontes, publicos
 from apps.social.models import Anuncio, Destino, Post, PublicoDeImpulso
 
 U = "core.urls_tenants"
@@ -27,13 +28,7 @@ FIM
 
 def _impulsionado(destino, publico, foco, gasto, cliques, alcance, n):
     post = Post.objects.create(
-        destino=destino,
-        motivo="novo",
-        situacao="publicado",
-        impulsionado=True,
-        custo_impulso=gasto,
-        publico_do_impulso=publico,
-        extras={"foco": foco},
+        destino=destino, motivo="novo", situacao="publicado", extras={"foco": foco}
     )
     Anuncio.objects.create(
         destino=destino,
@@ -42,6 +37,7 @@ def _impulsionado(destino, publico, foco, gasto, cliques, alcance, n):
         cliques=cliques,
         alcance=alcance,
         post=post,
+        publico=publico,
         origem="api",
     )
     return post
@@ -93,14 +89,63 @@ def test_telas_do_publico(ambiente, monkeypatch):
     )
     publico = destino.publicos.get(nome="Amplo Sul")
 
+    acao = reverse("social:acao_na_estrategia", urlconf=U)
     client.post(
-        reverse("social:acao_na_estrategia", urlconf=U),
-        {"acao": "impulso", "post": post.pk, "valor": "30", "publico": publico.pk},
+        acao,
+        {"acao": "impulso", "post": post.pk, "valor": "30", "publico": publico.pk, "dias": "3"},
+    )
+    # Um segundo impulso, outro valor e outra data: o formulario continua ali.
+    assert (
+        "Registrar outro impulso"
+        in client.get(reverse("social:inicio", urlconf=U), {"aba": "publicados"}).content.decode()
+    )
+    client.post(
+        acao, {"acao": "impulso", "post": post.pk, "valor": "12,50", "inicio": "2026-10-20"}
     )
     post.refresh_from_db()
-    assert post.impulsionado and post.publico_do_impulso == publico
+    assert post.impulsionado and post.custo_impulso == Decimal("42.50")
+    primeiro, segundo = post.anuncios.order_by("gasto").reverse()
+    assert primeiro.publico == publico and primeiro.dias == 3
+    assert segundo.inicio.isoformat() == "2026-10-20" and segundo.publico is None
     assert "Amplo Sul" in client.get(url, {"destino": destino.pk}).content.decode()
+
+    client.post(acao, {"acao": "publico_do_impulso", "anuncio": segundo.pk, "publico": publico.pk})
+    segundo.refresh_from_db()
+    assert segundo.publico == publico
+    client.post(acao, {"acao": "apagar_impulso", "anuncio": segundo.pk})
+    post.refresh_from_db()
+    assert post.custo_impulso == Decimal("30") and post.anuncios.count() == 1
 
     client.post(url, {"destino": destino.pk, "acao": "apagar", "publico": publico.pk})
     publico.refresh_from_db()
     assert not publico.ativo
+
+
+@pytest.mark.django_db
+def test_impulso_lido_da_meta_substitui_o_digitado_no_mesmo_periodo(ambiente):
+    destino = Destino.objects.create(rede="instagram", nome="Insta")
+    publico = PublicoDeImpulso.objects.create(destino=destino, nome="Pais")
+    post = Post.objects.create(
+        destino=destino, motivo="novo", situacao="publicado", id_remoto="media1"
+    )
+    hoje = date(2026, 10, 10)
+    anuncios.registrar(post, Decimal("30"), inicio=hoje, dias=3, publico=publico)
+    anuncios.registrar(post, Decimal("50"), inicio=hoje + timedelta(days=20))
+    Anuncio.objects.create(
+        destino=destino,
+        id_remoto="ad9",
+        media_id="media1",
+        gasto=Decimal("29.80"),
+        cliques=12,
+        alcance=900,
+        inicio=hoje + timedelta(days=1),
+        fim=hoje + timedelta(days=3),
+        origem="api",
+    )
+    anuncios.vincular(destino)
+    post.refresh_from_db()
+    lidos = {a.origem: a for a in post.anuncios.all()}
+    assert set(lidos) == {"api", "manual"} and lidos["manual"].gasto == Decimal("50")
+    assert lidos["api"].publico == publico  # o publico escolhido passou para o lido
+    assert post.custo_impulso == Decimal("79.80")
+    assert publicos.resultado(publico)["custo_por_clique"] == Decimal("2.48")

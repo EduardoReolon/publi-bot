@@ -18,7 +18,7 @@ from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
@@ -804,25 +804,36 @@ def acao_na_estrategia(request: HttpRequest) -> HttpResponse:
         except InvalidOperation:
             messages.error(request, _("Digite o valor pago."))
             return redirect(request.POST.get("voltar") or voltar)
-        post.impulsionado = True
-        post.custo_impulso = valor
-        post.impulso_em = timezone.now()
-        post.publico_do_impulso = _publico_escolhido(request, post)
-        post.save(
-            update_fields=[
-                "impulsionado",
-                "custo_impulso",
-                "impulso_em",
-                "publico_do_impulso",
-                "atualizado_em",
-            ]
+        from apps.social import anuncios
+
+        try:
+            dias = min(int(request.POST.get("dias") or 0), 90) or None
+            inicio = parse_date(request.POST.get("inicio") or "")
+        except ValueError:
+            dias = inicio = None
+        anuncios.registrar(
+            post,
+            valor,
+            inicio=inicio,
+            dias=dias,
+            publico=_publico_escolhido(request, post),
+            objetivo=request.POST.get("objetivo", ""),
         )
         messages.success(request, _("Impulso registrado: o resultado passa a contar como pago."))
-    elif acao == "publico_do_post":
-        post = get_object_or_404(Post, pk=request.POST.get("post"))
-        post.publico_do_impulso = _publico_escolhido(request, post)
-        post.save(update_fields=["publico_do_impulso", "atualizado_em"])
-        messages.success(request, _("Publico do impulso salvo."))
+    elif acao in ("publico_do_impulso", "apagar_impulso"):
+        from apps.social import anuncios
+        from apps.social.models import Anuncio
+
+        anuncio = get_object_or_404(Anuncio, pk=request.POST.get("anuncio"))
+        if acao == "apagar_impulso" and anuncio.origem == Anuncio.Origem.MANUAL:
+            post_id = anuncio.post_id
+            anuncio.delete()
+            anuncios.somar([post_id] if post_id else [])
+            messages.success(request, _("Impulso tirado."))
+        elif acao == "publico_do_impulso" and anuncio.post is not None:
+            anuncio.publico = _publico_escolhido(request, anuncio.post)
+            anuncio.save(update_fields=["publico"])
+            messages.success(request, _("Publico do impulso salvo."))
     return redirect(request.POST.get("voltar") or voltar)
 
 

@@ -49,7 +49,7 @@
           <tr>
             <td><strong>{{ l.publico.nome }}</strong>{% if l.publico.origem == 'outra_ia' %} <span class="selo">{% translate "outra IA" %}</span>{% endif %}{% if l.publico.por_que %}<div class="ajuda">{{ l.publico.por_que }}</div>{% endif %}</td>
             <td class="ajuda" style="white-space:pre-line">{{ l.publico.descricao }}</td>
-            <td class="numero">{{ l.posts }}</td>
+            <td class="numero">{{ l.impulsos }}</td>
             <td>{{ l.focos|join:", "|default:"—" }}</td>
             <td class="numero">{% if l.custo_por_clique %}R$ {{ l.custo_por_clique }}{% else %}—{% endif %}</td>
             <td class="numero">{% if l.custo_por_mil %}R$ {{ l.custo_por_mil }}{% else %}—{% endif %}</td>

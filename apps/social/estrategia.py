@@ -201,7 +201,7 @@ def _publico_sugerido(destino: Destino, tema_ou_titulo: str, foco: str = "") -> 
             if achado["custo_por_clique"]
             else f"R$ {achado['custo_por_mil']} por mil pessoas"
         )
-        return f'Reuse o publico salvo "{p.nome}" ({custo} em {achado["posts"]} impulso(s)).'
+        return f'Reuse o publico salvo "{p.nome}" ({custo} em {achado["impulsos"]} impulso(s)).'
     regioes = fontes.negocio().get("regioes") or []
     onde = ", ".join(regioes[:3]) or "a regiao onde o negocio atende (ou o Brasil)"
     return f"Local: {onde}. Interesses ligados a: {tema_ou_titulo[:80]}."

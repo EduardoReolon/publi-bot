@@ -1,6 +1,6 @@
 {% load i18n %}{# O publico usado no impulso: um dos salvos, ou pedir um a outra IA. Dentro de um form. #}
 <select name="publico" style="width:auto" title="{% translate 'o publico marcado no Gerenciador de Anuncios' %}">
   <option value="">{% translate "publico: nao salvo" %}</option>
-  {% for p in post.destino.publicos_ativos %}<option value="{{ p.pk }}"{% if p.pk == post.publico_do_impulso_id %} selected{% endif %}>{{ p.nome }}</option>{% endfor %}
+  {% for p in post.destino.publicos_ativos %}<option value="{{ p.pk }}"{% if p.pk == selecionado %} selected{% endif %}>{{ p.nome }}</option>{% endfor %}
 </select>
 <a class="ajuda" href="{% url 'social:publicos' %}?destino={{ post.destino_id }}&amp;post={{ post.pk }}">{% translate "qual publico usar?" %}</a>

@@ -129,10 +129,9 @@ A lista de interesses da Meta (direcionamento detalhado) so sai pela API com
 PubliBot nao cria. Entao:
 
 - **Publicos salvos** por conta (`PublicoDeImpulso`: nome e "como marcar" —
-  local, idade, interesses). Ao registrar o impulso, escolhe-se o publico usado
-  (`Post.publico_do_impulso`).
-- **Resultado por publico**: gasto, cliques e alcance do anuncio ligado ao post
-  (API ou planilha), ou o valor digitado. Custo por clique e por mil pessoas.
+  local, idade, interesses). Cada impulso (`Anuncio.publico`) diz qual usou.
+- **Resultado por publico**: gasto, cliques e alcance dos impulsos lidos da
+  Meta (API ou planilha). Custo por clique e por mil pessoas.
 - A recomendacao de impulso sugere **o publico salvo que rendeu mais barato no
   foco do post** (alcance: por mil pessoas; os outros: por clique); sem
   resultado, a regiao do negocio e o assunto.
@@ -455,6 +454,13 @@ ia mal no organico** (o desperdicio mais comum). "Copiar o diagnostico" da o
 texto corrido para mandar ao dono da conta.
 
 ## Gasto com anuncios — `anuncios.py`, `redes/meta_anuncios.py`, `planilhas.py`
+
+Cada impulso e um `Anuncio` ligado ao post — um post pode ter varios, com
+valores, datas e publicos diferentes; o post guarda so a soma
+(`custo_impulso`). Sem a API nem a planilha, o impulso e **digitado** no post
+(valor, inicio, dias, publico; quantos quiser). Quando a API ou a planilha
+traz o impulso de verdade, o digitado do mesmo post que comeca no periodo dele
+(com 2 dias de folga) sai, e o publico escolhido passa para o lido.
 
 Meta (Instagram): dois caminhos para o mesmo lugar, porque a permissao de ler
 anuncios depende de uma revisao da Meta que pode nao sair (ou ser retirada um

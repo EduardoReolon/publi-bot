@@ -6,9 +6,9 @@ anuncios com a permissao ads_management, que exige revisao do app pela Meta —
 e mexer nela pela API seria criar anuncio, o que o PubliBot nao faz. Por isso:
 
 * o PubliBot guarda os publicos que a pessoa usou (ou que a outra IA sugeriu),
-  e cada post impulsionado diz qual usou;
-* o resultado soma por publico (gasto, cliques, alcance — do anuncio ligado ao
-  post, ou o valor digitado), e o melhor de cada foco volta como sugestao;
+  e cada impulso (`Anuncio`) diz qual usou;
+* o resultado soma por publico (gasto, cliques, alcance — do impulso lido da
+  Meta; o digitado so tem o valor), e o melhor de cada foco volta como sugestao;
 * para um publico novo, o pedido leva o negocio, as regioes, o post, o foco e
   os publicos ja usados com o resultado; a resposta colada vira publico salvo.
 """
@@ -16,8 +16,6 @@ e mexer nela pela API seria criar anuncio, o que o PubliBot nao faz. Por isso:
 from __future__ import annotations
 
 from decimal import Decimal
-
-from django.db.models import Sum
 
 from apps.social import focos, fontes
 from apps.social.models import Destino, Post, PublicoDeImpulso
@@ -59,24 +57,24 @@ def _por_mil(gasto, alcance) -> Decimal | None:
 
 
 def resultado(publico: PublicoDeImpulso) -> dict:
-    """O que o publico rendeu nos posts impulsionados com ele."""
-    posts = list(publico.posts.filter(impulsionado=True))
-    anuncios = publico.posts.filter(impulsionado=True, anuncios__isnull=False).aggregate(
-        gasto=Sum("anuncios__gasto"),
-        cliques=Sum("anuncios__cliques"),
-        alcance=Sum("anuncios__alcance"),
-    )
-    gasto = anuncios["gasto"] or sum((p.custo_impulso or 0) for p in posts)
-    cliques = anuncios["cliques"] or 0
-    alcance = anuncios["alcance"] or 0
+    """O que o publico rendeu nos impulsos com ele. Custo por clique e por mil
+    pessoas so com os impulsos que tem o numero (os lidos da Meta)."""
+    anuncios = list(publico.anuncios.select_related("post"))
+    com_cliques = [a for a in anuncios if a.cliques]
+    com_alcance = [a for a in anuncios if a.alcance]
+    gasto_cliques = sum(a.gasto for a in com_cliques)
+    gasto_alcance = sum(a.gasto for a in com_alcance)
+    cliques = sum(a.cliques for a in com_cliques)
+    alcance = sum(a.alcance for a in com_alcance)
     return {
-        "posts": len(posts),
-        "focos": sorted({f for p in posts if (f := focos.do_post(p))}),
-        "gasto": gasto or None,
+        "impulsos": len(anuncios),
+        "posts": len({a.post_id for a in anuncios if a.post_id}),
+        "focos": sorted({f for a in anuncios if a.post and (f := focos.do_post(a.post))}),
+        "gasto": sum((a.gasto for a in anuncios), Decimal("0")) or None,
         "cliques": cliques,
         "alcance": alcance,
-        "custo_por_clique": round(gasto / cliques, 2) if gasto and cliques else None,
-        "custo_por_mil": _por_mil(gasto, alcance),
+        "custo_por_clique": round(gasto_cliques / cliques, 2) if cliques else None,
+        "custo_por_mil": _por_mil(gasto_alcance, alcance),
     }
 
 
@@ -142,7 +140,7 @@ def pedido(post: Post) -> str:
     for linha in linhas:
         p = linha["publico"]
         numeros = (
-            f"{linha['posts']} impulso(s)"
+            f"{linha['impulsos']} impulso(s)"
             + (f", focos {', '.join(linha['focos'])}" if linha["focos"] else "")
             + (f", R$ {linha['custo_por_clique']} por clique" if linha["custo_por_clique"] else "")
             + (f", R$ {linha['custo_por_mil']} por mil pessoas" if linha["custo_por_mil"] else "")

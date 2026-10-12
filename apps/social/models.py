@@ -440,20 +440,13 @@ class Post(models.Model):
     metricas = models.JSONField(_("resultado"), default=dict, blank=True)
     # Acima da mediana da conta na medida escolhida? None: cedo para dizer.
     sucesso = models.BooleanField(_("funcionou"), null=True, blank=True)
-    # Impulso pago: o PubliBot recomenda, a pessoa paga na rede e registra aqui.
+    # Impulso pago: cada impulso e um `Anuncio` (lido da Meta ou digitado); aqui
+    # fica a soma, para filtrar e comparar sem juntar tabelas.
     impulsionado = models.BooleanField(_("impulsionado"), default=False)
     custo_impulso = models.DecimalField(
         _("valor do impulso (R$)"), max_digits=8, decimal_places=2, null=True, blank=True
     )
     impulso_em = models.DateTimeField(null=True, blank=True)
-    publico_do_impulso = models.ForeignKey(
-        "PublicoDeImpulso",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="posts",
-        verbose_name=_("publico do impulso"),
-    )
     aprovado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
@@ -522,13 +515,15 @@ class Comentario(models.Model):
 
 
 class Anuncio(models.Model):
-    """Um anuncio pago (Meta Ads), com o gasto e o resultado do periodo todo.
-    Vem da API (ads_read) ou da planilha exportada do Gerenciador; ligado ao
-    post que impulsiona, quando da para saber qual."""
+    """Um anuncio pago (um impulso), com o gasto e o resultado do periodo todo.
+    Vem da API (ads_read), da planilha exportada do Gerenciador ou digitado na
+    tela; ligado ao post que impulsiona, quando da para saber qual. Um post
+    pode ter varios (valores, datas e publicos diferentes)."""
 
     class Origem(models.TextChoices):
         API = "api", _("API da Meta")
         PLANILHA = "planilha", _("Planilha exportada")
+        MANUAL = "manual", _("Digitado")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="anuncios")
@@ -551,17 +546,31 @@ class Anuncio(models.Model):
     post = models.ForeignKey(
         Post, on_delete=models.SET_NULL, null=True, blank=True, related_name="anuncios"
     )
+    publico = models.ForeignKey(
+        "PublicoDeImpulso",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="anuncios",
+        verbose_name=_("publico"),
+    )
     origem = models.CharField(max_length=10, choices=Origem.choices)
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-inicio"]
+        ordering = ["-inicio", "id_remoto"]
         constraints = [
             models.UniqueConstraint(fields=["destino", "id_remoto"], name="uniq_anuncio")
         ]
 
     def __str__(self) -> str:
         return self.nome or self.id_remoto
+
+    @property
+    def dias(self) -> int | None:
+        if not (self.inicio and self.fim):
+            return None
+        return (self.fim - self.inicio).days + 1
 
     @property
     def custo_por_clique(self):
@@ -573,8 +582,8 @@ class Anuncio(models.Model):
 
 class PublicoDeImpulso(models.Model):
     """Um publico de impulso pago (o que se marca no Gerenciador de Anuncios:
-    local, idade, interesses), salvo para reaproveitar e comparar: cada post
-    impulsionado diz qual publico usou, e o resultado soma por publico."""
+    local, idade, interesses), salvo para reaproveitar e comparar: cada impulso
+    (`Anuncio`) diz qual publico usou, e o resultado soma por publico."""
 
     class Origem(models.TextChoices):
         MANUAL = "manual", _("Digitado")
