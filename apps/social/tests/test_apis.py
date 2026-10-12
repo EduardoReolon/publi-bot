@@ -14,6 +14,7 @@ import httpx
 import pytest
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.social import comentarios, fontes, publicacao
@@ -21,6 +22,8 @@ from apps.social.models import Comentario, Destino, Post
 from apps.social.redes.base import ErroDaRede, ImagemPublica, NaoConectado
 from apps.social.redes.instagram import OAuthInstagram, PublicadorInstagram
 from apps.social.redes.linkedin import OAuthLinkedIn, texto_do_linkedin
+
+U = "core.urls_tenants"
 
 
 class Rede:
@@ -456,3 +459,55 @@ def test_post_parado_esperando_o_modelo_volta_para_a_fila(ambiente, monkeypatch)
     assert tasks.retomar_escrita() == 1
     assert despachados == [str(parado.pk)] and str(recente.pk) not in despachados
     assert tasks.retomar_escrita() == 0  # tocado: so daqui a meia hora
+
+
+@pytest.mark.django_db
+def test_tentar_de_novo_testa_o_servidor_e_fecha_o_disjuntor_de_quem_responde(
+    ambiente, monkeypatch
+):
+    import socket
+
+    from apps.inference.models import InferenceConnection
+    from apps.social import tasks
+
+    _, _, client = ambiente
+    ouvindo = socket.socket()
+    ouvindo.bind(("127.0.0.1", 0))
+    ouvindo.listen()
+    porta_viva = ouvindo.getsockname()[1]
+    morta = socket.socket()
+    morta.bind(("127.0.0.1", 0))
+    porta_morta = morta.getsockname()[1]
+    morta.close()  # ninguem escuta: recusa na hora
+    aberto = timezone.now() + timedelta(minutes=5)
+    viva, fora = (
+        InferenceConnection.objects.create(
+            name=nome,
+            kind=InferenceConnection.Kind.OPENAI_COMPATIBLE,
+            base_url=f"http://127.0.0.1:{porta}",
+            workloads=[InferenceConnection.Workload.TEXT],
+            is_active=True,
+            consecutive_failures=29,
+            circuit_open_until=aberto,
+        )
+        for nome, porta in (("viva", porta_viva), ("fora", porta_morta))
+    )
+    despachados = []
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: despachados.append(pk))
+    destino = _conectado("instagram", "17841")
+    post = _post(destino, situacao=Post.Situacao.SUGERIDO)
+    Post.objects.filter(pk=post.pk).update(erro="esperando o modelo: disjuntor aberto")
+
+    pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
+    assert "Tentar de novo agora" in pagina
+    resposta = client.post(
+        reverse("social:acao_no_post", args=[post.pk], urlconf=U),
+        {"acao": "tentar_de_novo"},
+        follow=True,
+    )
+    ouvindo.close()
+    assert despachados == [str(post.pk)]
+    viva.refresh_from_db()
+    fora.refresh_from_db()
+    assert not viva.circuito_aberto and fora.circuito_aberto
+    assert "continua fora do ar" in resposta.content.decode()

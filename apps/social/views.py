@@ -391,6 +391,23 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         post.save(update_fields=["abordagem", "situacao", "atualizado_em"])
         escrever_post.delay(str(post.pk))
         messages.info(request, _("Reescrevendo com a abordagem '%(a)s'.") % {"a": abordagem})
+    elif acao == "tentar_de_novo":
+        fora = [f"{nome}: {motivo}" for nome, ok, motivo in fontes.reabrir_modelo() if not ok]
+        post.situacao = Post.Situacao.SUGERIDO
+        post.erro = ""
+        post.save(update_fields=["situacao", "erro", "atualizado_em"])
+        escrever_post.delay(str(post.pk))
+        if fora:
+            messages.warning(
+                request,
+                _(
+                    "O servidor do modelo continua fora do ar (%(f)s). O post esta na fila e "
+                    "sai sozinho quando ele voltar: confira se a maquina esta ligada e na rede."
+                )
+                % {"f": "; ".join(fora)},
+            )
+        else:
+            messages.info(request, _("Escrevendo de novo: recarregue em instantes."))
     elif acao == "isca":
         post.isca = Isca.objects.filter(pk=request.POST.get("isca") or None).first()
         post.save(update_fields=["isca", "atualizado_em"])

@@ -286,6 +286,14 @@ def leitura_vinda_da_rede(remote_id: str, rede: str, desde) -> dict:
 
 
 # -- Modelo de linguagem e vetores -------------------------------------------------
+def reabrir_modelo() -> list[tuple[str, bool, str]]:
+    """Testa as conexoes de modelo com o disjuntor aberto e fecha o das que
+    respondem (ver `leases.testar_e_reabrir`)."""
+    from apps.inference.leases import testar_e_reabrir
+
+    return testar_e_reabrir()
+
+
 def modelo_indisponivel() -> tuple[type[Exception], ...]:
     """As excecoes de "sem modelo agora" (nao configurado, ou placa ocupada)."""
     from apps.content.inference import SemModeloConfigurado
