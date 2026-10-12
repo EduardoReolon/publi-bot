@@ -319,12 +319,24 @@ servidor no momento em que a pessoa converte, sem identificador nenhum.
 | `engaged_views` | Aberturas com pelo menos **10 s de tempo ativo**. Quem so abriu e fechou fica de fora. |
 | `engaged_seconds` | Soma do tempo ativo, em segundos. Ativo = aba visivel **e** alguma interacao (rolagem, toque, tecla, mouse) nos ultimos 30 s. Teto de 30 min por abertura. |
 | `read_to_end` | Aberturas em que o fim do corpo do artigo entrou na tela. |
+| `half_read` | Aberturas em que a pessoa rolou pelo menos ate a metade do texto (opcional). |
 | `cta_views` | Aberturas em que o bloco da chamada entrou na tela. |
 | `cta_clicks` | Aberturas com clique no bloco da chamada. |
 
 Tempo ativo, e nao tempo com a aba aberta: uma aba esquecida aberta a noite
 inteira nao e leitura. E o criterio do "tempo de engajamento" do Google
 Analytics 4, com o corte de 10 s da "sessao engajada".
+
+### Por origem da visita (opcional)
+
+`reading_by_source` traz a mesma leitura separada por **onde a pessoa entrou no
+site nesta visita**: `channel` (a mesma classificacao das conversoes) e
+`source` — o `utm_source` do link, em minusculas (`instagram`, `linkedin`,
+`gmn`...), ou, sem ele, o nome de quem mandou (`google`, `instagram`,
+`facebook`...). Navegar dentro do site mantem a origem da entrada (guardada so
+na sessao do navegador). E o que permite ao PubliBot dizer, por post de rede
+social, quantos vieram, quanto tempo leram e ate onde rolaram. Vai so na
+primeira pagina da resposta, como as conversoes; site que nao separa omite.
 
 ### O que e conversao
 
@@ -378,7 +390,13 @@ GET /api/v1/insights/?since=2026-09-01&cursor=
 {
   "reading": [
     {"remote_id": "a1b2", "date": "2026-09-20", "views": 120, "engaged_views": 71,
-     "engaged_seconds": 6390, "read_to_end": 33, "cta_views": 40, "cta_clicks": 5}
+     "engaged_seconds": 6390, "read_to_end": 33, "half_read": 52, "cta_views": 40,
+     "cta_clicks": 5}
+  ],
+  "reading_by_source": [
+    {"remote_id": "a1b2", "date": "2026-09-20", "channel": "social", "source": "instagram",
+     "views": 31, "engaged_views": 12, "engaged_seconds": 840, "read_to_end": 4,
+     "half_read": 9}
   ],
   "conversions": [
     {"id": "5f0c...", "date": "2026-09-20", "kind": "whatsapp", "via_cta": true,

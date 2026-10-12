@@ -542,6 +542,13 @@ class Anuncio(models.Model):
     def __str__(self) -> str:
         return self.nome or self.id_remoto
 
+    @property
+    def custo_por_clique(self):
+        """Gasto / cliques no link, em reais (None sem clique)."""
+        if not self.gasto or not self.cliques:
+            return None
+        return round(self.gasto / self.cliques, 2)
+
 
 def _caminho_da_midia(instancia, nome: str) -> str:
     import os

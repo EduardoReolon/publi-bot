@@ -398,14 +398,36 @@ class PublicadorInstagram(Publicador):
         "saved": "salvos",
     }
 
+    # Pedidas uma a uma: a Meta recusa o pedido INTEIRO por uma metrica que
+    # nao vale para aquele tipo de post (ou que ainda nao liberou na versao).
+    # "views" e a "Visualizacoes" do app (a metrica principal desde 2025).
+    EXTRAS = {
+        "views": "visualizacoes",
+        "profile_visits": "visitas_ao_perfil",
+        "follows": "seguidores_ganhos",
+    }
+
     def metricas(self, post) -> dict:
         dados = self._get(
             f"{post.id_remoto}/insights", "Instagram (resultado)", metric=",".join(self.NOMES)
         )
+        saida = self._valores(dados, self.NOMES)
+        for metrica in self.EXTRAS:
+            try:
+                extra = self._get(
+                    f"{post.id_remoto}/insights", "Instagram (resultado)", metric=metrica
+                )
+            except ErroDaRede:
+                continue
+            saida.update(self._valores(extra, self.EXTRAS))
+        return saida
+
+    @staticmethod
+    def _valores(dados: dict, nomes: dict) -> dict:
         saida = {}
         for item in dados.get("data", []):
             valores = item.get("values") or [{}]
-            saida[self.NOMES.get(item.get("name"), item.get("name"))] = valores[0].get("value", 0)
+            saida[nomes.get(item.get("name"), item.get("name"))] = valores[0].get("value", 0)
         return saida
 
 

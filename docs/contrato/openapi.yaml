@@ -218,8 +218,34 @@ components:
           minimum: 0
           description: Soma do tempo ativo (aba visivel e interacao nos ultimos 30 s).
         read_to_end: { type: integer, minimum: 0 }
+        half_read:
+          type: integer
+          minimum: 0
+          description: Aberturas em que a pessoa rolou pelo menos ate a METADE do texto (opcional).
         cta_views: { type: integer, minimum: 0 }
         cta_clicks: { type: integer, minimum: 0 }
+
+    LeituraPorOrigem:
+      type: object
+      description: |
+        A mesma leitura do dia, separada por ONDE a pessoa entrou no site nesta
+        visita: o canal (mesma classificacao das conversoes) e a fonte, o
+        `utm_source` do link (`instagram`, `linkedin`...) ou, sem ele, o nome
+        de quem mandou (`google`, `instagram`, `facebook`...). Navegar dentro
+        do site mantem a origem da entrada.
+      required: [remote_id, date, channel, source]
+      properties:
+        remote_id: { type: string }
+        date: { type: string, format: date }
+        channel:
+          type: string
+          enum: [organic, paid, social, referral, email, direct, other]
+        source: { type: string, maxLength: 40, description: "Minusculas; vazio = sem fonte." }
+        views: { type: integer, minimum: 0 }
+        engaged_views: { type: integer, minimum: 0 }
+        engaged_seconds: { type: integer, minimum: 0 }
+        read_to_end: { type: integer, minimum: 0 }
+        half_read: { type: integer, minimum: 0 }
 
     Conversao:
       type: object
@@ -675,6 +701,12 @@ paths:
                   reading:
                     type: array
                     items: { $ref: "#/components/schemas/LeituraDoDia" }
+                  reading_by_source:
+                    type: array
+                    description: |
+                      Opcional (biblioteca 1.3.0+). So na primeira pagina, como
+                      as conversoes. Site que nao separa por origem omite.
+                    items: { $ref: "#/components/schemas/LeituraPorOrigem" }
                   conversions:
                     type: array
                     items: { $ref: "#/components/schemas/Conversao" }

@@ -45,7 +45,39 @@ def publicar_posts() -> int:
     from apps.social.comentarios import responder_aprovadas
     from apps.social.publicacao import publicar_vencidos
 
-    return para_cada_tenant(lambda: publicar_vencidos() + responder_aprovadas(), "publicar_posts")
+    return para_cada_tenant(
+        lambda: publicar_vencidos() + responder_aprovadas() + retomar_escrita(), "publicar_posts"
+    )
+
+
+# Post esperando o modelo (placa desligada, disjuntor aberto) ha mais que isto
+# volta para a fila: as tentativas da propria tarefa acabam em 2 horas, e o
+# post ficava "Escrevendo..." para sempre. Alcance: os sugeridos recentes.
+RETOMAR_DEPOIS_DE_MINUTOS = 30
+RETOMAR_ATE_DIAS = 14
+
+
+def retomar_escrita() -> int:
+    """Os posts parados esperando escrita voltam para a fila (um por vez a cada
+    meia hora): quando o modelo volta, saem sozinhos."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.social.models import Post
+
+    agora = timezone.now()
+    parados = Post.objects.filter(
+        situacao__in=[Post.Situacao.SUGERIDO, Post.Situacao.GERANDO],
+        atualizado_em__lt=agora - timedelta(minutes=RETOMAR_DEPOIS_DE_MINUTOS),
+        criado_em__gte=agora - timedelta(days=RETOMAR_ATE_DIAS),
+    )
+    ids = [str(pk) for pk in parados.values_list("pk", flat=True)[:20]]
+    # "Toca" o post: a proxima retomada so depois de mais meia hora.
+    Post.objects.filter(pk__in=ids).update(atualizado_em=agora)
+    for pk in ids:
+        escrever_post.delay(pk)
+    return len(ids)
 
 
 @shared_task

@@ -231,3 +231,41 @@ def test_precificar_so_sem_dataforseo_nao_chama_nada(site, monkeypatch):  # noqa
     monkeypatch.setattr(provedores, "metricas_dataforseo", lambda *a, **k: 1 / 0)
     coleta = ColetaDoConsole.objects.create(propriedade="x", inicio=HOJE, fim=HOJE)
     assert precificar_consultas(coleta) == 0
+
+
+@pytest.mark.django_db
+def test_leitura_por_origem_vira_numero_do_post(site):  # noqa: F811
+    """O site separa a leitura por origem (biblioteca 1.3.0): o PubliBot grava e
+    soma, para o post de cada rede, o que veio dela desde a publicacao."""
+    from apps.integrations.models import LeituraPorOrigem
+    from apps.social import fontes
+
+    hoje = timezone.localdate()
+    origem = {"remote_id": "a", "date": hoje.isoformat(), "channel": "social"}
+    gravar(
+        site,
+        {
+            "reading": [_leitura("a", views=10, half_read=6)],
+            "reading_by_source": [
+                {
+                    **origem,
+                    "source": "Instagram",
+                    "views": 8,
+                    "engaged_views": 5,
+                    "engaged_seconds": 400,
+                    "half_read": 4,
+                    "read_to_end": 2,
+                },
+                {**origem, "source": "linkedin", "views": 2},
+                {**origem, "channel": "", "source": "x"},  # sem canal: ignorada
+            ],
+        },
+    )
+    assert LeituraDoDia.objects.get(remote_id="a").half_read == 6
+    assert LeituraPorOrigem.objects.count() == 2
+    insta = fontes.leitura_vinda_da_rede("a", "instagram", hoje)
+    assert insta == {"aberturas": 8, "leram": 5, "segundos_por_leitura": 50, "metade": 4, "fim": 2}
+    assert fontes.leitura_vinda_da_rede("a", "instagram", hoje + timedelta(days=1)) == {}
+    # Site antigo (sem reading_by_source) continua funcionando.
+    gravar(site, {"reading": [_leitura("a", views=11)]})
+    assert LeituraDoDia.objects.get(remote_id="a").views == 11

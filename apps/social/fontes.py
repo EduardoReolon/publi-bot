@@ -200,6 +200,46 @@ def conversoes_pelas_redes(remote_id: str, desde) -> int:
     )
 
 
+# A fonte (utm_source, ou quem mandou) com que a visita de cada rede chega ao
+# site. O link do post leva utm_source=<rede>; sem ele (o anuncio, o link na
+# bio aberto fora do PubliBot), o site reconhece a rede por quem mandou.
+FONTES_DA_REDE = {
+    "instagram": ("instagram", "ig"),
+    "linkedin": ("linkedin",),
+    "gmn": ("gmn",),
+}
+
+
+def leitura_vinda_da_rede(remote_id: str, rede: str, desde) -> dict:
+    """Quem veio desta rede ao artigo, desde a data, contado pelo site:
+    aberturas, quantos leram de verdade (10 s+), o tempo ativo medio, quantos
+    passaram da metade e quantos chegaram ao fim. Vazio sem dado (site antigo)."""
+    from django.db.models import Sum
+
+    from apps.integrations.models import LeituraPorOrigem
+
+    if not remote_id:
+        return {}
+    soma = LeituraPorOrigem.objects.filter(
+        remote_id=remote_id, dia__gte=desde, fonte__in=FONTES_DA_REDE.get(rede, (rede,))
+    ).aggregate(
+        aberturas=Sum("views"),
+        leram=Sum("engaged_views"),
+        segundos=Sum("engaged_seconds"),
+        metade=Sum("half_read"),
+        fim=Sum("read_to_end"),
+    )
+    if not soma["aberturas"]:
+        return {}
+    return {
+        "aberturas": soma["aberturas"],
+        "leram": soma["leram"] or 0,
+        "segundos_por_leitura": round((soma["segundos"] or 0) / soma["aberturas"]),
+        "metade": soma["metade"] or 0,
+        "fim": soma["fim"] or 0,
+    }
+
+
 # -- Modelo de linguagem e vetores -------------------------------------------------
 def modelo_indisponivel() -> tuple[type[Exception], ...]:
     """As excecoes de "sem modelo agora" (nao configurado, ou placa ocupada)."""

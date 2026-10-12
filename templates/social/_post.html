@@ -186,8 +186,29 @@
       {% if post.metricas.curtidas is not None %}<span class="selo">{{ post.metricas.curtidas }} {% translate "curtidas" %}</span>{% endif %}
       {% if post.metricas.comentarios is not None %}<span class="selo">{{ post.metricas.comentarios }} {% translate "comentarios" %}</span>{% endif %}
       {% if post.metricas.alcance is not None %}<span class="selo">{{ post.metricas.alcance }} {% translate "alcance" %}</span>{% endif %}
+      {% if post.metricas.visualizacoes is not None %}<span class="selo">{{ post.metricas.visualizacoes }} {% translate "visualizacoes" %}</span>{% endif %}
+      {% if post.metricas.compartilhamentos %}<span class="selo ok">{{ post.metricas.compartilhamentos }} {% translate "envios" %}</span>{% endif %}
+      {% if post.metricas.salvos %}<span class="selo ok">{{ post.metricas.salvos }} {% translate "salvos" %}</span>{% endif %}
+      {% if post.metricas.visitas_ao_perfil is not None %}<span class="selo">{{ post.metricas.visitas_ao_perfil }} {% translate "visitas ao perfil" %}</span>{% endif %}
+      {% if post.metricas.seguidores_ganhos is not None %}<span class="selo">{{ post.metricas.seguidores_ganhos }} {% translate "seguidores ganhos" %}</span>{% endif %}
       {% if post.sucesso is True %}<span class="selo ok">{% translate "funcionou" %}</span>{% elif post.sucesso is False %}<span class="selo">{% translate "abaixo da mediana" %}</span>{% endif %}
     </div>
+    {% with s=post.metricas.site %}{% if s %}
+      <div class="ajuda" style="margin:.3rem 0">
+        <strong>{% blocktranslate with rede=post.destino.nome %}No site, vindos de {{ rede }}:{% endblocktranslate %}</strong>
+        {{ s.aberturas }} {% translate "aberturas" %} · {{ s.leram }} {% translate "leram de verdade (10 s ou mais)" %} · {% translate "em media" %} {{ s.segundos_por_leitura }} s {% translate "ativos" %} · {{ s.metade }} {% translate "passaram da metade" %} · {{ s.fim }} {% translate "chegaram ao fim" %}
+      </div>
+    {% endif %}{% endwith %}
+    {% if post.impulsionado %}
+      <div class="ajuda" style="margin:.3rem 0">
+        <span class="selo alerta">{% translate "impulsionado" %}{% if post.custo_impulso %} · R$ {{ post.custo_impulso }}{% endif %}</span>
+        {% for a in post.anuncios.all %}
+          · {% translate "anuncio" %}: {{ a.cliques|default:"—" }} {% translate "cliques no link" %}, {{ a.alcance|default:"—" }} {% translate "alcance" %}{% if a.custo_por_clique %} ({% translate "custo por clique" %} R$ {{ a.custo_por_clique }}){% endif %}
+        {% empty %}
+          <br>{% translate "Valor informado a mao. Conecte os anuncios (Redes > Diagnostico > Conectar anuncios) ou envie a planilha do Gerenciador: o gasto, os cliques e o alcance do anuncio entram sozinhos e ficam ligados a este post." %}
+        {% endfor %}
+      </div>
+    {% endif %}
     {% if not post.impulsionado and post.destino.rede != 'gmn' %}
       <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes">
         {% csrf_token %}<input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="impulso">

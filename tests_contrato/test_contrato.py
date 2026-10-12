@@ -818,6 +818,11 @@ def test_insights_entrega_leitura_e_conversoes_com_assinatura(no_receptor, clien
     _medir(client, "leitura", {"id": remote_id, "active": 40, "end": True})
     _medir(
         client,
+        "leitura",
+        {"id": remote_id, "active": 5, "depth": 70, "channel": "social", "source": "instagram"},
+    )
+    _medir(
+        client,
         "conversao",
         {
             "id": str(uuid.uuid4()),
@@ -838,12 +843,27 @@ def test_insights_entrega_leitura_e_conversoes_com_assinatura(no_receptor, clien
         {
             "remote_id": remote_id,
             "date": hoje,
-            "views": 1,
+            "views": 2,
             "engaged_views": 1,
-            "engaged_seconds": 40,
+            "engaged_seconds": 45,
             "read_to_end": 1,
+            "half_read": 2,
             "cta_views": 0,
             "cta_clicks": 0,
+        }
+    ]
+    # A mesma leitura por origem (1.3.0): so a que veio com canal.
+    assert dados["reading_by_source"] == [
+        {
+            "remote_id": remote_id,
+            "date": hoje,
+            "channel": "social",
+            "source": "instagram",
+            "views": 1,
+            "engaged_views": 0,
+            "engaged_seconds": 5,
+            "read_to_end": 0,
+            "half_read": 1,
         }
     ]
     assert dados["conversions"][0]["journey"] == [{"remote_id": remote_id, "engaged_seconds": 40}]

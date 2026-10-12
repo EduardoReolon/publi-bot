@@ -419,3 +419,40 @@ def test_linkedin_pagina_usa_o_app_proprio_quando_ha(settings):
     assert "client_id=pagina" in url and "w_organization_social" in url
     settings.SOCIAL_LINKEDIN_PAGINA_CLIENT_ID = ""
     assert "client_id=perfil" in oauth.url_de_autorizacao(pagina, "https://r/", "e")
+
+
+@pytest.mark.django_db
+def test_instagram_le_visualizacoes_e_tolera_metrica_recusada(ambiente):
+    """'views' (a Visualizacoes do app) vem a parte; metrica que a Meta recusa
+    para o post nao derruba as outras."""
+    destino = _conectado("instagram", "17841")
+    post = _post(destino, id_remoto="999", situacao=Post.Situacao.PUBLICADO)
+
+    def insights(pedido):
+        metrica = parse_qs(urlsplit(str(pedido.url)).query)["metric"][0]
+        if metrica == "follows":
+            return httpx.Response(400, json={"error": {"message": "metric not supported"}})
+        nomes = metrica.split(",")
+        return httpx.Response(
+            200, json={"data": [{"name": n, "values": [{"value": 7}]} for n in nomes]}
+        )
+
+    rede = Rede({"GET graph.facebook.com/v21.0/999/insights": insights})
+    saida = PublicadorInstagram(destino, http=rede.cliente()).metricas(post)
+    assert saida["alcance"] == 7 and saida["visualizacoes"] == 7
+    assert saida["visitas_ao_perfil"] == 7 and "seguidores_ganhos" not in saida
+
+
+@pytest.mark.django_db
+def test_post_parado_esperando_o_modelo_volta_para_a_fila(ambiente, monkeypatch):
+    from apps.social import tasks
+
+    destino = _conectado("instagram", "17841")
+    parado = _post(destino, situacao=Post.Situacao.SUGERIDO)
+    recente = _post(destino, situacao=Post.Situacao.SUGERIDO)
+    Post.objects.filter(pk=parado.pk).update(atualizado_em=timezone.now() - timedelta(hours=3))
+    despachados = []
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: despachados.append(pk))
+    assert tasks.retomar_escrita() == 1
+    assert despachados == [str(parado.pk)] and str(recente.pk) not in despachados
+    assert tasks.retomar_escrita() == 0  # tocado: so daqui a meia hora
