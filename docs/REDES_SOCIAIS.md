@@ -146,6 +146,13 @@ comentario (`{nome}`, `{link}`) e o link da entrega.
   sem isca), pedidos, respondidos e cliques no link.
 - **Outra IA:** pedido de ideias com o negocio, as regras e as iscas que ja
   existem com o resultado; as ideias coladas entram paradas, para por o link.
+- **O que o publico quer** (`desejos.py`, nos pedidos de iscas e de propostas):
+  do Google, os grupos de demanda do Radar com volume, as perguntas reais
+  ("as pessoas tambem perguntam", visitantes, YouTube) e as buscas que ja
+  trazem gente ao site (Search Console); do Instagram, o vislumbre possivel —
+  perguntas, relatos e reclamacoes nos comentarios (sem nomes), os posts que
+  mais engajaram e o que outras contas do nicho oferecem em troca de
+  comentario ("Comente GUIA...", lido das legendas de referencia).
 
 ### Publico do impulso — `publicos.py`, `/redes/publicos/`
 

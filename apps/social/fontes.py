@@ -178,6 +178,51 @@ def demanda(limite: int = 300) -> list[dict]:
     ]
 
 
+def o_que_procuram(limite: int = 15) -> dict:
+    """O que o publico busca no Google, para os pedidos a outra IA:
+    {"grupos": [(rotulo, volume)], "perguntas": [texto], "consultas": [(consulta,
+    impressoes)]} — grupos de demanda do Radar (por volume), perguntas reais
+    ("as pessoas tambem perguntam", visitantes, YouTube) e as buscas que ja
+    trazem gente ao site (ultima coleta do Search Console)."""
+    from django.db.models import Sum
+
+    from apps.radar.models import ColetaDoConsole, GrupoDeDemanda, SinalDeDemanda
+
+    grupos = (
+        GrupoDeDemanda.objects.exclude(situacao="descartado")
+        .exclude(avaliacao_ia="ruim")
+        .filter(volume_total__gt=0)
+        .order_by("-volume_total")[:limite]
+    )
+    perguntas = (
+        SinalDeDemanda.objects.filter(situacao="ativo", fonte__in=["paa", "visitante", "youtube"])
+        .order_by("-volume", "-criado_em")
+        .values_list("texto", flat=True)[: limite * 3]
+    )
+    coleta = ColetaDoConsole.objects.order_by("-coletada_em").first()
+    consultas = (
+        list(
+            coleta.linhas_set.values("consulta")
+            .annotate(n=Sum("impressoes"))
+            .order_by("-n")
+            .values_list("consulta", "n")[:limite]
+        )
+        if coleta
+        else []
+    )
+    vistas, unicas = set(), []
+    for texto in perguntas:
+        chave = texto.strip().lower()
+        if chave not in vistas:
+            vistas.add(chave)
+            unicas.append(texto.strip())
+    return {
+        "grupos": [(g.rotulo, g.volume_total) for g in grupos],
+        "perguntas": unicas[:limite],
+        "consultas": consultas,
+    }
+
+
 def endereco_do_site() -> str:
     """A pagina inicial do site do cliente (destino de post sem artigo)."""
     alvo = site()

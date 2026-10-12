@@ -202,6 +202,10 @@ def pedido(destino: Destino) -> str:
     if not recentes:
         partes.append("(nenhum ainda)")
 
+    from apps.social import desejos
+
+    partes += desejos.secao(destino)
+
     referencias = list(destino.referencias.order_by("-curtidas")[:8])
     if referencias:
         partes += ["", "## O que mais engaja no nicho (posts de outras contas)"]

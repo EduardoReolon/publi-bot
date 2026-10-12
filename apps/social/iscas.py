@@ -303,6 +303,8 @@ Regras:
   diga e proponha outra coisa.
 - Nada que prometa resultado de saude ou peca dado sensivel no comentario.
 - Palavra curta, facil de digitar no celular, sem acento.
+- Parta do que o publico quer (abaixo): a isca boa resolve uma pergunta ou dor
+  que aparece nas buscas e nos comentarios.
 
 Converse antes, se precisar. Quando eu pedir, responda SO nos blocos e
 termine com FIM:
@@ -318,7 +320,7 @@ FIM
 
 
 def pedido() -> str:
-    from apps.social import fontes
+    from apps.social import desejos, fontes
     from apps.social.models import ConfiguracaoSocial
 
     negocio = fontes.negocio()
@@ -332,6 +334,7 @@ def pedido() -> str:
         "Dores do publico: " + ("; ".join(negocio.get("dores") or []) or "(nenhuma)"),
         "Onde atende: " + (", ".join(negocio.get("regioes") or []) or "(nao informado)"),
         f"Regras que nunca se quebram: {config.regras or '(nenhuma)'}",
+        *desejos.secao(),
         "",
         "## Iscas que ja existem e o resultado",
     ]

@@ -176,3 +176,47 @@ FIM
         "| checklist do sono\nFIM\n"
     )
     assert leitura.propostas[0].isca == checklist
+
+
+@pytest.mark.django_db
+def test_pedidos_levam_o_que_o_publico_quer(ambiente):
+    from datetime import date
+
+    from apps.radar.models import ColetaDoConsole, GrupoDeDemanda, SinalDeDemanda
+    from apps.social import desejos, outra_ia
+    from apps.social.models import ReferenciaDoNicho
+
+    destino = Destino.objects.create(rede="instagram", nome="Insta")
+    GrupoDeDemanda.objects.create(rotulo="insonia o que fazer", volume_total=5400)
+    GrupoDeDemanda.objects.create(rotulo="grupo ruim", volume_total=9000, avaliacao_ia="ruim")
+    SinalDeDemanda.objects.create(texto="Insonia tem cura?", fonte="paa", volume=900)
+    coleta = ColetaDoConsole.objects.create(
+        propriedade="sc", inicio=date(2026, 9, 1), fim=date(2026, 9, 30)
+    )
+    coleta.linhas_set.create(consulta="acordar cansado", pagina="https://x.com/a", impressoes=300)
+    post = Post.objects.create(destino=destino, motivo="novo", situacao="publicado")
+    Comentario.objects.create(
+        post=post,
+        id_remoto="c",
+        texto="Acordo 3h todo dia, e normal isso?",
+        tipo="pergunta",
+        autor="Ana",
+        escrito_em=timezone.now(),
+    )
+    ReferenciaDoNicho.objects.create(
+        destino=destino,
+        hashtag="sono",
+        id_remoto="r1",
+        legenda="5 sinais de que voce dorme mal. Comente GUIA e eu te mando o passo a passo.",
+        comentarios=340,
+    )
+    assert desejos.iscas_do_nicho() == [
+        "GUIA — “5 sinais de que voce dorme mal. Comente GUIA e eu te mando o passo a passo.”"
+        " (340 comentarios)"
+    ]
+    texto = iscas.pedido()
+    assert "insonia o que fazer (5400/mes)" in texto and "grupo ruim" not in texto
+    assert "Insonia tem cura?" in texto and "acordar cansado (300)" in texto
+    assert "Acordo 3h todo dia" in texto and "Ana" not in texto.split("## O que o publico")[1]
+    assert "Comente GUIA" in texto
+    assert "insonia o que fazer" in outra_ia.pedido(destino)
