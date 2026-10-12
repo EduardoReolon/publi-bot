@@ -185,13 +185,14 @@ def sugerir(
     ideia: str = "",
     entrada=None,
     foco: str = "",
+    isca=None,
 ) -> list[Post]:
     """Cria o(s) post(s) sugerido(s) e pede a redacao. Com 2 versoes, cada uma
     com uma abordagem diferente, ligadas uma a outra (o par do teste A/B).
     `ideia`: um angulo sugerido (pela outra IA) que vai para quem escreve.
     `entrada`: o material proprio (caso, fotos) quando o post nao e de artigo.
     `foco`: alcance, engajamento ou site; vazio, o que falta na mistura da fase."""
-    from apps.social import experimentos, focos
+    from apps.social import experimentos, focos, iscas
     from apps.social.tasks import escrever_post
 
     config = ConfiguracaoSocial.carregar()
@@ -210,6 +211,8 @@ def sugerir(
             else {}
         ),
     }
+    # A isca vale para o par inteiro, como o foco.
+    isca = isca or iscas.escolher(destino, extras["foco"])
     posts = []
     with transaction.atomic():
         for abordagem in abordagens:
@@ -224,6 +227,7 @@ def sugerir(
                 motivo=motivo,
                 por_que=por_que,
                 variante_de=posts[0] if posts else None,
+                isca=isca,
                 extras=dict(extras),
             )
             posts.append(post)
@@ -258,6 +262,7 @@ def sugerir_tema(
     por_que: str = "",
     ideia: str = "",
     foco: str = "",
+    isca=None,
 ) -> list[Post]:
     artigo = fontes.artigo(tema.artigo_principal)
     if artigo is None:
@@ -273,6 +278,7 @@ def sugerir_tema(
         versoes=versoes,
         ideia=ideia,
         foco=foco,
+        isca=isca,
     )
 
 

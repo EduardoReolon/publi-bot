@@ -5,6 +5,7 @@
       <strong>{{ post.destino.nome }}</strong> <span class="selo">{{ post.destino.rede_nome }}</span>
       <span class="selo {% if post.situacao == 'rascunho' %}alerta{% elif post.situacao == 'publicado' %}ok{% elif post.situacao == 'falhou' %}ruim{% else %}espera{% endif %}">{{ post.get_situacao_display }}</span>
       {% if post.abordagem %}<span class="selo" title="{% translate 'abordagem' %}">{{ post.abordagem.nome }}</span>{% endif %}
+      {% if post.isca %}<span class="selo ok" title="{% translate 'oferta para quem comentar' %}">{% translate "isca" %}: {{ post.isca.nome|truncatechars:40 }}{% if post.isca.palavra %} ({{ post.isca.palavra }}){% endif %}</span>{% endif %}
       {% if post.extras.foco %}<span class="selo espera" title="{% translate 'para que o post existe: alcance (quem nao segue), engajamento (quem ja segue) ou site (levar ao artigo)' %}">{% translate "foco" %}: {{ post.extras.foco }}</span>{% endif %}
       {% if post.tema_id %}<span class="selo espera" title="{{ post.tema.titulo }}">{% translate "tema" %}</span>{% endif %}
       {% if post.impulsionado %}<span class="selo alerta">{% translate "impulsionado" %} R$ {{ post.custo_impulso }}</span>{% endif %}
@@ -102,6 +103,13 @@
             {% for a in abordagens %}{% if a.pk != post.abordagem_id %}<option value="{{ a.pk }}">{{ a.nome }}</option>{% endif %}{% endfor %}
           </select>
           <button type="submit" name="acao" value="reescrever" class="botao secundario">{% translate "Reescrever" %}</button>
+          {% if iscas or post.isca %}
+            <select name="isca" style="width:auto" title="{% translate 'oferta para quem comentar' %}">
+              <option value="">{% translate "sem oferta para quem comentar" %}</option>
+              {% for i in iscas %}<option value="{{ i.pk }}"{% if i.pk == post.isca_id %} selected{% endif %}>{{ i.nome }}{% if i.palavra %} ({{ i.palavra }}){% endif %}</option>{% endfor %}
+            </select>
+            <button type="submit" name="acao" value="isca" class="botao discreto">{% translate "Trocar oferta" %}</button>
+          {% endif %}
           <button type="submit" name="acao" value="descartar" class="botao discreto">{% translate "Descartar" %}</button>
         </div>
       </form>

@@ -1,0 +1,93 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Iscas" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+  <h2>{% translate "Iscas: o que oferecer a quem comentar" %}</h2>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      "Comente QUERO e receba ...": o post de engajamento termina com uma oferta, e quem comenta
+      recebe a resposta pronta, com o link (o PubliBot conta os cliques). Cadastre o que o
+      negocio pode dar — um guia, uma checklist, uma conversa gratis de 15 minutos, uma aula. O
+      PubliBot usa em parte dos posts de engajamento (Estrategia &gt; parametros), revezando, e
+      le os comentarios desses posts de 5 em 5 minutos nos primeiros 10 dias.
+    {% endblocktranslate %}
+  </p>
+
+  {% if a_decidir %}
+    <section class="secao">
+      <h3>{% translate "Esperando voce" %}</h3>
+      <p class="ajuda">{% translate "Talvez seja pedido (sim, eu, so emoji), isca que nao responde sozinha, ou envio que deu erro. Um clique decide." %}</p>
+      {% for c in a_decidir %}
+        <form method="post" class="acoes" style="margin-bottom:.4rem">
+          {% csrf_token %}<input type="hidden" name="comentario" value="{{ c.pk }}">
+          <span><strong>{{ c.autor|default:"?" }}</strong>: “{{ c.texto|truncatechars:120 }}” <span class="ajuda">— {{ c.post.destino.nome }}, {{ c.post.isca.nome|truncatechars:40 }}{% if c.erro %} · <span class="selo ruim">{% translate "erro" %}</span> {{ c.erro|truncatechars:100 }}{% endif %}</span></span>
+          {% if c.post.url_remota %}<a class="ajuda" href="{{ c.post.url_remota }}" target="_blank" rel="noopener noreferrer">{% translate "ver o post" %}</a>{% endif %}
+          <button type="submit" name="acao" value="responder" class="botao pequeno">{% translate "E pedido: responder" %}</button>
+          <button type="submit" name="acao" value="nao_e" class="botao discreto pequeno">{% translate "Nao e pedido" %}</button>
+        </form>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <section class="secao">
+    <h3>{% translate "Suas iscas e o resultado" %}</h3>
+    <div class="rolagem"><table>
+      <thead><tr><th>{% translate "Isca" %}</th><th>{% translate "Palavra" %}</th><th class="numero">{% translate "Posts" %}</th><th class="numero">{% translate "Comentarios por post" %}</th><th class="numero">{% translate "Pedidos" %}</th><th class="numero">{% translate "Respondidos" %}</th><th class="numero">{% translate "Cliques no link" %}</th><th></th></tr></thead>
+      <tbody>
+        {% for l in painel %}
+          <tr>
+            <td><strong>{{ l.isca.nome }}</strong>{% if not l.isca.ativa %} <span class="selo">{% translate "parada" %}</span>{% endif %}{% if l.isca.origem == 'outra_ia' %} <span class="selo">{% translate "outra IA" %}</span>{% endif %}<div class="ajuda">{{ l.isca.get_modo_display }}{% if not l.isca.responder_sozinho %} · {% translate "voce aprova cada resposta" %}{% endif %}</div></td>
+            <td>{{ l.isca.palavra|default:"—" }}</td>
+            <td class="numero">{{ l.posts }}</td>
+            <td class="numero">{{ l.por_post|default:"—" }}{% if l.media_sem_isca is not None %} <span class="ajuda">({% translate "sem isca" %}: {{ l.media_sem_isca }})</span>{% endif %}</td>
+            <td class="numero">{{ l.pedidos }}{% if l.talvez %} <span class="selo alerta" title="{% translate 'talvez' %}">+{{ l.talvez }}?</span>{% endif %}</td>
+            <td class="numero">{{ l.respondidos }}</td>
+            <td class="numero">{% if l.isca.link %}{{ l.cliques }}{% else %}—{% endif %}</td>
+            <td><a class="botao discreto pequeno" href="?editar={{ l.isca.pk }}#isca-form">{% translate "Editar" %}</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="vazio">{% translate "Nenhuma isca ainda. Cadastre abaixo ou peca ideias a outra IA." %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="ajuda">{% translate "Comentarios por post: compare com os posts de engajamento sem isca. Pedido sem clique no link: a oferta atrai, a entrega nao convence (ou o link nao abre)." %}</p>
+  </section>
+
+  <section class="secao" id="isca-form">
+    <h3>{% if editar %}{% translate "Editar isca" %}{% else %}{% translate "Nova isca" %}{% endif %}</h3>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="acao" value="salvar">{% if editar %}<input type="hidden" name="isca" value="{{ editar.pk }}">{% endif %}
+      <label>{% translate "O que a pessoa recebe" %} <input type="text" name="nome" maxlength="120" value="{{ editar.nome|default:'' }}" placeholder="{% translate 'Ex.: Conversa gratis de 15 minutos sobre o seu caso' %}" required></label>
+      <label>{% translate "Como funciona (vai para quem escreve o post; diga tambem o que NAO prometer)" %} <textarea name="descricao" rows="2" style="width:100%">{{ editar.descricao|default:'' }}</textarea></label>
+      <label>{% translate "Palavra para comentar (vazio: qualquer comentario)" %} <input type="text" name="palavra" maxlength="40" value="{{ editar.palavra|default:'' }}" placeholder="QUERO" style="width:12rem"></label>
+      <label>{% translate "Como reconhecer o pedido" %}
+        <select name="modo">{% for valor, rotulo in modos %}<option value="{{ valor }}"{% if editar.modo == valor or not editar and valor == 'aproximado' %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select>
+      </label>
+      <label>{% translate "Resposta ao comentario ({nome} = primeiro nome, {link} = link rastreado)" %} <textarea name="resposta" rows="2" style="width:100%" required>{% if editar %}{{ editar.resposta }}{% else %}{nome}, que bom! Aqui esta: {link}{% endif %}</textarea></label>
+      <label>{% translate "Link da entrega (arquivo, pagina de agendamento, WhatsApp)" %} <input type="url" name="link" maxlength="500" value="{{ editar.link|default:'' }}" placeholder="https://"></label>
+      <label>{% translate "Redes (nenhuma: todas)" %}</label>
+      {% for codigo, nome in redes %}<label style="font-weight:400; display:inline-flex; gap:.3rem; margin-right:1rem"><input type="checkbox" name="redes" value="{{ codigo }}" style="width:auto" {% if codigo in editar.redes %}checked{% endif %}>{{ nome }}</label>{% endfor %}
+      <label style="font-weight:400"><input type="checkbox" name="responder_sozinho" value="1" style="width:auto" {% if not editar or editar.responder_sozinho %}checked{% endif %}> {% translate "Responder sozinho (desligado: cada resposta espera seu clique aqui)" %}</label>
+      <label style="font-weight:400"><input type="checkbox" name="ativa" value="1" style="width:auto" {% if not editar or editar.ativa %}checked{% endif %}> {% translate "Ativa (entra nos posts novos)" %}</label>
+      <div class="acoes"><button type="submit" class="botao">{% translate "Salvar" %}</button>{% if editar %} <a href="{% url 'social:iscas' %}" class="botao discreto">{% translate "Cancelar" %}</a>{% endif %}</div>
+    </form>
+  </section>
+
+  <section class="secao">
+    <h3>{% translate "Sem ideia do que oferecer? Peca a outra IA" %}</h3>
+    <p class="pre-visualizacao">{% translate "O pedido leva o seu negocio, as regras da conta e as iscas que ja existem com o resultado. As ideias coladas entram PARADAS: voce poe o link, ajusta e liga." %}</p>
+    <div class="acoes"><button type="button" class="botao" data-copiar="pedido-iscas">{% translate "Copiar para outra IA" %}</button></div>
+    <details><summary>{% translate "Ver o texto" %}</summary>
+      <textarea id="pedido-iscas" readonly rows="14" style="width:100%">{{ pedido }}</textarea>
+    </details>
+    <form method="post" style="margin-top:.8rem">
+      {% csrf_token %}<input type="hidden" name="acao" value="resposta_ia">
+      <label for="resposta-iscas">{% translate "Cole aqui a resposta inteira" %}</label>
+      <textarea id="resposta-iscas" name="resposta" rows="5" style="width:100%" required></textarea>
+      <div class="acoes"><button type="submit" class="botao secundario">{% translate "Salvar as ideias" %}</button></div>
+    </form>
+  </section>
+{% endblock %}

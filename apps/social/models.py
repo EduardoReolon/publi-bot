@@ -447,6 +447,10 @@ class Post(models.Model):
         _("valor do impulso (R$)"), max_digits=8, decimal_places=2, null=True, blank=True
     )
     impulso_em = models.DateTimeField(null=True, blank=True)
+    # A oferta para quem comentar (ex.: "comente QUERO e receba o guia").
+    isca = models.ForeignKey(
+        "Isca", on_delete=models.SET_NULL, null=True, blank=True, related_name="posts"
+    )
     aprovado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
@@ -499,6 +503,9 @@ class Comentario(models.Model):
     # A Pergunta criada no PubliBot (id, sem chave estrangeira: e do nucleo).
     pergunta_id = models.UUIDField(null=True, blank=True)
     resposta = models.TextField(_("resposta enviada"), blank=True)
+    # Pediu a isca do post? "sim", "talvez" (a pessoa decide no painel) ou
+    # "nao" (decidido no painel); vazio: o post nao tem isca ou nao bateu.
+    pedido = models.CharField(_("pediu a oferta"), max_length=8, blank=True)
     respondido_em = models.DateTimeField(null=True, blank=True)
     id_da_resposta = models.CharField(max_length=300, blank=True)
     erro = models.TextField(blank=True)
@@ -607,6 +614,67 @@ class PublicoDeImpulso(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["destino", "nome"], name="uniq_publico_de_impulso")
         ]
+
+    def __str__(self) -> str:
+        return self.nome
+
+
+class Isca(models.Model):
+    """Uma oferta para quem comentar: "comente QUERO e receba ...". O negocio
+    cadastra o que pode dar (guia, checklist, avaliacao gratis, aula); quem
+    escreve o post usa quando o post e de engajamento; o comentario que pede
+    recebe a resposta pronta, com o link rastreado."""
+
+    class Modo(models.TextChoices):
+        TODOS = "todos", _("Responder todo mundo que comentar, igual")
+        PALAVRA = (
+            "palavra",
+            _("So quando a palavra aparece (maiuscula, acento e pontuacao nao importam)"),
+        )
+        APROXIMADO = (
+            "aproximado",
+            _("Palavra com erro de digitacao, 'quero', 'me manda'; o duvidoso vai ao painel"),
+        )
+
+    class Origem(models.TextChoices):
+        MANUAL = "manual", _("Digitada")
+        OUTRA_IA = "outra_ia", _("Outra IA")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nome = models.CharField(_("o que a pessoa recebe"), max_length=120, unique=True)
+    descricao = models.TextField(
+        _("como funciona"),
+        blank=True,
+        help_text=_("Vai para quem escreve o post: o que e, para quem serve, o que NAO prometer."),
+    )
+    palavra = models.CharField(
+        _("palavra para comentar"),
+        max_length=40,
+        blank=True,
+        help_text=_("Ex.: QUERO. Vazio: qualquer comentario pede."),
+    )
+    modo = models.CharField(
+        _("como reconhecer o pedido"), max_length=12, choices=Modo.choices, default=Modo.APROXIMADO
+    )
+    resposta = models.TextField(
+        _("resposta ao comentario"),
+        help_text=_("Use {nome} para o primeiro nome e {link} para o link rastreado."),
+    )
+    link = models.URLField(_("link da entrega"), max_length=500, blank=True)
+    responder_sozinho = models.BooleanField(
+        _("responder sozinho"),
+        default=True,
+        help_text=_("Desligado: os pedidos esperam no painel, um clique para responder."),
+    )
+    redes = models.JSONField(_("redes"), default=list, blank=True)
+    ativa = models.BooleanField(_("ativa"), default=True)
+    origem = models.CharField(max_length=10, choices=Origem.choices, default=Origem.MANUAL)
+    cliques = models.PositiveIntegerField(default=0)
+    chave_publica = models.CharField(max_length=40, default=_chave, unique=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["nome"]
 
     def __str__(self) -> str:
         return self.nome

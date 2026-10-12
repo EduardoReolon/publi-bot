@@ -122,6 +122,31 @@ comparar, nao diz nada. Post de 48 h a 7 dias entre os 25% melhores do seu foco
 vira recomendacao **"Aproveitar"** na Estrategia, com o objetivo de impulso do
 foco ("feito para alcance, ficou entre os 25% melhores... se quiser aproveitar").
 
+### Iscas: oferta para quem comentar — `iscas.py`, `/redes/iscas/`
+
+"Comente QUERO e receba ...": o negocio cadastra o que pode oferecer (guia,
+checklist, conversa gratis de 15 minutos, aula), com a palavra, a resposta ao
+comentario (`{nome}`, `{link}`) e o link da entrega.
+
+- **Onde entra:** numa parte dos posts de **engajamento** (parametro
+  `iscas_por_cento`, padrao 50%), revezando a menos usada nas ultimas 3
+  semanas; a outra IA pode citar a isca pelo nome na proposta (5o campo), e a
+  pessoa pode trocar no post em revisao. Quem escreve recebe a instrucao; se a
+  palavra nao aparecer no texto, o PubliBot poe a chamada no fim.
+- **Reconhecer o pedido** (por isca): `todos` (qualquer comentario), `palavra`
+  (sem importar maiuscula, acento, pontuacao, emoji, plural) ou `aproximado`
+  (tambem erro de digitacao — `difflib`, 80% — e frases como "me manda",
+  "tenho interesse"; "sim", "eu" e so emoji ficam como **talvez**).
+- **Responder:** os posts com isca dos ultimos 10 dias tem os comentarios lidos
+  de 5 em 5 minutos (`publicar_posts`), e o pedido recebe a resposta publica ao
+  comentario, com o link rastreado `/redes/i/<chave>/` (conta os cliques). Com
+  "responder sozinho" desligado, ou no talvez, um clique no painel decide.
+  Mensagem no direct pede a permissao de mensagens da Meta (revisao do app).
+- **Painel:** por isca, posts, comentarios por post (contra os de engajamento
+  sem isca), pedidos, respondidos e cliques no link.
+- **Outra IA:** pedido de ideias com o negocio, as regras e as iscas que ja
+  existem com o resultado; as ideias coladas entram paradas, para por o link.
+
 ### Publico do impulso — `publicos.py`, `/redes/publicos/`
 
 A lista de interesses da Meta (direcionamento detalhado) so sai pela API com
@@ -567,7 +592,7 @@ em cada rede e o teste que falta** — faca com um post de teste e confira.
 | Tarefa | Quando | O que faz |
 |---|---|---|
 | `sugerir-posts` | 1x/dia | escolha do dia (com "sugerir sozinho") |
-| `publicar-posts` | 5 em 5 min | publica os aprovados vencidos (contas conectadas) e responde comentarios com resposta aprovada |
+| `publicar-posts` | 5 em 5 min | publica os aprovados vencidos (contas conectadas), responde comentarios com resposta aprovada e quem pediu a isca (posts com isca dos ultimos 10 dias) |
 | `medir-posts` | 1x/dia | resultado, comentarios, seguidores, referencias do nicho (semanal), proximo lote do historico, gasto com anuncios (API), placar, mistura artigos x fotos e fotos que faltam descrever |
 | `recalcular-temas` | 1x/dia | temas entre os artigos, com a nota |
 | `placar-coletivo` | 1x/dia | soma do placar das abordagens entre todos os clientes |

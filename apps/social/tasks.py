@@ -40,13 +40,15 @@ def sugerir_posts() -> int:
 @shared_task
 def publicar_posts() -> int:
     """De 5 em 5 minutos: publica os aprovados que venceram, nas contas conectadas,
-    e responde os comentarios cuja pergunta ja foi respondida."""
+    responde os comentarios cuja pergunta ja foi respondida e quem pediu a isca."""
     from apps.accounts.varredura import para_cada_tenant
+    from apps.social import iscas
     from apps.social.comentarios import responder_aprovadas
     from apps.social.publicacao import publicar_vencidos
 
     return para_cada_tenant(
-        lambda: publicar_vencidos() + responder_aprovadas() + retomar_escrita(), "publicar_posts"
+        lambda: publicar_vencidos() + responder_aprovadas() + iscas.responder() + retomar_escrita(),
+        "publicar_posts",
     )
 
 

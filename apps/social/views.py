@@ -25,7 +25,15 @@ from django.views.decorators.http import require_GET, require_POST
 from apps.social import experimentos, fontes
 from apps.social.abordagens import garantir_abordagens
 from apps.social.forms import AbordagemForm, ConfiguracaoForm, DestinoForm, RecadoForm
-from apps.social.models import Abordagem, Comentario, ConfiguracaoSocial, Destino, Post, Recado
+from apps.social.models import (
+    Abordagem,
+    Comentario,
+    ConfiguracaoSocial,
+    Destino,
+    Isca,
+    Post,
+    Recado,
+)
 from apps.social.redes import REDES, rede
 from apps.social.redes.base import ErroDaRede
 
@@ -53,12 +61,19 @@ def _contagens() -> dict:
         .exclude(post__motivo=Post.Motivo.HISTORICO)
         .count(),
         "diagnostico": sum(1 for d in Destino.objects.filter(ligado=True) if _leitura_parada(d)),
+        "iscas": _iscas_a_decidir(),
         "estoque_baixo": sum(
             1
             for d in Destino.objects.filter(ligado=True, fotos_por_cento__gt=0)
             if _estoque_baixo(d)
         ),
     }
+
+
+def _iscas_a_decidir() -> int:
+    from apps.social import iscas
+
+    return len(iscas.a_decidir())
 
 
 def _estoque_baixo(destino: Destino) -> bool:
@@ -105,6 +120,7 @@ def inicio(request: HttpRequest) -> HttpResponse:
             ]
         ).order_by("destino__nome", "-criado_em")
         contexto["abordagens"] = Abordagem.objects.filter(ativa=True)
+        contexto["iscas"] = Isca.objects.filter(ativa=True)
         contexto["destinos_do_link"] = fontes.destinos_do_link()
     elif aba == "agenda":
         contexto["posts"] = posts.filter(
@@ -375,6 +391,21 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         post.save(update_fields=["abordagem", "situacao", "atualizado_em"])
         escrever_post.delay(str(post.pk))
         messages.info(request, _("Reescrevendo com a abordagem '%(a)s'.") % {"a": abordagem})
+    elif acao == "isca":
+        post.isca = Isca.objects.filter(pk=request.POST.get("isca") or None).first()
+        post.save(update_fields=["isca", "atualizado_em"])
+        if post.situacao in (Post.Situacao.RASCUNHO, Post.Situacao.FALHOU):
+            post.situacao = Post.Situacao.SUGERIDO
+            post.save(update_fields=["situacao", "atualizado_em"])
+            escrever_post.delay(str(post.pk))
+            messages.info(request, _("Reescrevendo com a oferta para quem comentar."))
+        else:
+            if post.situacao != Post.Situacao.PUBLICADO:
+                from apps.social.iscas import garantir_chamada
+
+                post.texto = garantir_chamada(post, post.texto)
+                post.save(update_fields=["texto", "atualizado_em"])
+            messages.success(request, _("Oferta do post trocada."))
     elif acao in ("enquete", "post_comum"):
         extras = dict(post.extras or {})
         if acao == "enquete":
@@ -658,6 +689,82 @@ def clique(request: HttpRequest, chave: str) -> HttpResponse:
         raise Http404
     Post.objects.filter(pk=post.pk).update(cliques=F("cliques") + 1)
     return redirect(destino_do_clique(post))
+
+
+def isca_publica(request: HttpRequest, chave: str) -> HttpResponse:
+    """O link da isca na resposta ao comentario: conta e segue para a entrega."""
+    isca = Isca.objects.filter(chave_publica=chave).exclude(link="").first()
+    if isca is None:
+        raise Http404
+    Isca.objects.filter(pk=isca.pk).update(cliques=F("cliques") + 1)
+    return redirect(isca.link)
+
+
+@login_required
+def iscas(request: HttpRequest) -> HttpResponse:
+    """Ofertas para quem comentar: cadastro, resultado e o que espera decisao."""
+    from apps.social import iscas as modulo
+
+    if request.method == "POST":
+        acao = request.POST.get("acao")
+        if acao == "salvar":
+            isca = Isca.objects.filter(pk=request.POST.get("isca") or None).first() or Isca()
+            for campo in ("nome", "descricao", "resposta", "link"):
+                setattr(isca, campo, request.POST.get(campo, "").strip())
+            isca.palavra = request.POST.get("palavra", "").strip().upper()[:40]
+            isca.modo = request.POST.get("modo") or Isca.Modo.APROXIMADO
+            isca.responder_sozinho = request.POST.get("responder_sozinho") == "1"
+            isca.ativa = request.POST.get("ativa") == "1"
+            isca.redes = request.POST.getlist("redes")
+            if not isca.nome or not isca.resposta:
+                messages.error(request, _("Diga o que a pessoa recebe e a resposta ao comentario."))
+            elif isca.link and not isca.link.startswith(("http://", "https://")):
+                messages.error(request, _("O link precisa comecar com http(s)://."))
+            else:
+                isca.save()
+                messages.success(request, _("Isca salva."))
+        elif acao in ("responder", "nao_e"):
+            comentario = get_object_or_404(Comentario, pk=request.POST.get("comentario"))
+            if acao == "nao_e":
+                comentario.pedido = modulo.NAO
+                comentario.save(update_fields=["pedido"])
+            elif modulo.enviar(comentario):
+                messages.success(request, _("Respondido."))
+            else:
+                messages.error(request, _("Nao deu para responder: %(e)s") % {"e": comentario.erro})
+        elif acao == "resposta_ia":
+            ideias, comentarios = modulo.ler_ideias(request.POST.get("resposta", ""))
+            if not ideias:
+                messages.error(
+                    request,
+                    _("Nao achei o bloco ISCAS na resposta. Peca 'pode gerar' e cole tudo."),
+                )
+            else:
+                salvas = modulo.salvar_ideias(ideias)
+                messages.success(
+                    request,
+                    _("%(n)s ideia(s) salvas como iscas paradas: ponha o link e ligue.")
+                    % {"n": len(salvas)},
+                )
+                if comentarios:
+                    messages.info(request, comentarios[:1000])
+        return redirect("social:iscas")
+    editar = Isca.objects.filter(pk=request.GET.get("editar") or None).first()
+    return render(
+        request,
+        "social/iscas.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "iscas",
+            "contagens": _contagens(),
+            "painel": modulo.painel(),
+            "a_decidir": modulo.a_decidir(),
+            "editar": editar,
+            "modos": Isca.Modo.choices,
+            "redes": [("instagram", "Instagram"), ("linkedin", "LinkedIn")],
+            "pedido": modulo.pedido(),
+        },
+    )
 
 
 def imagem(request: HttpRequest, chave: str, n: int) -> HttpResponse:

@@ -70,9 +70,10 @@ Quando eu pedir os blocos, responda SO neles, nesta ordem, e termine com FIM
 (a resposta volta para o sistema, que a le sozinho):
 
 PROPOSTAS:
-- codigo | gancho sugerido (ate 15 palavras) | por que, em ate 15 palavras | foco
+- codigo | gancho sugerido (ate 15 palavras) | por que, em ate 15 palavras | foco | isca
   (ate {max_propostas}, na ordem: a primeira e a que eu deveria postar primeiro;
-  foco = alcance, engajamento ou site — ver FOCOS abaixo)
+  foco = alcance, engajamento ou site — ver FOCOS abaixo; isca = o nome exato de
+  uma OFERTA PARA QUEM COMENTA da lista, quando couber, ou vazio)
 ABORDAGENS:
 - Nome curto: como escrever com ela, em 2 a 4 frases (e uma instrucao para
   quem escreve o post). Ate {max_abordagens}: jeitos que faltam, ou a versao
@@ -153,6 +154,16 @@ def pedido(destino: Destino) -> str:
         f" ate {destino.teto_semanal} posts por semana.",
         f"Regras que nunca se quebram: {config.regras or '(nenhuma)'}",
     ]
+    from apps.social.models import Isca
+
+    ofertas = [i for i in Isca.objects.filter(ativa=True) if not i.redes or destino.rede in i.redes]
+    partes += ["", "## Ofertas para quem comenta (iscas: 'comente QUERO e receba...')"]
+    partes += [
+        f"- {i.nome}"
+        + (f" (palavra {i.palavra.upper()})" if i.palavra else "")
+        + (f": {_resumo(i.descricao, 160)}" if i.descricao else "")
+        for i in ofertas
+    ] or ["(nenhuma cadastrada)"]
     if config.instrucoes.strip() or destino.instrucoes.strip():
         partes.append(
             "Instrucoes do negocio: "
@@ -249,6 +260,7 @@ class Proposta:
     gancho: str
     por_que: str
     foco: str = ""
+    isca: object = None  # Isca citada pelo nome
 
 
 @dataclass
@@ -318,6 +330,10 @@ def ler(resposta: str) -> Leitura:
     alvos = _Alvos()
     leitura = Leitura(comentarios=blocos.get("COMENTARIOS", "").strip())
 
+    from apps.social.iscas import normalizar
+    from apps.social.models import Isca
+
+    iscas_por_nome = {normalizar(i.nome): i for i in Isca.objects.filter(ativa=True)}
     vistos = set()
     for linha in itens(blocos.get("PROPOSTAS", "")):
         partes = _partes(linha)
@@ -335,6 +351,7 @@ def ler(resposta: str) -> Leitura:
                 gancho=(partes[1] if len(partes) > 1 else "")[:200],
                 por_que=(partes[2] if len(partes) > 2 else "")[:300],
                 foco=focos.valido((partes[3] if len(partes) > 3 else "").strip().lower()),
+                isca=iscas_por_nome.get(normalizar(partes[4]) if len(partes) > 4 else ""),
             )
         )
     leitura.propostas = leitura.propostas[:MAXIMO_DE_PROPOSTAS]
@@ -375,7 +392,7 @@ def ler(resposta: str) -> Leitura:
 
 # -- Aplicar ---------------------------------------------------------------------------
 def _criar_post(
-    destino: Destino, alvo: Alvo, por_que: str, ideia: str, foco: str = ""
+    destino: Destino, alvo: Alvo, por_que: str, ideia: str, foco: str = "", isca=None
 ) -> list[Post]:
     from apps.social import escolha
 
@@ -387,11 +404,14 @@ def _criar_post(
             por_que=por_que,
             ideia=ideia,
             foco=foco,
+            isca=isca,
         )
     artigo = fontes.artigo(alvo.artigo_id)
     if artigo is None:
         return []
-    return escolha.sugerir(destino, artigo, Post.Motivo.OUTRA_IA, por_que, ideia=ideia, foco=foco)
+    return escolha.sugerir(
+        destino, artigo, Post.Motivo.OUTRA_IA, por_que, ideia=ideia, foco=foco, isca=isca
+    )
 
 
 def _nome_livre(nome: str) -> str:
@@ -420,7 +440,9 @@ def aplicar(
         por_que = "Sugerido pela outra IA" + (f": {proposta.por_que}" if proposta.por_que else ".")
         ideia = f"gancho sugerido: {proposta.gancho}" if proposta.gancho else ""
         feito["posts"] += len(
-            _criar_post(destino, proposta.alvo, por_que, ideia, foco=proposta.foco)
+            _criar_post(
+                destino, proposta.alvo, por_que, ideia, foco=proposta.foco, isca=proposta.isca
+            )
         )
     for i, evento in enumerate(leitura.eventos):
         if i not in eventos or evento.alvo is None:
