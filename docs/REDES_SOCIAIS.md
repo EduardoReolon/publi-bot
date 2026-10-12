@@ -99,6 +99,81 @@ minimo, dias para julgar, taxas de referencia, quantas abordagens no Comeco,
 peso do placar coletivo, pesos da nota dos temas, orcamento, valores do teste
 e do amplificar. Valor igual ao padrao volta a seguir o padrao.
 
+### Foco de cada post — `focos.py`
+
+Todo post nasce com um **foco** (em `extras["foco"]`), que muda como ele e
+escrito e como e julgado:
+
+| Foco | Para quem | Como e escrito | Medido por | Impulso |
+|---|---|---|---|---|
+| alcance | quem ainda nao segue | tema amplo da dor, valor inteiro no post, feito para ser mandado a alguem | alcance (ou visualizacoes) | Alcance / visitas ao perfil |
+| engajamento | quem ja segue | opiniao clara e uma pergunta facil de responder | (comentarios + salvos + envios) / alcance | Engajamento |
+| site | levar ao artigo | mostra o problema e deixa no ar o que so o artigo responde | cliques (ou aberturas no site) / alcance | Trafego para o site |
+
+A conta precisa dos tres, numa **mistura que muda com a fase** (`focos.MISTURA`;
+Comeco 50/35/15, Tracao 35/35/30, Crescimento 40/25/35, Escala 25/25/50). O
+foco de um post sugerido e o que esta mais abaixo da mistura nas ultimas 3
+semanas (algoritmo, sem modelo); a outra IA pode fixar o foco na proposta (4o
+campo). O par A/B tem o mesmo foco.
+
+O post publicado e comparado **so com os do mesmo foco** (organicos): o cartao
+mostra "no foco alcance: entre os 25% melhores (de N)". Com menos de 3 para
+comparar, nao diz nada. Post de 48 h a 7 dias entre os 25% melhores do seu foco
+vira recomendacao **"Aproveitar"** na Estrategia, com o objetivo de impulso do
+foco ("feito para alcance, ficou entre os 25% melhores... se quiser aproveitar").
+
+### Iscas: oferta para quem comentar — `iscas.py`, `/redes/iscas/`
+
+"Comente QUERO e receba ...": o negocio cadastra o que pode oferecer (guia,
+checklist, conversa gratis de 15 minutos, aula), com a palavra, a resposta ao
+comentario (`{nome}`, `{link}`) e o link da entrega.
+
+- **Onde entra:** numa parte dos posts de **engajamento** (parametro
+  `iscas_por_cento`, padrao 50%), revezando a menos usada nas ultimas 3
+  semanas; a outra IA pode citar a isca pelo nome na proposta (5o campo), e a
+  pessoa pode trocar no post em revisao. Quem escreve recebe a instrucao; se a
+  palavra nao aparecer no texto, o PubliBot poe a chamada no fim.
+- **Reconhecer o pedido** (por isca): `todos` (qualquer comentario), `palavra`
+  (sem importar maiuscula, acento, pontuacao, emoji, plural) ou `aproximado`
+  (tambem erro de digitacao — `difflib`, 80% — e frases como "me manda",
+  "tenho interesse"; "sim", "eu" e so emoji ficam como **talvez**).
+- **Responder:** os posts com isca dos ultimos 10 dias tem os comentarios lidos
+  de 5 em 5 minutos (`publicar_posts`), e o pedido recebe a resposta publica ao
+  comentario, com o link rastreado `/redes/i/<chave>/` (conta os cliques). Com
+  "responder sozinho" desligado, ou no talvez, um clique no painel decide.
+  Mensagem no direct pede a permissao de mensagens da Meta (revisao do app).
+- **Painel:** por isca, posts, comentarios por post (contra os de engajamento
+  sem isca), pedidos, respondidos e cliques no link.
+- **Outra IA:** pedido de ideias com o negocio, as regras e as iscas que ja
+  existem com o resultado; as ideias coladas entram paradas, para por o link.
+- **O que o publico quer** (`desejos.py`, nos pedidos de iscas e de propostas):
+  do Google, os grupos de demanda do Radar com volume, as perguntas reais
+  ("as pessoas tambem perguntam", visitantes, YouTube) e as buscas que ja
+  trazem gente ao site (Search Console); do Instagram, o vislumbre possivel —
+  perguntas, relatos e reclamacoes nos comentarios (sem nomes), os posts que
+  mais engajaram e o que outras contas do nicho oferecem em troca de
+  comentario ("Comente GUIA...", lido das legendas de referencia).
+
+### Publico do impulso — `publicos.py`, `/redes/publicos/`
+
+A lista de interesses da Meta (direcionamento detalhado) so sai pela API com
+`ads_management`, que pede revisao do app e serve para CRIAR anuncios — o
+PubliBot nao cria. Entao:
+
+- **Publicos salvos** por conta (`PublicoDeImpulso`: nome e "como marcar" —
+  local, idade, interesses). Cada impulso (`Anuncio.publico`) diz qual usou.
+- **Resultado por publico**: gasto, cliques e alcance dos impulsos lidos da
+  Meta (API ou planilha). Custo por clique e por mil pessoas.
+- A recomendacao de impulso sugere **o publico salvo que rendeu mais barato no
+  foco do post** (alcance: por mil pessoas; os outros: por clique); sem
+  resultado, a regiao do negocio e o assunto.
+- **Pedido para outra IA** (link "qual publico usar?" no post): leva negocio,
+  regioes, o post (texto, laminas), o foco e os publicos ja usados com o
+  resultado; pede so interesses que existem na Meta e lembra que interesses de
+  saude e outros sensiveis nao sao aceitos desde 2022. A resposta colada
+  (`PUBLICOS:` nome | local | idade | interesses | por que) vira publico salvo;
+  nome repetido reaproveita o existente.
+
 ## O caminho de um post
 
 ```
@@ -412,6 +487,13 @@ texto corrido para mandar ao dono da conta.
 
 ## Gasto com anuncios — `anuncios.py`, `redes/meta_anuncios.py`, `planilhas.py`
 
+Cada impulso e um `Anuncio` ligado ao post — um post pode ter varios, com
+valores, datas e publicos diferentes; o post guarda so a soma
+(`custo_impulso`). Sem a API nem a planilha, o impulso e **digitado** no post
+(valor, inicio, dias, publico; quantos quiser). Quando a API ou a planilha
+traz o impulso de verdade, o digitado do mesmo post que comeca no periodo dele
+(com 2 dias de folga) sai, e o publico escolhido passa para o lido.
+
 Meta (Instagram): dois caminhos para o mesmo lugar, porque a permissao de ler
 anuncios depende de uma revisao da Meta que pode nao sair (ou ser retirada um
 dia):
@@ -517,7 +599,7 @@ em cada rede e o teste que falta** — faca com um post de teste e confira.
 | Tarefa | Quando | O que faz |
 |---|---|---|
 | `sugerir-posts` | 1x/dia | escolha do dia (com "sugerir sozinho") |
-| `publicar-posts` | 5 em 5 min | publica os aprovados vencidos (contas conectadas) e responde comentarios com resposta aprovada |
+| `publicar-posts` | 5 em 5 min | publica os aprovados vencidos (contas conectadas), responde comentarios com resposta aprovada e quem pediu a isca (posts com isca dos ultimos 10 dias) |
 | `medir-posts` | 1x/dia | resultado, comentarios, seguidores, referencias do nicho (semanal), proximo lote do historico, gasto com anuncios (API), placar, mistura artigos x fotos e fotos que faltam descrever |
 | `recalcular-temas` | 1x/dia | temas entre os artigos, com a nota |
 | `placar-coletivo` | 1x/dia | soma do placar das abordagens entre todos os clientes |

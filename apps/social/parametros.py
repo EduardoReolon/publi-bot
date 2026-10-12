@@ -165,6 +165,16 @@ PARAMETROS = [
         "Depois do Comeco: so o que ja foi bem no organico ganha impulso.",
         "Impulso pago",
     ),
+    # -- Iscas -----------------------------------------------------------------------------------
+    Parametro(
+        "iscas_por_cento",
+        "Posts de engajamento com oferta para quem comentar (%)",
+        50,
+        "Parte dos posts de engajamento termina com 'comente QUERO e receba...', revezando as "
+        "iscas ativas. Em todo post cansa o publico e parece propaganda; 0 desliga.",
+        "Iscas",
+        inteiro=True,
+    ),
     # -- Fotos e mistura -------------------------------------------------------------------------
     Parametro(
         "nitidez_minima",

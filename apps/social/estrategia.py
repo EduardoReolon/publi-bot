@@ -177,7 +177,7 @@ def gasto_do_mes() -> Decimal:
 
 @dataclass
 class Recomendacao:
-    tipo: str  # "teste" | "amplificar" | "gerar_par"
+    tipo: str  # "teste" | "amplificar" | "gerar_par" | "aproveitar"
     titulo: str
     por_que: str
     valor: float = 0
@@ -188,7 +188,20 @@ class Recomendacao:
     tema: Tema | None = None
 
 
-def _publico_sugerido(destino: Destino, tema_ou_titulo: str) -> str:
+def _publico_sugerido(destino: Destino, tema_ou_titulo: str, foco: str = "") -> str:
+    """O publico salvo que rendeu mais barato (no foco, se houver); sem
+    resultado medido, a regiao do negocio e o assunto."""
+    from apps.social import publicos
+
+    achado = publicos.melhor(destino, foco) or publicos.melhor(destino)
+    if achado is not None:
+        p = achado["publico"]
+        custo = (
+            f"R$ {achado['custo_por_clique']} por clique"
+            if achado["custo_por_clique"]
+            else f"R$ {achado['custo_por_mil']} por mil pessoas"
+        )
+        return f'Reuse o publico salvo "{p.nome}" ({custo} em {achado["impulsos"]} impulso(s)).'
     regioes = fontes.negocio().get("regioes") or []
     onde = ", ".join(regioes[:3]) or "a regiao onde o negocio atende (ou o Brasil)"
     return f"Local: {onde}. Interesses ligados a: {tema_ou_titulo[:80]}."
@@ -251,7 +264,7 @@ def impulsos(destino: Destino, config: ConfiguracaoSocial | None = None) -> list
                         tema=tema,
                     )
                 )
-        return saida
+        return saida + _aproveitar(destino, config, saida)
 
     # Depois do Comeco: amplificar o que ja foi bem nas primeiras 48 horas.
     minimo = parametros.valor("alcance_minimo", config)
@@ -270,7 +283,7 @@ def impulsos(destino: Destino, config: ConfiguracaoSocial | None = None) -> list
         is not None
     ]
     if len(historico) < 4:
-        return saida
+        return saida + _aproveitar(destino, config, saida)
     corte = sorted(historico)[int(len(historico) * 0.75)]
     for post in recentes:
         v = experimentos.valor(post, ConfiguracaoSocial.Metrica.TAXA, alcance_minimo=minimo)
@@ -293,6 +306,45 @@ def impulsos(destino: Destino, config: ConfiguracaoSocial | None = None) -> list
                 posts=[post],
             )
         )
+    return saida + _aproveitar(destino, config, saida)
+
+
+def _aproveitar(destino: Destino, config, ja: list) -> list[Recomendacao]:
+    """O post que foi bem NO SEU FOCO (entre os 25% melhores da conta com o
+    mesmo foco), nos primeiros dias: impulsionar com o objetivo do foco."""
+    from apps.social import focos
+
+    agora = timezone.now()
+    recomendados = {p.pk for r in ja for p in r.posts}
+    saida = []
+    for post in destino.posts.filter(
+        situacao=Post.Situacao.PUBLICADO,
+        impulsionado=False,
+        publicado_em__gte=agora - timedelta(days=7),
+        publicado_em__lte=agora - timedelta(hours=48),
+    ):
+        if post.pk in recomendados:
+            continue
+        d = focos.desempenho(post)
+        if not d or d.get("posicao") is None or d["posicao"] < 0.75:
+            continue
+        info = focos.FOCOS[d["foco"]]
+        saida.append(
+            Recomendacao(
+                tipo="aproveitar",
+                titulo=f"Aproveitar: {post.artigo_titulo[:80]}",
+                por_que=(
+                    f"Feito para {info['nome'].lower()}, este post ficou entre os 25% melhores "
+                    f"da conta nisso (contra {d['comparados']} posts do mesmo foco). Se quiser "
+                    "aproveitar, impulsione com o objetivo do foco."
+                ),
+                valor=parametros.valor("valor_amplificar", config),
+                dias=3,
+                objetivo=info["impulso"],
+                publico=_publico_sugerido(destino, post.artigo_titulo, d["foco"]),
+                posts=[post],
+            )
+        )
     return saida
 
 
@@ -310,6 +362,8 @@ def formatos_do_nicho(destino: Destino) -> list[dict]:
 
 
 def plano(destino: Destino) -> dict:
+    from apps.social import focos
+
     """Tudo o que a pagina de estrategia mostra para uma conta."""
     config = ConfiguracaoSocial.carregar()
     etapa = fase(destino, config)
@@ -341,6 +395,10 @@ def plano(destino: Destino) -> dict:
         "destino": destino,
         "fase": etapa,
         "info": FASES[etapa],
+        "mistura": [
+            (focos.FOCOS[f]["nome"], round(parte * 100))
+            for f, parte in focos.MISTURA[etapa].items()
+        ],
         "proxima": FASES[proxima]["nome"] if proxima else "",
         "faltam": max(int(limite_proxima) - (destino.seguidores or 0), 0) if proxima else 0,
         "crescimento": crescimento_semanal(destino),

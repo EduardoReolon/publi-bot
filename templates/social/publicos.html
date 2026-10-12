@@ -1,0 +1,74 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Publicos do impulso" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+  <h2>{% blocktranslate with n=destino.nome %}Publicos do impulso — {{ n }}{% endblocktranslate %}</h2>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      O publico que voce marca no Gerenciador de Anuncios (local, idade, interesses). Salve os
+      que usar e diga, em cada post impulsionado, qual foi: o PubliBot soma o resultado por
+      publico e passa a sugerir o que rendeu mais barato no foco do post. A lista de interesses
+      da Meta nao sai pela API sem a permissao de criar anuncios (que pede revisao do app pela
+      Meta); por isso o publico novo vem de voce ou de outra IA, com o pedido abaixo.
+    {% endblocktranslate %}
+  </p>
+
+  {% if post %}
+    <section class="secao">
+      <h3>{% blocktranslate with t=post.artigo_titulo|default:post.gancho|truncatechars:90 %}Publico para: {{ t }}{% endblocktranslate %}</h3>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          1. Copie o pedido e cole no Claude, ChatGPT ou Gemini (com pesquisa na web, se tiver: ele
+          confere se os interesses existem na lista da Meta). Ele leva o negocio, as regioes, o
+          post, o foco e os publicos ja usados com o resultado. 2. Cole a resposta aqui: os
+          publicos viram opcoes ao registrar o impulso.
+        {% endblocktranslate %}
+      </p>
+      <div class="acoes"><button type="button" class="botao" data-copiar="pedido-publico">{% translate "Copiar para outra IA" %}</button></div>
+      <details><summary>{% translate "Ver o texto" %}</summary>
+        <textarea id="pedido-publico" readonly rows="14" style="width:100%">{{ pedido }}</textarea>
+      </details>
+      <form method="post" style="margin-top:.8rem">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="resposta">
+        <label for="resposta-publico">{% translate "Cole aqui a resposta inteira" %}</label>
+        <textarea id="resposta-publico" name="resposta" rows="5" style="width:100%" required></textarea>
+        <div class="acoes"><button type="submit" class="botao secundario">{% translate "Salvar os publicos" %}</button></div>
+      </form>
+    </section>
+  {% endif %}
+
+  <section class="secao">
+    <h3>{% translate "Publicos salvos e o que renderam" %}</h3>
+    <div class="rolagem"><table>
+      <thead><tr><th>{% translate "Publico" %}</th><th>{% translate "Como marcar" %}</th><th class="numero">{% translate "Impulsos" %}</th><th>{% translate "Focos" %}</th><th class="numero">{% translate "Por clique" %}</th><th class="numero">{% translate "Por mil pessoas" %}</th><th></th></tr></thead>
+      <tbody>
+        {% for l in quadro %}
+          <tr>
+            <td><strong>{{ l.publico.nome }}</strong>{% if l.publico.origem == 'outra_ia' %} <span class="selo">{% translate "outra IA" %}</span>{% endif %}{% if l.publico.por_que %}<div class="ajuda">{{ l.publico.por_que }}</div>{% endif %}</td>
+            <td class="ajuda" style="white-space:pre-line">{{ l.publico.descricao }}</td>
+            <td class="numero">{{ l.impulsos }}</td>
+            <td>{{ l.focos|join:", "|default:"—" }}</td>
+            <td class="numero">{% if l.custo_por_clique %}R$ {{ l.custo_por_clique }}{% else %}—{% endif %}</td>
+            <td class="numero">{% if l.custo_por_mil %}R$ {{ l.custo_por_mil }}{% else %}—{% endif %}</td>
+            <td><form method="post">{% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}">{% if post %}<input type="hidden" name="post" value="{{ post.pk }}">{% endif %}<input type="hidden" name="acao" value="apagar"><input type="hidden" name="publico" value="{{ l.publico.pk }}"><button type="submit" class="botao discreto pequeno">{% translate "Tirar" %}</button></form></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="vazio">{% translate "Nenhum publico salvo ainda." %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="ajuda">{% translate "Custo por clique e por mil pessoas saem do anuncio ligado ao post (Conectar anuncios ou a planilha do Gerenciador); sem ele, so o valor digitado conta." %}</p>
+    <details>
+      <summary>{% translate "Salvar um publico que voce ja usa" %}</summary>
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}">{% if post %}<input type="hidden" name="post" value="{{ post.pk }}">{% endif %}<input type="hidden" name="acao" value="novo">
+        <label>{% translate "Nome" %} <input type="text" name="nome" maxlength="80" required></label>
+        <label>{% translate "Como marcar (local, idade, interesses)" %} <textarea name="descricao" rows="3" style="width:100%"></textarea></label>
+        <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Salvar" %}</button></div>
+      </form>
+    </details>
+  </section>
+{% endblock %}

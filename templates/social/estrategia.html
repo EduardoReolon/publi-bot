@@ -83,6 +83,9 @@
       <a href="{% url 'social:inicio' %}?aba=revisar">{% translate "Revisar" %}</a>
     </p>
     <p class="ajuda"><strong>{% translate "Medir:" %}</strong> {{ p.info.medir }}</p>
+    <p class="ajuda"><strong>{% translate "Focos dos posts nesta fase:" %}</strong>
+      {% for nome, parte in p.mistura %}<span class="selo">{{ parte }}% {{ nome }}</span> {% endfor %}
+      — {% translate "o PubliBot escolhe o foco de cada post sugerido pelo que esta faltando nas ultimas 3 semanas, e mede cada um pelo seu foco." %}</p>
   </section>
 
   {# --- Temas ------------------------------------------------------------------- #}
@@ -150,6 +153,7 @@
               {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="impulso">
               <span>{{ post.abordagem|default:"" }} — {% if post.url_remota %}<a href="{{ post.url_remota }}" target="_blank" rel="noopener noreferrer">{% translate "abrir o post" %}</a>{% else %}{% translate "ainda nao publicado" %}{% endif %}</span>
               <input type="text" name="valor" value="{{ r.valor|floatformat:0 }}" style="width:6rem">
+              {% include "social/_publico_do_impulso.html" with selecionado=None %}
               <button type="submit" class="botao secundario pequeno">{% translate "Registrei o impulso" %}</button>
             </form>
           {% endfor %}

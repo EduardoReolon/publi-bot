@@ -5,6 +5,8 @@
       <strong>{{ post.destino.nome }}</strong> <span class="selo">{{ post.destino.rede_nome }}</span>
       <span class="selo {% if post.situacao == 'rascunho' %}alerta{% elif post.situacao == 'publicado' %}ok{% elif post.situacao == 'falhou' %}ruim{% else %}espera{% endif %}">{{ post.get_situacao_display }}</span>
       {% if post.abordagem %}<span class="selo" title="{% translate 'abordagem' %}">{{ post.abordagem.nome }}</span>{% endif %}
+      {% if post.isca %}<span class="selo ok" title="{% translate 'oferta para quem comentar' %}">{% translate "isca" %}: {{ post.isca.nome|truncatechars:40 }}{% if post.isca.palavra %} ({{ post.isca.palavra }}){% endif %}</span>{% endif %}
+      {% if post.extras.foco %}<span class="selo espera" title="{% translate 'para que o post existe: alcance (quem nao segue), engajamento (quem ja segue) ou site (levar ao artigo)' %}">{% translate "foco" %}: {{ post.extras.foco }}</span>{% endif %}
       {% if post.tema_id %}<span class="selo espera" title="{{ post.tema.titulo }}">{% translate "tema" %}</span>{% endif %}
       {% if post.impulsionado %}<span class="selo alerta">{% translate "impulsionado" %} R$ {{ post.custo_impulso }}</span>{% endif %}
       {% if post.variante_de_id or post.variantes.exists %}<span class="selo" title="{% translate 'ha outra versao deste artigo para esta conta: aprove a que preferir' %}">{% translate "versao A/B" %}</span>{% endif %}
@@ -101,6 +103,13 @@
             {% for a in abordagens %}{% if a.pk != post.abordagem_id %}<option value="{{ a.pk }}">{{ a.nome }}</option>{% endif %}{% endfor %}
           </select>
           <button type="submit" name="acao" value="reescrever" class="botao secundario">{% translate "Reescrever" %}</button>
+          {% if iscas or post.isca %}
+            <select name="isca" style="width:auto" title="{% translate 'oferta para quem comentar' %}">
+              <option value="">{% translate "sem oferta para quem comentar" %}</option>
+              {% for i in iscas %}<option value="{{ i.pk }}"{% if i.pk == post.isca_id %} selected{% endif %}>{{ i.nome }}{% if i.palavra %} ({{ i.palavra }}){% endif %}</option>{% endfor %}
+            </select>
+            <button type="submit" name="acao" value="isca" class="botao discreto">{% translate "Trocar oferta" %}</button>
+          {% endif %}
           <button type="submit" name="acao" value="descartar" class="botao discreto">{% translate "Descartar" %}</button>
         </div>
       </form>
@@ -186,16 +195,51 @@
       {% if post.metricas.curtidas is not None %}<span class="selo">{{ post.metricas.curtidas }} {% translate "curtidas" %}</span>{% endif %}
       {% if post.metricas.comentarios is not None %}<span class="selo">{{ post.metricas.comentarios }} {% translate "comentarios" %}</span>{% endif %}
       {% if post.metricas.alcance is not None %}<span class="selo">{{ post.metricas.alcance }} {% translate "alcance" %}</span>{% endif %}
+      {% if post.metricas.visualizacoes is not None %}<span class="selo">{{ post.metricas.visualizacoes }} {% translate "visualizacoes" %}</span>{% endif %}
+      {% if post.metricas.compartilhamentos %}<span class="selo ok">{{ post.metricas.compartilhamentos }} {% translate "envios" %}</span>{% endif %}
+      {% if post.metricas.salvos %}<span class="selo ok">{{ post.metricas.salvos }} {% translate "salvos" %}</span>{% endif %}
+      {% if post.metricas.visitas_ao_perfil is not None %}<span class="selo">{{ post.metricas.visitas_ao_perfil }} {% translate "visitas ao perfil" %}</span>{% endif %}
+      {% if post.metricas.seguidores_ganhos is not None %}<span class="selo">{{ post.metricas.seguidores_ganhos }} {% translate "seguidores ganhos" %}</span>{% endif %}
+      {% with d=post.no_foco %}{% if d.posicao is not None %}<span class="selo {% if d.posicao >= 0.75 %}ok{% elif d.posicao < 0.25 %}ruim{% endif %}" title="{% blocktranslate with n=d.comparados %}contra {{ n }} posts organicos da conta com o mesmo foco{% endblocktranslate %}">{% translate "no foco" %} {{ d.foco }}: {% if d.posicao >= 0.75 %}{% translate "entre os 25% melhores" %}{% elif d.posicao < 0.25 %}{% translate "entre os 25% piores" %}{% else %}{% translate "na media" %}{% endif %}</span>{% endif %}{% endwith %}
       {% if post.sucesso is True %}<span class="selo ok">{% translate "funcionou" %}</span>{% elif post.sucesso is False %}<span class="selo">{% translate "abaixo da mediana" %}</span>{% endif %}
     </div>
-    {% if not post.impulsionado and post.destino.rede != 'gmn' %}
-      <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes">
-        {% csrf_token %}<input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="impulso">
-        <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
-        <input type="text" name="valor" placeholder="R$" style="width:6rem">
-        <button type="submit" class="botao discreto pequeno">{% translate "Registrei um impulso pago" %}</button>
-        <a class="ajuda" href="{% url 'social:estrategia' %}?destino={{ post.destino_id }}">{% translate "o que impulsionar?" %}</a>
-      </form>
+    {% with s=post.metricas.site %}{% if s %}
+      <div class="ajuda" style="margin:.3rem 0">
+        <strong>{% blocktranslate with rede=post.destino.nome %}No site, vindos de {{ rede }}:{% endblocktranslate %}</strong>
+        {{ s.aberturas }} {% translate "aberturas" %} · {{ s.leram }} {% translate "leram de verdade (10 s ou mais)" %} · {% translate "em media" %} {{ s.segundos_por_leitura }} s {% translate "ativos" %} · {{ s.metade }} {% translate "passaram da metade" %} · {{ s.fim }} {% translate "chegaram ao fim" %}
+      </div>
+    {% endif %}{% endwith %}
+    {% if post.destino.rede != 'gmn' %}
+      <div class="ajuda" style="margin:.3rem 0">
+        {% if post.impulsionado %}<span class="selo alerta">{% translate "impulsionado" %}{% if post.custo_impulso %} · R$ {{ post.custo_impulso }} {% translate "no total" %}{% endif %}</span>{% endif %}
+        {% for a in post.anuncios.all %}
+          <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes" style="margin:.2rem 0">
+            {% csrf_token %}<input type="hidden" name="anuncio" value="{{ a.pk }}">
+            <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+            <span>R$ {{ a.gasto }}{% if a.inicio %} · {{ a.inicio|date:"d/m" }}{% if a.dias %} {% blocktranslate count n=a.dias %}por {{ n }} dia{% plural %}por {{ n }} dias{% endblocktranslate %}{% endif %}{% endif %}{% if a.objetivo %} · {{ a.objetivo }}{% endif %}
+              {% if a.origem == 'manual' %}<span class="selo">{% translate "digitado" %}</span>{% else %} · {{ a.cliques|default:"—" }} {% translate "cliques no link" %}, {{ a.alcance|default:"—" }} {% translate "alcance" %}{% if a.custo_por_clique %} ({% translate "custo por clique" %} R$ {{ a.custo_por_clique }}){% endif %} <span class="selo ok">{{ a.get_origem_display }}</span>{% endif %}</span>
+            {% include "social/_publico_do_impulso.html" with selecionado=a.publico_id %}
+            <button type="submit" name="acao" value="publico_do_impulso" class="botao discreto pequeno">{% translate "Salvar publico" %}</button>
+            {% if a.origem == 'manual' %}<button type="submit" name="acao" value="apagar_impulso" class="botao discreto pequeno">{% translate "Tirar" %}</button>{% endif %}
+          </form>
+        {% endfor %}
+        {% if post.impulsionado and not post.destino.anuncios_conta_id %}
+          <p>{% translate "Para os impulsos entrarem sozinhos, com cliques e alcance: Redes > Diagnostico > Conectar anuncios (ou envie a planilha do Gerenciador). O lido da Meta substitui o digitado no mesmo periodo." %}</p>
+        {% endif %}
+      </div>
+      <details>
+        <summary class="ajuda">{% if post.impulsionado %}{% translate "Registrar outro impulso" %}{% else %}{% translate "Registrei um impulso pago" %}{% endif %}</summary>
+        <form method="post" action="{% url 'social:acao_na_estrategia' %}" class="acoes">
+          {% csrf_token %}<input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="impulso">
+          <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+          <label>{% translate "Valor" %} <input type="text" name="valor" placeholder="R$" style="width:6rem" required></label>
+          <label>{% translate "Inicio" %} <input type="date" name="inicio" style="width:auto"></label>
+          <label>{% translate "Dias" %} <input type="number" name="dias" min="1" max="90" style="width:5rem"></label>
+          {% include "social/_publico_do_impulso.html" with selecionado=None %}
+          <button type="submit" class="botao discreto pequeno">{% translate "Registrar" %}</button>
+          <a class="ajuda" href="{% url 'social:estrategia' %}?destino={{ post.destino_id }}">{% translate "o que impulsionar?" %}</a>
+        </form>
+      </details>
     {% endif %}
   {% endif %}
 

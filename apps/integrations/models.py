@@ -498,6 +498,8 @@ class LeituraDoDia(models.Model):
     # Soma do tempo ativo (aba visivel e interacao recente), em segundos.
     engaged_seconds = models.PositiveIntegerField(_("segundos ativos"), default=0)
     read_to_end = models.PositiveIntegerField(_("chegaram ao fim"), default=0)
+    # Rolaram pelo menos ate a metade do texto (biblioteca 1.3.0+).
+    half_read = models.PositiveIntegerField(_("chegaram a metade"), default=0)
     cta_views = models.PositiveIntegerField(_("viram a chamada"), default=0)
     cta_clicks = models.PositiveIntegerField(_("clicaram na chamada"), default=0)
 
@@ -513,6 +515,39 @@ class LeituraDoDia(models.Model):
 
     def __str__(self) -> str:
         return f"{self.remote_id} {self.dia}"
+
+
+class LeituraPorOrigem(models.Model):
+    """A leitura do dia separada por onde a pessoa entrou no site nesta visita:
+    o canal e a fonte (`utm_source` do link, ou quem mandou: instagram,
+    google...). E o que diz, por post de rede social, quantos vieram, quanto
+    leram e ate onde rolaram. Biblioteca 1.3.0+; site antigo nao manda."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="leituras_por_origem")
+    remote_id = models.CharField(_("id remoto"), max_length=120, db_index=True)
+    dia = models.DateField(_("dia"))
+    canal = models.CharField(_("canal"), max_length=10)
+    fonte = models.CharField(_("fonte"), max_length=40, blank=True)
+    views = models.PositiveIntegerField(_("aberturas"), default=0)
+    engaged_views = models.PositiveIntegerField(_("leituras de verdade"), default=0)
+    engaged_seconds = models.PositiveIntegerField(_("segundos ativos"), default=0)
+    read_to_end = models.PositiveIntegerField(_("chegaram ao fim"), default=0)
+    half_read = models.PositiveIntegerField(_("chegaram a metade"), default=0)
+
+    class Meta:
+        verbose_name = _("leitura por origem")
+        verbose_name_plural = _("leituras por origem")
+        ordering = ["-dia"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["site", "remote_id", "dia", "canal", "fonte"],
+                name="uniq_leitura_por_origem",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.remote_id} {self.dia} {self.canal}/{self.fonte}"
 
 
 class ConversaoDoSite(models.Model):

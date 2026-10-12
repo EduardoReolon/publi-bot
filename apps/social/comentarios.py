@@ -95,6 +95,10 @@ def ler(post: Post, *, http=None, criar_perguntas: bool = True) -> int:
                 comentario.save(update_fields=["respondido_em"])
             continue
         novos += 1
+        if criar_perguntas:
+            from apps.social import iscas
+
+            iscas.avaliar(comentario)
         if criar_perguntas and comentario.tipo == Comentario.Tipo.PERGUNTA and not lido.respondido:
             comentario.pergunta_id = fontes.criar_pergunta(
                 comentario.texto, f"rede:{post.destino.rede}:{comentario.id_remoto}"

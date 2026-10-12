@@ -12,11 +12,15 @@ anuncios depende de uma revisao da Meta que pode nao sair (ou ser retirada):
   aprovacao a parte (Advertising API; token de desenvolvedor do Google Ads)
   que nao compensa para ler o gasto de uma conta pequena.
 
-Depois de qualquer um, `vincular` liga cada anuncio ao post: pelo id do post
+* **digitado** — na tela do post, um impulso por vez (valor, inicio, dias,
+  publico), para quem nao conectou nem envia a planilha.
+
+Depois da API ou da planilha, `vincular` liga cada anuncio ao post: pelo id do post
 do Instagram (API) ou, na planilha, pelo comeco da legenda — o nome que a
 Meta da ao impulso e "Publicacao do Instagram: <comeco da legenda>"; no
 LinkedIn, o texto do anuncio patrocinado e o do post. O post ligado fica
-como impulsionado, com o valor somado. Campanha do Google Ads nao e de um
+como impulsionado, com o valor somado; o impulso digitado no mesmo periodo
+sai (o lido da Meta e o mesmo, com os numeros certos). Campanha do Google Ads nao e de um
 post (anuncio de busca ou do mapa): entra no gasto da conta, sem post.
 """
 
@@ -24,7 +28,8 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+import uuid
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db.models import Min, Sum
@@ -252,10 +257,47 @@ def vincular(destino: Destino) -> int:
             anuncio.post = post
             anuncio.save(update_fields=["post"])
             ligados += 1
-    for post_id in set(destino.anuncios.exclude(post=None).values_list("post_id", flat=True)):
+    lidos = destino.anuncios.exclude(post=None).exclude(origem=Anuncio.Origem.MANUAL)
+    for anuncio in lidos:
+        _trocar_digitados(anuncio)
+    somar(set(destino.anuncios.exclude(post=None).values_list("post_id", flat=True)))
+    return ligados
+
+
+# Folga entre a data digitada e a que a Meta registra (fuso, "comecei amanha").
+FOLGA = timedelta(days=2)
+
+
+def _trocar_digitados(anuncio: Anuncio) -> None:
+    """O impulso digitado que cai no periodo de um lido da Meta (do mesmo post)
+    e o mesmo impulso: sai, e o publico escolhido passa para o lido."""
+    if not anuncio.inicio:
+        return
+    fim = anuncio.fim or anuncio.inicio
+    digitados = Anuncio.objects.filter(
+        post_id=anuncio.post_id,
+        origem=Anuncio.Origem.MANUAL,
+        inicio__gte=anuncio.inicio - FOLGA,
+        inicio__lte=fim + FOLGA,
+    )
+    for digitado in digitados:
+        if anuncio.publico_id is None and digitado.publico_id:
+            anuncio.publico_id = digitado.publico_id
+            anuncio.save(update_fields=["publico"])
+        digitado.delete()
+
+
+def somar(post_ids) -> None:
+    """Grava no post a soma dos impulsos (gasto e o primeiro inicio)."""
+    for post_id in post_ids:
         soma = Anuncio.objects.filter(post_id=post_id).aggregate(
             gasto=Sum("gasto"), inicio=Min("inicio")
         )
+        if soma["gasto"] is None:
+            Post.objects.filter(pk=post_id).update(
+                impulsionado=False, custo_impulso=None, impulso_em=None
+            )
+            continue
         quando = (
             timezone.make_aware(datetime.combine(soma["inicio"], datetime.min.time()))
             if soma["inicio"]
@@ -264,4 +306,30 @@ def vincular(destino: Destino) -> int:
         Post.objects.filter(pk=post_id).update(
             impulsionado=True, custo_impulso=soma["gasto"], impulso_em=quando
         )
-    return ligados
+
+
+def registrar(
+    post: Post,
+    valor: Decimal,
+    *,
+    inicio: date | None = None,
+    dias: int | None = None,
+    publico=None,
+    objetivo: str = "",
+) -> Anuncio:
+    """Um impulso digitado na tela. Pode haver varios no mesmo post."""
+    inicio = inicio or timezone.localdate()
+    anuncio = Anuncio.objects.create(
+        destino=post.destino,
+        id_remoto=f"manual:{uuid.uuid4().hex}",
+        nome=f"Impulso: {(post.gancho or post.artigo_titulo)[:280]}",
+        objetivo=objetivo[:60],
+        gasto=valor,
+        inicio=inicio,
+        fim=inicio + timedelta(days=dias - 1) if dias else None,
+        post=post,
+        publico=publico,
+        origem=Anuncio.Origem.MANUAL,
+    )
+    somar([post.pk])
+    return anuncio

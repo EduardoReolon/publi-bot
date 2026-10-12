@@ -178,6 +178,51 @@ def demanda(limite: int = 300) -> list[dict]:
     ]
 
 
+def o_que_procuram(limite: int = 15) -> dict:
+    """O que o publico busca no Google, para os pedidos a outra IA:
+    {"grupos": [(rotulo, volume)], "perguntas": [texto], "consultas": [(consulta,
+    impressoes)]} — grupos de demanda do Radar (por volume), perguntas reais
+    ("as pessoas tambem perguntam", visitantes, YouTube) e as buscas que ja
+    trazem gente ao site (ultima coleta do Search Console)."""
+    from django.db.models import Sum
+
+    from apps.radar.models import ColetaDoConsole, GrupoDeDemanda, SinalDeDemanda
+
+    grupos = (
+        GrupoDeDemanda.objects.exclude(situacao="descartado")
+        .exclude(avaliacao_ia="ruim")
+        .filter(volume_total__gt=0)
+        .order_by("-volume_total")[:limite]
+    )
+    perguntas = (
+        SinalDeDemanda.objects.filter(situacao="ativo", fonte__in=["paa", "visitante", "youtube"])
+        .order_by("-volume", "-criado_em")
+        .values_list("texto", flat=True)[: limite * 3]
+    )
+    coleta = ColetaDoConsole.objects.order_by("-coletada_em").first()
+    consultas = (
+        list(
+            coleta.linhas_set.values("consulta")
+            .annotate(n=Sum("impressoes"))
+            .order_by("-n")
+            .values_list("consulta", "n")[:limite]
+        )
+        if coleta
+        else []
+    )
+    vistas, unicas = set(), []
+    for texto in perguntas:
+        chave = texto.strip().lower()
+        if chave not in vistas:
+            vistas.add(chave)
+            unicas.append(texto.strip())
+    return {
+        "grupos": [(g.rotulo, g.volume_total) for g in grupos],
+        "perguntas": unicas[:limite],
+        "consultas": consultas,
+    }
+
+
 def endereco_do_site() -> str:
     """A pagina inicial do site do cliente (destino de post sem artigo)."""
     alvo = site()
@@ -198,6 +243,46 @@ def conversoes_pelas_redes(remote_id: str, desde) -> int:
         .filter(Q(canal_de_entrada="social") | Q(canal_final="social"))
         .count()
     )
+
+
+# A fonte (utm_source, ou quem mandou) com que a visita de cada rede chega ao
+# site. O link do post leva utm_source=<rede>; sem ele (o anuncio, o link na
+# bio aberto fora do PubliBot), o site reconhece a rede por quem mandou.
+FONTES_DA_REDE = {
+    "instagram": ("instagram", "ig"),
+    "linkedin": ("linkedin",),
+    "gmn": ("gmn",),
+}
+
+
+def leitura_vinda_da_rede(remote_id: str, rede: str, desde) -> dict:
+    """Quem veio desta rede ao artigo, desde a data, contado pelo site:
+    aberturas, quantos leram de verdade (10 s+), o tempo ativo medio, quantos
+    passaram da metade e quantos chegaram ao fim. Vazio sem dado (site antigo)."""
+    from django.db.models import Sum
+
+    from apps.integrations.models import LeituraPorOrigem
+
+    if not remote_id:
+        return {}
+    soma = LeituraPorOrigem.objects.filter(
+        remote_id=remote_id, dia__gte=desde, fonte__in=FONTES_DA_REDE.get(rede, (rede,))
+    ).aggregate(
+        aberturas=Sum("views"),
+        leram=Sum("engaged_views"),
+        segundos=Sum("engaged_seconds"),
+        metade=Sum("half_read"),
+        fim=Sum("read_to_end"),
+    )
+    if not soma["aberturas"]:
+        return {}
+    return {
+        "aberturas": soma["aberturas"],
+        "leram": soma["leram"] or 0,
+        "segundos_por_leitura": round((soma["segundos"] or 0) / soma["aberturas"]),
+        "metade": soma["metade"] or 0,
+        "fim": soma["fim"] or 0,
+    }
 
 
 # -- Modelo de linguagem e vetores -------------------------------------------------

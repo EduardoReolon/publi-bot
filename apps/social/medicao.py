@@ -29,6 +29,11 @@ def medir(post: Post, *, http=None) -> dict:
         metricas["conversoes"] = fontes.conversoes_pelas_redes(
             artigo.remote_id, post.publicado_em.date()
         )
+        site = fontes.leitura_vinda_da_rede(
+            artigo.remote_id, post.destino.rede, post.publicado_em.date()
+        )
+        if site:
+            metricas["site"] = site
     r = rede(post.destino.rede)
     if r.publicador is not None and post.id_remoto and post.destino.conectado:
         try:

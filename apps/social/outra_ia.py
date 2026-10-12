@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 from django.utils import timezone
 
-from apps.social import experimentos, fontes
+from apps.social import experimentos, focos, fontes
 from apps.social.models import Abordagem, ConfiguracaoSocial, Destino, Post, Tema
 from apps.social.redes import rede
 from core.resposta_ia import itens, ler_blocos
@@ -70,8 +70,10 @@ Quando eu pedir os blocos, responda SO neles, nesta ordem, e termine com FIM
 (a resposta volta para o sistema, que a le sozinho):
 
 PROPOSTAS:
-- codigo | gancho sugerido (ate 15 palavras) | por que, em ate 15 palavras
-  (ate {max_propostas}, na ordem: a primeira e a que eu deveria postar primeiro)
+- codigo | gancho sugerido (ate 15 palavras) | por que, em ate 15 palavras | foco | isca
+  (ate {max_propostas}, na ordem: a primeira e a que eu deveria postar primeiro;
+  foco = alcance, engajamento ou site — ver FOCOS abaixo; isca = o nome exato de
+  uma OFERTA PARA QUEM COMENTA da lista, quando couber, ou vazio)
 ABORDAGENS:
 - Nome curto: como escrever com ela, em 2 a 4 frases (e uma instrucao para
   quem escreve o post). Ate {max_abordagens}: jeitos que faltam, ou a versao
@@ -82,6 +84,15 @@ EVENTOS:
 COMENTARIOS:
 curto: o que voce acha da estrategia e perguntas para mim.
 FIM
+
+FOCOS (cada post tem um; a conta precisa dos tres, na mistura da fase dela):
+- alcance: para quem AINDA NAO segue — tema amplo da dor, valor inteiro no
+  post, feito para ser mandado a alguem. E o que traz seguidor.
+- engajamento: para quem ja segue — opiniao clara e uma pergunta facil de
+  responder; vale "salve para depois".
+- site: para levar ao artigo — mostra o problema e deixa no ar o que so o
+  artigo responde.
+Mistura desta conta agora (fase {fase}): {mistura}.
 
 Regras dos blocos:
 - Use os codigos exatamente como estao (m- ou a- e seis caracteres).
@@ -124,6 +135,10 @@ def pedido(destino: Destino) -> str:
             max_propostas=MAXIMO_DE_PROPOSTAS,
             max_abordagens=MAXIMO_DE_ABORDAGENS,
             max_eventos=MAXIMO_DE_EVENTOS,
+            fase=FASES[fase(destino)]["nome"],
+            mistura=", ".join(
+                f"{round(parte * 100)}% {foco}" for foco, parte in focos.mistura(destino).items()
+            ),
         ),
         "## Negocio",
         f"Tema: {negocio.get('tema') or '(nao informado)'}",
@@ -139,6 +154,16 @@ def pedido(destino: Destino) -> str:
         f" ate {destino.teto_semanal} posts por semana.",
         f"Regras que nunca se quebram: {config.regras or '(nenhuma)'}",
     ]
+    from apps.social.models import Isca
+
+    ofertas = [i for i in Isca.objects.filter(ativa=True) if not i.redes or destino.rede in i.redes]
+    partes += ["", "## Ofertas para quem comenta (iscas: 'comente QUERO e receba...')"]
+    partes += [
+        f"- {i.nome}"
+        + (f" (palavra {i.palavra.upper()})" if i.palavra else "")
+        + (f": {_resumo(i.descricao, 160)}" if i.descricao else "")
+        for i in ofertas
+    ] or ["(nenhuma cadastrada)"]
     if config.instrucoes.strip() or destino.instrucoes.strip():
         partes.append(
             "Instrucoes do negocio: "
@@ -176,6 +201,10 @@ def pedido(destino: Destino) -> str:
         )
     if not recentes:
         partes.append("(nenhum ainda)")
+
+    from apps.social import desejos
+
+    partes += desejos.secao(destino)
 
     referencias = list(destino.referencias.order_by("-curtidas")[:8])
     if referencias:
@@ -234,6 +263,8 @@ class Proposta:
     alvo: Alvo
     gancho: str
     por_que: str
+    foco: str = ""
+    isca: object = None  # Isca citada pelo nome
 
 
 @dataclass
@@ -303,6 +334,10 @@ def ler(resposta: str) -> Leitura:
     alvos = _Alvos()
     leitura = Leitura(comentarios=blocos.get("COMENTARIOS", "").strip())
 
+    from apps.social.iscas import normalizar
+    from apps.social.models import Isca
+
+    iscas_por_nome = {normalizar(i.nome): i for i in Isca.objects.filter(ativa=True)}
     vistos = set()
     for linha in itens(blocos.get("PROPOSTAS", "")):
         partes = _partes(linha)
@@ -319,6 +354,8 @@ def ler(resposta: str) -> Leitura:
                 alvo=alvo,
                 gancho=(partes[1] if len(partes) > 1 else "")[:200],
                 por_que=(partes[2] if len(partes) > 2 else "")[:300],
+                foco=focos.valido((partes[3] if len(partes) > 3 else "").strip().lower()),
+                isca=iscas_por_nome.get(normalizar(partes[4]) if len(partes) > 4 else ""),
             )
         )
     leitura.propostas = leitura.propostas[:MAXIMO_DE_PROPOSTAS]
@@ -358,17 +395,27 @@ def ler(resposta: str) -> Leitura:
 
 
 # -- Aplicar ---------------------------------------------------------------------------
-def _criar_post(destino: Destino, alvo: Alvo, por_que: str, ideia: str) -> list[Post]:
+def _criar_post(
+    destino: Destino, alvo: Alvo, por_que: str, ideia: str, foco: str = "", isca=None
+) -> list[Post]:
     from apps.social import escolha
 
     if alvo.tema is not None:
         return escolha.sugerir_tema(
-            destino, alvo.tema, motivo=Post.Motivo.OUTRA_IA, por_que=por_que, ideia=ideia
+            destino,
+            alvo.tema,
+            motivo=Post.Motivo.OUTRA_IA,
+            por_que=por_que,
+            ideia=ideia,
+            foco=foco,
+            isca=isca,
         )
     artigo = fontes.artigo(alvo.artigo_id)
     if artigo is None:
         return []
-    return escolha.sugerir(destino, artigo, Post.Motivo.OUTRA_IA, por_que, ideia=ideia)
+    return escolha.sugerir(
+        destino, artigo, Post.Motivo.OUTRA_IA, por_que, ideia=ideia, foco=foco, isca=isca
+    )
 
 
 def _nome_livre(nome: str) -> str:
@@ -396,7 +443,11 @@ def aplicar(
             continue
         por_que = "Sugerido pela outra IA" + (f": {proposta.por_que}" if proposta.por_que else ".")
         ideia = f"gancho sugerido: {proposta.gancho}" if proposta.gancho else ""
-        feito["posts"] += len(_criar_post(destino, proposta.alvo, por_que, ideia))
+        feito["posts"] += len(
+            _criar_post(
+                destino, proposta.alvo, por_que, ideia, foco=proposta.foco, isca=proposta.isca
+            )
+        )
     for i, evento in enumerate(leitura.eventos):
         if i not in eventos or evento.alvo is None:
             continue

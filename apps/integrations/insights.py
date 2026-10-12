@@ -8,11 +8,12 @@ e o total do dia, entao substitui; conversao tem id, entao nao duplica.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, timedelta
 
 from django.utils import timezone
 
-from apps.integrations.models import ConversaoDoSite, LeituraDoDia, Site
+from apps.integrations.models import ConversaoDoSite, LeituraDoDia, LeituraPorOrigem, Site
 
 logger = logging.getLogger("publibot.integrations")
 
@@ -26,9 +27,11 @@ CAMPOS_DE_LEITURA = (
     "engaged_views",
     "engaged_seconds",
     "read_to_end",
+    "half_read",
     "cta_views",
     "cta_clicks",
 )
+CAMPOS_POR_ORIGEM = ("views", "engaged_views", "engaged_seconds", "read_to_end", "half_read")
 
 
 def _inteiro(valor, teto: int = 10_000_000) -> int:
@@ -83,6 +86,21 @@ def gravar(site: Site, dados: dict) -> tuple[int, int]:
             defaults={campo: _inteiro(linha.get(campo)) for campo in CAMPOS_DE_LEITURA},
         )
         leituras += 1
+
+    for linha in dados.get("reading_by_source") or []:
+        dia = _dia(linha.get("date"))
+        remote_id = str(linha.get("remote_id") or "")[:120]
+        canal = _canal(linha.get("channel"))
+        if dia is None or not remote_id or not canal:
+            continue
+        LeituraPorOrigem.objects.update_or_create(
+            site=site,
+            remote_id=remote_id,
+            dia=dia,
+            canal=canal,
+            fonte=re.sub(r"[^a-z0-9_-]", "", str(linha.get("source") or "").lower())[:40],
+            defaults={campo: _inteiro(linha.get(campo)) for campo in CAMPOS_POR_ORIGEM},
+        )
 
     novas = 0
     for conversao in dados.get("conversions") or []:
