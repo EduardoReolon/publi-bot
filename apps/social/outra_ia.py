@@ -59,9 +59,9 @@ COMO TRABALHAR COMIGO
    gere os blocos quando eu pedir ("pode gerar"); se nao houver o que
    discutir, diga e ja gere.
 2. Se voce puder PESQUISAR NA WEB, procure o que acontece agora e conversa com
-   os candidatos: campanhas de saude do mes (ex.: Outubro Rosa), datas da
-   area, regra nova de orgao publico, estudo que virou noticia, assunto em
-   alta. So dos ultimos 30 dias ou dos proximos 60, e SO o que voce confirmou,
+   os candidatos: campanhas e datas do mes ligadas ao tema do negocio, regra
+   nova de orgao publico, pesquisa ou estudo que virou noticia, assunto em
+   alta no setor do publico. So dos ultimos 30 dias ou dos proximos 60, e SO o que voce confirmou,
    com o link. Sem pesquisa na web, deixe EVENTOS vazio: nao invente.
 3. O post so pode afirmar o que esta no artigo: nao proponha numero, caso ou
    promessa que nao esteja nos candidatos. Respeite as regras da conta.
@@ -84,11 +84,14 @@ Quando eu pedir os blocos, responda SO neles, nesta ordem, e termine com FIM
 PROPOSTAS:
 - codigo | capa (o problema concreto, como o publico diz, ate 8 palavras) | a ideia
   em uma frase simples + a cena da imagem da capa | foco | isca | abordagem | formato
+  | estilo
   (ate {max_propostas}, na ordem: a primeira e a que eu deveria postar primeiro;
   foco = alcance, engajamento ou site — ver FOCOS abaixo; isca = o nome exato de
   uma OFERTA PARA QUEM COMENTA da lista, quando couber, ou vazio; abordagem = o
   nome de uma das ABORDAGENS abaixo, ou de uma nova que voce criar em
-  ABORDAGENS, ou vazio para o sistema sortear; formato = carrossel ou enquete)
+  ABORDAGENS, ou vazio para o sistema sortear; formato = {formatos}; estilo = a
+  chave de um dos estilos de imagem da conta (ver "Imagens"), ou vazio para quem
+  escreve escolher)
 ABORDAGENS:
 - Nome curto: como escrever com ela, em 2 a 4 frases (e uma instrucao para
   quem escreve o post). Ate {max_abordagens}: jeitos que faltam, ou a versao
@@ -148,10 +151,10 @@ def _formato(r) -> str:
 
 
 def _estilo_visual(destino: Destino) -> str:
-    """O estilo das imagens da conta e os fundos padrao que ela tem."""
-    from apps.social.identidade import instrucao_de_estilo
+    """Os estilos de imagem da conta, as orientacoes e os fundos padrao."""
+    from apps.social.identidade import resumo_dos_estilos
 
-    partes = [instrucao_de_estilo(destino).rstrip(".")]
+    partes = [resumo_dos_estilos(destino)]
     fixos = [
         f"{e.nome} ({e.get_tipo_display().lower()})" for e in destino.elementos.filter(ativo=True)
     ]
@@ -160,7 +163,16 @@ def _estilo_visual(destino: Destino) -> str:
     fundos = sorted({str(f) for f in destino.fundos.all()})
     if fundos:
         partes.append("fundos padrao da conta: " + ", ".join(fundos))
-    return "; ".join(partes) or "sem estilo definido (sugira um em COMENTARIOS)"
+    return "; ".join(p for p in partes if p) or "sem estilo definido (sugira um em COMENTARIOS)"
+
+
+FORMATOS = "carrossel ou enquete"
+FORMATOS_COM_VIDEO = (
+    "carrossel, video ou enquete (video = as mesmas laminas narradas por uma voz, como "
+    "Reels: bom quando a ideia ganha com voz — pergunta direta, uma situacao contada, mito "
+    "x verdade — e o que mais chega a quem nao segue; carrossel, quando e para salvar e "
+    "consultar)"
+)
 
 
 def pedido(destino: Destino) -> str:
@@ -174,6 +186,9 @@ def pedido(destino: Destino) -> str:
             hoje=timezone.localdate().strftime("%d/%m/%Y"),
             rede=r.nome,
             max_propostas=MAXIMO_DE_PROPOSTAS,
+            formatos=FORMATOS
+            if destino.video == Destino.Video.NUNCA or not rede(destino.rede).formato.max_laminas
+            else FORMATOS_COM_VIDEO,
             max_abordagens=MAXIMO_DE_ABORDAGENS,
             max_eventos=MAXIMO_DE_EVENTOS,
             fase=FASES[fase(destino)]["nome"],
@@ -311,7 +326,8 @@ class Proposta:
     foco: str = ""
     isca: object = None  # Isca citada pelo nome
     abordagem: str = ""  # nome de uma abordagem (existente ou nova na resposta)
-    formato: str = ""  # "enquete" ou vazio (carrossel/post comum)
+    formato: str = ""  # "enquete", "video" ou vazio (carrossel/post comum)
+    estilo: str = ""  # um dos estilos de imagem da conta, ou vazio
 
 
 @dataclass
@@ -404,7 +420,8 @@ def ler(resposta: str) -> Leitura:
                 foco=focos.valido((partes[3] if len(partes) > 3 else "").strip().lower()),
                 isca=iscas_por_nome.get(normalizar(partes[4]) if len(partes) > 4 else ""),
                 abordagem=(partes[5] if len(partes) > 5 else "").strip()[:80],
-                formato="enquete" if len(partes) > 6 and "enquete" in partes[6].lower() else "",
+                formato=_formato_pedido(partes[6] if len(partes) > 6 else ""),
+                estilo=(partes[7] if len(partes) > 7 else "").strip().lower(),
             )
         )
     leitura.propostas = leitura.propostas[:MAXIMO_DE_PROPOSTAS]
@@ -443,6 +460,11 @@ def ler(resposta: str) -> Leitura:
     return leitura
 
 
+def _formato_pedido(texto: str) -> str:
+    texto = texto.lower()
+    return "enquete" if "enquete" in texto else "video" if "video" in texto else ""
+
+
 # -- Aplicar ---------------------------------------------------------------------------
 def _criar_post(
     destino: Destino,
@@ -453,6 +475,7 @@ def _criar_post(
     isca=None,
     abordagem=None,
     formato: str = "",
+    estilo: str = "",
 ) -> list[Post]:
     from apps.social import escolha
 
@@ -467,6 +490,7 @@ def _criar_post(
             isca=isca,
             abordagem=abordagem,
             formato=formato,
+            estilo=estilo,
         )
     artigo = fontes.artigo(alvo.artigo_id)
     if artigo is None:
@@ -481,6 +505,7 @@ def _criar_post(
         isca=isca,
         abordagem=abordagem,
         formato=formato,
+        estilo=estilo,
     )
 
 
@@ -545,6 +570,7 @@ def aplicar(
                 isca=proposta.isca,
                 abordagem=_abordagem_pelo_nome(proposta.abordagem),
                 formato=proposta.formato,
+                estilo=proposta.estilo,
             )
         )
     for i, evento in enumerate(leitura.eventos):

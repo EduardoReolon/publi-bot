@@ -64,7 +64,7 @@ def instrucao(post, *, laminas: bool) -> str:
                 "PERSONAGENS E CENARIOS FIXOS DA CONTA (chame pelo NOME no 'visual' quando "
                 "couber; nao invente outros personagens fixos):\n" + fixos + "\n"
             )
-        texto += INSTRUCAO_DAS_LAMINAS.format(estilo=instrucao_de_estilo(destino))
+        texto += INSTRUCAO_DAS_LAMINAS.format(estilo=instrucao_de_estilo(destino, post))
     return texto
 
 

@@ -188,13 +188,14 @@ def sugerir(
     isca=None,
     abordagem=None,
     formato: str = "",
+    estilo: str = "",
 ) -> list[Post]:
     """Cria o(s) post(s) sugerido(s) e pede a redacao. Com 2 versoes, cada uma
     com uma abordagem diferente, ligadas uma a outra (o par do teste A/B).
     `ideia`: um angulo sugerido (pela outra IA) que vai para quem escreve.
     `entrada`: o material proprio (caso, fotos) quando o post nao e de artigo.
     `foco`: alcance, engajamento ou site; vazio, o que falta na mistura da fase."""
-    from apps.social import experimentos, focos, iscas
+    from apps.social import experimentos, focos, identidade, iscas
     from apps.social.tasks import escrever_post
 
     config = ConfiguracaoSocial.carregar()
@@ -208,6 +209,9 @@ def sugerir(
         # O par A/B tem o mesmo foco: o teste continua comparando so a abordagem.
         "foco": focos.valido(foco) or focos.foco_da_vez(destino),
         **({"formato": "enquete"} if formato == "enquete" else {}),
+        # Pedidos pela outra IA: quem escreve segue (ver redacao.montar).
+        **({"formato_pedido": "video"} if formato == "video" else {}),
+        **({"estilo_pedido": estilo} if estilo in identidade.estilos_da_conta(destino) else {}),
         **({"ideia": ideia[:500]} if ideia else {}),
         **(
             {"recado": {"id": str(recado.pk), "nome": recado.nome, "instrucao": recado.instrucao}}
@@ -269,6 +273,7 @@ def sugerir_tema(
     isca=None,
     abordagem=None,
     formato: str = "",
+    estilo: str = "",
 ) -> list[Post]:
     artigo = fontes.artigo(tema.artigo_principal)
     if artigo is None:
@@ -287,6 +292,7 @@ def sugerir_tema(
         isca=isca,
         abordagem=abordagem,
         formato=formato,
+        estilo=estilo,
     )
 
 

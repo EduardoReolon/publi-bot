@@ -175,6 +175,43 @@ FIM
 
 
 @pytest.mark.django_db
+def test_proposta_em_video_com_estilo(ambiente, monkeypatch):
+    from apps.social import redacao, tasks, video
+
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    artigo = _artigo_publicado()
+    tema = _tema(artigo)
+    destino = _destino("instagram", estilos_permitidos=["quadrinhos", "apresentacao"])
+    texto = outra_ia.pedido(destino)
+    assert "carrossel, video ou enquete" in texto and "| estilo" in texto
+    assert "'quadrinhos'" in texto and "'foto'" not in texto
+    assert "Outubro Rosa" not in texto and "devolva em 'estilo'" not in texto
+    leitura = outra_ia.ler(
+        f"PROPOSTAS:\n- {outra_ia.codigo_do_tema(tema)} | Cresceu e o lucro nao? | uma ideia "
+        "| alcance | | | video | apresentacao\nFIM"
+    )
+    proposta = leitura.propostas[0]
+    assert (proposta.formato, proposta.estilo) == ("video", "apresentacao")
+    outra_ia.aplicar(leitura, destino, propostas={0}, abordagens=set(), eventos=set())
+    post = Post.objects.get()
+    assert post.extras["formato_pedido"] == "video"
+    assert post.extras["estilo_pedido"] == "apresentacao"
+    assert "vai como VIDEO" in video.instrucao(post)
+    # quem escreve segue o pedido, mesmo sugerindo outra coisa
+    _, extras = redacao.montar(
+        post,
+        {
+            "gancho": "Oi",
+            "texto": "Ola",
+            "formato_sugerido": "carrossel",
+            "estilo": "quadrinhos",
+            "laminas": [{"titulo": "a", "texto": "b"}],
+        },
+    )
+    assert extras["formato_sugerido"] == "video" and extras["estilo"] == "apresentacao"
+
+
+@pytest.mark.django_db
 def test_gerar_as_imagens_aqui(ambiente, modulo, settings, tmp_path, monkeypatch):  # noqa: F811
     settings.MEDIA_ROOT = tmp_path
     pedidos = []

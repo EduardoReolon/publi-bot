@@ -72,7 +72,9 @@ def instrucao(post) -> str:
         palavras=PALAVRAS_MAXIMAS,
         orientacao=f" Orientacoes da conta para os videos: {orientacao}." if orientacao else "",
     )
-    if destino.video != destino.Video.SEMPRE:  # sempre video: nao ha o que sugerir
+    if (post.extras or {}).get("formato_pedido") == "video":
+        texto += "Este post vai como VIDEO (foi o formato pedido): capriche nas falas.\n"
+    elif destino.video != destino.Video.SEMPRE:  # sempre video: nao ha o que sugerir
         texto += INSTRUCAO_DO_FORMATO
     return texto
 
