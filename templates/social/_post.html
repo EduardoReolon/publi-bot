@@ -6,6 +6,7 @@
       <span class="selo {% if post.situacao == 'rascunho' %}alerta{% elif post.situacao == 'publicado' %}ok{% elif post.situacao == 'falhou' %}ruim{% else %}espera{% endif %}">{{ post.get_situacao_display }}</span>
       {% if post.abordagem %}<span class="selo" title="{% translate 'abordagem' %}">{{ post.abordagem.nome }}</span>{% endif %}
       {% if post.isca %}<span class="selo ok" title="{% translate 'oferta para quem comentar' %}">{% translate "isca" %}: {{ post.isca.nome|truncatechars:40 }}{% if post.isca.palavra %} ({{ post.isca.palavra }}){% endif %}</span>{% endif %}
+      {% with c=post.extras.clareza %}{% if c %}<span class="selo {% if c.nota >= 7 %}ok{% else %}alerta{% endif %}" title="{% translate 'Um leitor que nao leu o artigo entendeu:' %} {{ c.entendi }}">{% translate "clareza" %} {{ c.nota|floatformat:0 }}/10</span>{% endif %}{% endwith %}
       {% if post.extras.foco %}<span class="selo espera" title="{% translate 'para que o post existe: alcance (quem nao segue), engajamento (quem ja segue) ou site (levar ao artigo)' %}">{% translate "foco" %}: {{ post.extras.foco }}</span>{% endif %}
       {% if post.tema_id %}<span class="selo espera" title="{{ post.tema.titulo }}">{% translate "tema" %}</span>{% endif %}
       {% if post.impulsionado %}<span class="selo alerta">{% translate "impulsionado" %} R$ {{ post.custo_impulso }}</span>{% endif %}
@@ -109,6 +110,7 @@
             {% for a in abordagens %}{% if a.pk != post.abordagem_id %}<option value="{{ a.pk }}">{{ a.nome }}</option>{% endif %}{% endfor %}
           </select>
           <button type="submit" name="acao" value="reescrever" class="botao secundario">{% translate "Reescrever" %}</button>
+          <a class="botao discreto" href="{% url 'social:post_pela_outra_ia' post.pk %}" title="{% translate 'Copia um pedido com o material do artigo para o Claude, ChatGPT ou Gemini escrever o post inteiro (e as imagens); a resposta colada passa pela mesma conferencia' %}">{% translate "Escrever com outra IA" %}</a>
           {% if iscas or post.isca %}
             <select name="isca" style="width:auto" title="{% translate 'oferta para quem comentar' %}">
               <option value="">{% translate "sem oferta para quem comentar" %}</option>
@@ -166,7 +168,9 @@
           cenas, no estilo da conta, sem texto. Envie cada imagem na lamina dela: o PubliBot escreve o texto por
           cima, com as letras certas. Estilo e fundos padrao: Configurar &gt; a conta &gt; Identidade visual.
         {% endblocktranslate %}</p>
-        <div class="acoes"><button type="button" class="botao pequeno" data-copiar="pedido-imagens-{{ post.pk }}">{% translate "Copiar o pedido de imagens" %}</button></div>
+        <div class="acoes"><button type="button" class="botao pequeno" data-copiar="pedido-imagens-{{ post.pk }}">{% translate "Copiar o pedido de imagens" %}</button>
+          <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="display:inline">{% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+            <button type="submit" name="acao" value="gerar_imagens_aqui" class="botao discreto pequeno" title="{% translate 'Com o gerador de imagem do PubliBot (o das capas), no estilo da conta, sem texto; uma por lamina sem imagem nem fundo padrao' %}">{% translate "Gerar as imagens aqui" %}</button></form></div>
         <textarea id="pedido-imagens-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.pedido_de_imagens }}</textarea>
         {% for l in post.laminas_e_fundos %}
           <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin:.2rem 0">

@@ -680,3 +680,15 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
                 )
     post.imagens = imagens
     post.save(update_fields=["imagens", "atualizado_em"])
+
+
+def refazer_imagens(post) -> bool:
+    """Monta de novo as imagens do post com o texto e as fotos atuais. Falso se
+    o artigo sumiu."""
+    from apps.social.proprio import como_artigo
+
+    artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+    if artigo is None:
+        return False
+    preparar_imagens(post, artigo)
+    return True

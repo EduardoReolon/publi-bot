@@ -242,6 +242,22 @@ guia, endereco no texto (sai), tamanho da rede, gancho maior que o "ver mais",
 laminas fora do limite. Achou: uma nova tentativa dizendo o que corrigir.
 Persistiu: o post vai para a revisao com os avisos — e nunca sai sozinho.
 
+**Clareza** (`clareza.py`) — o post tem de ser entendido em 2 segundos por quem
+nunca leu o artigo:
+
+- **Instrucao** (no codigo, vale sem republicar o prompt): uma ideia so
+  (`ideia`), com as palavras do publico, concreta, sem copiar frase do
+  artigo; as laminas contam uma historia (problema, por que, o que fazer,
+  chamada), cada uma com `visual` — a cena da imagem, no estilo da conta.
+- **Algoritmo:** lamina ou gancho que copia 9+ palavras seguidas do artigo,
+  titulo com mais de 9 palavras, texto dificil (Flesch adaptado ao portugues
+  abaixo de 40), lamina sem `visual`.
+- **Revisor** (prompt `social_revisor`): le o post sem o artigo, diz o que
+  entendeu e da nota de 0 a 10; abaixo de 7, volta para quem escreve com o que
+  confundiu. A nota aparece no post ("clareza 8/10", com o que entendeu).
+- Ate 3 escritas por post (`TENTATIVAS`). Post de tema usa o titulo do artigo
+  principal (a frase central do tema, solta, e abstrata demais).
+
 | Rede | Publico e formato | Onde vai o link | Imagem |
 |---|---|---|---|
 | LinkedIn | profissional; 1.000–1.500 caracteres, gancho de ~200, pergunta no fim, ate 3 hashtags | primeiro comentario | capa do artigo |
@@ -298,6 +314,11 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
     (`extras["fundos"]`; a da 1a vira a foto da capa) e entra escurecida.
   - Ordem do fundo: imagem enviada para a lamina > fundo padrao > capa do
     artigo (so na 1a) > cor da conta.
+  - **Gerar as imagens aqui** (`identidade.gerar_imagens`, tarefa
+    `gerar_imagens_das_laminas`): com o gerador de imagem do PubliBot (o das
+    capas, `capas.gerar_imagens`), a cena (`visual`) de cada lamina sem imagem
+    vira um prompt em ingles (`social_cena`) e uma imagem 4:5 sem texto.
+    Gerador ocupado: tenta de novo em 10 minutos.
 
 ### 6. Medicao — `medicao.py`, `views.clique`
 
@@ -565,6 +586,20 @@ A resposta colada vira previa; aplicado o que estiver marcado:
 - **EVENTOS** viram post do candidato ligado, com o evento como gancho (sem
   link de fonte, a linha e ignorada);
 - **ABORDAGENS** entram no sorteio da rede e competem pelo placar.
+
+O pedido tambem leva a regra de CLAREZA, o formato da rede e o estilo das
+imagens da conta; os temas aparecem pelos artigos que ligam (nao so pela frase
+central). Cada proposta pode trazer, alem do foco e da isca, a **abordagem**
+(uma existente ou uma nova da mesma resposta — vira a unica versao do post) e
+o **formato** (carrossel ou enquete).
+
+**Post inteiro pela outra IA** (`criacao.py`, "Escrever com outra IA" no post):
+o pedido leva o mesmo que a IA do PubliBot recebe (material do artigo,
+publico, tom, abordagem, foco, isca, enquete, regras, clareza, estilo das
+imagens) e pede IDEIA, GANCHO, LEGENDA, HASHTAGS, LAMINAS (titulo | texto |
+visual), ENQUETE e PRIMEIRO COMENTARIO — e, se ela gera imagem, uma por lamina
+sem texto. A resposta passa pela mesma conferencia (`redacao.montar_e_conferir`)
+e vira o post (`extras["escrito_por"] = "outra_ia"`).
 
 Tudo fica marcado (motivo "Sugerido pela outra IA", abordagem "da outra IA"),
 e a Estrategia mostra o **comparativo**: a proporcao de posts que funcionaram

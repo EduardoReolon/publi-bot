@@ -28,6 +28,25 @@ def escrever_post(self, post_id: str) -> str:
     return post.situacao
 
 
+@shared_task(bind=True, max_retries=12)
+def gerar_imagens_das_laminas(self, post_id: str) -> int:
+    """As imagens das laminas pelo gerador do PubliBot. Gerador ocupado: tenta
+    de novo em 10 minutos (o que ja saiu fica)."""
+    from apps.social import fontes, identidade, laminas
+    from apps.social.models import Post
+
+    post = Post.objects.select_related("destino").filter(pk=post_id).first()
+    if post is None:
+        return 0
+    try:
+        feitas = identidade.gerar_imagens(post)
+    except fontes.imagem_indisponivel() + fontes.modelo_indisponivel() as exc:
+        laminas.refazer_imagens(post)
+        raise self.retry(exc=exc, countdown=600) from exc
+    laminas.refazer_imagens(post)
+    return feitas
+
+
 @shared_task
 def sugerir_posts() -> int:
     """Uma vez por dia: a escolha do dia em cada conta (com 'sugerir sozinho')."""

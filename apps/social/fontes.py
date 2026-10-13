@@ -286,6 +286,30 @@ def leitura_vinda_da_rede(remote_id: str, rede: str, desde) -> dict:
 
 
 # -- Modelo de linguagem e vetores -------------------------------------------------
+def ha_modelo_de_imagem() -> bool:
+    from apps.content.capas import ha_conexao_de_imagem
+
+    return ha_conexao_de_imagem()
+
+
+def imagem_indisponivel() -> tuple[type[Exception], ...]:
+    """As excecoes de "gerador de imagem sem vaga agora" (tentar mais tarde)."""
+    from apps.content.capas import GeradorDeImagemOcupado
+    from apps.inference.providers.base import ProviderTransientError
+
+    return (GeradorDeImagemOcupado, ProviderTransientError)
+
+
+def gerar_imagem(prompt: str, *, tamanho: str = "896x1152") -> bytes:
+    """Uma imagem do gerador do PubliBot (o mesmo das capas), sem texto."""
+    from apps.content.capas import gerar_imagens
+
+    geradas = gerar_imagens(
+        prompt, quantidade=1, tamanho=tamanho, negativo="text, letters, words, watermark, logo"
+    )
+    return geradas[0].conteudo
+
+
 def reabrir_modelo() -> list[tuple[str, bool, str]]:
     """Testa as conexoes de modelo com o disjuntor aberto e fecha o das que
     respondem (ver `leases.testar_e_reabrir`)."""

@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Escrever com outra IA" %} — {% translate "Redes" %} — PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Redes sociais" %}</h1>
+  {% include "social/_abas.html" %}
+  <h2>{% blocktranslate with t=post.artigo_titulo|default:post.gancho|truncatechars:90 n=post.destino.nome %}Escrever com outra IA: {{ t }} ({{ n }}){% endblocktranslate %}</h2>
+  <p class="sub">
+    {% blocktranslate trimmed %}
+      1. Copie o pedido e cole no Claude, ChatGPT ou Gemini. Ele leva o mesmo que a IA do PubliBot
+      recebe: o material do artigo, o publico, a abordagem, o foco, a oferta, as regras, a clareza e o
+      estilo das imagens. Converse o quanto quiser e peca "pode gerar". 2. Cole a resposta aqui: ela
+      passa pela mesma conferencia (numeros que o artigo nao tem, termos proibidos, clareza) e vira o
+      post, para revisar. 3. Se a IA gerou as imagens, envie cada uma na lamina dela (no post, em
+      "Imagens das laminas").
+    {% endblocktranslate %}
+  </p>
+  {% if pedido %}
+    <div class="acoes"><button type="button" class="botao" data-copiar="pedido-post">{% translate "Copiar o pedido" %}</button></div>
+    <details><summary>{% translate "Ver o texto" %}</summary>
+      <textarea id="pedido-post" readonly rows="16" style="width:100%">{{ pedido }}</textarea>
+    </details>
+    <form method="post" style="margin-top:.8rem">
+      {% csrf_token %}
+      <label for="resposta-post">{% translate "Cole aqui a resposta inteira" %}</label>
+      <textarea id="resposta-post" name="resposta" rows="10" style="width:100%" required></textarea>
+      <div class="acoes"><button type="submit" class="botao secundario">{% translate "Usar no post" %}</button>
+        <a class="botao discreto" href="{% url 'social:inicio' %}?aba=revisar#post-{{ post.pk }}">{% translate "Voltar" %}</a></div>
+    </form>
+  {% else %}
+    <p class="vazio">{% translate "O artigo deste post nao existe mais." %}</p>
+  {% endif %}
+{% endblock %}
