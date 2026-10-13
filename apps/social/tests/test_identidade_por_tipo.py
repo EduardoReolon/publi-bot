@@ -281,3 +281,35 @@ def test_clipe_enviado_animado_e_tirado(ambiente, modulo, settings, tmp_path, mo
     client.post(acao, {"acao": "tirar_clipe", "n": "2"})
     post.refresh_from_db()
     assert "2" not in post.extras["clipes"] and "1" in post.extras["clipes"]
+
+
+@pytest.mark.django_db
+def test_prompts_da_folha_de_personagem_na_tela(ambiente):
+    _, _, client = ambiente
+    destino = _destino("instagram")
+    ElementoVisual.objects.create(
+        destino=destino, nome="Seu Carlos", tipo="personagem", descricao="dono de empresa, oculos."
+    )
+    folhas = identidade.prompts_de_folha("Seu Carlos", "dono de empresa, oculos.")
+    assert [f["chave"] for f in folhas] == ["2d", "3d", "realista"]
+    assert (
+        "FOLHA DE PERSONAGEM de Seu Carlos: dono de empresa, oculos. Estilo:" in folhas[0]["prompt"]
+    )
+    assert "de frente, de 3/4, de perfil e de costas" in folhas[0]["prompt"]
+    assert "[nome]" in identidade.prompts_de_folha()[0]["prompt"]
+    assert (
+        "MESMO lugar" in identidade.prompts_de_folha("Escritorio", "sala", "cenario")[0]["prompt"]
+    )
+    pagina = client.get(reverse("social:identidade", args=[destino.pk], urlconf=U)).content.decode()
+    assert "Criar o personagem numa IA de imagem" in pagina
+    assert "FOLHA DE PERSONAGEM de Seu Carlos" in pagina and "Animacao 2D" in pagina
+
+
+@pytest.mark.django_db
+def test_onde_atende_sem_regiao_e_o_pais(ambiente):
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    radar = ConfiguracaoDoRadar.carregar()
+    radar.regioes = []
+    radar.save()
+    assert fontes.negocio()["regioes"] == ["Brasil"]

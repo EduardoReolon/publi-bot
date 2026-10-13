@@ -924,6 +924,12 @@ class ElementoVisual(models.Model):
     def __str__(self) -> str:
         return self.nome
 
+    @property
+    def prompts_de_folha(self) -> list:
+        from apps.social.identidade import prompts_de_folha
+
+        return prompts_de_folha(self.nome, self.descricao, self.tipo)
+
 
 def _caminho_da_midia(instancia, nome: str) -> str:
     import os
