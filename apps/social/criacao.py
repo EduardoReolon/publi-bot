@@ -23,6 +23,7 @@ logger = logging.getLogger("publibot.social")
 
 ROTULOS = [
     "IDEIA",
+    "PRINCIPIOS",
     "GANCHO",
     "LEGENDA",
     "HASHTAGS",
@@ -54,6 +55,7 @@ responda SO nos blocos abaixo e termine com FIM (a resposta volta para o
 sistema, que a le sozinho):
 
 IDEIA: a ideia do post em uma frase simples
+PRINCIPIOS: as chaves dos principios de persuasao que voce usou, separadas por virgula
 GANCHO: a primeira linha da legenda (ate {dobra} caracteres)
 LEGENDA: o resto da legenda
 HASHTAGS: ate {hashtags}, separadas por virgula, sem #
@@ -124,7 +126,7 @@ def pedido(post: Post) -> str:
     laminas = redacao.com_laminas(post)
     return PEDIDO.format(
         rede=r.nome,
-        instrucoes=redacao.instrucoes(post, artigo),
+        instrucoes=redacao.instrucoes(post, artigo, mat),
         estilo=r.estilo,
         limites=v["limites"],
         imagens=_estilo_visual(post.destino) if laminas else "uma imagem (a capa do artigo)",
@@ -158,6 +160,7 @@ def ler(resposta: str) -> tuple[dict, str]:
     blocos = ler_blocos(resposta, ROTULOS)
     dados = {
         "ideia": blocos.get("IDEIA", "").strip(),
+        "principios": [p for p in re.split(r"[,\s]+", blocos.get("PRINCIPIOS", "")) if p],
         "gancho": " ".join(blocos.get("GANCHO", "").split()),
         "texto": blocos.get("LEGENDA", "").strip(),
         "hashtags": [h for h in re.split(r"[,\s#]+", blocos.get("HASHTAGS", "")) if h],

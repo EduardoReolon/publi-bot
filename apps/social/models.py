@@ -495,6 +495,19 @@ class Post(models.Model):
         return f"{self.destino} — {self.artigo_titulo[:60]}"
 
     @property
+    def principios_usados(self) -> list[tuple[str, bool]]:
+        """[(nome, e o principal)] dos principios de Cialdini do post."""
+        from apps.social.persuasao import PRINCIPIOS
+
+        extras = self.extras or {}
+        principal = extras.get("principio", "")
+        return [
+            (PRINCIPIOS[p]["nome"], p == principal)
+            for p in extras.get("principios") or []
+            if p in PRINCIPIOS
+        ]
+
+    @property
     def laminas_e_fundos(self) -> list[dict]:
         """Cada lamina e de onde vem o fundo dela (ver `identidade`)."""
         from apps.social import identidade

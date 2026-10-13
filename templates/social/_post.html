@@ -7,6 +7,7 @@
       {% if post.abordagem %}<span class="selo" title="{% translate 'abordagem' %}">{{ post.abordagem.nome }}</span>{% endif %}
       {% if post.isca %}<span class="selo ok" title="{% translate 'oferta para quem comentar' %}">{% translate "isca" %}: {{ post.isca.nome|truncatechars:40 }}{% if post.isca.palavra %} ({{ post.isca.palavra }}){% endif %}</span>{% endif %}
       {% with c=post.extras.clareza %}{% if c %}<span class="selo {% if c.nota >= 7 %}ok{% else %}alerta{% endif %}" title="{% translate 'Um leitor que nao leu o artigo entendeu:' %} {{ c.entendi }}">{% translate "clareza" %} {{ c.nota|floatformat:0 }}/10</span>{% endif %}{% endwith %}
+      {% for nome, principal in post.principios_usados %}<span class="selo{% if principal %} espera{% endif %}" title="{% if principal %}{% translate 'principio de persuasao principal deste post (Cialdini)' %}{% else %}{% translate 'principio de persuasao (Cialdini)' %}{% endif %}">{{ nome }}</span>{% endfor %}
       {% if post.extras.foco %}<span class="selo espera" title="{% translate 'para que o post existe: alcance (quem nao segue), engajamento (quem ja segue) ou site (levar ao artigo)' %}">{% translate "foco" %}: {{ post.extras.foco }}</span>{% endif %}
       {% if post.tema_id %}<span class="selo espera" title="{{ post.tema.titulo }}">{% translate "tema" %}</span>{% endif %}
       {% if post.impulsionado %}<span class="selo alerta">{% translate "impulsionado" %} R$ {{ post.custo_impulso }}</span>{% endif %}

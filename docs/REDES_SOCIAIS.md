@@ -258,6 +258,16 @@ guia, endereco no texto (sai), tamanho da rede, gancho maior que o "ver mais",
 laminas fora do limite. Achou: uma nova tentativa dizendo o que corrigir.
 Persistiu: o post vai para a revisao com os avisos — e nunca sai sozinho.
 
+**Persuasao — Cialdini** (`persuasao.py`): os sete principios (reciprocidade,
+compromisso, prova social, autoridade, afinidade, escassez, unidade), cada um
+com o uso honesto e o que nunca fazer, vao para quem escreve (e para a outra
+IA). Um **principal** por post, por algoritmo: o menos usado nos ultimos 20
+posts da conta, entre os que o material permite (prova social so com dado
+numerico) — assim todos sao testados. O post devolve `principios`; o algoritmo
+confirma os evidentes (fonte na lamina, isca, enquete ou pedido de resposta,
+numero, "nos"). Aparecem como etiquetas no post (o principal em destaque) e "O
+que funciona" compara, por conta, a mediana com e sem cada um.
+
 **Clareza** (`clareza.py`) — o post tem de ser entendido em 2 segundos por quem
 nunca leu o artigo:
 

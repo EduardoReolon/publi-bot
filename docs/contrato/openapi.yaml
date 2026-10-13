@@ -130,7 +130,10 @@ components:
         slug: { type: string }
         html_content:
           type: string
-          description: Sanitize antes de gravar. Ver a lista de tags no README.
+          description: >-
+            Sanitize antes de gravar. Ver a lista de tags no README. Pode trazer ate
+            dois `<aside data-publibot="destaque">` (a frase em letra maior no meio do
+            texto) e o lugar da chamada `<aside data-publibot="chamada"></aside>`.
         excerpt: { type: string }
         meta_description: { type: string, maxLength: 160 }
         focus_keyword: { type: string }
