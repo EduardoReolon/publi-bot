@@ -1,0 +1,42 @@
+{% load i18n %}
+<div class="lamina-do-post" style="border-top:1px solid var(--borda); padding:.4rem 0">
+  <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin:.2rem 0">
+    {% csrf_token %}<input type="hidden" name="n" value="{{ l.n }}">
+    <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+    <span><strong>{{ l.n }}.</strong> {{ l.titulo|truncatechars:50 }} <span class="ajuda">— {% if l.fundo == 'enviado' %}{% translate "imagem enviada" %}{% elif l.fundo %}{% translate "fundo" %} {{ l.fundo }}{% elif l.n == 1 %}{% translate "capa do artigo" %}{% else %}{% translate "so a cor da conta" %}{% endif %}{% if l.clipe %} · {% translate "com clipe" %}{% endif %}</span></span>
+    <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp" style="width:auto">
+    <button type="submit" name="acao" value="fundo_da_lamina" class="botao discreto pequeno">{% translate "Usar nesta lamina" %}</button>
+    {% if l.fundo == 'enviado' %}<button type="submit" name="acao" value="tirar_fundo_da_lamina" class="botao discreto pequeno">{% translate "Tirar" %}</button>{% endif %}
+    <button type="submit" name="acao" value="refazer_imagem" class="botao discreto pequeno" title="{% translate 'Gera de novo so a imagem desta lamina, no lugar da atual' %}">{% translate "Refazer so esta" %}</button>
+    <button type="submit" name="acao" value="opcoes_de_imagem" class="botao discreto pequeno" title="{% translate 'Gera 3 versoes desta lamina para voce escolher (bom para a capa)' %}">{% translate "3 opcoes" %}</button>
+  </form>
+  {% if l.opcoes %}
+    <div class="acoes" style="gap:.4rem">
+      {% for i in "012"|make_list|slice:l.opcoes %}
+        <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="display:inline-flex; flex-direction:column; align-items:center">
+          {% csrf_token %}<input type="hidden" name="n" value="{{ l.n }}"><input type="hidden" name="i" value="{{ i }}">
+          <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+          <img src="{% url 'social:midia_da_lamina' post.pk l.n 'opcao-'|add:i %}" alt="{% translate 'opcao' %} {{ i }}" style="width:110px; border-radius:.3rem; border:1px solid var(--borda)">
+          <button type="submit" name="acao" value="escolher_opcao" class="botao pequeno">{% translate "Usar esta" %}</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if l.prompt_imagem or l.movimento %}
+    <details class="ajuda"><summary>{% translate "Prompts desta lamina (para copiar)" %}</summary>
+      {% if l.prompt_imagem %}<p><strong>{% translate "Imagem" %}:</strong> <span id="pi-{{ post.pk }}-{{ l.n }}">{{ l.prompt_imagem }}</span> <button type="button" class="botao discreto pequeno" data-copiar="pi-{{ post.pk }}-{{ l.n }}">{% translate "copiar" %}</button></p>{% endif %}
+      {% if l.prompt_movimento or l.movimento %}<p><strong>{% translate "Movimento" %}:</strong> <span id="pm-{{ post.pk }}-{{ l.n }}">{{ l.prompt_movimento|default:l.movimento }}</span> <button type="button" class="botao discreto pequeno" data-copiar="pm-{{ post.pk }}-{{ l.n }}">{% translate "copiar" %}</button></p>{% endif %}
+    </details>
+  {% endif %}
+  <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin:.2rem 0">
+    {% csrf_token %}<input type="hidden" name="n" value="{{ l.n }}">
+    <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+    <span class="ajuda">{% translate "Clipe (video):" %}</span>
+    {% if l.clipe %}<a class="ajuda" href="{% url 'social:midia_da_lamina' post.pk l.n 'clipe' %}" target="_blank">{% translate "ver" %}</a>{% endif %}
+    <input type="file" name="clipe" accept="video/mp4,video/quicktime,video/webm" style="width:auto">
+    <button type="submit" name="acao" value="clipe_da_lamina" class="botao discreto pequeno">{% if l.clipe %}{% translate "Trocar o clipe" %}{% else %}{% translate "Enviar clipe" %}{% endif %}</button>
+    <button type="submit" name="acao" value="animar" class="botao discreto pequeno" title="{% translate 'Anima a imagem desta lamina (worker ou Sora)' %}">{% translate "Animar" %}</button>
+    {% if l.clipe %}<button type="submit" name="acao" value="tirar_clipe" class="botao discreto pequeno">{% translate "Tirar clipe" %}</button>{% endif %}
+    {% if l.fundo or l.n == 1 %}<a class="ajuda" href="{% url 'social:midia_da_lamina' post.pk l.n 'fundo' %}" download>{% translate "baixar a imagem (para animar fora)" %}</a>{% endif %}
+  </form>
+</div>

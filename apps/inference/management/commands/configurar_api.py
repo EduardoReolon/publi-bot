@@ -7,6 +7,9 @@ dos videos (ElevenLabs, OpenAI, Google), com o endereco certo de cada uma.
     manage.py configurar_api elevenlabs --chave ... --modelo eleven_multilingual_v2
     manage.py configurar_api openai_voz --chave sk-...
     manage.py configurar_api google_voz --chave AIza...
+    manage.py configurar_api worker_voz          # a placa propria (endereco e segredo do .env)
+    manage.py configurar_api worker_animacao
+    manage.py configurar_api openai_video --chave sk-...   # Sora
     manage.py configurar_api anthropic --chave ... --tenant clinica_a   # so desse cliente
 
 A chave fica cifrada no banco (como as outras conexoes) e nunca e mostrada de
@@ -69,7 +72,19 @@ SERVICOS = {
         "OpenAI (voz)",
     ),
     "google_voz": (K.GOOGLE_TTS, "https://texttospeech.googleapis.com", W.VOZ, "", "Google (voz)"),
+    "openai_video": (
+        K.OPENAI_COMPATIBLE,
+        "https://api.openai.com",
+        W.ANIMACAO,
+        "sora-2",
+        "Sora (animacao)",
+    ),
+    # A placa propria (docs/WORKER_VOZ_E_ANIMACAO.md): endereco e segredo vem do
+    # .env (os mesmos da imagem), entao --chave e opcional.
+    "worker_voz": (K.OPENAI_COMPATIBLE, "", W.VOZ, "kokoro", "Worker (voz)"),
+    "worker_animacao": (K.OPENAI_COMPATIBLE, "", W.ANIMACAO, "ltx-video", "Worker (animacao)"),
 }
+DO_WORKER = {"worker_voz", "worker_animacao"}
 
 
 class Command(BaseCommand):
@@ -77,7 +92,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("servico", choices=sorted(SERVICOS))
-        parser.add_argument("--chave", required=True, help="a chave da API (fica cifrada)")
+        parser.add_argument(
+            "--chave", default="", help="a chave da API (fica cifrada); no worker, o do .env"
+        )
         parser.add_argument("--modelo", default="", help="o modelo (vazio: o padrao do servico)")
         parser.add_argument("--endereco", default="", help="outro endereco (servidor proprio)")
         parser.add_argument("--nome", default="", help="nome da conexao (vazio: o do servico)")
@@ -85,9 +102,20 @@ class Command(BaseCommand):
         parser.add_argument("--testar", action="store_true", help="chama a API para conferir")
 
     def handle(self, *args, servico, chave, modelo, endereco, nome, tenant, testar, **opcoes):
+        from django.conf import settings
+
         from apps.accounts.models import Tenant
 
         tipo, padrao_endereco, carga, padrao_modelo, padrao_nome = SERVICOS[servico]
+        if servico in DO_WORKER:
+            padrao_endereco = settings.IMAGEM_BASE_URL or settings.CONVERSAO_BASE_URL
+            chave = chave or settings.IMAGEM_SEGREDO or settings.CONVERSAO_SEGREDO
+            if not (endereco or padrao_endereco):
+                raise CommandError(
+                    "Sem endereco do worker: preencha IMAGEM_BASE_URL no .env ou use --endereco."
+                )
+        if not chave:
+            raise CommandError("Falta --chave (a chave da API).")
         dono = None
         if tenant:
             dono = Tenant.objects.filter(schema_name=tenant).first()
@@ -118,6 +146,18 @@ class Command(BaseCommand):
 
     def _testar(self, conexao, carga) -> None:
         try:
+            if carga == W.ANIMACAO:
+                from apps.inference.providers.animacao import get_animation_provider
+
+                cliente = get_animation_provider(conexao)
+                resposta = cliente._chamar("GET", "/models")
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"Respondeu {resposta.status_code}: endereco e chave valem (o teste nao "
+                        "gera video, que leva minutos e custa)."
+                    )
+                )
+                return
             if carga == W.VOZ:
                 from apps.inference.providers.voz import get_voice_provider
 

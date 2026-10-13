@@ -282,13 +282,30 @@ def _capa(caminho: str, cores: dict, ajuste: dict | None = None):
     y = int((imagem.height - ALTURA) * ajuste["y"])
     imagem = imagem.crop((x, y, x + LARGURA, y + ALTURA))
     escuro = Image.new("RGB", (LARGURA, ALTURA), (0, 0, 0))
+    return Image.composite(escuro, imagem, _mascara_do_escuro(ajuste))
+
+
+def _mascara_do_escuro(ajuste: dict | None):
+    """Quanto escurecer cada ponto (0-255): por igual, ou em degrade (nada em
+    cima, ate 1,5x o escuro embaixo, onde fica o texto)."""
+    from PIL import Image
+
+    ajuste = ajuste_limpo(ajuste)
     if not ajuste["degrade"]:
-        return Image.blend(imagem, escuro, ajuste["escuro"])
-    # Degrade: nada em cima, ate 1,5x o escuro embaixo (onde fica o texto).
+        return Image.new("L", (LARGURA, ALTURA), int(255 * ajuste["escuro"]))
     fundo = min(0.95, ajuste["escuro"] * 1.5)
     mascara = Image.linear_gradient("L").resize((LARGURA, ALTURA))
-    mascara = mascara.point(lambda v: int(v * fundo))
-    return Image.composite(escuro, imagem, mascara)
+    return mascara.point(lambda v: int(v * fundo))
+
+
+def _veu(ajuste: dict | None):
+    """O escurecimento sozinho (preto com transparencia), para ir por cima de
+    um clipe de video no lugar da imagem."""
+    from PIL import Image
+
+    veu = Image.new("RGBA", (LARGURA, ALTURA), (0, 0, 0, 0))
+    veu.putalpha(_mascara_do_escuro(ajuste))
+    return veu
 
 
 # Entre o titulo e o texto da lamina.
@@ -405,10 +422,17 @@ def desenhar(
     apenas: int | None = None,
     fundos: dict | None = None,
     cores_da_capa: dict | None = None,
+    camada: str = "tudo",
+    clipes: set[int] | frozenset = frozenset(),
 ) -> list[bytes]:
     """As laminas em PNG. `laminas[0]` e o gancho, sobre a capa (com o
     `ajuste` de enquadramento). `fundos`: {n: {"caminho", "modelo", "cores"}}
-    das outras (ver `fundos_das_laminas`). `apenas`: so a lamina n (a previa)."""
+    das outras (ver `fundos_das_laminas`). `apenas`: so a lamina n (a previa).
+
+    `camada` (para o video, que anima o fundo e poe o texto por cima):
+    "tudo" (o carrossel), "fundo" (sem texto; nas laminas com clipe de video,
+    `clipes`, so o escurecimento, transparente) ou "texto" (so o texto, o
+    rodape e a fonte citada, em fundo transparente)."""
     from PIL import Image, ImageDraw
 
     cores = {**CORES, **{k: v for k, v in (cores or {}).items() if v}}
@@ -422,7 +446,11 @@ def desenhar(
             continue
         fundo = (fundos or {}).get(n)
         cores = {**base, **((cores_da_capa or {}) if n == 1 else (fundo or {}).get("cores", {}))}
-        if n == 1:
+        if camada == "texto":
+            imagem = Image.new("RGBA", (LARGURA, ALTURA), (0, 0, 0, 0))
+        elif camada == "fundo" and n in clipes:
+            imagem = _veu(ajuste if n == 1 else None)
+        elif n == 1:
             imagem = _capa(capa, cores, ajuste)
         elif fundo:
             # O fundo padrao ja vem desenhado para o texto; a imagem enviada
@@ -430,6 +458,11 @@ def desenhar(
             imagem = _capa(fundo["caminho"], cores, {"escuro": 0.0} if fundo["modelo"] else None)
         else:
             imagem = Image.new("RGB", (LARGURA, ALTURA), cores["fundo"])
+        if camada == "fundo":
+            buffer = io.BytesIO()
+            imagem.save(buffer, format="PNG")
+            saida.append(buffer.getvalue())
+            continue
         desenho = ImageDraw.Draw(imagem)
         titulo, texto = item.get("titulo", ""), item.get("texto", "")
         if n == 1:
@@ -636,8 +669,9 @@ def previa_da_primeira(
     return buffer.getvalue()
 
 
-def pngs_do_carrossel(post, artigo) -> list[bytes]:
-    """As laminas do post em PNG (as mesmas do carrossel e do video)."""
+def pngs_do_carrossel(post, artigo, *, camada: str = "tudo") -> list[bytes]:
+    """As laminas do post em PNG (as mesmas do carrossel e do video). Para o
+    video, `camada` separa o fundo do texto (ver `desenhar`)."""
     laminas = (post.extras or {}).get("laminas") or []
     chamada = post.destino.chamada_final or CHAMADA
     return desenhar(
@@ -649,7 +683,20 @@ def pngs_do_carrossel(post, artigo) -> list[bytes]:
         chamada=chamada,
         fundos=fundos_das_laminas(post, com_a_chamada(laminas, chamada)),
         cores_da_capa=cores_da_capa(post),
+        camada=camada,
+        clipes=set(clipes_das_laminas(post)),
     )
+
+
+def clipes_das_laminas(post) -> dict[int, str]:
+    """{n: caminho} dos clipes de video enviados ou gerados para as laminas
+    (o fundo animado daquela lamina, no video)."""
+    clipes = (post.extras or {}).get("clipes") or {}
+    return {
+        int(n): caminho
+        for n, caminho in clipes.items()
+        if str(n).isdigit() and caminho and default_storage.exists(caminho)
+    }
 
 
 def video_pronto(post) -> dict | None:

@@ -97,7 +97,7 @@ def test_pedido_de_imagens_e_imagem_enviada_por_lamina(ambiente, modulo, setting
     )
     texto = identidade.pedido(post)
     assert "NAO escreva nenhum texto" in texto and "tons de azul e areia" in texto
-    assert "Foto realista so quando: ambiente e equipamentos" in texto
+    assert "foto realista so quando: ambiente e equipamentos" in texto
     assert "Lamina 2 (meio): uma cena que mostre a ideia de: 40% dos adultos" in texto
     assert "Lamina 3" not in texto and "As laminas 3 usam o fundo padrao" in texto
 

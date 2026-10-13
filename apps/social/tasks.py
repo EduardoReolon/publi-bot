@@ -29,8 +29,11 @@ def escrever_post(self, post_id: str) -> str:
 
 
 @shared_task(bind=True, max_retries=12)
-def gerar_imagens_das_laminas(self, post_id: str) -> int:
-    """As imagens das laminas pelo gerador do PubliBot. Gerador ocupado: tenta
+def gerar_imagens_das_laminas(
+    self, post_id: str, apenas: int | None = None, opcoes: int = 1
+) -> int:
+    """As imagens das laminas pelo gerador do PubliBot (todas as que faltam, ou
+    so a `apenas`; com `opcoes`, varias para escolher). Gerador ocupado: tenta
     de novo em 10 minutos (o que ja saiu fica)."""
     from apps.social import fontes, identidade, laminas
     from apps.social.models import Post
@@ -39,7 +42,7 @@ def gerar_imagens_das_laminas(self, post_id: str) -> int:
     if post is None:
         return 0
     try:
-        feitas = identidade.gerar_imagens(post)
+        feitas = identidade.gerar_imagens(post, apenas=apenas, opcoes=opcoes)
     except fontes.imagem_indisponivel() + fontes.modelo_indisponivel() as exc:
         laminas.refazer_imagens(post)
         raise self.retry(exc=exc, countdown=600) from exc
@@ -76,6 +79,43 @@ def gerar_video(self, post_id: str) -> str:
 
         aprovar(post, por=None)
     return "ok"
+
+
+@shared_task(bind=True, max_retries=12)
+def animar_laminas(self, post_id: str, apenas: int | None = None) -> int:
+    """Anima as laminas que tem imagem e ainda nao tem clipe (ou so a `apenas`).
+    Placa ocupada: tenta de novo em 10 minutos (o que ja saiu fica). No fim,
+    se o post ja e video, monta de novo com os clipes."""
+    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+    from apps.social import laminas, video
+    from apps.social.models import Post
+
+    post = Post.objects.select_related("destino").filter(pk=post_id).first()
+    if post is None:
+        return 0
+    total = len(
+        laminas.com_a_chamada(
+            (post.extras or {}).get("laminas") or [],
+            post.destino.chamada_final or laminas.CHAMADA,
+        )
+    )
+    com_clipe = laminas.clipes_das_laminas(post)
+    feitas = 0
+    for n in [apenas] if apenas else range(1, total + 1):
+        if apenas is None and (n in com_clipe or not video.imagem_da_lamina(post, n)):
+            continue
+        try:
+            video.animar_lamina(post, n)
+        except ProviderTransientError as exc:
+            raise self.retry(exc=exc, countdown=600) from exc
+        except (video.VideoIndisponivel, ProviderPermanentError) as exc:
+            post.avisos = [*(post.avisos or []), f"lamina {n} nao animada: {exc}"]
+            post.save(update_fields=["avisos", "atualizado_em"])
+            continue
+        feitas += 1
+    if feitas and (post.extras or {}).get("formato") == "video":
+        gerar_video.delay(str(post.pk))
+    return feitas
 
 
 @shared_task(bind=True, max_retries=3)

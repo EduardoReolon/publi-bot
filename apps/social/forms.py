@@ -51,8 +51,6 @@ class DestinoForm(forms.ModelForm):
             "instrucoes",
             "hashtags_fixas",
             "hashtags_de_referencia",
-            "video",
-            "voz",
         ]
         widgets = {
             "publico": forms.Textarea(attrs={"rows": 3}),
@@ -66,7 +64,6 @@ class DestinoForm(forms.ModelForm):
         for r in REDES.values():
             autores += [(c, f"{r.nome}: {rotulo}") for c, rotulo in r.autores]
         self.fields["fotos_por_cento"].required = False  # vazio: so artigos
-        self.fields["video"].required = False  # vazio: a IA so sugere
         self.fields["autor"] = forms.ChoiceField(
             label=_("quem posta"), choices=autores, required=False
         )
@@ -79,7 +76,6 @@ class DestinoForm(forms.ModelForm):
     GRUPOS = (
         (_("A conta"), ("rede", "nome", "autor", "ligado", "aprovacao")),
         (_("Ritmo"), ("teto_semanal", "dias", "horarios", "fotos_por_cento")),
-        (_("Video e voz"), ("video", "voz")),
         (
             _("Publico e voz"),
             ("publico", "tom", "instrucoes", "hashtags_fixas", "hashtags_de_referencia"),
@@ -92,9 +88,6 @@ class DestinoForm(forms.ModelForm):
             (titulo, [self[c] for c in campos if c in self.fields])
             for titulo, campos in self.GRUPOS
         ]
-
-    def clean_video(self):
-        return self.cleaned_data.get("video") or Destino.Video.SUGERIR
 
     def clean_horarios(self):
         horarios = [
@@ -120,25 +113,56 @@ class DestinoForm(forms.ModelForm):
 
 
 class IdentidadeForm(forms.ModelForm):
-    """O visual da conta: cores das laminas, a ultima lamina e o estilo das
-    imagens (na tela Identidade visual)."""
+    """O visual da conta: cores das laminas, a ultima lamina, os estilos que a
+    IA pode escolher, as orientacoes (gerais, so das imagens, so dos videos) e o
+    video com voz (na tela Identidade visual)."""
 
     cor_fundo = forms.CharField(label=_("cor de fundo das laminas"), required=False)
     cor_texto = forms.CharField(label=_("cor do texto"), required=False)
     cor_destaque = forms.CharField(label=_("cor de destaque"), required=False)
+    estilos_permitidos = forms.MultipleChoiceField(
+        label=_("estilos que a IA pode escolher"),
+        choices=[],
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_(
+            "A cada post a IA escolhe o que melhor mostra a ideia, e diz por que. Nenhum "
+            "marcado: todos."
+        ),
+    )
 
     class Meta:
         model = Destino
-        fields = ["estilo_das_imagens", "descricao_do_estilo", "cenarios_de_foto", "chamada_final"]
+        fields = [
+            "estilos_permitidos",
+            "estilo_das_imagens",
+            "descricao_do_estilo",
+            "orientacao_imagens",
+            "orientacao_videos",
+            "cenarios_de_foto",
+            "chamada_final",
+            "video",
+            "voz",
+            "legendas",
+        ]
         widgets = {
             "descricao_do_estilo": forms.Textarea(attrs={"rows": 3}),
+            "orientacao_imagens": forms.Textarea(attrs={"rows": 2}),
+            "orientacao_videos": forms.Textarea(attrs={"rows": 2}),
             "cenarios_de_foto": forms.Textarea(attrs={"rows": 2}),
         }
 
     def __init__(self, *args, **kwargs):
+        from apps.social.identidade import ESCOLHIVEIS, NOMES
+
         super().__init__(*args, **kwargs)
+        self.fields["estilos_permitidos"].choices = [(e, NOMES[e]) for e in ESCOLHIVEIS]
+        self.fields["video"].required = False  # vazio: a IA so sugere
         for chave in ("fundo", "texto", "destaque"):
             self.initial[f"cor_{chave}"] = (self.instance.cores or {}).get(chave, "")
+
+    def clean_video(self):
+        return self.cleaned_data.get("video") or Destino.Video.SUGERIR
 
     def save(self, commit=True):
         destino = super().save(commit=False)

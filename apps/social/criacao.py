@@ -23,6 +23,7 @@ logger = logging.getLogger("publibot.social")
 
 ROTULOS = [
     "FORMATO",
+    "ESTILO",
     "IDEIA",
     "PRINCIPIOS",
     "GANCHO",
@@ -88,8 +89,9 @@ Idioma: {idioma}
 
 LAMINAS = (
     "LAMINAS:\n- titulo (ate 8 palavras) | texto (ate 20 palavras) | visual (a cena da imagem,"
-    " sem texto) | fala (o que a voz diz nesta lamina, se virar video)\n  (de {min} a {max} "
-    "linhas; a primeira e a capa)\n"
+    " sem texto) | movimento (o que se mexe na cena, se virar animacao) | fala (o que a voz "
+    "diz nesta lamina, se virar video)\n  (de {min} a {max} linhas; a primeira e a capa)\n"
+    "ESTILO: a chave do estilo das imagens que voce escolheu | por que, em uma frase\n"
     "FORMATO: carrossel ou video | por que, em uma frase\n"
 )
 ENQUETE = "ENQUETE: pergunta | opcao 1 | opcao 2 (de 2 a 4 opcoes, ate 30 caracteres cada)\n"
@@ -179,13 +181,19 @@ def ler(resposta: str) -> tuple[dict, str]:
                 "titulo": partes[0],
                 "texto": partes[1],
                 "visual": partes[2] if len(partes) > 2 else "",
-                "fala": " | ".join(partes[3:]).strip(),
+                "movimento": partes[3] if len(partes) > 4 else "",
+                # a fala e a ultima coluna (a resposta antiga, sem movimento, tambem le)
+                "fala": " | ".join(partes[4:] if len(partes) > 4 else partes[3:]).strip(),
             }
         )
     formato = _partes(" ".join(blocos.get("FORMATO", "").split()))
     if formato and formato[0]:
         dados["formato_sugerido"] = formato[0].lower()
         dados["por_que_formato"] = " | ".join(formato[1:])
+    estilo = _partes(" ".join(blocos.get("ESTILO", "").split()))
+    if estilo and estilo[0]:
+        dados["estilo"] = estilo[0].lower()
+        dados["por_que_estilo"] = " | ".join(estilo[1:])
     enquete = _partes(" ".join(blocos.get("ENQUETE", "").split()))
     if len(enquete) >= 3:
         dados["enquete"] = {"pergunta": enquete[0], "opcoes": enquete[1:]}

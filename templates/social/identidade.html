@@ -18,7 +18,13 @@
   </p>
 
   <section class="secao">
-    <h3>{% translate "Cores, ultima lamina e estilo das imagens" %}</h3>
+    <h3>{% translate "Cores, estilos, orientacoes e video" %}</h3>
+    <p class="ajuda">{% blocktranslate trimmed %}
+      A IA escolhe, post a post, o estilo (entre os marcados) e se vale carrossel ou video — e diz por
+      que. As orientacoes gerais valem para tudo; as de imagem, so para as imagens das laminas; as de
+      video, so para animar as cenas. Personagens fixos (abaixo) entram iguais em todo pedido, para
+      IAs diferentes desenharem igual.
+    {% endblocktranslate %}</p>
     <form method="post">
       {% csrf_token %}<input type="hidden" name="acao" value="visual">
       {% for campo in form %}{% include "_campo.html" %}{% endfor %}

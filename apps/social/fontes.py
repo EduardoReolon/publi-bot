@@ -336,13 +336,50 @@ def perguntar_a_outra_ia(pedido: str) -> str:
     return resposta.text
 
 
+def _tem(carga: str) -> bool:
+    from apps.inference.models import InferenceConnection
+
+    return any(c.atende(carga) for c in InferenceConnection.objects.filter(is_active=True))
+
+
 def tem_voz() -> bool:
     from apps.inference.models import InferenceConnection
 
-    return any(
-        c.atende(InferenceConnection.Workload.VOZ)
-        for c in InferenceConnection.objects.filter(is_active=True)
-    )
+    return _tem(InferenceConnection.Workload.VOZ)
+
+
+def tem_animacao() -> bool:
+    from apps.inference.models import InferenceConnection
+
+    return _tem(InferenceConnection.Workload.ANIMACAO)
+
+
+def animar(imagem: bytes, prompt: str, *, segundos: int = 4) -> bytes:
+    """O clipe (MP4) da imagem animada, pela conexao de animacao (o worker ou a
+    Sora). Leva minutos: chamar de tarefa, nunca da tela."""
+    from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
+    from apps.inference.models import InferenceConnection
+    from apps.inference.providers.animacao import get_animation_provider
+    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+
+    conexao = _conexao_externa(InferenceConnection.Workload.ANIMACAO)
+    if conexao is None:
+        raise ProviderPermanentError(
+            "nenhuma animacao cadastrada (manage.py configurar_api worker_animacao, ou "
+            "openai_video --chave ...)."
+        )
+    try:
+        with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
+            clipe = get_animation_provider(conexao).animar(
+                imagem=imagem, prompt=prompt, modelo=conexao.default_model, segundos=segundos
+            )
+    except ProviderTransientError:
+        raise  # placa ocupada nao e falha da conexao (contrato do worker)
+    except Exception:
+        registrar_falha(conexao)
+        raise
+    registrar_sucesso(conexao)
+    return clipe
 
 
 def falar(texto: str, voz: str = "") -> bytes:
@@ -385,12 +422,20 @@ def imagem_indisponivel() -> tuple[type[Exception], ...]:
 
 def gerar_imagem(prompt: str, *, tamanho: str = "896x1152") -> bytes:
     """Uma imagem do gerador do PubliBot (o mesmo das capas), sem texto."""
-    from apps.content.capas import gerar_imagens
+    return gerar_imagens(prompt, quantidade=1, tamanho=tamanho)[0]
 
-    geradas = gerar_imagens(
-        prompt, quantidade=1, tamanho=tamanho, negativo="text, letters, words, watermark, logo"
+
+def gerar_imagens(prompt: str, *, quantidade: int, tamanho: str = "896x1152") -> list[bytes]:
+    """Varias opcoes da mesma cena (para escolher a melhor), sem texto."""
+    from apps.content.capas import gerar_imagens as gerar
+
+    geradas = gerar(
+        prompt,
+        quantidade=quantidade,
+        tamanho=tamanho,
+        negativo="text, letters, words, watermark, logo",
     )
-    return geradas[0].conteudo
+    return [g.conteudo for g in geradas]
 
 
 def reabrir_modelo() -> list[tuple[str, bool, str]]:
