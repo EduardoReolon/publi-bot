@@ -41,7 +41,7 @@ NOMES = {
 QUANDO = {
     "foto": "ambiente, equipamento, resultado real, confianca",
     "ilustracao": "explicar uma ideia abstrata ou um processo, leve",
-    "quadrinhos": "contar uma situacao com personagens, humor, antes e depois",
+    "quadrinhos": "contar uma situacao do dia a dia com personagens, com leveza",
     "apresentacao": "dado, lista, comparacao, passo a passo para salvar",
 }
 
@@ -81,12 +81,33 @@ def descricao_do_estilo(destino, estilo: str, *, para: str = "imagem") -> str:
     return ". ".join(p.rstrip(". ") for p in partes if p)
 
 
-def instrucao_de_estilo(destino) -> str:
+def resumo_dos_estilos(destino) -> str:
+    """Os estilos que a conta aceita e as orientacoes, para quem propoe posts
+    (a escolha final e de quem escreve cada um)."""
+    lista = estilos_da_conta(destino)
+    texto = "estilos de imagem permitidos: " + "; ".join(
+        f"'{e}' ({NOMES[e]}: bom para {QUANDO[e]})" for e in lista
+    )
+    for rotulo, valor in (
+        ("orientacoes gerais", destino.descricao_do_estilo),
+        ("so nas imagens", destino.orientacao_imagens),
+        ("so nos videos", destino.orientacao_videos),
+    ):
+        if valor.strip():
+            texto += f"; {rotulo}: {valor.strip()}"
+    return texto
+
+
+def instrucao_de_estilo(destino, post=None) -> str:
     """Para quem escreve o post: o estilo de imagem a escolher, entre os da
-    conta, e por que (vai em 'estilo' e 'por_que_estilo')."""
+    conta, e por que (vai em 'estilo' e 'por_que_estilo'). Se a proposta ja
+    pediu um estilo, e ele."""
     lista = estilos_da_conta(destino)
     gerais = destino.descricao_do_estilo.strip()
     imagens = destino.orientacao_imagens.strip()
+    pedido = ((post.extras or {}).get("estilo_pedido") or "") if post is not None else ""
+    if pedido in lista:
+        lista = [pedido]
     if len(lista) == 1:
         texto = f"Estilo das imagens deste post: {ESTILOS[lista[0]]}."
     else:

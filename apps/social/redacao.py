@@ -217,13 +217,15 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
         extras["laminas"] = laminas
     if str(dados.get("ideia") or "").strip():
         extras["ideia_central"] = str(dados["ideia"]).strip()[:200]
-    formato = str(dados.get("formato_sugerido") or "").strip().lower()
+    pedidos = post.extras or {}
+    formato = pedidos.get("formato_pedido") or str(dados.get("formato_sugerido") or "")
+    formato = formato.strip().lower()
     if f.max_laminas and formato in ("carrossel", "video"):
         extras["formato_sugerido"] = formato
         extras["por_que_formato"] = str(dados.get("por_que_formato") or "").strip()[:300]
     from apps.social.identidade import estilos_da_conta
 
-    estilo = str(dados.get("estilo") or "").strip().lower()
+    estilo = pedidos.get("estilo_pedido") or str(dados.get("estilo") or "").strip().lower()
     if f.max_laminas and estilo in estilos_da_conta(post.destino):
         extras["estilo"] = estilo
         extras["por_que_estilo"] = str(dados.get("por_que_estilo") or "").strip()[:300]

@@ -22,6 +22,7 @@
           <strong>{% if p.alvo.tema %}{% translate "Tema" %}{% else %}{% translate "Artigo" %}{% endif %}:</strong> {{ p.alvo.titulo|truncatechars:140 }}
           {% if p.gancho %}<div class="ajuda">{% translate "Gancho sugerido:" %} “{{ p.gancho }}”</div>{% endif %}
           {% if p.por_que %}<div class="ajuda">{% translate "Por que:" %} {{ p.por_que }}</div>{% endif %}
+          <div class="ajuda">{% if p.foco %}{% translate "foco" %}: {{ p.foco }} · {% endif %}{% if p.abordagem %}{% translate "abordagem" %}: {{ p.abordagem }} · {% endif %}{% translate "formato" %}: {{ p.formato|default:"carrossel" }}{% if p.estilo %} · {% translate "estilo" %}: {{ p.estilo }}{% endif %}</div>
         </label>
       {% empty %}
         <p class="vazio">{% translate "Nenhuma proposta com codigo reconhecido." %}</p>
