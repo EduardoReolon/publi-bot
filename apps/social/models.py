@@ -570,6 +570,12 @@ class Post(models.Model):
         return identidade.pedido(self)
 
     @property
+    def pedido_de_quadros(self) -> str:
+        from apps.social import identidade
+
+        return identidade.pedido_de_quadros(self)
+
+    @property
     def pedido_de_animacao(self) -> str:
         from apps.social import identidade
 

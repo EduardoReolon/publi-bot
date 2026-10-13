@@ -404,6 +404,13 @@ explica:
   volta);
 - baixar a imagem para animar fora.
 
+**Quadros, o meio-termo sem IA de video** (`video.clipe_de_quadros`, "Montar com
+quadros" na lamina): 2 a 4 imagens da mesma cena (o comeco, o meio e o fim de
+um gesto, feitas numa IA de imagem com o "pedido de quadros" do post) viram o
+clipe da lamina — cada uma 2,4 s com zoom lento alternando, e fade de 0,5 s
+entre elas. Fica com cara de gibi animado, sem tentar parecer filmagem, e
+custa so a geracao das imagens.
+
 **Montagem em camadas** (`video.montar`, tarefa `gerar_video`; ffmpeg,
 instalado pelo deploy). Cada lamina e:
 
