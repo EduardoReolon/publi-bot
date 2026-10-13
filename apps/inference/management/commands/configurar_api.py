@@ -82,7 +82,7 @@ SERVICOS = {
     # A placa propria (docs/WORKER_VOZ_E_ANIMACAO.md): endereco e segredo vem do
     # .env (os mesmos da imagem), entao --chave e opcional.
     "worker_voz": (K.OPENAI_COMPATIBLE, "", W.VOZ, "kokoro", "Worker (voz)"),
-    "worker_animacao": (K.OPENAI_COMPATIBLE, "", W.ANIMACAO, "ltx-video", "Worker (animacao)"),
+    "worker_animacao": (K.OPENAI_COMPATIBLE, "", W.ANIMACAO, "framepack", "Worker (animacao)"),
 }
 DO_WORKER = {"worker_voz", "worker_animacao"}
 
@@ -128,8 +128,9 @@ class Command(BaseCommand):
         conexao.base_url = endereco or padrao_endereco
         conexao.workloads = [carga]
         conexao.default_model = modelo or padrao_modelo
-        conexao.max_concurrency = 2
-        conexao.lease_seconds = 600
+        conexao.max_concurrency = 1 if carga == W.ANIMACAO else 2
+        # Animar leva dezenas de minutos na placa propria: a vaga dura o trabalho.
+        conexao.lease_seconds = 5400 if carga == W.ANIMACAO else 600
         conexao.is_active = True
         conexao.consecutive_failures = 0
         conexao.circuit_open_until = None

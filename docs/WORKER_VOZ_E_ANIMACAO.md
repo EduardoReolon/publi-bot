@@ -133,19 +133,24 @@ de volta para 4:5. Por isso o worker deve:
 | `failed` | `200` com `error.message` | aviso na lâmina, sem repetir |
 | Rota inexistente | `404` no `POST` | aviso: "configure a animação" |
 
-### Sugestão: LTX-Video (imagem para vídeo) pelo diffusers
+### Implementado: FramePack (worker 2.10)
 
-- Pipeline: `LTXImageToVideoPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.bfloat16)`.
-- Com `enable_model_cpu_offload()` e `vae.enable_tiling()`, como a rota de
-  imagem faz.
-- Parâmetros: ~512x768 (múltiplos de 32), `num_frames = 8k+1` (97 ≈ 4 s a 24 fps)
-  e `num_inference_steps` 30–40.
-- `export_to_video(frames, caminho, fps=24)`.
-- Descarregar o Ollama antes, como na imagem. Liberar a placa depois de ocioso.
-- **Não medido numa placa de 8 GB.** Meça como o `medir_imagem.py` antes de
-  ligar (`ANIMACAO_ATIVA=nao` de padrão). Se não couber, as alternativas são o
-  Wan 2.1 (1,3B, mas é texto para vídeo) ou deixar a animação para a Sora,
-  pela API.
+A rota existe no worker desde a 2.10: `animacao.py` e `animar_framepack.py`.
+Os detalhes estão no `INTEGRACAO.md` de lá, seção "Animação". Ela usa o
+**FramePack** (lllyasviel/FramePack, HunyuanVideo), num processo à parte,
+porque ele pede torch 2.6 e Python 3.10.
+
+**Medido numa placa de 8 GB** (704×544, TeaCache):
+- cerca de 9,5 min por trecho de ~1,1 s; 2,4 s de vídeo em uns 20 min;
+- até 7,7 GB de VRAM.
+
+A qualidade foi boa no personagem principal; movimento de figura pequena ao
+fundo quase não sai. Por isso o PubliBot pede 3 s e envia a imagem 4:5
+inteira. Uso realista: **animar a capa**, e as outras lâminas com quadros.
+
+Para ligar:
+1. No `.env` do worker, `ANIMACAO_ATIVA=sim`.
+2. No servidor, `manage.py configurar_api worker_animacao`.
 
 `/health/` deve publicar `rotas.animacao` e um bloco `animacao` com `modelo`,
 `carregado`, `trabalhos` (em curso e prontos) e `tempo_maximo`.

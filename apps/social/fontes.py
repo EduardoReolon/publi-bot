@@ -367,7 +367,16 @@ def tem_animacao() -> bool:
     return _tem(InferenceConnection.Workload.ANIMACAO)
 
 
-def animar(imagem: bytes, prompt: str, *, segundos: int = 4) -> bytes:
+def animacao_e_da_sora() -> bool:
+    """A conexao de animacao e a Sora (quadro 9:16 obrigatorio) ou outra (o
+    worker aceita a imagem como ela e)?"""
+    from apps.inference.models import InferenceConnection
+
+    conexao = _conexao_externa(InferenceConnection.Workload.ANIMACAO)
+    return bool(conexao and "sora" in (conexao.default_model or "").lower())
+
+
+def animar(imagem: bytes, prompt: str, *, segundos: int = 3, tamanho: str = "720x1280") -> bytes:
     """O clipe (MP4) da imagem animada, pela conexao de animacao (o worker ou a
     Sora). Leva minutos: chamar de tarefa, nunca da tela."""
     from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
@@ -384,7 +393,11 @@ def animar(imagem: bytes, prompt: str, *, segundos: int = 4) -> bytes:
     try:
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
             clipe = get_animation_provider(conexao).animar(
-                imagem=imagem, prompt=prompt, modelo=conexao.default_model, segundos=segundos
+                imagem=imagem,
+                prompt=prompt,
+                modelo=conexao.default_model,
+                segundos=segundos,
+                tamanho=tamanho,
             )
     except ProviderTransientError:
         raise  # placa ocupada nao e falha da conexao (contrato do worker)

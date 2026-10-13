@@ -488,7 +488,14 @@ def animar_lamina(post, n: int) -> str:
     prompt = identidade.prompts_da_lamina(post, n).get("movimento") or (
         "subtle slow motion of the scene, static camera, no cuts"
     )
-    clipe = fontes.animar(_no_quadro_da_animacao(caminho, cores["fundo"]), prompt)
+    if fontes.animacao_e_da_sora():
+        # A Sora so aceita o quadro do video (9:16): a imagem vai no meio.
+        clipe = fontes.animar(_no_quadro_da_animacao(caminho, cores["fundo"]), prompt)
+    else:
+        # O worker (FramePack) anima a imagem no formato dela: mandar a 4:5
+        # inteira aproveita toda a resolucao.
+        with default_storage.open(caminho, "rb") as arquivo:
+            clipe = fontes.animar(_em_png(arquivo.read()), prompt, tamanho="544x704")
     return _guardar_clipe(post, n, clipe)
 
 

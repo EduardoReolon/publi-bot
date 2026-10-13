@@ -23,7 +23,7 @@ import httpx
 import pytest
 
 CONTRATO = Path(__file__).resolve().parent / "contrato_do_worker"
-VERSAO_ESPERADA = "2.6"
+VERSAO_ESPERADA = "2.10"
 
 
 def _exemplo(nome: str) -> dict:
@@ -598,3 +598,29 @@ def test_contexto_estourado_explica_o_que_fazer():
         OpenAICompatibleClient._levantar_se_erro(resposta)
     assert "4835" in str(erro.value) and "4096" in str(erro.value)
     assert "WORKER_CONTEXTO" in str(erro.value)
+
+
+def test_a_animacao_le_o_trabalho_publicado_pelo_worker(monkeypatch):
+    """O cliente de animacao (dialeto /v1/videos) contra o exemplo do worker:
+    o POST devolve o trabalho, o GET o status, e o conteudo e o MP4."""
+    import httpx
+
+    from apps.inference.providers.animacao import OpenAIVideoClient
+
+    exemplo = _exemplo("video-resposta.json")
+    pedidos = []
+
+    def request(metodo, url, **kwargs):
+        pedidos.append((metodo, url))
+        pedido = httpx.Request(metodo, url)
+        if metodo == "POST":
+            return httpx.Response(200, json=exemplo, request=pedido)
+        if url.endswith("/content"):
+            return httpx.Response(200, content=b"MP4", request=pedido)
+        return httpx.Response(200, json={**exemplo, "status": "completed"}, request=pedido)
+
+    monkeypatch.setattr(httpx, "request", request)
+    cliente = OpenAIVideoClient(base_url="http://gpu:8090", api_key="s")
+    clipe = cliente.animar(imagem=b"PNG", prompt="p", modelo="framepack", dormir=lambda s: None)
+    assert clipe == b"MP4"
+    assert pedidos[-1] == ("GET", f"http://gpu:8090/v1/videos/{exemplo['id']}/content")
