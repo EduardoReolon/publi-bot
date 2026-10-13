@@ -47,6 +47,56 @@ def gerar_imagens_das_laminas(self, post_id: str) -> int:
     return feitas
 
 
+@shared_task(bind=True, max_retries=6)
+def gerar_video(self, post_id: str) -> str:
+    """O video do post (narracao + laminas). Voz ou servidor ocupados: tenta
+    de novo em 10 minutos; erro de verdade vira aviso no post."""
+    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+    from apps.social import video
+    from apps.social.models import Post
+
+    post = Post.objects.select_related("destino").filter(pk=post_id).first()
+    if post is None:
+        return "sem post"
+    try:
+        video.montar(post)
+    except ProviderTransientError as exc:
+        raise self.retry(exc=exc, countdown=600) from exc
+    except (video.VideoIndisponivel, ProviderPermanentError) as exc:
+        post.avisos = [*(post.avisos or []), f"video nao gerado: {exc}"]
+        post.save(update_fields=["avisos", "atualizado_em"])
+        return "erro"
+    destino = post.destino
+    if (
+        post.situacao == Post.Situacao.RASCUNHO
+        and not post.avisos
+        and destino.aprovacao == destino.Aprovacao.AUTOMATICO
+    ):
+        from apps.social.publicacao import aprovar
+
+        aprovar(post, por=None)
+    return "ok"
+
+
+@shared_task(bind=True, max_retries=3)
+def perguntar_a_outra_ia(self, resposta_id: str) -> str:
+    """O pedido vai a outra IA por API; a resposta passa pelos mesmos leitores
+    da colada. Post, iscas e publicos ja se aplicam (entram para revisar);
+    propostas esperam a pessoa escolher na previa."""
+    from apps.inference.providers.base import ProviderTransientError
+    from apps.social import outra_ia_por_api
+    from apps.social.models import RespostaDaOutraIA
+
+    pedido = RespostaDaOutraIA.objects.filter(pk=resposta_id).first()
+    if pedido is None:
+        return "sem pedido"
+    try:
+        outra_ia_por_api.responder(pedido)
+    except ProviderTransientError as exc:
+        raise self.retry(exc=exc, countdown=300) from exc
+    return pedido.situacao
+
+
 @shared_task
 def sugerir_posts() -> int:
     """Uma vez por dia: a escolha do dia em cada conta (com 'sugerir sozinho')."""

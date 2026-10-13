@@ -636,6 +636,36 @@ def previa_da_primeira(
     return buffer.getvalue()
 
 
+def pngs_do_carrossel(post, artigo) -> list[bytes]:
+    """As laminas do post em PNG (as mesmas do carrossel e do video)."""
+    laminas = (post.extras or {}).get("laminas") or []
+    chamada = post.destino.chamada_final or CHAMADA
+    return desenhar(
+        laminas,
+        capa=foto_de_fundo(post, artigo),
+        ajuste=ajuste_da_capa(post),
+        cores=post.destino.cores,
+        marca=post.destino.conta_nome or post.destino.nome,
+        chamada=chamada,
+        fundos=fundos_das_laminas(post, com_a_chamada(laminas, chamada)),
+        cores_da_capa=cores_da_capa(post),
+    )
+
+
+def video_pronto(post) -> dict | None:
+    """O video do post (Reels), se ele esta no formato video e o arquivo existe."""
+    extras = post.extras or {}
+    caminho = extras.get("video") or ""
+    if extras.get("formato") != "video" or not caminho or not default_storage.exists(caminho):
+        return None
+    return {
+        "caminho": caminho,
+        "url": _endereco(post, 1),
+        "tipo": "video",
+        "alt": (extras.get("gancho") or post.artigo_titulo)[:500],
+    }
+
+
 def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
     """Grava as imagens do post e o endereco publico de cada uma."""
     r = rede(post.destino.rede)
@@ -649,20 +679,13 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
         imagens = [{"caminho": propria, "url": _endereco(post, 1), "alt": artigo.titulo[:500]}]
     elif r.formato.imagem == "capa" and artigo.capa:
         imagens = [{"caminho": artigo.capa, "url": artigo.capa_url, "alt": artigo.titulo[:500]}]
+    elif r.formato.imagem == "laminas" and (video := video_pronto(post)):
+        imagens = [video]
     elif r.formato.imagem == "laminas":
         laminas = (post.extras or {}).get("laminas") or []
         if laminas:
             chamada = post.destino.chamada_final or CHAMADA
-            pngs = desenhar(
-                laminas,
-                capa=capa,
-                ajuste=ajuste_da_capa(post),
-                cores=post.destino.cores,
-                marca=post.destino.conta_nome or post.destino.nome,
-                chamada=chamada,
-                fundos=fundos_das_laminas(post, com_a_chamada(laminas, chamada)),
-                cores_da_capa=cores_da_capa(post),
-            )
+            pngs = pngs_do_carrossel(post, artigo)
             for n, png in enumerate(pngs, start=1):
                 caminho = caminho_da_imagem(post, n)
                 if default_storage.exists(caminho):
@@ -682,12 +705,16 @@ def preparar_imagens(post, artigo: fontes.ArtigoParaRedes) -> None:
     post.save(update_fields=["imagens", "atualizado_em"])
 
 
+def artigo_do_post(post):
+    from apps.social.proprio import como_artigo
+
+    return como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+
+
 def refazer_imagens(post) -> bool:
     """Monta de novo as imagens do post com o texto e as fotos atuais. Falso se
     o artigo sumiu."""
-    from apps.social.proprio import como_artigo
-
-    artigo = como_artigo(post.entrada) if post.entrada_id else fontes.artigo(post.artigo_id)
+    artigo = artigo_do_post(post)
     if artigo is None:
         return False
     preparar_imagens(post, artigo)

@@ -205,6 +205,7 @@ padroes = [
   "apps/inference/**",
   "apps/content/inference.py",
   "tests/test_inference.py",
+  "tests/test_voz_e_api_externa.py",
 ]
 
 [[bloco]]

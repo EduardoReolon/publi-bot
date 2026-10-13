@@ -159,6 +159,26 @@ class Destino(models.Model):
     # Lâminas (carrossel): {"fundo": "#...", "texto": "#...", "destaque": "#..."}.
     cores = models.JSONField(_("cores das laminas"), default=dict, blank=True)
     chamada_final = models.CharField(_("ultima lamina / chamada"), max_length=160, blank=True)
+
+    # Video (Reels/Shorts): a IA sugere carrossel ou video por post; aqui se
+    # decide o que fazer com a sugestao, e com que voz narrar.
+    class Video(models.TextChoices):
+        SUGERIR = "sugerir", _("A IA sugere; eu gero o video quando quiser")
+        AUTOMATICO = "automatico", _("Gerar o video sozinho quando a IA sugerir")
+        NUNCA = "nunca", _("So carrossel (sem video)")
+
+    video = models.CharField(
+        _("video"), max_length=12, choices=Video.choices, default=Video.SUGERIR
+    )
+    voz = models.CharField(
+        _("voz da narracao"),
+        max_length=100,
+        blank=True,
+        help_text=_(
+            "O id da voz no servico de voz (ElevenLabs: Voices > ID; OpenAI: alloy, nova...; "
+            "Google: pt-BR-Neural2-B). Vazio: a voz padrao do servico."
+        ),
+    )
     # Identidade visual: o estilo das imagens das laminas (para a IA de imagem).
     estilo_das_imagens = models.CharField(
         _("estilo das imagens"),
@@ -521,6 +541,20 @@ class Post(models.Model):
         return identidade.pedido(self)
 
     @property
+    def roteiro_do_video(self) -> str:
+        from apps.social import video
+
+        return video.roteiro(self)
+
+    @property
+    def falas_do_video(self) -> str:
+        """Uma fala por linha, das laminas escritas (sem a chamada final)."""
+        return "\n".join(
+            (x.get("fala") or "").replace("\n", " ")
+            for x in (self.extras or {}).get("laminas") or []
+        )
+
+    @property
     def no_foco(self) -> dict:
         """Como foi no seu foco, contra os da conta com o mesmo foco."""
         from apps.social import focos
@@ -731,6 +765,45 @@ class Isca(models.Model):
 
     def __str__(self) -> str:
         return self.nome
+
+
+class RespostaDaOutraIA(models.Model):
+    """Um pedido feito a outra IA por API (no lugar de copiar e colar) e a
+    resposta, que passa pelos mesmos leitores da resposta colada. Roda em
+    segundo plano: a IA grande leva de segundos a minutos."""
+
+    class Tipo(models.TextChoices):
+        PROPOSTAS = "propostas", _("Propostas de posts")
+        POST = "post", _("Post inteiro")
+        ISCAS = "iscas", _("Ideias de iscas")
+        PUBLICOS = "publicos", _("Publico do impulso")
+
+    class Situacao(models.TextChoices):
+        ESPERANDO = "esperando", _("Esperando a resposta")
+        PRONTA = "pronta", _("Pronta para ver")
+        APLICADA = "aplicada", _("Aplicada")
+        ERRO = "erro", _("Erro")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    destino = models.ForeignKey(
+        Destino, on_delete=models.CASCADE, null=True, blank=True, related_name="respostas_ia"
+    )
+    post = models.ForeignKey(
+        Post, on_delete=models.CASCADE, null=True, blank=True, related_name="respostas_ia"
+    )
+    pedido = models.TextField()
+    resposta = models.TextField(blank=True)
+    situacao = models.CharField(max_length=10, choices=Situacao.choices, default=Situacao.ESPERANDO)
+    erro = models.TextField(blank=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+
+    def __str__(self) -> str:
+        return f"{self.get_tipo_display()} ({self.get_situacao_display()})"
 
 
 def _caminho_do_fundo(instancia, nome: str) -> str:

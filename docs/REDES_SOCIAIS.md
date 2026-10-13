@@ -351,6 +351,37 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
     vira um prompt em ingles (`social_cena`) e uma imagem 4:5 sem texto.
     Gerador ocupado: tenta de novo em 10 minutos.
 
+### 5b. Video (Reels) com voz de IA — `video.py`, `providers/voz.py`
+
+As **mesmas laminas** viram um video vertical (1080x1920): cada lamina na tela
+enquanto a voz diz a fala dela; sai como **Reels** (o publicador do Instagram
+ja manda Reels quando a midia e video).
+
+- **Quem decide**: quem escreve (a nossa IA ou a outra) devolve a `fala` de
+  cada lamina (curta, como se fala: ate ~160 palavras no total, ~60 s) e
+  `formato_sugerido` (carrossel ou video) com o porque. Sugere video quando a
+  ideia ganha com voz: pergunta direta ao publico, historia/caso, passo a passo
+  curto, mito x verdade. Carrossel quando o post e para salvar (lista, tabela,
+  numeros para consultar). O algoritmo avisa narracao longa demais.
+- **O que a conta faz com a sugestao** (`Destino.video`, Configurar > a conta >
+  Video e voz): *so sugerir* (padrao: o post mostra "a IA sugere video" e o
+  botao), *gerar sozinho* (a sugestao vira video antes da aprovacao automatica;
+  precisa de voz cadastrada) ou *nunca*. `Destino.voz`: o id da voz no servico.
+- **Montagem** (`video.montar`, tarefa `gerar_video`): ffmpeg (instalado pelo
+  deploy) junta PNG de cada lamina + MP3 da fala, com uma pausa curta;
+  lamina sem fala (ex.: a chamada final sem texto) fica 2,5 s em silencio. A
+  narracao fica guardada por voz + texto (`social/audios/`): mudar uma fala so
+  paga essa fala. Voz ocupada: tenta de novo em 10 min; erro de verdade vira
+  aviso no post.
+- **No post**: "Video (Reels)": a sugestao e o porque, as falas para ajustar
+  (uma por linha), gerar / gerar de novo, voltar ao carrossel e o **roteiro**
+  para gravar com a propria voz ou num editor (CapCut, HeyGen) e enviar o video.
+- **Voz** (`providers/voz.py`, um adaptador por API, a mesma ideia: texto +
+  voz -> MP3): ElevenLabs, OpenAI (e servidores locais que imitam a rota
+  `/v1/audio/speech`, como Kokoro) e Google Text-to-Speech. Cadastro:
+  `manage.py configurar_api elevenlabs --chave ... --testar` (ou `openai_voz`,
+  `google_voz`).
+
 ### 6. Medicao — `medicao.py`, `views.clique`
 
 - **Cliques:** o link do post passa pelo PubliBot (`/redes/r/<chave>/`), que
@@ -636,6 +667,29 @@ Tudo fica marcado (motivo "Sugerido pela outra IA", abordagem "da outra IA"),
 e a Estrategia mostra o **comparativo**: a proporcao de posts que funcionaram
 entre os sugeridos pela outra IA e os escolhidos pelo PubliBot. Assim ela
 ganha (ou perde) credito com dado, conta por conta.
+
+### A outra IA por API — `outra_ia_por_api.py`, `fontes.perguntar_a_outra_ia`
+
+O mesmo pedido de copiar e colar (propostas, post inteiro, ideias de iscas,
+publico do impulso) pode ir **por API**, com um aviso no fim para responder
+direto nos blocos, sem conversar. A resposta passa pelos **mesmos leitores** da
+colada: post, iscas e publicos entram direto (para revisar, como colados);
+propostas ficam prontas na Estrategia ("ver e aplicar"), para marcar o que
+aplicar. Cada pedido fica guardado (`RespostaDaOutraIA`: pedido, resposta,
+situacao, erro). Roda em segundo plano (`tasks.perguntar_a_outra_ia`).
+
+O botao "Pedir pela API" so aparece com uma conexao cadastrada:
+
+    manage.py configurar_api anthropic --chave sk-ant-... --testar
+    manage.py configurar_api openai --chave sk-... [--modelo gpt-5]
+    manage.py configurar_api gemini --chave AIza...
+    manage.py configurar_api openrouter|deepseek|groq --chave ... --modelo ...
+    manage.py configurar_api anthropic --chave ... --tenant clinica_a   # so desse cliente
+
+Adaptadores: Claude pela API da Anthropic; todo o resto pela API compativel
+com a OpenAI (`/chat/completions` — OpenAI, Gemini em `/v1beta/openai`,
+OpenRouter, DeepSeek, Groq). O modelo padrao de cada servico troca com
+`--modelo`. A chave fica cifrada, como nas outras conexoes.
 
 ## Conectar as APIs (o que o dono precisa fazer)
 

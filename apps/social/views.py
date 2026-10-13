@@ -296,6 +296,7 @@ def post_pela_outra_ia(request: HttpRequest, pk) -> HttpResponse:
             "contagens": _contagens(request),
             "post": post,
             "pedido": criacao.pedido(post),
+            "api_da_outra_ia": _api_da_outra_ia(),
         },
     )
 
@@ -425,6 +426,36 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             post.save(update_fields=["extras", "atualizado_em"])
             _refazer_imagens(post)
             messages.success(request, _("Foto trocada e imagens refeitas."))
+    elif acao == "gerar_video":
+        from apps.social.tasks import gerar_video
+
+        if not fontes.tem_voz():
+            messages.error(
+                request,
+                _(
+                    "Nenhuma voz cadastrada. No servidor: manage.py configurar_api elevenlabs "
+                    "(ou openai_voz, google_voz) --chave ... Enquanto isso, use o roteiro para "
+                    "gravar fora."
+                ),
+            )
+        else:
+            gerar_video.delay(str(post.pk))
+            messages.info(request, _("Gerando o video (narracao e montagem). Recarregue depois."))
+    elif acao == "voltar_ao_carrossel":
+        from apps.social import video
+
+        video.voltar_ao_carrossel(post)
+        messages.success(request, _("De volta ao carrossel."))
+    elif acao == "falas":
+        extras = dict(post.extras or {})
+        lista = [dict(x) for x in extras.get("laminas") or []]
+        falas = [linha.strip() for linha in request.POST.get("falas", "").splitlines()]
+        for lamina, fala in zip(lista, falas, strict=False):
+            lamina["fala"] = fala[:400]
+        extras["laminas"] = lista
+        post.extras = extras
+        post.save(update_fields=["extras", "atualizado_em"])
+        messages.success(request, _("Falas salvas. Gere o video de novo para usar."))
     elif acao == "gerar_imagens_aqui":
         from apps.social.tasks import gerar_imagens_das_laminas
 
@@ -921,6 +952,7 @@ def iscas(request: HttpRequest) -> HttpResponse:
             "modos": Isca.Modo.choices,
             "redes": [("instagram", "Instagram"), ("linkedin", "LinkedIn")],
             "pedido": modulo.pedido(),
+            "api_da_outra_ia": _api_da_outra_ia(),
         },
     )
 
@@ -1004,6 +1036,10 @@ def estrategia(request: HttpRequest) -> HttpResponse:
             "destinos": destinos,
             "destino": escolhido,
             "plano": modulo.plano(escolhido) if escolhido else None,
+            "api_da_outra_ia": _api_da_outra_ia(),
+            "respostas_da_api": escolhido.respostas_ia.filter(tipo="propostas")[:5]
+            if escolhido
+            else [],
             "passos": modulo.primeiros_passos(escolhido) if escolhido else [],
             "fases": [(c, modulo.FASES[c]["nome"]) for c in modulo.ORDEM],
             "parametros": parametros.todos(),
@@ -1168,6 +1204,7 @@ def publicos(request: HttpRequest) -> HttpResponse:
             "post": post,
             "quadro": modulo.quadro(destino),
             "pedido": modulo.pedido(post) if post else "",
+            "api_da_outra_ia": _api_da_outra_ia(),
         },
     )
 
@@ -1206,6 +1243,68 @@ def revisar_resposta_ia(request: HttpRequest) -> HttpResponse:
 
 @login_required
 @require_POST
+def pedir_a_outra_ia(request: HttpRequest) -> HttpResponse:
+    """Manda o pedido (o mesmo de copiar e colar) para a outra IA por API, em
+    segundo plano."""
+    from apps.social import outra_ia_por_api
+    from apps.social.models import RespostaDaOutraIA
+
+    tipo = request.POST.get("tipo")
+    voltar = request.POST.get("voltar") or reverse("social:estrategia")
+    if not outra_ia_por_api.disponivel():
+        messages.error(
+            request,
+            _(
+                "Nenhuma outra IA por API cadastrada. No servidor: manage.py configurar_api "
+                "anthropic (ou openai, gemini) --chave ..."
+            ),
+        )
+        return redirect(voltar)
+    if tipo not in RespostaDaOutraIA.Tipo.values:
+        raise Http404
+    destino = Destino.objects.filter(pk=request.POST.get("destino") or None).first()
+    post = Post.objects.filter(pk=request.POST.get("post") or None).first()
+    if tipo in ("post", "publicos") and post is None:
+        raise Http404
+    if tipo == "propostas" and destino is None:
+        raise Http404
+    outra_ia_por_api.pedir(tipo, destino=destino, post=post)
+    messages.info(
+        request,
+        _(
+            "Pedido enviado a outra IA (%(api)s). Leva de segundos a alguns minutos: "
+            "recarregue a pagina."
+        )
+        % {"api": outra_ia_por_api.disponivel()},
+    )
+    return redirect(voltar)
+
+
+@login_required
+def ver_resposta_da_api(request: HttpRequest, pk) -> HttpResponse:
+    """A previa de uma resposta de propostas que veio pela API (a pessoa marca
+    o que aplicar, como na colada)."""
+    from apps.social import outra_ia
+    from apps.social.models import RespostaDaOutraIA
+
+    registro = get_object_or_404(RespostaDaOutraIA, pk=pk, tipo="propostas")
+    return render(
+        request,
+        "social/resposta_ia.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "estrategia",
+            "contagens": _contagens(request),
+            "destino": registro.destino,
+            "leitura": outra_ia.ler(registro.resposta),
+            "resposta": registro.resposta,
+            "registro": registro,
+        },
+    )
+
+
+@login_required
+@require_POST
 def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
     from apps.social import outra_ia
 
@@ -1221,6 +1320,12 @@ def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
         abordagens=indices("abordagem"),
         eventos=indices("evento"),
     )
+    if request.POST.get("registro"):
+        from apps.social.models import RespostaDaOutraIA
+
+        RespostaDaOutraIA.objects.filter(pk=request.POST["registro"]).update(
+            situacao=RespostaDaOutraIA.Situacao.APLICADA
+        )
     messages.success(
         request,
         _("%(p)s post(s) sendo escritos e %(a)s abordagem(ns) nova(s) no sorteio.")
@@ -1604,6 +1709,12 @@ def elemento_privado(request: HttpRequest, pk) -> HttpResponse:
     if not elemento.imagem:
         raise Http404
     return FileResponse(elemento.imagem.open("rb"))
+
+
+def _api_da_outra_ia() -> str:
+    from apps.social import outra_ia_por_api
+
+    return outra_ia_por_api.disponivel()
 
 
 def _cor(valor) -> str:

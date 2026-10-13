@@ -31,6 +31,7 @@
       <details><summary>{% translate "Ver o texto" %}</summary>
         <textarea id="pedido-publico" readonly rows="14" style="width:100%">{{ pedido }}</textarea>
       </details>
+      {% include "social/_pedir_por_api.html" with tipo="publicos" %}
       <form method="post" style="margin-top:.8rem">
         {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}"><input type="hidden" name="post" value="{{ post.pk }}"><input type="hidden" name="acao" value="resposta">
         <label for="resposta-publico">{% translate "Cole aqui a resposta inteira" %}</label>

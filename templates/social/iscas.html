@@ -83,6 +83,7 @@
     <details><summary>{% translate "Ver o texto" %}</summary>
       <textarea id="pedido-iscas" readonly rows="14" style="width:100%">{{ pedido }}</textarea>
     </details>
+    {% include "social/_pedir_por_api.html" with tipo="iscas" destino=None post=None %}
     <form method="post" style="margin-top:.8rem">
       {% csrf_token %}<input type="hidden" name="acao" value="resposta_ia">
       <label for="resposta-iscas">{% translate "Cole aqui a resposta inteira" %}</label>

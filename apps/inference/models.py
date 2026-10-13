@@ -40,6 +40,10 @@ class InferenceConnection(models.Model):
         ANTHROPIC = "anthropic", _("Anthropic")
         DOCLING = "docling", _("Docling (conversao de PDF)")
         IMAGE = "image", _("Geracao de imagem")
+        # Voz (texto para fala). OpenAI e servidores compativeis (Kokoro,
+        # openedai-speech) usam OPENAI_COMPATIBLE com a carga VOZ.
+        ELEVENLABS = "elevenlabs", _("ElevenLabs (voz)")
+        GOOGLE_TTS = "google_tts", _("Google Text-to-Speech (voz)")
 
     class Workload(models.TextChoices):
         TEXT = "text", _("Geracao de texto")
@@ -51,6 +55,12 @@ class InferenceConnection(models.Model):
         # Ler a legenda do YouTube a partir do IP da maquina da placa: o
         # YouTube costuma recusar IP de servidor em nuvem.
         YOUTUBE = "youtube", _("Legenda do YouTube")
+        # Narracao dos videos das redes (texto para fala).
+        VOZ = "voz", _("Voz (texto para fala)")
+        # A "outra IA" (Claude, ChatGPT, Gemini) chamada por API, no lugar de
+        # copiar e colar o pedido. Carga propria: uma API paga cadastrada aqui
+        # nunca e escolhida para o trabalho comum de texto.
+        OUTRA_IA = "outra_ia", _("Outra IA por API (segunda opiniao)")
 
     class Health(models.TextChoices):
         UNKNOWN = "unknown", _("Desconhecida")

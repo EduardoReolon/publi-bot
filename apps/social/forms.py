@@ -51,6 +51,8 @@ class DestinoForm(forms.ModelForm):
             "instrucoes",
             "hashtags_fixas",
             "hashtags_de_referencia",
+            "video",
+            "voz",
         ]
         widgets = {
             "publico": forms.Textarea(attrs={"rows": 3}),
@@ -64,6 +66,7 @@ class DestinoForm(forms.ModelForm):
         for r in REDES.values():
             autores += [(c, f"{r.nome}: {rotulo}") for c, rotulo in r.autores]
         self.fields["fotos_por_cento"].required = False  # vazio: so artigos
+        self.fields["video"].required = False  # vazio: a IA so sugere
         self.fields["autor"] = forms.ChoiceField(
             label=_("quem posta"), choices=autores, required=False
         )
@@ -76,6 +79,7 @@ class DestinoForm(forms.ModelForm):
     GRUPOS = (
         (_("A conta"), ("rede", "nome", "autor", "ligado", "aprovacao")),
         (_("Ritmo"), ("teto_semanal", "dias", "horarios", "fotos_por_cento")),
+        (_("Video e voz"), ("video", "voz")),
         (
             _("Publico e voz"),
             ("publico", "tom", "instrucoes", "hashtags_fixas", "hashtags_de_referencia"),
@@ -88,6 +92,9 @@ class DestinoForm(forms.ModelForm):
             (titulo, [self[c] for c in campos if c in self.fields])
             for titulo, campos in self.GRUPOS
         ]
+
+    def clean_video(self):
+        return self.cleaned_data.get("video") or Destino.Video.SUGERIR
 
     def clean_horarios(self):
         horarios = [
