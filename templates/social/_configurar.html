@@ -1,30 +1,26 @@
 {% load i18n %}
-<section class="secao">
-  <h2>{% translate "Contas" %}</h2>
-  <p class="pre-visualizacao">
-    {% blocktranslate trimmed %}
-      Cada conta tem o proprio publico, tom e aprovacao — o perfil pessoal no LinkedIn e
-      a pagina da empresa sao duas contas. Sem conectar a API, a conta ja funciona: o post
-      fica pronto para copiar e colar, e os cliques sao medidos do mesmo jeito.
-    {% endblocktranslate %}
-  </p>
-  {% for d in destinos %}
-    <details class="secao" {% if d.ultimo_erro or d.vence_logo %}open{% endif %}>
-      <summary>
+{% include "social/_sub_configurar.html" %}
+{% if parte == 'conta' and conta %}
+{% with d=conta %}
+    <div class="secao">
+      <h2>
         <strong>{{ d.nome }}</strong> <span class="selo">{{ d.rede_nome }}</span>
         {% if not d.ligado %}<span class="selo">{% translate "desligada" %}</span>{% endif %}
         {% if d.conectado %}<span class="selo ok">{% translate "API conectada" %}: {{ d.conta_nome }}</span>{% else %}<span class="selo">{% translate "copiar para postar" %}</span>{% endif %}
         {% if d.vence_logo %}<span class="selo ruim">{% translate "acesso vence em" %} {{ d.expira_em|date:"d/m" }}</span>{% endif %}
-      </summary>
+      </h2>
       {% if d.ultimo_erro %}<div class="aviso ruim">{{ d.ultimo_erro }}</div>{% endif %}
       <form method="post" action="{% url 'social:salvar_destino' d.pk %}">
         {% csrf_token %}
-        {% for campo in d.form %}{% include "_campo.html" %}{% endfor %}
+        {% for titulo, campos in d.form.grupos %}
+          <fieldset class="secao" style="margin:.6rem 0"><legend><strong>{{ titulo }}</strong></legend>
+            {% for campo in campos %}{% include "_campo.html" %}{% endfor %}
+          </fieldset>
+        {% endfor %}
         <div class="acoes"><button type="submit" class="botao">{% translate "Salvar conta" %}</button></div>
       </form>
       <div class="acoes">
         <a class="botao secundario" href="{% url 'social:conectar' d.pk %}">{% if d.conectado %}{% translate "Reconectar" %}{% else %}{% translate "Conectar a API" %}{% endif %}</a>
-        <a class="botao discreto" href="{% url 'social:identidade' d.pk %}" title="{% translate 'Fundos padrao das laminas (capa, meio, final) e o estilo das imagens' %}">{% translate "Identidade visual" %}</a>
         {% if d.conectado %}<a class="botao discreto" href="{% url 'social:conectar' d.pk %}?trocar=1" title="{% translate 'Entra de novo na rede e pergunta qual pagina/conta este ambiente usa' %}">{% translate "Trocar a conta" %}</a>{% endif %}
         {% if d.conectado %}
           <form method="post" action="{% url 'social:desconectar' d.pk %}">{% csrf_token %}<button type="submit" class="botao discreto">{% translate "Desconectar" %}</button></form>
@@ -39,30 +35,12 @@
         <p>{% translate "Endereco de retorno para cadastrar no app da rede:" %} <code>{{ retorno }}</code></p>
         <p><strong>{% translate "Como e o publico desta rede:" %}</strong> {{ d.rede_obj.estilo }}</p>
       </details>
-    </details>
-  {% endfor %}
-
-  <details class="secao" {% if not destinos %}open{% endif %}>
-    <summary><strong>{% translate "Cadastrar uma conta" %}</strong></summary>
-    <form method="post" action="{% url 'social:novo_destino' %}">
-      {% csrf_token %}
-      {% for campo in form_destino %}{% include "_campo.html" %}{% endfor %}
-      <div class="acoes"><button type="submit" class="botao">{% translate "Cadastrar" %}</button></div>
-    </form>
-  </details>
-</section>
-
+    </div>
+{% endwith %}
+{% elif parte == 'textos' %}
 <section class="secao">
-  <h2>{% translate "Para todas as redes" %}</h2>
-  <form method="post" action="{% url 'social:configurar' %}">
-    {% csrf_token %}
-    {% for campo in form_config %}{% include "_campo.html" %}{% endfor %}
-    <div class="acoes"><button type="submit" class="botao">{% translate "Salvar" %}</button></div>
-  </form>
-</section>
-
-<section class="secao">
-  <h2>{% translate "Abordagens" %}</h2>
+  <h2>{% translate "Abordagens" %}{% if conta %} — {{ conta.rede_nome }}{% endif %}</h2>
+  {% if conta %}<p class="ajuda">{% blocktranslate with r=conta.rede_nome %}As que valem para o {{ r }} (marcadas para ele ou sem rede marcada). Uma nova ja vem marcada so para o {{ r }}.{% endblocktranslate %}</p>{% endif %}
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
       O jeito de convencer: o gancho que faz a pessoa parar de rolar a tela. Edite, desligue
@@ -99,7 +77,7 @@
 </section>
 
 <section class="secao">
-  <h2>{% translate "Recados de posicionamento (em teste)" %}</h2>
+  <h2>{% translate "Recados de posicionamento (em teste)" %}{% if conta %} — {{ conta.rede_nome }}{% endif %}</h2>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
       Uma ideia que entra so em parte dos posts, para medir se ajuda — por exemplo, "aqui o
@@ -127,3 +105,26 @@
     </form>
   </details>
 </section>
+{% elif parte == 'todas' %}
+<section class="secao">
+  <h2>{% translate "Para todas as contas" %}</h2>
+  <p class="pre-visualizacao">{% translate "Vale para todas as contas e redes: regras que nunca se quebram, instrucoes do negocio, a pagina da oferta, quantas versoes por post e a medida de sucesso." %}</p>
+  <form method="post" action="{% url 'social:configurar' %}">
+    {% csrf_token %}
+    {% for campo in form_config %}{% include "_campo.html" %}{% endfor %}
+    <div class="acoes"><button type="submit" class="botao">{% translate "Salvar" %}</button></div>
+  </form>
+</section>
+{% else %}
+<section class="secao">
+<div class="secao">
+    <h2>{% translate "Cadastrar uma conta" %}</h2>
+    <p class="pre-visualizacao">{% blocktranslate trimmed %}Cada conta tem o proprio publico, tom e aprovacao — o perfil pessoal no LinkedIn e a pagina da empresa sao duas contas. Sem conectar a API, a conta ja funciona: o post fica pronto para copiar e colar, e os cliques sao medidos do mesmo jeito.{% endblocktranslate %}</p>
+    <form method="post" action="{% url 'social:novo_destino' %}">
+      {% csrf_token %}
+      {% for campo in form_destino %}{% include "_campo.html" %}{% endfor %}
+      <div class="acoes"><button type="submit" class="botao">{% translate "Cadastrar" %}</button></div>
+    </form>
+  </div>
+</section>
+{% endif %}

@@ -164,7 +164,9 @@ def test_quadro_compara_com_e_sem_recado(ambiente):
 
     pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "funciona"}).content.decode()
     assert "Recados de posicionamento" in pagina and "rende mais com o recado" in pagina
-    configurar = client.get(reverse("social:inicio", urlconf=U), {"aba": "configurar"})
+    configurar = client.get(
+        reverse("social:inicio", urlconf=U), {"aba": "configurar", "parte": "textos"}
+    )
     assert "Novo recado" in configurar.content.decode()
     resposta = client.post(
         reverse("social:novo_recado", urlconf=U),

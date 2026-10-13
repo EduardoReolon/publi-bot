@@ -10,11 +10,6 @@
     <div class="aviso">{% translate "Cadastre uma conta em" %} <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Configurar" %}</a> {% translate "para ver a estrategia dela." %}</div>
   {% else %}
   {% with p=plano %}
-  <form method="get" class="acoes" style="margin-bottom:1rem">
-    <select name="destino" onchange="this.form.submit()" style="width:auto">
-      {% for d in destinos %}<option value="{{ d.pk }}" {% if d.pk == destino.pk %}selected{% endif %}>{{ d.nome }} ({{ d.rede_nome }})</option>{% endfor %}
-    </select>
-  </form>
 
   {# --- Primeiros passos ----------------------------------------------------------- #}
   <section class="secao">

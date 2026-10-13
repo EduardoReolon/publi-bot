@@ -759,6 +759,51 @@ class FundoDeLamina(models.Model):
         return f"{self.get_papel_display()} {self.etiqueta}".strip()
 
 
+def _caminho_do_elemento(instancia, nome: str) -> str:
+    import os
+
+    extensao = os.path.splitext(nome)[1].lower()[:5] or ".png"
+    return f"social/elementos/{instancia.destino_id}/{instancia.pk}{extensao}"
+
+
+class ElementoVisual(models.Model):
+    """Um personagem, cenario ou objeto fixo da conta ("Gugu, o gorila de
+    terno azul"): quem escreve o post o chama pelo nome na cena da lamina, e o
+    pedido de imagem leva a descricao inteira — sempre a mesma, que e o que da
+    consistencia. A imagem de referencia e para anexar na IA que aceita."""
+
+    class Tipo(models.TextChoices):
+        PERSONAGEM = "personagem", _("Personagem")
+        CENARIO = "cenario", _("Cenario")
+        OBJETO = "objeto", _("Objeto")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="elementos")
+    tipo = models.CharField(_("tipo"), max_length=12, choices=Tipo.choices)
+    nome = models.CharField(_("nome"), max_length=60)
+    descricao = models.TextField(
+        _("como e, sempre igual"),
+        help_text=_(
+            "A aparencia fixa, em detalhe: especie/idade, roupa, cores, acessorios, traco. "
+            "Ex.: 'gorila adulto de terno azul-marinho, gravata amarela, oculos redondos'."
+        ),
+    )
+    imagem = models.ImageField(
+        _("imagem de referencia (opcional)"), upload_to=_caminho_do_elemento, blank=True
+    )
+    ativo = models.BooleanField(_("ativo"), default=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["tipo", "nome"]
+        constraints = [
+            models.UniqueConstraint(fields=["destino", "nome"], name="uniq_elemento_por_conta")
+        ]
+
+    def __str__(self) -> str:
+        return self.nome
+
+
 def _caminho_da_midia(instancia, nome: str) -> str:
     import os
 

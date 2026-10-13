@@ -1,0 +1,10 @@
+{% load i18n %}
+<nav class="abas" style="font-size:.92em">
+  {% if conta %}
+    <a href="{% url 'social:inicio' %}?aba=configurar&amp;parte=conta" class="{% if parte == 'conta' %}ativo{% endif %}">{{ conta.nome }}: {% translate "conta e conexao" %}</a>
+    <a href="{% url 'social:identidade' conta.pk %}" class="{% if parte == 'identidade' %}ativo{% endif %}">{% translate "Identidade visual" %}</a>
+  {% endif %}
+  <a href="{% url 'social:inicio' %}?aba=configurar&amp;parte=textos" class="{% if parte == 'textos' %}ativo{% endif %}">{% translate "Abordagens e recados" %}</a>
+  <a href="{% url 'social:inicio' %}?aba=configurar&amp;parte=todas" class="{% if parte == 'todas' %}ativo{% endif %}">{% translate "Para todas as contas" %}</a>
+  <a href="{% url 'social:inicio' %}?aba=configurar&amp;parte=nova" class="{% if parte == 'nova' %}ativo{% endif %}">+ {% translate "Nova conta" %}</a>
+</nav>

@@ -36,10 +36,32 @@ Regras para TODAS:
 - Estilo da conta (o mesmo em todas, para o perfil ter uma linha): {estilo}.
 {descricao}{cenarios}- Cores da marca: fundo {fundo}, destaque {destaque}. Use como base da paleta.
 - Nada de pessoas reais reconheciveis, marcas de terceiros ou imagem chocante.
-{regras}
+{regras}{elementos}
 Assunto do post: {assunto}
 
 """
+
+
+def elementos(destino) -> list:
+    return list(destino.elementos.filter(ativo=True))
+
+
+def ficha(destino) -> str:
+    """Os personagens, cenarios e objetos fixos da conta, um por linha."""
+    return "\n".join(
+        f"- {e.nome} ({e.get_tipo_display().lower()}): {e.descricao.strip()}"
+        for e in elementos(destino)
+    )
+
+
+def expandir(cena: str, lista: list) -> str:
+    """A cena com a descricao inteira de cada elemento fixo chamado pelo nome
+    (para o gerador de imagem, que nao sabe quem e o "Gugu")."""
+    from apps.social.iscas import normalizar
+
+    alvo = f" {normalizar(cena)} "
+    citados = [e for e in lista if f" {normalizar(e.nome)} " in alvo]
+    return cena + "".join(f"; {e.nome}: {e.descricao.strip()}" for e in citados)
 
 
 def _laminas(post) -> list[dict]:
@@ -75,6 +97,25 @@ def situacao_das_laminas(post) -> list[dict]:
     return saida
 
 
+def _ficha_do_pedido(destino) -> str:
+    lista = elementos(destino)
+    if not lista:
+        return ""
+    com_imagem = [e.nome for e in lista if e.imagem]
+    return (
+        "- Personagens e cenarios FIXOS da conta (desenhe sempre igual a descricao; quando "
+        "a lamina chamar um pelo nome, e ele):\n"
+        + ficha(destino)
+        + "\n"
+        + (
+            f"- Se voce aceita imagem de referencia, vou anexar as de: {', '.join(com_imagem)}"
+            " — siga-as.\n"
+            if com_imagem
+            else ""
+        )
+    )
+
+
 def pedido(post) -> str:
     """O texto para colar na IA de imagem: as laminas sem fundo padrao."""
     from apps.social.models import ConfiguracaoSocial
@@ -105,6 +146,7 @@ def pedido(post) -> str:
         fundo=cores["fundo"],
         destaque=cores["destaque"],
         regras=f"- Regras do negocio: {regras}\n" if regras else "",
+        elementos=_ficha_do_pedido(destino),
         assunto=post.artigo_titulo or post.gancho or "(post proprio)",
     )
     for x in faltam:
@@ -165,6 +207,7 @@ def gerar_imagens(post) -> int:
     estilo = ESTILOS.get(destino.estilo_das_imagens, "clean modern editorial illustration")
     detalhe = destino.descricao_do_estilo.strip()
     itens = _laminas(post)
+    fixos = elementos(destino)
     feitas = 0
     for x in situacao_das_laminas(post):
         if x["fundo"]:
@@ -173,7 +216,7 @@ def gerar_imagens(post) -> int:
             "social_cena",
             {
                 "estilo": f"{estilo}. {detalhe}".strip(". "),
-                "cena": _cena(itens[x["n"] - 1]),
+                "cena": expandir(_cena(itens[x["n"] - 1]), fixos),
                 "cores": f"background {cores['fundo']}, accent {cores['destaque']}",
             },
             json_schema=ESQUEMA_DA_CENA,

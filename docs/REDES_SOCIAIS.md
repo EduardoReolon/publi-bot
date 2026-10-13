@@ -23,6 +23,22 @@ o nucleo nao sabe que ele existe, e ele so le o nucleo por `apps/social/fontes.p
 Sem conectar nenhuma API, tudo funciona: os posts chegam prontos para copiar e
 colar, e os cliques sao medidos pelo link do PubliBot.
 
+## A tela: conta primeiro, depois as abas
+
+Acima das abas fica a **barra de contas** (como o seletor de canais do Buffer e
+do Hootsuite): a conta escolhida vale para todas as abas — revisar, agenda,
+publicados, comentarios, iscas, o que funciona — e fica lembrada na sessao
+(`views._conta`). "Todas" junta as contas onde faz sentido; Estrategia,
+Diagnostico e Configurar sao de uma conta so. O banco de fotos e um so (cada
+conta usa na proporcao dela) e as iscas sao ofertas do negocio (a conta filtra
+os numeros e os pedidos; a isca pode ser marcada para certas redes).
+
+Configurar tem um submenu: **a conta** (em blocos: a conta, ritmo, publico e
+voz; conexao e link na bio), **Identidade visual** (cores, ultima lamina,
+estilo das imagens, personagens e cenarios fixos, fundos padrao),
+**Abordagens e recados** (os que valem para a rede da conta; os novos ja vem
+marcados para ela) e **Para todas as contas** (regras, instrucoes, oferta).
+
 ## Como esta organizado (e por que nao nas Pautas)
 
 Pauta e "um tema vira um artigo". Post e outra coisa: **um artigo vira varios
@@ -314,6 +330,11 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
     (`extras["fundos"]`; a da 1a vira a foto da capa) e entra escurecida.
   - Ordem do fundo: imagem enviada para a lamina > fundo padrao > capa do
     artigo (so na 1a) > cor da conta.
+  - **Personagens e cenarios fixos** (`ElementoVisual`): nome, tipo e uma
+    descricao que nunca muda (e imagem de referencia opcional). Quem escreve
+    chama pelo nome na cena da lamina; o pedido de imagens leva a ficha
+    inteira e pede para anexar as referencias; na geracao aqui, o nome vira a
+    descricao (`identidade.expandir`). E o que da consistencia entre posts.
   - **Gerar as imagens aqui** (`identidade.gerar_imagens`, tarefa
     `gerar_imagens_das_laminas`): com o gerador de imagem do PubliBot (o das
     capas, `capas.gerar_imagens`), a cena (`visual`) de cada lamina sem imagem
