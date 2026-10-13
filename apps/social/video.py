@@ -502,6 +502,81 @@ def enviar_clipe(post, n: int, arquivo) -> str:
     return _guardar_clipe(post, n, arquivo.read(), extensao)
 
 
+# -- Quadros: 2 a 4 imagens da mesma cena viram o clipe da lamina -------------------------
+# O meio-termo entre a imagem parada e a animacao por IA: a mesma cena em
+# momentos diferentes (o comeco, o meio e o fim de um gesto), cada uma com zoom
+# lento, trocando em fade. Fica claro que sao quadros (como um "motion comic"),
+# nao uma animacao que tenta parecer filmagem — sem IA de video, sem custo.
+SEGUNDOS_POR_QUADRO = 2.4
+TROCA = 0.5
+QUADROS_MAXIMOS = 4
+
+
+def clipe_de_quadros(imagens: list[bytes]) -> bytes:
+    """O MP4 (4:5) das imagens em sequencia: zoom lento alternando (aproxima,
+    afasta) e fade entre elas."""
+    ffmpeg, _ = _ffmpeg()
+    if not 1 <= len(imagens) <= QUADROS_MAXIMOS:
+        raise VideoIndisponivel(f"envie de 1 a {QUADROS_MAXIMOS} quadros.")
+    largura, altura = laminas.LARGURA, laminas.ALTURA
+    quadros = int(SEGUNDOS_POR_QUADRO * 30)
+    with tempfile.TemporaryDirectory() as pasta:
+        pasta = Path(pasta)
+        entradas, filtros = [], []
+        for i, conteudo in enumerate(imagens):
+            arquivo = _guardar_em(pasta, f"q{i}.png", _em_png(conteudo))
+            entradas += ["-i", str(arquivo)]
+            zoom = (
+                f"min(1+{ZOOM_POR_SEGUNDO * 2 / 30:.6f}*on,1.2)"
+                if i % 2 == 0
+                else f"max(1.1-{ZOOM_POR_SEGUNDO * 2 / 30:.6f}*on,1)"
+            )
+            filtros.append(
+                f"[{i}:v]scale={largura * 2}:{altura * 2}:force_original_aspect_ratio=increase,"
+                f"crop={largura * 2}:{altura * 2},zoompan=z='{zoom}':d={quadros}:"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={largura}x{altura}:fps=30,"
+                f"setsar=1,format=yuv420p[q{i}]"
+            )
+        rotulo = "q0"
+        for i in range(1, len(imagens)):
+            inicio = i * SEGUNDOS_POR_QUADRO - i * TROCA
+            filtros.append(
+                f"[{rotulo}][q{i}]xfade=transition=fade:duration={TROCA}:offset={inicio:.2f}[x{i}]"
+            )
+            rotulo = f"x{i}"
+        saida = pasta / "quadros.mp4"
+        _rodar(
+            [
+                ffmpeg, "-y", *entradas, "-filter_complex", ";".join(filtros),
+                "-map", f"[{rotulo}]", "-c:v", "libx264", "-preset", "veryfast",
+                "-crf", "22", "-r", "30", "-pix_fmt", "yuv420p", str(saida),
+            ]
+        )  # fmt: skip
+        return saida.read_bytes()
+
+
+def _em_png(conteudo: bytes) -> bytes:
+    """Qualquer imagem (JPG, WebP, PNG) em PNG RGB, para o ffmpeg ler igual."""
+    import io
+
+    from PIL import Image
+
+    imagem = Image.open(io.BytesIO(conteudo)).convert("RGB")
+    buffer = io.BytesIO()
+    imagem.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def usar_quadros(post, n: int, arquivos) -> str:
+    """Os quadros enviados para a lamina n viram o clipe dela."""
+    imagens = [arquivo.read() for arquivo in arquivos][:QUADROS_MAXIMOS]
+    try:
+        clipe = clipe_de_quadros(imagens)
+    except (OSError, ValueError) as exc:  # imagem que o Pillow nao abre
+        raise VideoIndisponivel("envie imagens (JPG, PNG ou WebP).") from exc
+    return _guardar_clipe(post, n, clipe)
+
+
 def tirar_clipe(post, n: int) -> None:
     extras = dict(post.extras or {})
     clipes = dict(extras.get("clipes") or {})

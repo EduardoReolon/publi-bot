@@ -484,6 +484,7 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         "animar",
         "animar_todas",
         "clipe_da_lamina",
+        "quadros_da_lamina",
         "tirar_clipe",
     ):
         _acao_na_lamina(request, post, acao)
@@ -1310,6 +1311,19 @@ def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
             messages.success(
                 request,
                 _("Clipe na lamina %(n)s. Gere o video de novo para usar.") % {"n": n},
+            )
+        except video.VideoIndisponivel as exc:
+            messages.error(request, str(exc))
+    elif acao == "quadros_da_lamina":
+        arquivos = request.FILES.getlist("quadros")
+        if n < 1 or not arquivos:
+            messages.error(request, _("Escolha de 2 a 4 imagens da mesma cena."))
+            return
+        try:
+            video.usar_quadros(post, n, arquivos)
+            messages.success(
+                request,
+                _("Quadros montados na lamina %(n)s. Gere o video de novo para usar.") % {"n": n},
             )
         except video.VideoIndisponivel as exc:
             messages.error(request, str(exc))

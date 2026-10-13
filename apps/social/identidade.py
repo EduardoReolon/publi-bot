@@ -522,6 +522,40 @@ Regras para TODOS os clipes:
 """
 
 
+PEDIDO_DE_QUADROS = """\
+Para cada lamina abaixo, gere {quantos} QUADROS da mesma cena, como num gibi
+animado: o comeco, o meio e o fim de um gesto pequeno. Os quadros vao virar um
+video curto trocando um pelo outro, entao:
+
+- MESMO enquadramento, MESMO fundo, MESMA luz e MESMO personagem nos {quantos}
+  (roupa, cores, rosto e proporcoes iguais); muda so a expressao, a posicao das
+  maos ou da cabeca, ou um objeto que aparece.
+- Vertical 4:5. Sem texto, letras, legendas ou logotipo (o texto entra depois).
+- Estilo: {estilo}.
+{elementos}Gere os quadros de uma lamina por vez, na ordem, e me diga de qual lamina
+e cada um.
+"""
+
+
+def pedido_de_quadros(post, quantos: int = 3) -> str:
+    """O texto para a IA de imagem fazer os quadros de cada lamina (o meio-termo
+    entre imagem parada e animacao)."""
+    destino = post.destino
+    texto = PEDIDO_DE_QUADROS.format(
+        quantos=quantos,
+        estilo=descricao_do_estilo(destino, estilo_do_post(post)) or "o mesmo das imagens da conta",
+        elementos=(
+            "- Personagens e cenarios fixos (exatamente assim):\n" + ficha(destino) + "\n"
+            if elementos(destino)
+            else ""
+        ),
+    )
+    for n, item in enumerate(_laminas(post), start=1):
+        movimento = item.get("movimento") or "um gesto pequeno que combine com a lamina"
+        texto += f"\nLamina {n}: {_cena(item)}. O gesto: {movimento}."
+    return texto + "\n"
+
+
 def pedido_de_animacao(post) -> str:
     """O texto para colar numa IA de video (Sora, Runway, Kling, Veo, Pika...)
     junto com a imagem de cada lamina."""

@@ -313,3 +313,32 @@ def test_onde_atende_sem_regiao_e_o_pais(ambiente):
     radar.regioes = []
     radar.save()
     assert fontes.negocio()["regioes"] == ["Brasil"]
+
+
+@pytest.mark.django_db
+@pytest.mark.skipif(not FFMPEG, reason="sem ffmpeg nesta maquina")
+def test_quadros_viram_o_clipe_da_lamina(ambiente, modulo, settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path
+    _, _, client = ambiente
+    post = _post(_destino("instagram"))
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
+    quadros = [
+        SimpleUploadedFile(f"q{i}.png", _png(cor), content_type="image/png")
+        for i, cor in enumerate(["red", "green", "blue"])
+    ]
+    client.post(acao, {"acao": "quadros_da_lamina", "n": "1", "quadros": quadros})
+    post.refresh_from_db()
+    assert post.extras["clipes"]["1"].endswith(".mp4")
+    from django.core.files.storage import default_storage
+
+    copia = tmp_path / "q.mp4"
+    with default_storage.open(post.extras["clipes"]["1"], "rb") as arquivo:
+        copia.write_bytes(arquivo.read())
+    # 3 quadros de 2,4 s com 0,5 s de troca entre eles
+    assert video._duracao(shutil.which("ffprobe"), copia) == pytest.approx(6.2, abs=0.15)
+
+    texto = identidade.pedido_de_quadros(post)
+    assert "3 QUADROS da mesma cena" in texto
+    assert "Lamina 1: o macaco Gugu bocejando na cama. O gesto: Gugu boceja" in texto
+    pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
+    assert "Montar com quadros" in pagina and "Copiar o pedido de quadros" in pagina
