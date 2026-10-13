@@ -1,4 +1,14 @@
 {% load i18n %}
+  {% if contagens.contas %}
+    {# A conta escolhida vale para todas as abas (lembrada na sessao). #}
+    <nav class="abas contas" aria-label="{% translate 'Conta' %}" style="margin-bottom:.4rem">
+      <span class="ajuda" style="align-self:center">{% translate "Conta:" %}</span>
+      {% if not contagens.so_uma %}<a href="?destino=" class="{% if not contagens.conta %}ativo{% endif %}">{% translate "Todas" %}</a>{% endif %}
+      {% for c in contagens.contas %}
+        <a href="?destino={{ c.pk }}{% if aba_das_redes and aba_das_redes != 'estrategia' and aba_das_redes != 'diagnostico' and aba_das_redes != 'iscas' and aba_das_redes != 'fotos' and aba_das_redes != 'novo' %}&amp;aba={{ aba_das_redes }}{% endif %}" class="{% if contagens.conta.pk == c.pk %}ativo{% endif %}">{{ c.nome }} <span class="ajuda">{{ c.rede_nome }}</span>{% if not c.ligado %} <span class="selo">{% translate "desligada" %}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
   <nav class="abas">
     <a href="{% url 'social:estrategia' %}" class="{% if aba_das_redes == 'estrategia' %}ativo{% endif %}"><strong>{% translate "Estrategia" %}</strong></a>
     <a href="{% url 'social:novo_post' %}" class="{% if aba_das_redes == 'novo' %}ativo{% endif %}">+ {% translate "Novo post" %}</a>

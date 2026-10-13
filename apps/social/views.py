@@ -46,34 +46,59 @@ def _voltar(request, aba: str = "revisar") -> HttpResponse:
     return redirect(request.POST.get("voltar") or f"{reverse('social:inicio')}?aba={aba}")
 
 
-def _contagens() -> dict:
-    """Os numeros das abas (pendencias de cada uma)."""
+# A conta escolhida na barra acima das abas, lembrada na sessao: todas as abas
+# mostram so ela (ou todas, onde faz sentido). "?destino=" muda a escolha.
+CONTA_NA_SESSAO = "redes_conta"
+
+
+def _conta(request: HttpRequest, *, exigir: bool = False) -> Destino | None:
+    """A conta da barra. `exigir`: a tela e de uma conta so (Estrategia,
+    Diagnostico, Configurar): sem escolha, a primeira ligada."""
+    import uuid
+
+    if "destino" in request.GET:
+        request.session[CONTA_NA_SESSAO] = request.GET.get("destino") or ""
+    escolha = request.session.get(CONTA_NA_SESSAO) or ""
+    try:
+        conta = Destino.objects.filter(pk=uuid.UUID(escolha)).first() if escolha else None
+    except ValueError:
+        conta = None
+    if conta is None and exigir:
+        conta = Destino.objects.filter(ligado=True).first() or Destino.objects.first()
+    return conta
+
+
+def _contagens(request: HttpRequest | None = None, *, exigir: bool = False) -> dict:
+    """Os numeros das abas (pendencias de cada uma), da conta da barra, e a
+    propria barra (as contas, a escolhida e se a tela aceita "todas")."""
+    conta = _conta(request, exigir=exigir) if request is not None else None
+    posts = Post.objects.filter(destino=conta) if conta else Post.objects.all()
+    comentarios = Comentario.objects.filter(post__destino=conta) if conta else Comentario.objects
+    contas = list(Destino.objects.filter(ligado=True)) if conta is None else [conta]
     return {
-        "revisar": Post.objects.filter(
+        "revisar": posts.filter(
             situacao__in=[Post.Situacao.SUGERIDO, Post.Situacao.GERANDO, Post.Situacao.RASCUNHO]
         ).count(),
-        "agenda": Post.objects.filter(
+        "agenda": posts.filter(
             situacao__in=[Post.Situacao.APROVADO, Post.Situacao.PUBLICANDO]
         ).count(),
-        "comentarios": Comentario.objects.filter(
-            tipo=Comentario.Tipo.PERGUNTA, respondido_em__isnull=True
-        )
+        "comentarios": comentarios.filter(tipo=Comentario.Tipo.PERGUNTA, respondido_em__isnull=True)
         .exclude(post__motivo=Post.Motivo.HISTORICO)
         .count(),
-        "diagnostico": sum(1 for d in Destino.objects.filter(ligado=True) if _leitura_parada(d)),
-        "iscas": _iscas_a_decidir(),
-        "estoque_baixo": sum(
-            1
-            for d in Destino.objects.filter(ligado=True, fotos_por_cento__gt=0)
-            if _estoque_baixo(d)
-        ),
+        "diagnostico": sum(1 for d in contas if _leitura_parada(d)),
+        "iscas": _iscas_a_decidir(conta),
+        "estoque_baixo": sum(1 for d in contas if d.fotos_por_cento and _estoque_baixo(d)),
+        # A barra de contas (acima das abas).
+        "contas": list(Destino.objects.all()),
+        "conta": conta,
+        "so_uma": exigir,
     }
 
 
-def _iscas_a_decidir() -> int:
+def _iscas_a_decidir(conta=None) -> int:
     from apps.social import iscas
 
-    return len(iscas.a_decidir())
+    return len(iscas.a_decidir(conta))
 
 
 def _estoque_baixo(destino: Destino) -> bool:
@@ -96,19 +121,20 @@ def inicio(request: HttpRequest) -> HttpResponse:
     garantir_contas_padrao()
     aba = request.GET.get("aba") if request.GET.get("aba") in ABAS else "revisar"
     destinos = list(Destino.objects.all())
-    filtro = request.GET.get("destino", "")
+    so_uma = aba == "configurar"
+    conta = _conta(request, exigir=so_uma)
     posts = Post.objects.select_related("destino", "abordagem")
-    if filtro:
-        posts = posts.filter(destino_id=filtro)
+    if conta is not None:
+        posts = posts.filter(destino=conta)
 
     contexto = {
         "aba": "redes",
         "aba_das_redes": aba,
         "destinos": destinos,
-        "filtro": filtro,
+        "conta": conta,
         "redes": REDES,
         "config": ConfiguracaoSocial.carregar(),
-        "contagens": _contagens(),
+        "contagens": _contagens(request, exigir=so_uma),
     }
     if aba == "revisar":
         contexto["posts"] = posts.filter(
@@ -132,36 +158,61 @@ def inicio(request: HttpRequest) -> HttpResponse:
             "-publicado_em"
         )[:100]
     elif aba == "comentarios":
-        contexto["comentarios"] = Comentario.objects.select_related("post__destino").order_by(
+        comentarios = Comentario.objects.select_related("post__destino")
+        if conta is not None:
+            comentarios = comentarios.filter(post__destino=conta)
+        contexto["comentarios"] = comentarios.order_by(
             F("respondido_em").asc(nulls_first=True), "-escrito_em"
         )[:200]
     elif aba == "funciona":
         contexto["quadros"] = [
-            (d, experimentos.quadro(d), experimentos.quadro_de_recados(d)) for d in destinos
+            (d, experimentos.quadro(d), experimentos.quadro_de_recados(d))
+            for d in ([conta] if conta else destinos)
         ]
         contexto["metrica"] = contexto["config"].get_metrica_display()
     else:
-        contexto["form_config"] = ConfiguracaoForm(instance=contexto["config"])
-        contexto["form_destino"] = DestinoForm()
-        contexto["form_abordagem"] = AbordagemForm()
-        contexto["abordagens"] = Abordagem.objects.all()
-        contexto["recados"] = [
-            (r, RecadoForm(instance=r, auto_id=f"r{r.pk}_%s")) for r in Recado.objects.all()
-        ]
-        contexto["form_recado"] = RecadoForm(auto_id="recado_%s")
+        parte = request.GET.get("parte")
+        contexto["parte"] = (
+            parte if parte in PARTES_DE_CONFIGURAR else ("conta" if conta else "nova")
+        )
+        contexto.update(_configurar(request, conta, contexto["parte"], contexto["config"]))
+    return render(request, "social/inicio.html", contexto)
+
+
+# Configurar: um submenu (a conta da barra; o visual fica em Identidade visual).
+PARTES_DE_CONFIGURAR = ("conta", "textos", "todas", "nova")
+
+
+def _da_rede(itens, conta):
+    """Abordagens ou recados que valem para a rede da conta (sem rede: todas)."""
+    return [x for x in itens if conta is None or not x.redes or conta.rede in x.redes]
+
+
+def _configurar(request: HttpRequest, conta, parte: str, config) -> dict:
+    if parte == "conta" and conta is not None:
         from core.retorno_oauth import endereco_de_retorno
 
-        contexto["retorno"] = endereco_de_retorno()
-        for destino in destinos:
-            destino.form = DestinoForm(instance=destino, prefix=str(destino.pk))
-            destino.bio = request.build_absolute_uri(
-                reverse("social:bio", args=[destino.chave_publica])
-            )
-            destino.rede_obj = rede(destino.rede)
-            destino.vence_logo = bool(
-                destino.expira_em and destino.expira_em <= timezone.now() + timedelta(days=7)
-            )
-    return render(request, "social/inicio.html", contexto)
+        conta.form = DestinoForm(instance=conta, prefix=str(conta.pk))
+        conta.bio = request.build_absolute_uri(reverse("social:bio", args=[conta.chave_publica]))
+        conta.rede_obj = rede(conta.rede)
+        conta.vence_logo = bool(
+            conta.expira_em and conta.expira_em <= timezone.now() + timedelta(days=7)
+        )
+        return {"retorno": endereco_de_retorno()}
+    if parte == "textos":
+        inicial = {"redes": [conta.rede]} if conta else {}
+        return {
+            "abordagens": _da_rede(Abordagem.objects.all(), conta),
+            "form_abordagem": AbordagemForm(initial=inicial),
+            "recados": [
+                (r, RecadoForm(instance=r, auto_id=f"r{r.pk}_%s"))
+                for r in _da_rede(Recado.objects.all(), conta)
+            ],
+            "form_recado": RecadoForm(auto_id="recado_%s", initial=inicial),
+        }
+    if parte == "todas":
+        return {"form_config": ConfiguracaoForm(instance=config)}
+    return {"form_destino": DestinoForm()}
 
 
 # -- Posts ---------------------------------------------------------------------------
@@ -242,7 +293,7 @@ def post_pela_outra_ia(request: HttpRequest, pk) -> HttpResponse:
         {
             "aba": "redes",
             "aba_das_redes": "revisar",
-            "contagens": _contagens(),
+            "contagens": _contagens(request),
             "post": post,
             "pedido": criacao.pedido(post),
         },
@@ -863,9 +914,9 @@ def iscas(request: HttpRequest) -> HttpResponse:
         {
             "aba": "redes",
             "aba_das_redes": "iscas",
-            "contagens": _contagens(),
-            "painel": modulo.painel(),
-            "a_decidir": modulo.a_decidir(),
+            "contagens": _contagens(request),
+            "painel": modulo.painel(_conta(request)),
+            "a_decidir": modulo.a_decidir(_conta(request)),
             "editar": editar,
             "modos": Isca.Modo.choices,
             "redes": [("instagram", "Instagram"), ("linkedin", "LinkedIn")],
@@ -942,17 +993,14 @@ def estrategia(request: HttpRequest) -> HttpResponse:
     ):
         recalcular_temas_do_cliente.delay(conexao.schema_name)
     destinos = list(Destino.objects.filter(ligado=True)) or list(Destino.objects.all())
-    escolhido = next(
-        (d for d in destinos if str(d.pk) == request.GET.get("destino")),
-        destinos[0] if destinos else None,
-    )
+    escolhido = _conta(request, exigir=True)
     return render(
         request,
         "social/estrategia.html",
         {
             "aba": "redes",
             "aba_das_redes": "estrategia",
-            "contagens": _contagens(),
+            "contagens": _contagens(request, exigir=True),
             "destinos": destinos,
             "destino": escolhido,
             "plano": modulo.plano(escolhido) if escolhido else None,
@@ -1115,7 +1163,7 @@ def publicos(request: HttpRequest) -> HttpResponse:
         {
             "aba": "redes",
             "aba_das_redes": "estrategia",
-            "contagens": _contagens(),
+            "contagens": _contagens(request),
             "destino": destino,
             "post": post,
             "quadro": modulo.quadro(destino),
@@ -1148,7 +1196,7 @@ def revisar_resposta_ia(request: HttpRequest) -> HttpResponse:
         {
             "aba": "redes",
             "aba_das_redes": "estrategia",
-            "contagens": _contagens(),
+            "contagens": _contagens(request),
             "destino": destino,
             "leitura": leitura,
             "resposta": resposta,
@@ -1190,14 +1238,13 @@ def diagnostico(request: HttpRequest) -> HttpResponse:
     from apps.social.painel import leitura_parada
 
     destinos = list(Destino.objects.all())
-    escolhido = next(
-        (d for d in destinos if str(d.pk) == request.GET.get("destino")),
-        next((d for d in destinos if d.conectado), destinos[0] if destinos else None),
+    escolhido = _conta(request) or next(
+        (d for d in destinos if d.conectado), destinos[0] if destinos else None
     )
     contexto = {
         "aba": "redes",
         "aba_das_redes": "diagnostico",
-        "contagens": _contagens(),
+        "contagens": _contagens(request, exigir=True),
         "destinos": destinos,
         "destino": escolhido,
     }
@@ -1355,8 +1402,9 @@ def novo_post(request: HttpRequest) -> HttpResponse:
         {
             "aba": "redes",
             "aba_das_redes": "novo",
-            "contagens": _contagens(),
+            "contagens": _contagens(request),
             "destinos": destinos,
+            "marcadas": {_conta(request).pk} if _conta(request) else {d.pk for d in destinos},
             "artigos": artigos,
             "tipos": [
                 (Entrada.Tipo.CASO, _("Caso real")),
@@ -1443,7 +1491,7 @@ def banco_de_fotos(request: HttpRequest) -> HttpResponse:
         {
             "aba": "redes",
             "aba_das_redes": "fotos",
-            "contagens": _contagens(),
+            "contagens": _contagens(request),
             "grupos": list(grupos.items()),
             "destinos": destinos,
             "estoques": [(d, proprio.estoque(d)) for d in destinos if d.fotos_por_cento],
@@ -1463,15 +1511,53 @@ def fundo_privado(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 def identidade(request: HttpRequest, pk) -> HttpResponse:
-    """A identidade visual da conta: os fundos padrao das laminas (capa, meio
-    por tipo, final). O estilo das imagens fica no formulario da conta."""
-    from apps.social.models import FundoDeLamina
+    """A identidade visual da conta: cores e estilo das imagens, personagens e
+    cenarios fixos, e os fundos padrao das laminas (capa, meio por tipo,
+    final)."""
+    from apps.social.forms import IdentidadeForm
+    from apps.social.models import ElementoVisual, FundoDeLamina
 
     destino = get_object_or_404(Destino, pk=pk)
+    trocou = request.GET.get("destino")
+    if trocou and trocou != str(destino.pk):  # a barra de contas trocou a conta
+        _conta(request)
+        return redirect("social:identidade", trocou)
+    request.session[CONTA_NA_SESSAO] = str(destino.pk)
+    form = IdentidadeForm(instance=destino)
     if request.method == "POST":
-        if request.POST.get("acao") == "apagar":
+        acao = request.POST.get("acao") or "fundo"
+        if acao == "visual":
+            form = IdentidadeForm(request.POST, instance=destino)
+            if form.is_valid():
+                form.save()
+                messages.success(request, _("Identidade visual salva."))
+                return redirect("social:identidade", destino.pk)
+            messages.error(request, _("Confira os campos: %(e)s") % {"e": form.errors.as_text()})
+        elif acao == "elemento":
+            nome = request.POST.get("nome", "").strip()[:60]
+            tipo = request.POST.get("tipo")
+            descricao = request.POST.get("descricao", "").strip()
+            if not nome or not descricao or tipo not in ElementoVisual.Tipo.values:
+                messages.error(request, _("Diga o nome, o tipo e como ele e."))
+            else:
+                elemento, _criado = ElementoVisual.objects.update_or_create(
+                    destino=destino,
+                    nome=nome,
+                    defaults={"tipo": tipo, "descricao": descricao, "ativo": True},
+                )
+                if request.FILES.get("imagem"):
+                    elemento.imagem = request.FILES["imagem"]
+                    elemento.save(update_fields=["imagem"])
+                messages.success(request, _("'%(n)s' salvo.") % {"n": nome})
+            return redirect("social:identidade", destino.pk)
+        elif acao == "apagar_elemento":
+            ElementoVisual.objects.filter(pk=request.POST.get("elemento"), destino=destino).delete()
+            messages.success(request, _("Tirado."))
+            return redirect("social:identidade", destino.pk)
+        elif acao == "apagar":
             FundoDeLamina.objects.filter(pk=request.POST.get("fundo"), destino=destino).delete()
             messages.success(request, _("Fundo tirado."))
+            return redirect("social:identidade", destino.pk)
         else:
             arquivo = request.FILES.get("arquivo")
             papel = request.POST.get("papel")
@@ -1489,19 +1575,35 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
                     cor_destaque=_cor(request.POST.get("cor_destaque")),
                 )
                 messages.success(request, _("Fundo salvo: entra nos proximos posts."))
-        return redirect("social:identidade", destino.pk)
+            return redirect("social:identidade", destino.pk)
     return render(
         request,
         "social/identidade.html",
         {
             "aba": "redes",
             "aba_das_redes": "configurar",
-            "contagens": _contagens(),
+            "contagens": _contagens(request, exigir=True),
+            "conta": destino,
+            "parte": "identidade",
             "destino": destino,
+            "form": form,
             "fundos": destino.fundos.all(),
             "papeis": FundoDeLamina.Papel.choices,
+            "elementos": destino.elementos.all(),
+            "tipos": ElementoVisual.Tipo.choices,
         },
     )
+
+
+@login_required
+def elemento_privado(request: HttpRequest, pk) -> HttpResponse:
+    """A imagem de referencia de um personagem ou cenario (com login)."""
+    from apps.social.models import ElementoVisual
+
+    elemento = get_object_or_404(ElementoVisual, pk=pk)
+    if not elemento.imagem:
+        raise Http404
+    return FileResponse(elemento.imagem.open("rb"))
 
 
 def _cor(valor) -> str:

@@ -150,6 +150,11 @@ def _estilo_visual(destino: Destino) -> str:
         partes.append(ESTILOS[destino.estilo_das_imagens])
     if destino.descricao_do_estilo.strip():
         partes.append(destino.descricao_do_estilo.strip())
+    fixos = [
+        f"{e.nome} ({e.get_tipo_display().lower()})" for e in destino.elementos.filter(ativo=True)
+    ]
+    if fixos:
+        partes.append("personagens e cenarios fixos: " + ", ".join(fixos))
     fundos = sorted({str(f) for f in destino.fundos.all()})
     if fundos:
         partes.append("fundos padrao da conta: " + ", ".join(fundos))

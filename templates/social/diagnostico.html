@@ -9,11 +9,6 @@
   {% if not destino %}
     <div class="aviso">{% translate "Cadastre uma conta em" %} <a href="{% url 'social:inicio' %}?aba=configurar">{% translate "Configurar" %}</a>.</div>
   {% else %}
-  <form method="get" class="acoes" style="margin-bottom:1rem">
-    <select name="destino" onchange="this.form.submit()" style="width:auto">
-      {% for x in destinos %}<option value="{{ x.pk }}" {% if x.pk == destino.pk %}selected{% endif %}>{{ x.nome }} ({{ x.rede_nome }}){% if x.conectado %} ✓{% endif %}</option>{% endfor %}
-    </select>
-  </form>
   <p class="pre-visualizacao">
     {% blocktranslate trimmed %}
       O que funcionou e o que nao funcionou nesta conta, calculado a partir dos posts (os de

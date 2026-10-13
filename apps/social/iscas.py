@@ -240,19 +240,28 @@ def responder(*, http=None) -> int:
 
 
 # -- Painel --------------------------------------------------------------------------------
-def painel() -> list[dict]:
+def painel(conta=None) -> list[dict]:
     """Cada isca: posts, comentarios, pedidos, respondidos, cliques, e o
-    comentario por post contra os de engajamento sem isca."""
-    sem_isca = Post.objects.filter(
-        situacao=Post.Situacao.PUBLICADO, isca=None, extras__foco="engajamento"
-    ).annotate(n=Count("comentarios"))
+    comentario por post contra os de engajamento sem isca (da conta, se dada;
+    os cliques no link sao da isca, de todas as contas)."""
+    publicados = Post.objects.filter(situacao=Post.Situacao.PUBLICADO)
+    if conta is not None:
+        publicados = publicados.filter(destino=conta)
+    sem_isca = publicados.filter(isca=None, extras__foco="engajamento").annotate(
+        n=Count("comentarios")
+    )
     base = [p.n for p in sem_isca]
     media_sem = round(sum(base) / len(base), 1) if base else None
     linhas = []
-    for isca in Isca.objects.annotate(
-        n_posts=Count("posts", filter=Q(posts__situacao=Post.Situacao.PUBLICADO), distinct=True)
-    ):
+    filtro = Q(posts__situacao=Post.Situacao.PUBLICADO)
+    if conta is not None:
+        filtro &= Q(posts__destino=conta)
+    for isca in Isca.objects.annotate(n_posts=Count("posts", filter=filtro, distinct=True)):
+        if conta is not None and isca.redes and conta.rede not in isca.redes:
+            continue
         comentarios = Comentario.objects.filter(post__isca=isca)
+        if conta is not None:
+            comentarios = comentarios.filter(post__destino=conta)
         total = comentarios.count()
         linhas.append(
             {
@@ -270,12 +279,14 @@ def painel() -> list[dict]:
     return linhas
 
 
-def a_decidir():
+def a_decidir(conta=None):
     """Comentarios que esperam a pessoa: "talvez", pedidos de isca que nao
-    responde sozinha, e envios que deram erro."""
+    responde sozinha, e envios que deram erro (da conta, se dada)."""
+    base = Comentario.objects.filter(post__isca__isnull=False, respondido_em=None)
+    if conta is not None:
+        base = base.filter(post__destino=conta)
     return (
-        Comentario.objects.filter(post__isca__isnull=False, respondido_em=None)
-        .filter(
+        base.filter(
             Q(pedido=TALVEZ)
             | Q(pedido=SIM, post__isca__responder_sozinho=False)
             | (Q(pedido=SIM) & ~Q(erro=""))

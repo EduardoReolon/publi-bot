@@ -21,15 +21,6 @@
     </div>
   {% endif %}
 
-  {% if destinos and aba_das_redes != 'configurar' and aba_das_redes != 'funciona' and aba_das_redes != 'comentarios' %}
-    <form method="get" class="acoes" style="margin-bottom:1rem">
-      <input type="hidden" name="aba" value="{{ aba_das_redes }}">
-      <select name="destino" onchange="this.form.submit()" style="width:auto">
-        <option value="">{% translate "Todas as contas" %}</option>
-        {% for d in destinos %}<option value="{{ d.pk }}" {% if filtro == d.pk|stringformat:'s' %}selected{% endif %}>{{ d.nome }}</option>{% endfor %}
-      </select>
-    </form>
-  {% endif %}
 
   {% if aba_das_redes == 'revisar' or aba_das_redes == 'agenda' or aba_das_redes == 'publicados' %}
     {% for post in posts %}

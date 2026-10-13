@@ -35,9 +35,6 @@ class DestinoForm(forms.ModelForm):
         required=False,
         help_text=_("Separados por virgula, ex.: 08:30, 18:00. Vazio: o horario comum da rede."),
     )
-    cor_fundo = forms.CharField(label=_("cor de fundo das laminas"), required=False)
-    cor_texto = forms.CharField(label=_("cor do texto"), required=False)
-    cor_destaque = forms.CharField(label=_("cor de destaque"), required=False)
 
     class Meta:
         model = Destino
@@ -54,14 +51,8 @@ class DestinoForm(forms.ModelForm):
             "instrucoes",
             "hashtags_fixas",
             "hashtags_de_referencia",
-            "chamada_final",
-            "estilo_das_imagens",
-            "descricao_do_estilo",
-            "cenarios_de_foto",
         ]
         widgets = {
-            "descricao_do_estilo": forms.Textarea(attrs={"rows": 3}),
-            "cenarios_de_foto": forms.Textarea(attrs={"rows": 2}),
             "publico": forms.Textarea(attrs={"rows": 3}),
             "instrucoes": forms.Textarea(attrs={"rows": 3}),
         }
@@ -80,8 +71,23 @@ class DestinoForm(forms.ModelForm):
             self.fields["rede"].disabled = True
             self.initial["horarios"] = ", ".join(instancia.horarios or [])
             self.initial["dias"] = instancia.dias or []
-            for chave in ("fundo", "texto", "destaque"):
-                self.initial[f"cor_{chave}"] = (instancia.cores or {}).get(chave, "")
+
+    # Os campos em blocos, na tela da conta.
+    GRUPOS = (
+        (_("A conta"), ("rede", "nome", "autor", "ligado", "aprovacao")),
+        (_("Ritmo"), ("teto_semanal", "dias", "horarios", "fotos_por_cento")),
+        (
+            _("Publico e voz"),
+            ("publico", "tom", "instrucoes", "hashtags_fixas", "hashtags_de_referencia"),
+        ),
+    )
+
+    @property
+    def grupos(self):
+        return [
+            (titulo, [self[c] for c in campos if c in self.fields])
+            for titulo, campos in self.GRUPOS
+        ]
 
     def clean_horarios(self):
         horarios = [
@@ -101,6 +107,34 @@ class DestinoForm(forms.ModelForm):
         destino = super().save(commit=False)
         destino.horarios = self.cleaned_data["horarios"]
         destino.dias = sorted(self.cleaned_data.get("dias") or [])
+        if commit:
+            destino.save()
+        return destino
+
+
+class IdentidadeForm(forms.ModelForm):
+    """O visual da conta: cores das laminas, a ultima lamina e o estilo das
+    imagens (na tela Identidade visual)."""
+
+    cor_fundo = forms.CharField(label=_("cor de fundo das laminas"), required=False)
+    cor_texto = forms.CharField(label=_("cor do texto"), required=False)
+    cor_destaque = forms.CharField(label=_("cor de destaque"), required=False)
+
+    class Meta:
+        model = Destino
+        fields = ["estilo_das_imagens", "descricao_do_estilo", "cenarios_de_foto", "chamada_final"]
+        widgets = {
+            "descricao_do_estilo": forms.Textarea(attrs={"rows": 3}),
+            "cenarios_de_foto": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for chave in ("fundo", "texto", "destaque"):
+            self.initial[f"cor_{chave}"] = (self.instance.cores or {}).get(chave, "")
+
+    def save(self, commit=True):
+        destino = super().save(commit=False)
         destino.cores = {
             chave: self.cleaned_data.get(f"cor_{chave}", "").strip()
             for chave in ("fundo", "texto", "destaque")

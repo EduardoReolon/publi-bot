@@ -5,6 +5,7 @@
 {% block conteudo %}
   <h1>{% translate "Redes sociais" %}</h1>
   {% include "social/_abas.html" %}
+  {% include "social/_sub_configurar.html" %}
   <h2>{% blocktranslate with n=destino.nome %}Identidade visual — {{ n }}{% endblocktranslate %}</h2>
   <p class="sub">
     {% blocktranslate trimmed %}
@@ -17,13 +18,50 @@
   </p>
 
   <section class="secao">
-    <h3>{% translate "Estilo das imagens" %}</h3>
-    <p>
-      <strong>{{ destino.get_estilo_das_imagens_display }}</strong>
-      {% if destino.descricao_do_estilo %}— {{ destino.descricao_do_estilo }}{% endif %}
-      {% if destino.estilo_das_imagens == 'misto' and destino.cenarios_de_foto %}<br><span class="ajuda">{% translate "Foto realista quando:" %} {{ destino.cenarios_de_foto }}</span>{% endif %}
+    <h3>{% translate "Cores, ultima lamina e estilo das imagens" %}</h3>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="acao" value="visual">
+      {% for campo in form %}{% include "_campo.html" %}{% endfor %}
+      <div class="acoes"><button type="submit" class="botao">{% translate "Salvar" %}</button></div>
+    </form>
+  </section>
+
+  <section class="secao">
+    <h3>{% translate "Personagens e cenarios fixos" %}</h3>
+    <p class="pre-visualizacao">
+      {% blocktranslate trimmed %}
+        Como os perfis que tem um mascote: um personagem (ou cenario, ou objeto) com nome e uma
+        descricao que nunca muda. Quem escreve o post o chama pelo nome na cena da lamina; o pedido
+        de imagens leva a descricao inteira, e a imagem de referencia (se tiver) e para anexar na IA
+        que aceita (ChatGPT, Gemini, Midjourney). Quanto mais detalhada e fixa a descricao — especie,
+        idade, roupa, cores, acessorios, traco —, mais parecido ele sai de um post para o outro.
+      {% endblocktranslate %}
     </p>
-    <p class="ajuda">{% translate "Muda em Configurar > a conta (estilo, como sao as imagens, quando usar foto). Vai igual em todo pedido de imagens para a IA de imagem, no post (Imagens das laminas)." %}</p>
+    {% for e in elementos %}
+      <details class="secao">
+        <summary><strong>{{ e.nome }}</strong> <span class="selo">{{ e.get_tipo_display }}</span>{% if not e.ativo %} <span class="selo">{% translate "desligado" %}</span>{% endif %}</summary>
+        {% if e.imagem %}<img src="{% url 'social:elemento_privado' e.pk %}" alt="" style="max-width:160px; display:block; margin:.4rem 0">{% endif %}
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}<input type="hidden" name="acao" value="elemento"><input type="hidden" name="nome" value="{{ e.nome }}">
+          <label>{% translate "Tipo" %} <select name="tipo">{% for v, r in tipos %}<option value="{{ v }}"{% if v == e.tipo %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+          <label>{% translate "Como e, sempre igual" %} <textarea name="descricao" rows="3" style="width:100%" required>{{ e.descricao }}</textarea></label>
+          <label>{% translate "Imagem de referencia (opcional)" %} <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp"></label>
+          <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Salvar" %}</button></div>
+        </form>
+        <form method="post">{% csrf_token %}<input type="hidden" name="acao" value="apagar_elemento"><input type="hidden" name="elemento" value="{{ e.pk }}"><button type="submit" class="botao discreto pequeno">{% translate "Tirar" %}</button></form>
+      </details>
+    {% endfor %}
+    <details class="secao" {% if not elementos %}open{% endif %}>
+      <summary><strong>{% translate "Novo personagem, cenario ou objeto" %}</strong></summary>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}<input type="hidden" name="acao" value="elemento">
+        <label>{% translate "Nome (como o texto vai chama-lo)" %} <input type="text" name="nome" maxlength="60" required placeholder="Gugu"></label>
+        <label>{% translate "Tipo" %} <select name="tipo">{% for v, r in tipos %}<option value="{{ v }}">{{ r }}</option>{% endfor %}</select></label>
+        <label>{% translate "Como e, sempre igual" %} <textarea name="descricao" rows="3" style="width:100%" required placeholder="{% translate 'gorila adulto de terno azul-marinho, gravata amarela, oculos redondos, ilustracao plana de traco grosso' %}"></textarea></label>
+        <label>{% translate "Imagem de referencia (opcional)" %} <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp"></label>
+        <div class="acoes"><button type="submit" class="botao">{% translate "Salvar" %}</button></div>
+      </form>
+    </details>
   </section>
 
   <section class="secao">

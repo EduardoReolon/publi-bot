@@ -30,6 +30,7 @@ urlpatterns = [
     path("contas/<uuid:pk>/conectar/", views.conectar, name="conectar"),
     path("contas/<uuid:pk>/identidade/", views.identidade, name="identidade"),
     path("fundos/<uuid:pk>/", views.fundo_privado, name="fundo_privado"),
+    path("elementos/<uuid:pk>/", views.elemento_privado, name="elemento_privado"),
     path("contas/<uuid:pk>/conta/", views.escolher_conta, name="escolher_conta"),
     path("contas/<uuid:pk>/desconectar/", views.desconectar, name="desconectar"),
     path("conectar/retorno/", views.retorno, name="retorno"),
