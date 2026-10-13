@@ -43,6 +43,16 @@
         idade, roupa, cores, acessorios, traco —, mais parecido ele sai de um post para o outro.
       {% endblocktranslate %}
     </p>
+    <details class="secao">
+      <summary><strong>{% translate "Criar o personagem numa IA de imagem (escolha o traco)" %}</strong></summary>
+      <p class="ajuda">{% blocktranslate trimmed %}
+        Peca a "folha de personagem": o mesmo personagem de frente, de lado, de costas e com algumas
+        expressoes, numa imagem so. Envie essa imagem aqui como referencia e escreva a descricao com as
+        mesmas palavras do prompt. Escolha um traco e mantenha: quanto mais simples o traco, mais facil
+        sair igual em IAs diferentes, mais barato gerar e animar, e melhor fica numa IA menor.
+      {% endblocktranslate %}</p>
+      {% include "social/_folha_de_referencia.html" with prompts=folha_modelo prefixo="novo" %}
+    </details>
     {% for e in elementos %}
       <details class="secao">
         <summary><strong>{{ e.nome }}</strong> <span class="selo">{{ e.get_tipo_display }}</span>{% if not e.ativo %} <span class="selo">{% translate "desligado" %}</span>{% endif %}</summary>
@@ -54,6 +64,9 @@
           <label>{% translate "Imagem de referencia (opcional)" %} <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp"></label>
           <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Salvar" %}</button></div>
         </form>
+        <details class="ajuda"><summary>{% translate "Prompts da folha de referencia deste elemento" %}</summary>
+          {% include "social/_folha_de_referencia.html" with prompts=e.prompts_de_folha prefixo=e.pk %}
+        </details>
         <form method="post">{% csrf_token %}<input type="hidden" name="acao" value="apagar_elemento"><input type="hidden" name="elemento" value="{{ e.pk }}"><button type="submit" class="botao discreto pequeno">{% translate "Tirar" %}</button></form>
       </details>
     {% endfor %}

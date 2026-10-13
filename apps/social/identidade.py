@@ -139,6 +139,87 @@ Assunto do post: {assunto}
 """
 
 
+# -- Criar o personagem (ou cenario) numa IA de imagem --------------------------------------
+# A "folha de personagem" (o mesmo personagem de varios lados e com varias
+# expressoes, numa imagem so) e o que faz IAs diferentes desenharem igual: ela
+# vira a imagem de referencia do elemento, e a descricao vai em todo pedido.
+TRACOS = {
+    "2d": {
+        "nome": "Animacao 2D (traco simples)",
+        "estilo": (
+            "ilustracao 2D vetorial plana, traco limpo com contorno fino, cores chapadas com "
+            "sombra simples, poucos detalhes, proporcoes levemente estilizadas"
+        ),
+        "quando": (
+            "o mais facil de manter igual de um post para o outro e de animar: ate IA menor "
+            "e mais barata (e a placa propria) da conta. Combina com quadrinhos e apresentacao."
+        ),
+    },
+    "3d": {
+        "nome": "3D estilo filme de animacao",
+        "estilo": (
+            "personagem 3D estilo filme de animacao, formas arredondadas, texturas suaves, "
+            "iluminacao de estudio suave"
+        ),
+        "quando": (
+            "simpatico e caprichado, mas precisa de IA boa (ChatGPT, Midjourney, Gemini) para "
+            "sair igual sempre; animar pede IA de video maior (Sora, Kling) — mais caro."
+        ),
+    },
+    "realista": {
+        "nome": "Realista (foto)",
+        "estilo": "fotografia realista, luz natural, pessoa comum (nao famosa), nitida",
+        "quando": (
+            "o mais dificil de manter o mesmo rosto entre imagens e de animar sem estranhar; "
+            "so as melhores IAs dao conta, e e o mais caro. Para mascote, evite."
+        ),
+    },
+}
+FOLHA = {
+    "personagem": (
+        "Crie a FOLHA DE PERSONAGEM de {nome}: {descricao}. Estilo: {estilo}. Na mesma "
+        "imagem, em fundo branco liso, o MESMO personagem 4 vezes lado a lado — de frente, de "
+        "3/4, de perfil e de costas — e, embaixo, 3 expressoes do rosto (neutro, sorrindo, "
+        "preocupado). Mesma roupa, mesmas cores e proporcoes em todas. Sem texto, sem "
+        "logotipo. Formato horizontal 16:9."
+    ),
+    "cenario": (
+        "Crie a FOLHA DO CENARIO {nome}: {descricao}. Estilo: {estilo}. Na mesma imagem, o "
+        "MESMO lugar de 3 angulos (de frente, de lado, de cima), sem pessoas, mesma luz e "
+        "mesmas cores. Sem texto, sem logotipo. Formato horizontal 16:9."
+    ),
+    "objeto": (
+        "Crie a FOLHA DO OBJETO {nome}: {descricao}. Estilo: {estilo}. Na mesma imagem, o "
+        "MESMO objeto de 4 lados em fundo branco liso, mesmas cores e proporcoes. Sem texto, "
+        "sem logotipo. Formato horizontal 16:9."
+    ),
+}
+EXEMPLO_DE_PERSONAGEM = (
+    "[descreva sempre igual: quem e, idade, cabelo, roupa e cores, acessorios — ex.: dono de "
+    "empresa, uns 55 anos, grisalho, oculos de armacao preta, camisa social azul-clara de "
+    "mangas dobradas, calca azul-marinho]"
+)
+
+
+def prompts_de_folha(nome: str = "", descricao: str = "", tipo: str = "personagem") -> list:
+    """O pedido da folha de referencia em cada traco: [{"chave", "nome", "quando",
+    "prompt"}]. Sem nome e descricao, com o modelo para preencher."""
+    modelo = FOLHA.get(tipo, FOLHA["personagem"])
+    return [
+        {
+            "chave": chave,
+            "nome": traco["nome"],
+            "quando": traco["quando"],
+            "prompt": modelo.format(
+                nome=nome or "[nome]",
+                descricao=descricao.strip().rstrip(".") or EXEMPLO_DE_PERSONAGEM,
+                estilo=traco["estilo"],
+            ),
+        }
+        for chave, traco in TRACOS.items()
+    ]
+
+
 def elementos(destino) -> list:
     return list(destino.elementos.filter(ativo=True))
 

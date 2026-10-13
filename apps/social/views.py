@@ -1723,6 +1723,7 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
     cenarios fixos, e os fundos padrao das laminas (capa, meio por tipo,
     final)."""
     from apps.social.forms import IdentidadeForm
+    from apps.social.identidade import prompts_de_folha
     from apps.social.models import ElementoVisual, FundoDeLamina
 
     destino = get_object_or_404(Destino, pk=pk)
@@ -1798,6 +1799,7 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
             "fundos": destino.fundos.all(),
             "papeis": FundoDeLamina.Papel.choices,
             "elementos": destino.elementos.all(),
+            "folha_modelo": prompts_de_folha(),
             "tipos": ElementoVisual.Tipo.choices,
         },
     )

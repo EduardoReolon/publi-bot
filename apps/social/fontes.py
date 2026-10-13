@@ -117,6 +117,17 @@ def artigos_no_ar(desde=None) -> list[str]:
     return [str(pk) for pk in consulta.order_by("-published_at").values_list("pk", flat=True)]
 
 
+PAISES = {2076: "Brasil", 2620: "Portugal", 2840: "Estados Unidos"}
+
+
+def _nome_do_pais(codigo: int) -> str:
+    """O pais do Radar pelo nome (a lista de locais guardada, ou os mais comuns)."""
+    from apps.radar.models import LocalDisponivel
+
+    local = LocalDisponivel.objects.filter(codigo=codigo).first()
+    return (local.nome if local else PAISES.get(codigo, "")) or "o pais inteiro"
+
+
 def negocio() -> dict:
     """Tema, publico, oferta, dores e regioes, como o Negocio e o Radar guardam."""
     from apps.editorial.models import PerfilDoNegocio
@@ -129,6 +140,8 @@ def negocio() -> dict:
         nome = str(regiao.get("nome") or "").split(",")[0].strip()
         if nome:
             regioes.append(nome)
+    if not regioes:  # nenhuma regiao no Radar: o pais inteiro
+        regioes = [_nome_do_pais(radar.codigo_de_local)]
     return {
         "tema": getattr(perfil, "tema", "") or "",
         "publico": getattr(perfil, "publico", "") or "",

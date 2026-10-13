@@ -1,0 +1,8 @@
+{% load i18n %}
+{% for p in prompts %}
+  <div style="margin:.4rem 0">
+    <strong>{{ p.nome }}</strong> — <span class="ajuda">{{ p.quando }}</span>
+    <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="folha-{{ prefixo }}-{{ p.chave }}">{% translate "Copiar o prompt" %}</button></div>
+    <textarea id="folha-{{ prefixo }}-{{ p.chave }}" readonly rows="3" style="width:100%">{{ p.prompt }}</textarea>
+  </div>
+{% endfor %}
