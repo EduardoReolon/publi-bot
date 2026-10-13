@@ -36,6 +36,7 @@ ESQUEMA = {
     "type": "object",
     "properties": {
         "ideia": {"type": "string"},
+        "principios": {"type": "array", "items": {"type": "string"}},
         "gancho": {"type": "string"},
         "texto": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
@@ -338,12 +339,15 @@ def com_laminas(post: Post) -> bool:
     return bool(rede(post.destino.rede).formato.max_laminas) and not com_fotos(post)
 
 
-def instrucoes(post: Post, artigo) -> str:
+def instrucoes(post: Post, artigo, mat: dict | None = None) -> str:
     """Tudo o que vai para quem escreve alem do material: clareza, foco, isca,
     formato, ideia sugerida, recado, cuidados do assunto."""
-    from apps.social import clareza, focos, iscas, proprio
+    from apps.social import clareza, focos, iscas, persuasao, proprio
 
     entrada = post.entrada if post.entrada_id else None
+    # O principio de Cialdini principal deste post (fica no post para medir).
+    if not (post.extras or {}).get("principio"):
+        post.extras = {**(post.extras or {}), "principio": persuasao.principal_da_vez(post, mat)}
     # O angulo sugerido (outra IA, evento) vai como sugestao, nao como ordem:
     # o material continua sendo o limite do que se afirma.
     ideia = (post.extras or {}).get("ideia", "")
@@ -365,13 +369,15 @@ def instrucoes(post: Post, artigo) -> str:
         + "\nHashtags com cada palavra iniciando em maiuscula (#SaudeMental, nao "
         "#saudemental): o leitor de tela le palavra por palavra.\n" + base
     )
-    return clareza.instrucao(post, laminas=com_laminas(post)) + base
+    return (
+        clareza.instrucao(post, laminas=com_laminas(post)) + persuasao.instrucao(post, mat) + base
+    )
 
 
 def montar_e_conferir(post: Post, dados: dict, artigo) -> tuple[str, dict, list[str]]:
     """O texto e os extras a partir do JSON (do modelo ou da outra IA) e os
     avisos da conferencia: numeros, termos, enquete, identificacao, clareza."""
-    from apps.social import clareza, laminas, proprio
+    from apps.social import clareza, laminas, persuasao, proprio
 
     fotos = com_fotos(post)
     if fotos:
@@ -379,6 +385,7 @@ def montar_e_conferir(post: Post, dados: dict, artigo) -> tuple[str, dict, list[
     texto, extras = montar(post, dados)
     if extras.get("laminas"):
         extras["laminas"] = laminas.com_as_fontes(extras["laminas"], artigo.fontes_das_frases)
+    persuasao.registrar(post, texto, extras, dados.get("principios"))
     avisos = conferir(post, texto, extras, artigo, com_fotos=fotos)
     if e_enquete(post) and "enquete" not in extras:
         avisos.append("a enquete veio sem pergunta ou com menos de 2 opcoes")
@@ -448,7 +455,7 @@ def escrever(post: Post) -> Post:
     post.situacao = Post.Situacao.GERANDO
     post.save(update_fields=["situacao", "atualizado_em"])
 
-    base = instrucoes(post, artigo)
+    base = instrucoes(post, artigo, mat)
     ajuste, avisos, texto, extras = base, [], "", {}
     for _tentativa in range(TENTATIVAS):
         try:

@@ -22,7 +22,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
-from apps.social import experimentos, fontes
+from apps.social import experimentos, fontes, persuasao
 from apps.social.abordagens import garantir_abordagens
 from apps.social.forms import AbordagemForm, ConfiguracaoForm, DestinoForm, RecadoForm
 from apps.social.models import (
@@ -166,7 +166,7 @@ def inicio(request: HttpRequest) -> HttpResponse:
         )[:200]
     elif aba == "funciona":
         contexto["quadros"] = [
-            (d, experimentos.quadro(d), experimentos.quadro_de_recados(d))
+            (d, experimentos.quadro(d), experimentos.quadro_de_recados(d), persuasao.quadro(d))
             for d in ([conta] if conta else destinos)
         ]
         contexto["metrica"] = contexto["config"].get_metrica_display()

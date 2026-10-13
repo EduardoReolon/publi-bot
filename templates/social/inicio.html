@@ -79,7 +79,7 @@
         funcionam, sem parar de testar as outras — abordagem nova tem a mesma chance.
       {% endblocktranslate %}
     </p>
-    {% for destino, linhas, recados in quadros %}
+    {% for destino, linhas, recados, principios in quadros %}
       <section class="secao">
         <h2>{{ destino.nome }} <span class="selo">{{ destino.rede_nome }}</span></h2>
         <div class="rolagem"><table>
@@ -111,6 +111,21 @@
             </tbody>
           </table></div>
         {% endif %}
+        <h3>{% translate "Principios de persuasao (Cialdini)" %}</h3>
+        <p class="ajuda">{% translate "Cada post usa 1 a 3, sempre do jeito honesto, e um principal escolhido para que todos sejam testados. Medida mediana dos posts com o principio x sem ele, nesta conta: indicio, nao prova." %}</p>
+        <div class="rolagem"><table>
+          <thead><tr><th>{% translate "Principio" %}</th><th class="numero">{% translate "Posts com" %}</th><th class="numero">{% translate "Funcionou" %}</th><th>{% translate "Com x sem" %}</th></tr></thead>
+          <tbody>
+            {% for l in principios %}
+              <tr>
+                <td>{{ l.nome }}</td>
+                <td class="numero">{{ l.com }}</td>
+                <td class="numero">{% if l.funcionou is not None %}{{ l.funcionou }}%{% else %}—{% endif %}</td>
+                <td>{% if l.diferenca is not None %}{% if l.diferenca > 0 %}+{% endif %}{{ l.diferenca }}% {% translate "na mediana" %}{% else %}<span class="ajuda">{% translate "cedo para dizer (3 posts medidos de cada lado)" %}</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
       </section>
     {% empty %}
       <p class="pre-visualizacao">{% translate "Cadastre uma conta para comecar a medir." %}</p>

@@ -65,7 +65,13 @@ COMO TRABALHAR COMIGO
    com o link. Sem pesquisa na web, deixe EVENTOS vazio: nao invente.
 3. O post so pode afirmar o que esta no artigo: nao proponha numero, caso ou
    promessa que nao esteja nos candidatos. Respeite as regras da conta.
-4. CLAREZA acima de tudo: quem NUNCA leu o artigo, rolando a tela, tem de
+4. PERSUASAO honesta (Cialdini): pense em qual principio cada post usa —
+   reciprocidade (entregar valor antes), compromisso (um pequeno sim),
+   prova social (o numero real do artigo), autoridade (a fonte), afinidade
+   (as palavras do publico), escassez (so a verdadeira: o que pouca gente
+   sabe) e unidade (falar de dentro do grupo). Varie entre os posts. Nunca
+   urgencia, numero ou depoimento inventados.
+5. CLAREZA acima de tudo: quem NUNCA leu o artigo, rolando a tela, tem de
    entender o post em 2 segundos. Uma ideia so por post, dita com as palavras
    do publico, concreta (uma situacao que a pessoa vive), sem jargao e sem
    copiar frase do artigo. Pense tambem na IMAGEM: o que a capa mostra para a
