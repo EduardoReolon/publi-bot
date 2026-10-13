@@ -185,7 +185,12 @@ def test_proposta_em_video_com_estilo(ambiente, monkeypatch):
     texto = outra_ia.pedido(destino)
     assert "carrossel, video ou enquete" in texto and "| estilo" in texto
     assert "'quadrinhos'" in texto and "'foto'" not in texto
-    assert "Outubro Rosa" not in texto and "devolva em 'estilo'" not in texto
+    assert "devolva em 'estilo'" not in texto
+    # o exemplo de evento segue o tema: clinica ve campanha de saude; o resto, data do setor
+    consultoria = {"tema": "Processos, dados e medicao de resultados", "publico": "empresarios"}
+    clinica = {"tema": "Clínica de dermatologia", "publico": "pacientes adultos"}
+    assert "feira" in outra_ia.exemplos_de_eventos(consultoria, destino)
+    assert "Outubro Rosa" in outra_ia.exemplos_de_eventos(clinica, destino)
     leitura = outra_ia.ler(
         f"PROPOSTAS:\n- {outra_ia.codigo_do_tema(tema)} | Cresceu e o lucro nao? | uma ideia "
         "| alcance | | | video | apresentacao\nFIM"

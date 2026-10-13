@@ -59,10 +59,11 @@ COMO TRABALHAR COMIGO
    gere os blocos quando eu pedir ("pode gerar"); se nao houver o que
    discutir, diga e ja gere.
 2. Se voce puder PESQUISAR NA WEB, procure o que acontece agora e conversa com
-   os candidatos: campanhas e datas do mes ligadas ao tema do negocio, regra
-   nova de orgao publico, pesquisa ou estudo que virou noticia, assunto em
-   alta no setor do publico. So dos ultimos 30 dias ou dos proximos 60, e SO o que voce confirmou,
-   com o link. Sem pesquisa na web, deixe EVENTOS vazio: nao invente.
+   os candidatos: campanhas e datas do mes ligadas ao tema do negocio
+   ({exemplos}), regra nova de orgao publico, pesquisa ou estudo que virou
+   noticia, assunto em alta no setor do publico. So dos ultimos 30 dias ou
+   dos proximos 60, e SO o que voce confirmou, com o link. Sem pesquisa na
+   web, deixe EVENTOS vazio: nao invente.
 3. O post so pode afirmar o que esta no artigo: nao proponha numero, caso ou
    promessa que nao esteja nos candidatos. Respeite as regras da conta.
 4. PERSUASAO honesta (Cialdini): pense em qual principio cada post usa —
@@ -166,6 +167,29 @@ def _estilo_visual(destino: Destino) -> str:
     return "; ".join(p for p in partes if p) or "sem estilo definido (sugira um em COMENTARIOS)"
 
 
+# O exemplo de evento que ajuda a outra IA a procurar o certo: campanha de saude
+# para clinica, data do setor para o resto (algoritmo, pelas palavras do tema).
+_SAUDE = re.compile(
+    r"\b(saude|clinicas?|medic[oa]s?|medicina|odonto\w*|dentist\w*|fisioterap\w*|"
+    r"psicolog\w*|nutricion\w*|pediatr\w*|dermatolog\w*|cardiolog\w*|ginecolog\w*|"
+    r"oftalmolog\w*|ortoped\w*|pacientes?|hospita\w*|consultorios?|exames?)\b"
+)
+EXEMPLOS_DE_EVENTOS = {
+    "saude": "ex.: Outubro Rosa, Novembro Azul, o dia da especialidade, campanha de vacinacao",
+    "outros": "ex.: uma data do setor, feira ou congresso da area, lei ou prazo novo que "
+    "afeta o publico, pesquisa de mercado recente",
+}
+
+
+def exemplos_de_eventos(negocio: dict, destino: Destino) -> str:
+    from apps.social.iscas import normalizar
+
+    texto = normalizar(
+        " ".join([negocio.get("tema") or "", negocio.get("publico") or "", destino.publico or ""])
+    )
+    return EXEMPLOS_DE_EVENTOS["saude" if _SAUDE.search(texto) else "outros"]
+
+
 FORMATOS = "carrossel ou enquete"
 FORMATOS_COM_VIDEO = (
     "carrossel, video ou enquete (video = as mesmas laminas narradas por uma voz, como "
@@ -184,6 +208,7 @@ def pedido(destino: Destino) -> str:
     partes = [
         PEDIDO.format(
             hoje=timezone.localdate().strftime("%d/%m/%Y"),
+            exemplos=exemplos_de_eventos(negocio, destino),
             rede=r.nome,
             max_propostas=MAXIMO_DE_PROPOSTAS,
             formatos=FORMATOS
