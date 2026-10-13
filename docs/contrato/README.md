@@ -560,6 +560,24 @@ JavaScript.
   lista aparece sempre aberta, como texto comum. Nada quebra, mas o recolher
   some: inclua as duas tags na lista abaixo.
 
+## Destaque no meio do texto
+
+No meio do `html_content` podem vir ate dois **destaques**: a frase que resume a
+ideia mais importante de uma secao, repetida em letra maior (o "olho" das
+revistas). Quem le na diagonal pega a ideia so por eles.
+
+```html
+<aside data-publibot="destaque"><p><strong>A frase que importa.</strong></p></aside>
+```
+
+- Mostre em letra maior, com respiro em cima e embaixo (ex.: fonte 1,4x, uma
+  borda lateral na cor de destaque do site). A biblioteca Django traz um estilo
+  padrao no `publibot/head.html`, sobrescrevivel pelo seletor
+  `aside[data-publibot="destaque"]`.
+- E repeticao do texto: leitor de tela pode pular (`aside` ja e complementar).
+- Site que nao aceita este `aside` remove a tag e fica o paragrafo em negrito:
+  degrada para enfase, sem quebrar.
+
 ## Sanitizacao do HTML recebido
 
 **Sanitize o `html_content` antes de gravar.** O PubliBot ja sanitiza antes de
@@ -568,7 +586,8 @@ final pelo que sai na propria pagina.
 
 Tags aceitas: `p br hr h2 h3 h4 ul ol li strong em b i u s blockquote code pre
 a img table thead tbody tr th td figure figcaption span div details summary`, e
-`aside` so com `data-publibot="chamada"` (ver [Chamada](#chamada-para-a-oferta-do-site)).
+`aside` so com `data-publibot="chamada"` (vazio; ver [Chamada](#chamada-para-a-oferta-do-site))
+ou `data-publibot="destaque"` (com o texto; ver [Destaque](#destaque-no-meio-do-texto)).
 Em `details`, aceite os atributos `class` e `open` (ver [Referencias](#referencias)).
 
 - Atributos `on*` (`onclick`, `onerror`, ...): **sempre removidos**.

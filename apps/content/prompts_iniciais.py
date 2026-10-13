@@ -56,6 +56,27 @@ REGRA_DO_EMBASAMENTO = (
     "escreva a mais geral."
 )
 
+# Prender o leitor (que decide em segundos se fica) sem perder o rigor: vale
+# para quem escreve o corpo do artigo (de uma vez ou secao por secao).
+REGRAS_DE_ATENCAO = (
+    "- Paragrafos de no maximo 3 frases. Frases curtas, de "
+    "tamanhos variados. Primeira frase entrega a resposta e prende: a "
+    "consequencia concreta, o numero que surpreende (das fontes) ou a "
+    "pergunta que o leitor faz; o resto sustenta.\n"
+    "- Fale da rotina do leitor: troque abstracao por situacao concreta "
+    "(um exemplo ilustrativo do dia a dia, sem numero nem resultado "
+    "inventado).\n"
+    "- DESTAQUE: se a secao tiver uma frase que resume a ideia mais "
+    "importante dela (a que o leitor deveria lembrar), repita-a, curta "
+    "(8 a 20 palavras), numa linha propria comecando com '>> ', sem "
+    "marcador de fonte. No maximo uma por secao, e so quando valer.\n"
+    "- Persuasao honesta (Cialdini): autoridade (diga de onde vem o "
+    "dado; o marcador ja leva a fonte), prova social (quantas pessoas "
+    "vivem isso, se a fonte disser), reciprocidade (algo pratico que o "
+    "leitor use hoje), afinidade (as palavras de quem vive o problema). "
+    "Nunca urgencia, escassez ou numero inventados.\n"
+)
+
 
 PROMPTS_INICIAIS: dict[str, dict] = {
     "consensus_filter": {
@@ -102,6 +123,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             '("voce deve tomar"). Escreva de forma informativa.\n'
             "- Se a tese indicar divergencia entre fontes, apresente a "
             "divergencia no texto em vez de escolher um lado.\n\n"
+            f"Forma:\n{REGRAS_DE_ATENCAO}\n"
             "Formato: Markdown, com subtitulos de nivel 2 e 3. Nao repita o "
             "titulo do artigo como cabecalho."
         ),
@@ -214,8 +236,8 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "um lado.\n\n"
             "Regras de forma:\n"
             "- Escreva o CORPO da secao apenas. Nao repita o titulo dela.\n"
-            "- 2 a 4 paragrafos. Frases curtas. Primeira frase entrega a "
-            "resposta; o resto sustenta.\n"
+            "- 2 a 4 paragrafos.\n"
+            f"{REGRAS_DE_ATENCAO}"
             "- Use as palavras-chave da secao com naturalidade, onde couberem. "
             "Repeti-las forcadamente piora o texto e nao ajuda a busca.\n"
             "- Subtitulo de nivel 3 so se a secao tiver mesmo duas partes.\n"
@@ -248,8 +270,11 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "[[FONTE_N]], nome de autor ou endereco da web. As citacoes estao no "
             "corpo do artigo.\n\n"
             "Responda SOMENTE com um objeto JSON:\n"
-            '  "abertura": 1 a 2 paragrafos. Comece pelo problema de quem le, '
-            "nao por definicao de dicionario. Diga o que o artigo responde. "
+            '  "abertura": 1 a 2 paragrafos curtos. A primeira frase tem de '
+            "prender em 2 segundos: o problema de quem le, como ele o vive "
+            "(a pessoa se reconhece), ou a pergunta que ela faz — nunca "
+            "definicao de dicionario nem contexto historico. Depois, diga o que "
+            "o leitor leva do artigo (o que ele vai saber fazer). "
             'Nao escreva "neste artigo vamos".\n'
             '  "fecho": 1 paragrafo. Feche o raciocinio. Nao resuma o que ja '
             "foi dito nem repita os subtitulos.\n\n"
