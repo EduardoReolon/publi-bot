@@ -66,6 +66,7 @@ class DestinoForm(forms.ModelForm):
         for r in REDES.values():
             autores += [(c, f"{r.nome}: {rotulo}") for c, rotulo in r.autores]
         self.fields["fotos_por_cento"].required = False  # vazio: so artigos
+        self.fields["video"].required = False  # vazio: a IA so sugere
         self.fields["autor"] = forms.ChoiceField(
             label=_("quem posta"), choices=autores, required=False
         )
@@ -91,6 +92,9 @@ class DestinoForm(forms.ModelForm):
             (titulo, [self[c] for c in campos if c in self.fields])
             for titulo, campos in self.GRUPOS
         ]
+
+    def clean_video(self):
+        return self.cleaned_data.get("video") or Destino.Video.SUGERIR
 
     def clean_horarios(self):
         horarios = [
