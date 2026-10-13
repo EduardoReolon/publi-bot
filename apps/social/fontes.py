@@ -286,6 +286,89 @@ def leitura_vinda_da_rede(remote_id: str, rede: str, desde) -> dict:
 
 
 # -- Modelo de linguagem e vetores -------------------------------------------------
+def _conexao_externa(carga: str):
+    """A conexao ativa desta carga (outra IA, voz) que vale para este cliente."""
+    from apps.content.inference import _tenant_atual
+    from apps.inference.leases import escolher_conexao
+
+    return escolher_conexao(workload=carga, tenant=_tenant_atual(), model_name="")
+
+
+def outra_ia_por_api() -> str:
+    """O nome da conexao da "outra IA" por API ("" sem nenhuma)."""
+    from apps.inference.models import InferenceConnection
+
+    conexao = _conexao_externa(InferenceConnection.Workload.OUTRA_IA)
+    return f"{conexao.name} ({conexao.default_model})" if conexao else ""
+
+
+AVISO_DA_API = (
+    "\n\n(Voce esta sendo chamado por API, sem conversa: nao pergunte nada antes; gere "
+    "agora os blocos pedidos, no formato exato, e termine com FIM.)"
+)
+
+
+def perguntar_a_outra_ia(pedido: str) -> str:
+    """Manda o pedido (o mesmo de copiar e colar) para a outra IA por API e
+    devolve a resposta, para os mesmos leitores da resposta colada."""
+    from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
+    from apps.inference.models import InferenceConnection
+    from apps.inference.providers.base import ProviderPermanentError, get_provider
+
+    conexao = _conexao_externa(InferenceConnection.Workload.OUTRA_IA)
+    if conexao is None:
+        raise ProviderPermanentError(
+            "nenhuma outra IA por API cadastrada (manage.py configurar_api anthropic --chave ...)."
+        )
+    try:
+        with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
+            resposta = get_provider(conexao, timeout=600).chat(
+                model=conexao.default_model,
+                system="Voce e um estrategista de conteudo. Responda em portugues do Brasil.",
+                user=pedido + AVISO_DA_API,
+                temperature=0.7,
+                max_tokens=8000,
+            )
+    except Exception:
+        registrar_falha(conexao)
+        raise
+    registrar_sucesso(conexao)
+    return resposta.text
+
+
+def tem_voz() -> bool:
+    from apps.inference.models import InferenceConnection
+
+    return any(
+        c.atende(InferenceConnection.Workload.VOZ)
+        for c in InferenceConnection.objects.filter(is_active=True)
+    )
+
+
+def falar(texto: str, voz: str = "") -> bytes:
+    """O audio (MP3) do texto, pela conexao de voz (ElevenLabs, OpenAI, Google)."""
+    from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
+    from apps.inference.models import InferenceConnection
+    from apps.inference.providers.base import ProviderPermanentError
+    from apps.inference.providers.voz import get_voice_provider
+
+    conexao = _conexao_externa(InferenceConnection.Workload.VOZ)
+    if conexao is None:
+        raise ProviderPermanentError(
+            "nenhuma voz cadastrada (manage.py configurar_api elevenlabs --chave ...)."
+        )
+    try:
+        with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
+            audio = get_voice_provider(conexao).falar(
+                texto=texto, voz=voz, modelo=conexao.default_model
+            )
+    except Exception:
+        registrar_falha(conexao)
+        raise
+    registrar_sucesso(conexao)
+    return audio
+
+
 def ha_modelo_de_imagem() -> bool:
     from apps.content.capas import ha_conexao_de_imagem
 

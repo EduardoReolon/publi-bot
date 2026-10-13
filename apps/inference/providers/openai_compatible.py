@@ -35,6 +35,16 @@ STATUS_TERMINAIS = frozenset({400, 401, 403, 404, 405, 413, 422})
 CODIGOS_SEM_VOLTA = frozenset({"timeout"})
 
 
+def raiz_da_api(base_url: str) -> str:
+    """O endereco ate a versao: `{base}/v1`, a nao ser que a base ja traga a
+    versao (o Gemini compativel e `.../v1beta/openai`; quem cadastrou com `/v1`
+    no fim tambem funciona)."""
+    import re
+
+    base = base_url.rstrip("/")
+    return base if re.search(r"/v\d+\w*(/openai)?$", base) else f"{base}/v1"
+
+
 class OpenAICompatibleClient(LLMClient):
     def _headers(self) -> dict[str, str]:
         cabecalhos = {"Content-Type": "application/json"}
@@ -93,7 +103,7 @@ class OpenAICompatibleClient(LLMClient):
             # pre-commit que recusa desligar isso.
             with httpx.Client(timeout=self.timeout, verify=True) as cliente:
                 resposta = cliente.post(
-                    f"{self.base_url}/v1/chat/completions",
+                    f"{raiz_da_api(self.base_url)}/chat/completions",
                     json=corpo,
                     headers=cabecalhos,
                 )
@@ -158,7 +168,9 @@ class OpenAICompatibleClient(LLMClient):
     def health(self) -> bool:
         try:
             with httpx.Client(timeout=10.0, verify=True) as cliente:
-                return cliente.get(f"{self.base_url}/v1/models", headers=self._headers()).is_success
+                return cliente.get(
+                    f"{raiz_da_api(self.base_url)}/models", headers=self._headers()
+                ).is_success
         except httpx.HTTPError:
             return False
 
@@ -240,7 +252,7 @@ class OpenAICompatibleImageClient(ImageClient):
         try:
             with httpx.Client(timeout=self.timeout, verify=True) as cliente:
                 resposta = cliente.post(
-                    f"{self.base_url}/v1/images/generations",
+                    f"{raiz_da_api(self.base_url)}/images/generations",
                     json=corpo,
                     headers=self._headers(),
                 )
@@ -311,7 +323,9 @@ class OpenAICompatibleImageClient(ImageClient):
     def health(self) -> bool:
         try:
             with httpx.Client(timeout=10.0, verify=True) as cliente:
-                return cliente.get(f"{self.base_url}/v1/models", headers=self._headers()).is_success
+                return cliente.get(
+                    f"{raiz_da_api(self.base_url)}/models", headers=self._headers()
+                ).is_success
         except httpx.HTTPError:
             return False
 

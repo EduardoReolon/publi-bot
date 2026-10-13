@@ -11,6 +11,7 @@
   <form method="post" action="{% url 'social:aplicar_resposta_ia' %}">
     {% csrf_token %}
     <input type="hidden" name="destino" value="{{ destino.pk }}">
+    {% if registro %}<input type="hidden" name="registro" value="{{ registro.pk }}">{% endif %}
     <textarea name="resposta" hidden>{{ resposta }}</textarea>
 
     <section class="secao">

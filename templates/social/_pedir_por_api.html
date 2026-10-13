@@ -1,0 +1,10 @@
+{% load i18n %}{% if api_da_outra_ia %}
+<form method="post" action="{% url 'social:pedir_a_outra_ia' %}" class="acoes" style="margin-top:.4rem">
+  {% csrf_token %}<input type="hidden" name="tipo" value="{{ tipo }}">
+  {% if destino %}<input type="hidden" name="destino" value="{{ destino.pk }}">{% endif %}
+  {% if post %}<input type="hidden" name="post" value="{{ post.pk }}">{% endif %}
+  <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+  <button type="submit" class="botao secundario">{% blocktranslate with api=api_da_outra_ia %}Pedir pela API ({{ api }}){% endblocktranslate %}</button>
+  <span class="ajuda">{% translate "Manda o mesmo pedido, sem copiar e colar; a resposta entra sozinha." %}</span>
+</form>
+{% endif %}

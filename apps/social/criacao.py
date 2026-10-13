@@ -22,6 +22,7 @@ from core.resposta_ia import itens, ler_blocos
 logger = logging.getLogger("publibot.social")
 
 ROTULOS = [
+    "FORMATO",
     "IDEIA",
     "PRINCIPIOS",
     "GANCHO",
@@ -87,7 +88,9 @@ Idioma: {idioma}
 
 LAMINAS = (
     "LAMINAS:\n- titulo (ate 8 palavras) | texto (ate 20 palavras) | visual (a cena da imagem,"
-    " sem texto)\n  (de {min} a {max} linhas; a primeira e a capa)\n"
+    " sem texto) | fala (o que a voz diz nesta lamina, se virar video)\n  (de {min} a {max} "
+    "linhas; a primeira e a capa)\n"
+    "FORMATO: carrossel ou video | por que, em uma frase\n"
 )
 ENQUETE = "ENQUETE: pergunta | opcao 1 | opcao 2 (de 2 a 4 opcoes, ate 30 caracteres cada)\n"
 COMENTARIO = "PRIMEIRO COMENTARIO: a frase que chama para o artigo (o link vai depois dela)\n"
@@ -175,9 +178,14 @@ def ler(resposta: str) -> tuple[dict, str]:
             {
                 "titulo": partes[0],
                 "texto": partes[1],
-                "visual": " | ".join(partes[2:]).strip(),
+                "visual": partes[2] if len(partes) > 2 else "",
+                "fala": " | ".join(partes[3:]).strip(),
             }
         )
+    formato = _partes(" ".join(blocos.get("FORMATO", "").split()))
+    if formato and formato[0]:
+        dados["formato_sugerido"] = formato[0].lower()
+        dados["por_que_formato"] = " | ".join(formato[1:])
     enquete = _partes(" ".join(blocos.get("ENQUETE", "").split()))
     if len(enquete) >= 3:
         dados["enquete"] = {"pergunta": enquete[0], "opcoes": enquete[1:]}

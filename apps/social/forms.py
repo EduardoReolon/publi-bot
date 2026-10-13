@@ -51,6 +51,8 @@ class DestinoForm(forms.ModelForm):
             "instrucoes",
             "hashtags_fixas",
             "hashtags_de_referencia",
+            "video",
+            "voz",
         ]
         widgets = {
             "publico": forms.Textarea(attrs={"rows": 3}),
@@ -76,6 +78,7 @@ class DestinoForm(forms.ModelForm):
     GRUPOS = (
         (_("A conta"), ("rede", "nome", "autor", "ligado", "aprovacao")),
         (_("Ritmo"), ("teto_semanal", "dias", "horarios", "fotos_por_cento")),
+        (_("Video e voz"), ("video", "voz")),
         (
             _("Publico e voz"),
             ("publico", "tom", "instrucoes", "hashtags_fixas", "hashtags_de_referencia"),

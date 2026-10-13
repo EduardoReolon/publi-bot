@@ -230,6 +230,16 @@
     <details><summary>{% translate "Ver o texto" %}</summary>
       <textarea id="pedido-ia" readonly rows="14" style="width:100%">{{ pedido_ia }}</textarea>
     </details>
+    {% include "social/_pedir_por_api.html" with tipo="propostas" post=None %}
+    {% if respostas_da_api %}
+      <ul>
+        {% for r in respostas_da_api %}
+          <li>{{ r.criado_em|date:"d/m H:i" }} — {{ r.get_situacao_display }}
+            {% if r.situacao == "pronta" or r.situacao == "aplicada" %}<a href="{% url 'social:ver_resposta_da_api' r.pk %}">{% translate "ver e aplicar" %}</a>{% endif %}
+            {% if r.erro %}<span class="ajuda">{{ r.erro|truncatechars:160 }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
     <form method="post" action="{% url 'social:revisar_resposta_ia' %}" style="margin-top:.8rem">
       {% csrf_token %}<input type="hidden" name="destino" value="{{ destino.pk }}">
       <label for="resposta-ia">{% translate "Cole aqui a resposta inteira" %}</label>

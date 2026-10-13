@@ -72,6 +72,8 @@ pacotes=(
     build-essential rsync gettext curl postgresql-client
     # Fonte com acentos para as laminas das redes (a embutida no Pillow nao tem).
     fonts-dejavu-core
+    # Video das redes (Reels): narracao + laminas montadas em mp4.
+    ffmpeg
 )
 faltando=()
 for pacote in "${pacotes[@]}"; do

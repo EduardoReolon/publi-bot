@@ -1,0 +1,25 @@
+{% load i18n %}
+<details style="margin:.3rem 0"{% if post.extras.formato_sugerido == 'video' and post.extras.formato != 'video' %} open{% endif %}>
+  <summary class="ajuda">{% translate "Video (Reels)" %}
+    {% if post.extras.formato == 'video' %}<span class="selo ok">{% translate "vai como video" %}</span>
+    {% elif post.extras.formato_sugerido == 'video' %}<span class="selo alerta">{% translate "a IA sugere video" %}</span>{% endif %}
+  </summary>
+  {% if post.extras.por_que_formato %}<p class="ajuda">{% translate "Por que" %}: {{ post.extras.por_que_formato }}</p>{% endif %}
+  <p class="ajuda">{% blocktranslate trimmed %}
+    As mesmas laminas viram um video vertical: cada lamina na tela enquanto a voz diz a fala
+    dela. Sai como Reels. A fala de cada lamina vem da IA; ajuste abaixo (uma por linha, na
+    ordem; linha vazia usa o titulo e o texto da lamina).
+  {% endblocktranslate %}</p>
+  <form method="post" action="{% url 'social:acao_no_post' post.pk %}">
+    {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+    <textarea name="falas" rows="5" style="width:100%">{{ post.falas_do_video }}</textarea>
+    <div class="acoes">
+      <button type="submit" name="acao" value="falas" class="botao discreto pequeno">{% translate "Salvar as falas" %}</button>
+      <button type="submit" name="acao" value="gerar_video" class="botao secundario pequeno" title="{% translate 'Narra com a voz da conta (API de voz) e monta o video com as laminas' %}">{% if post.extras.formato == 'video' %}{% translate "Gerar o video de novo" %}{% else %}{% translate "Gerar o video" %}{% endif %}</button>
+      {% if post.extras.formato == 'video' %}<button type="submit" name="acao" value="voltar_ao_carrossel" class="botao discreto pequeno">{% translate "Voltar ao carrossel" %}</button>{% endif %}
+      <button type="button" class="botao discreto pequeno" data-copiar="roteiro-{{ post.pk }}">{% translate "Copiar o roteiro" %}</button>
+    </div>
+  </form>
+  <textarea id="roteiro-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.roteiro_do_video }}</textarea>
+  <p class="ajuda">{% translate "Roteiro para gravar com a propria voz ou num editor (CapCut, HeyGen) e enviar o video." %}</p>
+</details>

@@ -37,6 +37,8 @@ ESQUEMA = {
     "properties": {
         "ideia": {"type": "string"},
         "principios": {"type": "array", "items": {"type": "string"}},
+        "formato_sugerido": {"type": "string"},
+        "por_que_formato": {"type": "string"},
         "gancho": {"type": "string"},
         "texto": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
@@ -56,6 +58,7 @@ ESQUEMA = {
                     "titulo": {"type": "string"},
                     "texto": {"type": "string"},
                     "visual": {"type": "string"},
+                    "fala": {"type": "string"},
                 },
             },
         },
@@ -204,10 +207,16 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
                 }
                 if str(item.get("visual") or "").strip():
                     lamina["visual"] = str(item["visual"]).strip()[:300]
+                if str(item.get("fala") or "").strip():
+                    lamina["fala"] = str(item["fala"]).strip()[:400]
                 laminas.append(lamina)
         extras["laminas"] = laminas
     if str(dados.get("ideia") or "").strip():
         extras["ideia_central"] = str(dados["ideia"]).strip()[:200]
+    formato = str(dados.get("formato_sugerido") or "").strip().lower()
+    if f.max_laminas and formato in ("carrossel", "video"):
+        extras["formato_sugerido"] = formato
+        extras["por_que_formato"] = str(dados.get("por_que_formato") or "").strip()[:300]
     return texto, extras
 
 
@@ -369,8 +378,13 @@ def instrucoes(post: Post, artigo, mat: dict | None = None) -> str:
         + "\nHashtags com cada palavra iniciando em maiuscula (#SaudeMental, nao "
         "#saudemental): o leitor de tela le palavra por palavra.\n" + base
     )
+    from apps.social import video
+
     return (
-        clareza.instrucao(post, laminas=com_laminas(post)) + persuasao.instrucao(post, mat) + base
+        clareza.instrucao(post, laminas=com_laminas(post))
+        + (video.instrucao(post) if com_laminas(post) else "")
+        + persuasao.instrucao(post, mat)
+        + base
     )
 
 
@@ -394,7 +408,10 @@ def montar_e_conferir(post: Post, dados: dict, artigo) -> tuple[str, dict, list[
             f"pode identificar alguem: {a}"
             for a in proprio.identificacao(" ".join([texto, *_textos_das_laminas(extras)]))
         ]
+    from apps.social import video
+
     avisos += clareza.avisos(extras, artigo.texto, laminas=com_laminas(post))
+    avisos += video.avisos(extras)
     return texto, extras, avisos
 
 
@@ -432,6 +449,17 @@ def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat
             post.avisos = [*post.avisos, f"imagens nao montadas: {exc}"]
             post.save(update_fields=["avisos", "atualizado_em"])
     destino = post.destino
+    if (
+        texto
+        and destino.video == destino.Video.AUTOMATICO
+        and post.extras.get("formato_sugerido") == "video"
+        and fontes.tem_voz()
+    ):
+        # O video sai em segundo plano; a aprovacao automatica vem depois dele.
+        from apps.social.tasks import gerar_video
+
+        gerar_video.delay(str(post.pk))
+        return post
     if texto and not avisos and destino.aprovacao == destino.Aprovacao.AUTOMATICO:
         from apps.social.publicacao import aprovar
 
