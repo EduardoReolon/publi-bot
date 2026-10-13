@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import uuid
 
 import pytest
 from django.core.files.storage import default_storage
@@ -88,7 +89,8 @@ def test_video_montado_com_a_voz_vira_reels(ambiente, modulo, settings, tmp_path
     monkeypatch.setattr(fontes, "falar", lambda texto, voz="": falas.append(texto) or _mp3())
     monkeypatch.setattr(fontes, "tem_voz", lambda: True)
     post = _post(
-        _destino("instagram", voz="nova"),
+        # voz unica por rodada: a narracao fica guardada por voz + texto
+        _destino("instagram", voz=f"nova-{uuid.uuid4().hex[:8]}"),
         extras={
             "laminas": [
                 {"titulo": "Acorda cansado?", "texto": "Mesmo dormindo bem", "fala": "Oi!"},
