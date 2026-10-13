@@ -53,30 +53,18 @@ INSTRUCAO_DAS_LAMINAS = (
 
 def instrucao(post, *, laminas: bool) -> str:
     """A instrucao de clareza para quem escreve (com a das laminas, se houver)."""
-    from apps.social.identidade import ESTILOS
+    from apps.social.identidade import ficha, instrucao_de_estilo
 
     destino = post.destino
     texto = INSTRUCAO
     if laminas:
-        estilo = ESTILOS.get(destino.estilo_das_imagens, "")
-        detalhe = destino.descricao_do_estilo.strip()
-        from apps.social.identidade import ficha
-
         fixos = ficha(destino)
         if fixos:
             texto += (
                 "PERSONAGENS E CENARIOS FIXOS DA CONTA (chame pelo NOME no 'visual' quando "
                 "couber; nao invente outros personagens fixos):\n" + fixos + "\n"
             )
-        texto += INSTRUCAO_DAS_LAMINAS.format(
-            estilo=(
-                f"Estilo das imagens da conta: {estilo}"
-                + (f" ({detalhe})" if detalhe else "")
-                + "."
-                if estilo or detalhe
-                else ""
-            )
-        )
+        texto += INSTRUCAO_DAS_LAMINAS.format(estilo=instrucao_de_estilo(destino))
     return texto
 
 

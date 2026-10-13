@@ -351,36 +351,95 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
     vira um prompt em ingles (`social_cena`) e uma imagem 4:5 sem texto.
     Gerador ocupado: tenta de novo em 10 minutos.
 
-### 5b. Video (Reels) com voz de IA — `video.py`, `providers/voz.py`
+### 5b. Video (Reels) com voz de IA — `video.py`, `providers/voz.py`, `providers/animacao.py`
 
-As **mesmas laminas** viram um video vertical (1080x1920): cada lamina na tela
-enquanto a voz diz a fala dela; sai como **Reels** (o publicador do Instagram
-ja manda Reels quando a midia e video).
+As **mesmas laminas** viram um video vertical (1080x1920), e sai como **Reels**
+(o publicador do Instagram ja manda Reels quando a midia e video).
 
-- **Quem decide**: quem escreve (a nossa IA ou a outra) devolve a `fala` de
-  cada lamina (curta, como se fala: ate ~160 palavras no total, ~60 s) e
-  `formato_sugerido` (carrossel ou video) com o porque. Sugere video quando a
-  ideia ganha com voz: pergunta direta ao publico, historia/caso, passo a passo
-  curto, mito x verdade. Carrossel quando o post e para salvar (lista, tabela,
-  numeros para consultar). O algoritmo avisa narracao longa demais.
-- **O que a conta faz com a sugestao** (`Destino.video`, Configurar > a conta >
-  Video e voz): *so sugerir* (padrao: o post mostra "a IA sugere video" e o
-  botao), *gerar sozinho* (a sugestao vira video antes da aprovacao automatica;
-  precisa de voz cadastrada) ou *nunca*. `Destino.voz`: o id da voz no servico.
-- **Montagem** (`video.montar`, tarefa `gerar_video`): ffmpeg (instalado pelo
-  deploy) junta PNG de cada lamina + MP3 da fala, com uma pausa curta;
-  lamina sem fala (ex.: a chamada final sem texto) fica 2,5 s em silencio. A
-  narracao fica guardada por voz + texto (`social/audios/`): mudar uma fala so
-  paga essa fala. Voz ocupada: tenta de novo em 10 min; erro de verdade vira
-  aviso no post.
-- **No post**: "Video (Reels)": a sugestao e o porque, as falas para ajustar
-  (uma por linha), gerar / gerar de novo, voltar ao carrossel e o **roteiro**
-  para gravar com a propria voz ou num editor (CapCut, HeyGen) e enviar o video.
-- **Voz** (`providers/voz.py`, um adaptador por API, a mesma ideia: texto +
-  voz -> MP3): ElevenLabs, OpenAI (e servidores locais que imitam a rota
-  `/v1/audio/speech`, como Kokoro) e Google Text-to-Speech. Cadastro:
-  `manage.py configurar_api elevenlabs --chave ... --testar` (ou `openai_voz`,
-  `google_voz`).
+**Quem decide o que, post a post.** A conta diz o que aceita; a IA escolhe e
+explica:
+
+- **Estilo** (Identidade visual): a conta marca os estilos permitidos (foto,
+  ilustracao, quadrinhos, apresentacao — nenhum marcado: todos) e um
+  preferido. Quem escreve escolhe o estilo do post (`extras["estilo"]`, com
+  `por_que_estilo`); fora dos permitidos e ignorado.
+- **Formato**: a IA devolve `formato_sugerido` (carrossel ou video) com o
+  porque.
+  - Sugere video quando a ideia ganha com voz: pergunta direta, caso,
+    historia, mito x verdade, passo a passo curto.
+  - Sugere carrossel quando e para salvar: lista, tabela, numeros.
+  - A conta escolhe o que fazer com a sugestao (`Destino.video`): so sugerir
+    (padrao), gerar sozinho quando sugerir, sempre video, ou nunca.
+- **Por lamina**, a IA devolve:
+  - `visual`: a cena;
+  - `movimento`: o que se mexe se virar animacao;
+  - `fala`: o que a voz diz (ate ~160 palavras no total, ~60 s).
+- **Orientacoes** (Identidade visual), cada uma no prompt certo:
+  - as **gerais** vao em tudo;
+  - as **so das imagens**, nas imagens;
+  - as **so dos videos**, na animacao e na instrucao do movimento.
+- **Personagens fixos** entram com a descricao inteira em todo prompt, para
+  IAs diferentes (o gerador daqui, Midjourney, Sora, Kling) desenharem igual.
+
+**Prompts prontos** (`identidade.prompts_da_lamina`, prompt `social_cena`):
+
+- A cena de cada lamina vira dois prompts em ingles, guardados no post e
+  mostrados para copiar:
+  - o da **imagem** (qualquer gerador);
+  - o do **movimento** (qualquer IA de video).
+- So sao refeitos quando a cena, o estilo ou o movimento mudam.
+- Ha tambem o **pedido de animacao** para colar numa IA de video junto com a
+  imagem de cada lamina, alem do pedido de imagens que ja existia.
+
+**Por lamina, na tela do post** ("Imagens das laminas"):
+
+- enviar, trocar ou tirar a imagem;
+- **refazer so esta**;
+- **3 opcoes** para escolher (bom para a capa); as opcoes ficam em
+  `extras["opcoes"]`, e a escolhida vira o fundo;
+- ver os prompts;
+- **enviar, trocar ou tirar o clipe** (MP4, MOV ou WebM, ate 80 MB);
+- **animar aqui** (tarefa `animar_laminas`, pelo worker ou pela Sora: a
+  imagem 4:5 vai inteira no meio do quadro 9:16 e o video recorta o meio de
+  volta);
+- baixar a imagem para animar fora.
+
+**Montagem em camadas** (`video.montar`, tarefa `gerar_video`; ffmpeg,
+instalado pelo deploy). Cada lamina e:
+
+1. **o fundo**:
+   - a imagem, aproximando devagar (Ken Burns);
+   - ou o clipe da lamina em loop, recortado para 4:5 e escurecido como a
+     imagem (`laminas.desenhar(camada="fundo")`);
+2. **o texto** da lamina por cima, nitido, entrando em fade
+   (`camada="texto"`). E o mesmo texto do carrossel, escrito pelo PubliBot:
+   nenhuma IA de imagem ou video escreve letra;
+3. **a legenda** da fala, logo abaixo da lamina, um trecho curto por vez
+   (`trechos_da_legenda`), no tempo proporcional ao tamanho de cada trecho.
+   Pode ser desligada (`Destino.legendas`);
+4. **a narracao**, com uma pausa curta no fim; lamina sem fala fica 2,5 s.
+
+A lamina fica a 90% e mais para cima, fora das faixas que o Instagram cobre.
+A narracao fica guardada por voz + texto (`social/audios/`): mudar uma fala so
+paga essa fala.
+
+**Voz** (`providers/voz.py`): um adaptador por API, e a ideia e a mesma em
+todos (texto + voz -> MP3). Cadastro com
+`manage.py configurar_api <servico> --chave ... --testar`:
+
+| Servico | Atalho do `configurar_api` |
+|---|---|
+| ElevenLabs | `elevenlabs` |
+| OpenAI | `openai_voz` |
+| Google | `google_voz` |
+| A placa propria (Kokoro) | `worker_voz`, sem chave: endereco e segredo do `.env` |
+
+A especificacao da rota no worker esta em
+[WORKER_VOZ_E_ANIMACAO.md](WORKER_VOZ_E_ANIMACAO.md).
+
+**Animacao** (`providers/animacao.py`): o dialeto de video da OpenAI
+(`/v1/videos`, assincrono), que serve a Sora (`openai_video --chave`) e o
+worker (`worker_animacao`, especificado no mesmo arquivo).
 
 ### 6. Medicao — `medicao.py`, `views.clique`
 

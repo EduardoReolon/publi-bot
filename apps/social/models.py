@@ -165,6 +165,7 @@ class Destino(models.Model):
     class Video(models.TextChoices):
         SUGERIR = "sugerir", _("A IA sugere; eu gero o video quando quiser")
         AUTOMATICO = "automatico", _("Gerar o video sozinho quando a IA sugerir")
+        SEMPRE = "sempre", _("Sempre video (todo post com laminas vira video)")
         NUNCA = "nunca", _("So carrossel (sem video)")
 
     video = models.CharField(
@@ -180,8 +181,32 @@ class Destino(models.Model):
         ),
     )
     # Identidade visual: o estilo das imagens das laminas (para a IA de imagem).
+    legendas = models.BooleanField(
+        _("legendas no video"),
+        default=True,
+        help_text=_("A fala escrita embaixo da lamina, um trecho por vez (quem ve sem som le)."),
+    )
+    # Os estilos que a conta aceita; a IA escolhe, post a post, o que serve
+    # melhor ao assunto (e diz por que). Vazio: todos.
+    estilos_permitidos = models.JSONField(_("estilos permitidos"), default=list, blank=True)
+    orientacao_imagens = models.TextField(
+        _("orientacoes so para as imagens"),
+        blank=True,
+        help_text=_(
+            "Vale para as imagens das laminas (carrossel). Ex.: 'fundo liso, personagem a "
+            "esquerda, espaco vazio embaixo para o texto'."
+        ),
+    )
+    orientacao_videos = models.TextField(
+        _("orientacoes so para os videos"),
+        blank=True,
+        help_text=_(
+            "Vale para a animacao das cenas. Ex.: 'movimentos curtos e lentos, camera parada, "
+            "os macacos piscam e gesticulam; nada de cortes rapidos'."
+        ),
+    )
     estilo_das_imagens = models.CharField(
-        _("estilo das imagens"),
+        _("estilo preferido"),
         max_length=12,
         blank=True,
         choices=[
@@ -189,12 +214,16 @@ class Destino(models.Model):
             ("foto", _("Foto realista")),
             ("ilustracao", _("Ilustracao (desenho)")),
             ("quadrinhos", _("Quadrinhos (cenas com personagens)")),
+            ("apresentacao", _("Apresentacao (slide limpo, icones e graficos)")),
             ("misto", _("Misto: foto em alguns cenarios, desenho no resto")),
         ],
-        help_text=_("Vai no pedido de imagens das laminas, para a conta ter uma linha so."),
+        help_text=_(
+            "O de sempre, quando a IA nao escolher outro entre os permitidos. Vazio: so as "
+            "cores e o texto."
+        ),
     )
     descricao_do_estilo = models.TextField(
-        _("como sao as imagens"),
+        _("orientacoes gerais (imagens e videos)"),
         blank=True,
         help_text=_(
             "Traco, cores, luz, personagens que se repetem, o que evitar. Ex.: 'ilustracao "
@@ -539,6 +568,12 @@ class Post(models.Model):
         from apps.social import identidade
 
         return identidade.pedido(self)
+
+    @property
+    def pedido_de_animacao(self) -> str:
+        from apps.social import identidade
+
+        return identidade.pedido_de_animacao(self)
 
     @property
     def roteiro_do_video(self) -> str:

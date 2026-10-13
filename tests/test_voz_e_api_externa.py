@@ -115,3 +115,93 @@ def test_configurar_api_cria_e_atualiza_a_conexao(public_tenant):
     voz = InferenceConnection.objects.get(name="ElevenLabs (voz)")
     assert voz.workloads == [InferenceConnection.Workload.VOZ]
     assert isinstance(get_voice_provider(voz), ElevenLabsClient)
+
+
+# -- Animacao (dialeto /v1/videos: Sora e o worker) ---------------------------------------
+@pytest.fixture
+def servidor_de_video(monkeypatch):
+    """httpx.request falso: guarda os pedidos e responde pela rota."""
+    feitos, situacoes = [], ["queued", "in_progress", "completed"]
+    respostas_extra = {}
+
+    def request(metodo, url, **kwargs):
+        feitos.append((metodo, url, kwargs))
+        pedido = httpx.Request(metodo, url)
+        if url in respostas_extra:
+            status, corpo, cabecalhos = respostas_extra[url]
+            return httpx.Response(status, json=corpo, headers=cabecalhos, request=pedido)
+        if metodo == "POST":
+            return httpx.Response(200, json={"id": "video_1", "status": "queued"}, request=pedido)
+        if url.endswith("/content"):
+            return httpx.Response(200, content=b"MP4", request=pedido)
+        return httpx.Response(
+            200, json={"id": "video_1", "status": situacoes.pop(0), "progress": 50}, request=pedido
+        )
+
+    monkeypatch.setattr(httpx, "request", request)
+    return feitos, respostas_extra
+
+
+def test_animacao_cria_espera_e_baixa(servidor_de_video):
+    from apps.inference.providers.animacao import OpenAIVideoClient
+
+    feitos, _ = servidor_de_video
+    cliente = OpenAIVideoClient(base_url="https://api.openai.com", api_key="k")
+    clipe = cliente.animar(
+        imagem=b"PNG", prompt="slow blink", modelo="sora-2", dormir=lambda s: None
+    )
+    assert clipe == b"MP4"
+    metodo, url, kwargs = feitos[0]
+    assert (metodo, url) == ("POST", "https://api.openai.com/v1/videos")
+    assert kwargs["data"] == {
+        "prompt": "slow blink",
+        "model": "sora-2",
+        "seconds": "4",
+        "size": "720x1280",
+    }
+    assert kwargs["files"]["input_reference"][1] == b"PNG"
+    assert kwargs["headers"] == {"Authorization": "Bearer k"}
+    assert [u for _, u, _ in feitos[1:]] == [
+        "https://api.openai.com/v1/videos/video_1",
+        "https://api.openai.com/v1/videos/video_1",
+        "https://api.openai.com/v1/videos/video_1",
+        "https://api.openai.com/v1/videos/video_1/content",
+    ]
+
+
+def test_animacao_placa_ocupada_e_transitoria_e_falha_e_permanente(servidor_de_video):
+    from apps.inference.providers.animacao import OpenAIVideoClient
+
+    _, extra = servidor_de_video
+    cliente = OpenAIVideoClient(base_url="http://gpu:8090", api_key="s")
+    extra["http://gpu:8090/v1/videos"] = (
+        503,
+        {"error": {"code": "gpu_ocupada"}},
+        {"Retry-After": "40"},
+    )
+    with pytest.raises(ProviderTransientError, match="40s"):
+        cliente.animar(imagem=b"PNG", prompt="p", modelo="ltx-video", dormir=lambda s: None)
+    extra.clear()
+    extra["http://gpu:8090/v1/videos/video_1"] = (
+        200,
+        {"id": "video_1", "status": "failed", "error": {"message": "sem VRAM"}},
+        {},
+    )
+    with pytest.raises(ProviderPermanentError, match="sem VRAM"):
+        cliente.animar(imagem=b"PNG", prompt="p", modelo="ltx-video", dormir=lambda s: None)
+
+
+@pytest.mark.django_db
+def test_configurar_api_do_worker_usa_o_env(public_tenant, settings):
+    settings.IMAGEM_BASE_URL = "http://100.64.0.5:8090"
+    settings.IMAGEM_SEGREDO = "segredo-do-worker"
+    call_command("configurar_api", "worker_animacao", stdout=io.StringIO())
+    conexao = InferenceConnection.objects.get(name="Worker (animacao)")
+    assert conexao.base_url == "http://100.64.0.5:8090"
+    assert conexao.workloads == [InferenceConnection.Workload.ANIMACAO]
+    assert decifrar_chave(conexao) == "segredo-do-worker"
+    call_command("configurar_api", "worker_voz", stdout=io.StringIO())
+    voz = InferenceConnection.objects.get(name="Worker (voz)")
+    assert isinstance(get_voice_provider(voz), OpenAIVoiceClient)
+    with pytest.raises(Exception, match="--chave"):
+        call_command("configurar_api", "anthropic", stdout=io.StringIO())

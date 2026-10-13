@@ -22,4 +22,17 @@
   </form>
   <textarea id="roteiro-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.roteiro_do_video }}</textarea>
   <p class="ajuda">{% translate "Roteiro para gravar com a propria voz ou num editor (CapCut, HeyGen) e enviar o video." %}</p>
+  <h4 style="margin:.6rem 0 .2rem">{% translate "Laminas animadas (opcional)" %}</h4>
+  <p class="ajuda">{% blocktranslate trimmed %}
+    Sem clipe, o fundo de cada lamina aproxima devagar e o texto entra por cima. Com clipe, o fundo
+    se mexe. Anime aqui (worker ou Sora) ou numa IA de video de fora, com o pedido abaixo e a imagem de
+    cada lamina, e envie o clipe na lamina dela (em "Imagens das laminas"). O texto continua sendo
+    escrito pelo PubliBot, por cima, sempre com as letras certas.
+  {% endblocktranslate %}</p>
+  <div class="acoes">
+    <button type="button" class="botao discreto pequeno" data-copiar="animacao-{{ post.pk }}">{% translate "Copiar o pedido de animacao" %}</button>
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="display:inline">{% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+      <button type="submit" name="acao" value="animar_todas" class="botao discreto pequeno" title="{% translate 'Anima todas as laminas que tem imagem e ainda nao tem clipe' %}">{% translate "Animar todas aqui" %}</button></form>
+  </div>
+  <textarea id="animacao-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_de_animacao }}</textarea>
 </details>

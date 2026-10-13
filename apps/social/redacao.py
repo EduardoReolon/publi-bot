@@ -39,6 +39,8 @@ ESQUEMA = {
         "principios": {"type": "array", "items": {"type": "string"}},
         "formato_sugerido": {"type": "string"},
         "por_que_formato": {"type": "string"},
+        "estilo": {"type": "string"},
+        "por_que_estilo": {"type": "string"},
         "gancho": {"type": "string"},
         "texto": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
@@ -58,6 +60,7 @@ ESQUEMA = {
                     "titulo": {"type": "string"},
                     "texto": {"type": "string"},
                     "visual": {"type": "string"},
+                    "movimento": {"type": "string"},
                     "fala": {"type": "string"},
                 },
             },
@@ -207,8 +210,9 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
                 }
                 if str(item.get("visual") or "").strip():
                     lamina["visual"] = str(item["visual"]).strip()[:300]
-                if str(item.get("fala") or "").strip():
-                    lamina["fala"] = str(item["fala"]).strip()[:400]
+                for campo, maximo in (("movimento", 300), ("fala", 400)):
+                    if str(item.get(campo) or "").strip():
+                        lamina[campo] = str(item[campo]).strip()[:maximo]
                 laminas.append(lamina)
         extras["laminas"] = laminas
     if str(dados.get("ideia") or "").strip():
@@ -217,6 +221,12 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     if f.max_laminas and formato in ("carrossel", "video"):
         extras["formato_sugerido"] = formato
         extras["por_que_formato"] = str(dados.get("por_que_formato") or "").strip()[:300]
+    from apps.social.identidade import estilos_da_conta
+
+    estilo = str(dados.get("estilo") or "").strip().lower()
+    if f.max_laminas and estilo in estilos_da_conta(post.destino):
+        extras["estilo"] = estilo
+        extras["por_que_estilo"] = str(dados.get("por_que_estilo") or "").strip()[:300]
     return texto, extras
 
 
@@ -448,13 +458,10 @@ def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat
             logger.exception("Imagens do post %s nao montadas.", post.pk)
             post.avisos = [*post.avisos, f"imagens nao montadas: {exc}"]
             post.save(update_fields=["avisos", "atualizado_em"])
+    from apps.social import video
+
     destino = post.destino
-    if (
-        texto
-        and destino.video == destino.Video.AUTOMATICO
-        and post.extras.get("formato_sugerido") == "video"
-        and fontes.tem_voz()
-    ):
+    if texto and video.sai_sozinho(post) and fontes.tem_voz():
         # O video sai em segundo plano; a aprovacao automatica vem depois dele.
         from apps.social.tasks import gerar_video
 

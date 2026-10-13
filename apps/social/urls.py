@@ -11,6 +11,11 @@ urlpatterns = [
     path("estrategia/ia/", views.revisar_resposta_ia, name="revisar_resposta_ia"),
     path("estrategia/ia/aplicar/", views.aplicar_resposta_ia, name="aplicar_resposta_ia"),
     path("outra-ia/api/", views.pedir_a_outra_ia, name="pedir_a_outra_ia"),
+    path(
+        "posts/<uuid:pk>/lamina/<int:n>/<str:tipo>/",
+        views.midia_da_lamina,
+        name="midia_da_lamina",
+    ),
     path("outra-ia/api/<uuid:pk>/", views.ver_resposta_da_api, name="ver_resposta_da_api"),
     path("diagnostico/", views.diagnostico, name="diagnostico"),
     path("publicos/", views.publicos, name="publicos"),

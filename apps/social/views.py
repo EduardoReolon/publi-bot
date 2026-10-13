@@ -476,6 +476,17 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
                     "Recarregue depois."
                 ),
             )
+    elif acao in (
+        "refazer_imagem",
+        "opcoes_de_imagem",
+        "escolher_opcao",
+        "preparar_prompts",
+        "animar",
+        "animar_todas",
+        "clipe_da_lamina",
+        "tirar_clipe",
+    ):
+        _acao_na_lamina(request, post, acao)
     elif acao in ("fundo_da_lamina", "tirar_fundo_da_lamina"):
         # A imagem de uma lamina (feita numa IA de imagem com o pedido do post).
         try:
@@ -1239,6 +1250,98 @@ def revisar_resposta_ia(request: HttpRequest) -> HttpResponse:
             "resposta": resposta,
         },
     )
+
+
+def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
+    """Uma lamina so: refazer a imagem, gerar opcoes e escolher, os prompts para
+    copiar, animar (o worker ou a Sora) e o clipe enviado de fora."""
+    from apps.social import identidade, laminas, video
+    from apps.social.tasks import animar_laminas, gerar_imagens_das_laminas
+
+    try:
+        n = int(request.POST.get("n") or 0)
+    except ValueError:
+        n = 0
+    if acao in ("refazer_imagem", "opcoes_de_imagem"):
+        if not fontes.ha_modelo_de_imagem():
+            messages.error(request, _("Nao ha gerador de imagem cadastrado."))
+            return
+        opcoes = identidade.OPCOES_POR_LAMINA if acao == "opcoes_de_imagem" else 1
+        gerar_imagens_das_laminas.delay(str(post.pk), apenas=n, opcoes=opcoes)
+        messages.info(
+            request,
+            _("Gerando %(q)s imagem(ns) da lamina %(n)s. Recarregue em alguns minutos.")
+            % {"q": opcoes, "n": n},
+        )
+    elif acao == "escolher_opcao":
+        try:
+            i = int(request.POST.get("i") or -1)
+        except ValueError:
+            i = -1
+        if identidade.escolher_opcao(post, n, i):
+            laminas.refazer_imagens(post)
+            messages.success(request, _("Imagem escolhida para a lamina %(n)s.") % {"n": n})
+    elif acao == "preparar_prompts":
+        try:
+            for x in identidade.situacao_das_laminas(post):
+                identidade.prompts_da_lamina(post, x["n"])
+            messages.success(request, _("Prompts prontos em cada lamina, para copiar."))
+        except fontes.modelo_indisponivel() as exc:
+            messages.error(request, _("Modelo indisponivel agora: %(e)s") % {"e": exc})
+    elif acao in ("animar", "animar_todas"):
+        if not fontes.tem_animacao():
+            messages.error(
+                request,
+                _(
+                    "Nenhuma animacao cadastrada (manage.py configurar_api worker_animacao, "
+                    "ou openai_video). Use o pedido de animacao numa IA de video e envie o clipe."
+                ),
+            )
+            return
+        animar_laminas.delay(str(post.pk), apenas=n if acao == "animar" else None)
+        messages.info(request, _("Animando (leva minutos por lamina). Recarregue depois."))
+    elif acao == "clipe_da_lamina":
+        arquivo = request.FILES.get("clipe")
+        if n < 1 or arquivo is None:
+            messages.error(request, _("Escolha o clipe (MP4, MOV ou WebM)."))
+            return
+        try:
+            video.enviar_clipe(post, n, arquivo)
+            messages.success(
+                request,
+                _("Clipe na lamina %(n)s. Gere o video de novo para usar.") % {"n": n},
+            )
+        except video.VideoIndisponivel as exc:
+            messages.error(request, str(exc))
+    elif acao == "tirar_clipe":
+        video.tirar_clipe(post, n)
+        messages.success(request, _("Clipe tirado: a lamina volta a imagem parada."))
+
+
+@login_required
+def midia_da_lamina(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
+    """A imagem de fundo, uma opcao ou o clipe de uma lamina (para ver, baixar
+    e levar a uma IA de video), so para quem esta logado."""
+    from django.core.files.storage import default_storage
+    from django.http import FileResponse
+
+    from apps.social import identidade, video
+    from apps.social import laminas as modulo
+
+    post = get_object_or_404(Post, pk=pk)
+    if tipo == "fundo":
+        caminho = video.imagem_da_lamina(post, n)
+    elif tipo == "clipe":
+        caminho = modulo.clipes_das_laminas(post).get(n, "")
+    elif tipo.startswith("opcao-") and tipo[6:].isdigit():
+        lista = identidade.opcoes_da_lamina(post, n)
+        i = int(tipo[6:])
+        caminho = lista[i] if i < len(lista) else ""
+    else:
+        caminho = ""
+    if not caminho or not default_storage.exists(caminho):
+        raise Http404
+    return FileResponse(default_storage.open(caminho, "rb"), filename=caminho.rsplit("/", 1)[-1])
 
 
 @login_required

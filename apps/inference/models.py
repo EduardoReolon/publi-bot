@@ -61,6 +61,9 @@ class InferenceConnection(models.Model):
         # copiar e colar o pedido. Carga propria: uma API paga cadastrada aqui
         # nunca e escolhida para o trabalho comum de texto.
         OUTRA_IA = "outra_ia", _("Outra IA por API (segunda opiniao)")
+        # Animar a imagem de uma lamina (imagem para video), para o fundo do
+        # video das redes: o worker-gpu ou a Sora, no mesmo dialeto.
+        ANIMACAO = "animacao", _("Animacao (imagem para video)")
 
     class Health(models.TextChoices):
         UNKNOWN = "unknown", _("Desconhecida")

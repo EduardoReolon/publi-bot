@@ -149,13 +149,9 @@ def _formato(r) -> str:
 
 def _estilo_visual(destino: Destino) -> str:
     """O estilo das imagens da conta e os fundos padrao que ela tem."""
-    from apps.social.identidade import ESTILOS
+    from apps.social.identidade import instrucao_de_estilo
 
-    partes = []
-    if destino.estilo_das_imagens:
-        partes.append(ESTILOS[destino.estilo_das_imagens])
-    if destino.descricao_do_estilo.strip():
-        partes.append(destino.descricao_do_estilo.strip())
+    partes = [instrucao_de_estilo(destino).rstrip(".")]
     fixos = [
         f"{e.nome} ({e.get_tipo_display().lower()})" for e in destino.elementos.filter(ativo=True)
     ]
