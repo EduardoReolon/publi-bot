@@ -10,8 +10,9 @@ ou a Sora, trocando so o endereco:
                                       "progress", "error": {"message"}}
     GET  /v1/videos/{id}/content  -> o MP4
 
-E assincrono: gerar video leva minutos. O cliente consulta a cada
-`INTERVALO` segundos ate `limite`. 503 (placa ocupada) e 429 viram
+E assincrono: gerar video leva minutos (na placa propria de 8 GB, uns 20 min
+por 2,4 s). O cliente consulta a cada `INTERVALO` segundos ate `limite`.
+503 (placa ocupada) e 429 viram
 `ProviderTransientError` (a tarefa tenta mais tarde, sem gastar tentativa);
 um id que sumiu (o worker reiniciou e esqueceu o trabalho) tambem — pedir de
 novo resolve.
@@ -104,7 +105,7 @@ class OpenAIVideoClient:
         modelo: str,
         segundos: int = 4,
         tamanho: str = "720x1280",
-        limite: float = 1800.0,
+        limite: float = 5400.0,
         dormir=time.sleep,
     ) -> bytes:
         """O MP4 da imagem animada (criar, esperar, baixar)."""

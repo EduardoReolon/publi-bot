@@ -232,8 +232,8 @@ def test_clipe_enviado_animado_e_tirado(ambiente, modulo, settings, tmp_path, mo
     ).stdout  # fmt: skip
     animados = []
 
-    def animar(imagem, prompt, segundos=4):
-        animados.append((Image.open(io.BytesIO(imagem)).size, prompt))
+    def animar(imagem, prompt, segundos=3, tamanho="720x1280"):
+        animados.append((Image.open(io.BytesIO(imagem)).size, prompt, tamanho))
         return clipe
 
     monkeypatch.setattr(fontes, "animar", animar)
@@ -266,8 +266,15 @@ def test_clipe_enviado_animado_e_tirado(ambiente, modulo, settings, tmp_path, mo
     capa = laminas.guardar_imagem_propria(post, io.BytesIO(_png("green")), "propria")
     post.extras = {**post.extras, "imagem_propria": capa}
     post.save()
+    # pelo worker (FramePack): a imagem como ela e, no formato dela
+    monkeypatch.setattr(fontes, "animacao_e_da_sora", lambda: False)
     video.animar_lamina(post, 1)
-    assert animados == [((720, 1280), "slow blink")]
+    # pela Sora: no meio do quadro 9:16, que e o unico que ela aceita
+    monkeypatch.setattr(fontes, "animacao_e_da_sora", lambda: True)
+    video.animar_lamina(post, 1)
+    largura, altura = animados[0][0]
+    assert animados[0][2] == "544x704" and altura > largura and (largura, altura) != (720, 1280)
+    assert animados[1] == ((720, 1280), "slow blink", "720x1280")
 
     from django.core.files.storage import default_storage
 
