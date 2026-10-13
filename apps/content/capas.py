@@ -164,13 +164,6 @@ def gerar_opcoes(
     quantas vezes a imagem ja falhou e parar de tentar
     (`falhas_de_imagem_do_job`).
     """
-    from apps.inference.leases import gerar_owner_key, registrar_falha, reserva
-    from apps.inference.providers.base import (
-        ProviderPermanentError,
-        ProviderTransientError,
-        get_image_provider,
-    )
-
     lote = _proximo_lote(article)
     if lote > MAXIMO_DE_LOTES:
         raise LimiteDeLotes(
@@ -178,9 +171,28 @@ def gerar_opcoes(
             f"Escolha uma das opcoes existentes ou ajuste o texto do artigo."
         )
 
-    conexao = _conexao_de_imagem()
+    _conexao_de_imagem()  # sem gerador, falha antes de gastar o modelo de texto
     descricao, prompt_run = descrever_capa(article, site=site, job=job)
+    geradas = gerar_imagens(descricao, quantidade=quantidade, job=job)
+    criadas = _gravar(article, geradas, lote=lote, descricao=descricao, prompt_run=prompt_run)
 
+    logger.info("Artigo %s: lote %s com %s opcao(oes) de capa.", article.pk, lote, len(criadas))
+    return criadas
+
+
+def gerar_imagens(
+    prompt: str, *, quantidade: int = 1, tamanho: str = "", negativo: str = "", job=None
+):
+    """Chama o gerador de imagem (reserva da placa, disjuntor, registro de uso).
+    Usado pela capa do artigo e pelas laminas das redes."""
+    from apps.inference.leases import gerar_owner_key, registrar_falha, reserva
+    from apps.inference.providers.base import (
+        ProviderPermanentError,
+        ProviderTransientError,
+        get_image_provider,
+    )
+
+    conexao = _conexao_de_imagem()
     modelo = conexao.default_model
     if not modelo:
         raise SemConexaoDeImagem(f"a conexao {conexao.name!r} nao tem modelo padrao configurado.")
@@ -190,10 +202,10 @@ def gerar_opcoes(
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
             geradas = cliente.generate(
                 model=modelo,
-                prompt=descricao,
+                prompt=prompt,
                 quantidade=quantidade,
-                tamanho=_tamanho(),
-                negativo=_negativo(),
+                tamanho=tamanho or _tamanho(),
+                negativo=", ".join(x for x in (_negativo(), negativo) if x),
             )
     except (ProviderTransientError, ProviderPermanentError) as exc:
         _registrar_falha_de_imagem(conexao, modelo, exc, job=job)
@@ -206,10 +218,7 @@ def gerar_opcoes(
         raise
 
     _registrar_uso(conexao, modelo, len(geradas))
-    criadas = _gravar(article, geradas, lote=lote, descricao=descricao, prompt_run=prompt_run)
-
-    logger.info("Artigo %s: lote %s com %s opcao(oes) de capa.", article.pk, lote, len(criadas))
-    return criadas
+    return geradas
 
 
 def _conexao_de_imagem():

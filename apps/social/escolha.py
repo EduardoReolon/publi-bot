@@ -186,6 +186,8 @@ def sugerir(
     entrada=None,
     foco: str = "",
     isca=None,
+    abordagem=None,
+    formato: str = "",
 ) -> list[Post]:
     """Cria o(s) post(s) sugerido(s) e pede a redacao. Com 2 versoes, cada uma
     com uma abordagem diferente, ligadas uma a outra (o par do teste A/B).
@@ -197,13 +199,15 @@ def sugerir(
 
     config = ConfiguracaoSocial.carregar()
     versoes = versoes or max(config.variantes, 1)
-    abordagens = experimentos.escolher(destino, versoes) or [None]
+    # Abordagem pedida (pela outra IA): uma versao so, com ela.
+    abordagens = [abordagem] if abordagem else experimentos.escolher(destino, versoes) or [None]
     # O recado em teste vale para as versoes do par por igual: o A/B continua
     # comparando so a abordagem.
     recado = experimentos.sortear_recado(destino)
     extras = {
         # O par A/B tem o mesmo foco: o teste continua comparando so a abordagem.
         "foco": focos.valido(foco) or focos.foco_da_vez(destino),
+        **({"formato": "enquete"} if formato == "enquete" else {}),
         **({"ideia": ideia[:500]} if ideia else {}),
         **(
             {"recado": {"id": str(recado.pk), "nome": recado.nome, "instrucao": recado.instrucao}}
@@ -263,6 +267,8 @@ def sugerir_tema(
     ideia: str = "",
     foco: str = "",
     isca=None,
+    abordagem=None,
+    formato: str = "",
 ) -> list[Post]:
     artigo = fontes.artigo(tema.artigo_principal)
     if artigo is None:
@@ -279,6 +285,8 @@ def sugerir_tema(
         ideia=ideia,
         foco=foco,
         isca=isca,
+        abordagem=abordagem,
+        formato=formato,
     )
 
 

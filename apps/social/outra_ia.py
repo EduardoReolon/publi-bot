@@ -65,15 +65,24 @@ COMO TRABALHAR COMIGO
    com o link. Sem pesquisa na web, deixe EVENTOS vazio: nao invente.
 3. O post so pode afirmar o que esta no artigo: nao proponha numero, caso ou
    promessa que nao esteja nos candidatos. Respeite as regras da conta.
+4. CLAREZA acima de tudo: quem NUNCA leu o artigo, rolando a tela, tem de
+   entender o post em 2 segundos. Uma ideia so por post, dita com as palavras
+   do publico, concreta (uma situacao que a pessoa vive), sem jargao e sem
+   copiar frase do artigo. Pense tambem na IMAGEM: o que a capa mostra para a
+   ideia ficar obvia sem ler? Se um candidato e abstrato demais para virar
+   post claro, nao o proponha.
 
 Quando eu pedir os blocos, responda SO neles, nesta ordem, e termine com FIM
 (a resposta volta para o sistema, que a le sozinho):
 
 PROPOSTAS:
-- codigo | gancho sugerido (ate 15 palavras) | por que, em ate 15 palavras | foco | isca
+- codigo | capa (o problema concreto, como o publico diz, ate 8 palavras) | a ideia
+  em uma frase simples + a cena da imagem da capa | foco | isca | abordagem | formato
   (ate {max_propostas}, na ordem: a primeira e a que eu deveria postar primeiro;
   foco = alcance, engajamento ou site — ver FOCOS abaixo; isca = o nome exato de
-  uma OFERTA PARA QUEM COMENTA da lista, quando couber, ou vazio)
+  uma OFERTA PARA QUEM COMENTA da lista, quando couber, ou vazio; abordagem = o
+  nome de uma das ABORDAGENS abaixo, ou de uma nova que voce criar em
+  ABORDAGENS, ou vazio para o sistema sortear; formato = carrossel ou enquete)
 ABORDAGENS:
 - Nome curto: como escrever com ela, em 2 a 4 frases (e uma instrucao para
   quem escreve o post). Ate {max_abordagens}: jeitos que faltam, ou a versao
@@ -122,6 +131,31 @@ def _resultado(post: Post) -> str:
     return "acima do normal da conta" if post.sucesso else "abaixo do normal da conta"
 
 
+def _formato(r) -> str:
+    f = r.formato
+    if f.imagem == "laminas":
+        return (
+            f"carrossel de {f.min_laminas} a {f.max_laminas} laminas (a capa decide se a pessoa "
+            "para), legenda curta, link na bio"
+        )
+    return "texto com uma imagem" + (" e link no comentario" if f.link == "comentario" else "")
+
+
+def _estilo_visual(destino: Destino) -> str:
+    """O estilo das imagens da conta e os fundos padrao que ela tem."""
+    from apps.social.identidade import ESTILOS
+
+    partes = []
+    if destino.estilo_das_imagens:
+        partes.append(ESTILOS[destino.estilo_das_imagens])
+    if destino.descricao_do_estilo.strip():
+        partes.append(destino.descricao_do_estilo.strip())
+    fundos = sorted({str(f) for f in destino.fundos.all()})
+    if fundos:
+        partes.append("fundos padrao da conta: " + ", ".join(fundos))
+    return "; ".join(partes) or "sem estilo definido (sugira um em COMENTARIOS)"
+
+
 def pedido(destino: Destino) -> str:
     from apps.social.estrategia import FASES, fase
 
@@ -152,6 +186,8 @@ def pedido(destino: Destino) -> str:
         f"Tom: {destino.tom or r.tom_padrao}",
         f"Fase: {FASES[fase(destino, config)]['nome']}; seguidores: {destino.seguidores or '?'};"
         f" ate {destino.teto_semanal} posts por semana.",
+        f"Formato: {_formato(r)}",
+        f"Imagens: {_estilo_visual(destino)}",
         f"Regras que nunca se quebram: {config.regras or '(nenhuma)'}",
     ]
     from apps.social.models import Isca
@@ -218,9 +254,11 @@ def pedido(destino: Destino) -> str:
     partes += ["", "## Candidatos: temas (atravessam varios artigos)"]
     temas = list(Tema.objects.filter(ativo=True).order_by("-nota")[:TEMAS_NO_PEDIDO])
     for tema in temas:
+        titulos = list(dict.fromkeys(f.get("artigo_titulo", "") for f in tema.frases or []))
         partes.append(
-            f"- {codigo_do_tema(tema)}: {_resumo(tema.titulo, 200)} "
-            f"(nota {tema.nota:.2f}; em {len(tema.artigos)} artigos)"
+            f"- {codigo_do_tema(tema)}: ideia que liga {len(tema.artigos)} artigos "
+            f"({'; '.join(_resumo(t, 70) for t in titulos[:4] if t)}). Frase central: "
+            f'"{_resumo(tema.titulo, 200)}" (nota {tema.nota:.2f})'
         )
     if not temas:
         partes.append("(nenhum ainda)")
@@ -265,6 +303,8 @@ class Proposta:
     por_que: str
     foco: str = ""
     isca: object = None  # Isca citada pelo nome
+    abordagem: str = ""  # nome de uma abordagem (existente ou nova na resposta)
+    formato: str = ""  # "enquete" ou vazio (carrossel/post comum)
 
 
 @dataclass
@@ -356,6 +396,8 @@ def ler(resposta: str) -> Leitura:
                 por_que=(partes[2] if len(partes) > 2 else "")[:300],
                 foco=focos.valido((partes[3] if len(partes) > 3 else "").strip().lower()),
                 isca=iscas_por_nome.get(normalizar(partes[4]) if len(partes) > 4 else ""),
+                abordagem=(partes[5] if len(partes) > 5 else "").strip()[:80],
+                formato="enquete" if len(partes) > 6 and "enquete" in partes[6].lower() else "",
             )
         )
     leitura.propostas = leitura.propostas[:MAXIMO_DE_PROPOSTAS]
@@ -396,7 +438,14 @@ def ler(resposta: str) -> Leitura:
 
 # -- Aplicar ---------------------------------------------------------------------------
 def _criar_post(
-    destino: Destino, alvo: Alvo, por_que: str, ideia: str, foco: str = "", isca=None
+    destino: Destino,
+    alvo: Alvo,
+    por_que: str,
+    ideia: str,
+    foco: str = "",
+    isca=None,
+    abordagem=None,
+    formato: str = "",
 ) -> list[Post]:
     from apps.social import escolha
 
@@ -409,12 +458,34 @@ def _criar_post(
             ideia=ideia,
             foco=foco,
             isca=isca,
+            abordagem=abordagem,
+            formato=formato,
         )
     artigo = fontes.artigo(alvo.artigo_id)
     if artigo is None:
         return []
     return escolha.sugerir(
-        destino, artigo, Post.Motivo.OUTRA_IA, por_que, ideia=ideia, foco=foco, isca=isca
+        destino,
+        artigo,
+        Post.Motivo.OUTRA_IA,
+        por_que,
+        ideia=ideia,
+        foco=foco,
+        isca=isca,
+        abordagem=abordagem,
+        formato=formato,
+    )
+
+
+def _abordagem_pelo_nome(nome: str):
+    """A abordagem que a proposta pediu (existente ou criada nesta resposta)."""
+    from apps.social.iscas import normalizar
+
+    alvo = normalizar(nome)
+    if not alvo:
+        return None
+    return next(
+        (a for a in Abordagem.objects.filter(ativa=True) if normalizar(a.nome) == alvo), None
     )
 
 
@@ -438,25 +509,7 @@ def aplicar(
     from apps.social.abordagens import NAO_INVENTE
 
     feito = {"posts": 0, "abordagens": 0}
-    for i, proposta in enumerate(leitura.propostas):
-        if i not in propostas:
-            continue
-        por_que = "Sugerido pela outra IA" + (f": {proposta.por_que}" if proposta.por_que else ".")
-        ideia = f"gancho sugerido: {proposta.gancho}" if proposta.gancho else ""
-        feito["posts"] += len(
-            _criar_post(
-                destino, proposta.alvo, por_que, ideia, foco=proposta.foco, isca=proposta.isca
-            )
-        )
-    for i, evento in enumerate(leitura.eventos):
-        if i not in eventos or evento.alvo is None:
-            continue
-        por_que = f"Evento ({evento.data}): {evento.evento} — {evento.link}"
-        ideia = (
-            f"use como gancho o evento '{evento.evento}' ({evento.data}), so pelo nome; "
-            f"{evento.ideia}. Numeros e afirmacoes, so do material."
-        )
-        feito["posts"] += len(_criar_post(destino, evento.alvo, por_que, ideia))
+    # As abordagens novas antes: uma proposta pode pedir uma delas pelo nome.
     for i, nova in enumerate(leitura.abordagens):
         if i not in abordagens:
             continue
@@ -470,6 +523,32 @@ def aplicar(
             origem=Abordagem.Origem.OUTRA_IA,
         )
         feito["abordagens"] += 1
+    for i, proposta in enumerate(leitura.propostas):
+        if i not in propostas:
+            continue
+        por_que = "Sugerido pela outra IA" + (f": {proposta.por_que}" if proposta.por_que else ".")
+        ideia = f"gancho sugerido: {proposta.gancho}" if proposta.gancho else ""
+        feito["posts"] += len(
+            _criar_post(
+                destino,
+                proposta.alvo,
+                por_que,
+                ideia,
+                foco=proposta.foco,
+                isca=proposta.isca,
+                abordagem=_abordagem_pelo_nome(proposta.abordagem),
+                formato=proposta.formato,
+            )
+        )
+    for i, evento in enumerate(leitura.eventos):
+        if i not in eventos or evento.alvo is None:
+            continue
+        por_que = f"Evento ({evento.data}): {evento.evento} — {evento.link}"
+        ideia = (
+            f"use como gancho o evento '{evento.evento}' ({evento.data}), so pelo nome; "
+            f"{evento.ideia}. Numeros e afirmacoes, so do material."
+        )
+        feito["posts"] += len(_criar_post(destino, evento.alvo, por_que, ideia))
     return feito
 
 

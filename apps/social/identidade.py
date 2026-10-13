@@ -68,6 +68,7 @@ def situacao_das_laminas(post) -> list[dict]:
                 "n": n,
                 "titulo": item.get("titulo", ""),
                 "texto": item.get("texto", ""),
+                "visual": item.get("visual", ""),
                 "fundo": fundo,
             }
         )
@@ -109,8 +110,86 @@ def pedido(post) -> str:
     for x in faltam:
         papel = "capa" if x["n"] == 1 else "ultima" if x["n"] == len(estado) else "meio"
         sobre = " — ".join(p for p in (x["titulo"], x["texto"]) if p)
-        texto += f"Lamina {x['n']} ({papel}): uma cena que mostre a ideia de: {sobre}\n"
+        if x["visual"]:
+            texto += f"Lamina {x['n']} ({papel}): {x['visual']} (a lamina diz: {sobre})\n"
+        else:
+            texto += f"Lamina {x['n']} ({papel}): uma cena que mostre a ideia de: {sobre}\n"
     padrao = [str(x["n"]) for x in estado if x["fundo"].startswith("padrao")]
     if padrao:
         texto += f"\n(As laminas {', '.join(padrao)} usam o fundo padrao da conta: nao gere.)\n"
     return texto
+
+
+# -- Gerar aqui, com o gerador de imagem do PubliBot -------------------------------------
+ESQUEMA_DA_CENA = {
+    "type": "object",
+    "properties": {"prompt": {"type": "string"}},
+    "required": ["prompt"],
+}
+
+PROMPT_DA_CENA = {
+    "descricao": "Transforma a cena de uma lamina num prompt para o gerador de imagem.",
+    "variaveis": ["estilo", "cena", "cores"],
+    "temperatura": 0.3,
+    "sistema": (
+        "You write prompts for an image generator (Stable Diffusion family). Given a "
+        "scene described in Portuguese and the visual style of a brand, write ONE English "
+        "prompt, 30 to 60 words: subject, action, setting, composition (vertical 4:5, calm "
+        "empty area in the {lugar} for overlaid text), lighting, style and palette. Concrete "
+        "nouns, no abstract ideas. NEVER ask for text, letters, numbers, logos or "
+        "recognizable real people.\n\n"
+        'Answer ONLY with JSON: {"prompt": "..."}'
+    ).replace("{lugar}", "lower half or center"),
+    "usuario": "Style: {estilo}\nBrand colors: {cores}\nScene (Portuguese): {cena}",
+}
+
+
+def _cena(item: dict) -> str:
+    sobre = " — ".join(p for p in (item.get("titulo", ""), item.get("texto", "")) if p)
+    return item.get("visual") or f"uma cena concreta que mostre: {sobre}"
+
+
+def gerar_imagens(post) -> int:
+    """Gera, com o gerador do PubliBot, a imagem de cada lamina que ainda nao
+    tem imagem enviada nem fundo padrao; grava como imagem da lamina e refaz o
+    carrossel. Devolve quantas gerou. Gerador ocupado: levanta (a tarefa tenta
+    mais tarde) e o que ja saiu fica."""
+    import io
+    import json
+    import re
+
+    from apps.social import fontes
+
+    destino = post.destino
+    cores = {**laminas.CORES, **{k: v for k, v in (destino.cores or {}).items() if v}}
+    estilo = ESTILOS.get(destino.estilo_das_imagens, "clean modern editorial illustration")
+    detalhe = destino.descricao_do_estilo.strip()
+    itens = _laminas(post)
+    feitas = 0
+    for x in situacao_das_laminas(post):
+        if x["fundo"]:
+            continue
+        bruto = fontes.executar(
+            "social_cena",
+            {
+                "estilo": f"{estilo}. {detalhe}".strip(". "),
+                "cena": _cena(itens[x["n"] - 1]),
+                "cores": f"background {cores['fundo']}, accent {cores['destaque']}",
+            },
+            json_schema=ESQUEMA_DA_CENA,
+        )
+        prompt = json.loads(re.sub(r"^```\w*\n|```$", "", bruto.strip()).strip())["prompt"]
+        conteudo = fontes.gerar_imagem(prompt)
+        caminho = laminas.guardar_imagem_propria(
+            post, io.BytesIO(conteudo), "propria" if x["n"] == 1 else f"fundo-{x['n']}"
+        )
+        extras = dict(post.extras or {})
+        if x["n"] == 1:
+            extras["imagem_propria"] = caminho
+            extras.pop("ajuste_da_capa", None)
+        else:
+            extras["fundos"] = {**(extras.get("fundos") or {}), str(x["n"]): caminho}
+        post.extras = extras
+        post.save(update_fields=["extras", "atualizado_em"])
+        feitas += 1
+    return feitas

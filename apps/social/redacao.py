@@ -35,6 +35,7 @@ _FRASE = re.compile(r"(?<=[.!?…])\s+")
 ESQUEMA = {
     "type": "object",
     "properties": {
+        "ideia": {"type": "string"},
         "gancho": {"type": "string"},
         "texto": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
@@ -50,7 +51,11 @@ ESQUEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {"titulo": {"type": "string"}, "texto": {"type": "string"}},
+                "properties": {
+                    "titulo": {"type": "string"},
+                    "texto": {"type": "string"},
+                    "visual": {"type": "string"},
+                },
             },
         },
     },
@@ -192,13 +197,16 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
         laminas = []
         for item in (dados.get("laminas") or [])[: f.max_laminas]:
             if isinstance(item, dict) and (item.get("titulo") or item.get("texto")):
-                laminas.append(
-                    {
-                        "titulo": str(item.get("titulo") or "").strip()[:120],
-                        "texto": str(item.get("texto") or "").strip()[:220],
-                    }
-                )
+                lamina = {
+                    "titulo": str(item.get("titulo") or "").strip()[:120],
+                    "texto": str(item.get("texto") or "").strip()[:220],
+                }
+                if str(item.get("visual") or "").strip():
+                    lamina["visual"] = str(item["visual"]).strip()[:300]
+                laminas.append(lamina)
         extras["laminas"] = laminas
+    if str(dados.get("ideia") or "").strip():
+        extras["ideia_central"] = str(dados["ideia"]).strip()[:200]
     return texto, extras
 
 
@@ -287,38 +295,55 @@ def _do_tema(tema, principal):
         if str(artigo_id) != principal.id and (outro := fontes.artigo(artigo_id)):
             textos.append(outro.texto)
     titulos = list(dict.fromkeys(f["artigo_titulo"] for f in tema.frases))
+    # O titulo continua o do artigo principal: a frase central do tema, fora do
+    # texto, e abstrata demais para servir de titulo (e o post a copiava).
     combinado = replace(
         principal,
-        titulo=tema.titulo,
-        resumo=f"Tema que aparece em {len(tema.artigos)} artigos: " + "; ".join(titulos),
+        titulo=principal.titulo,
+        resumo=f"Ideia que aparece em {len(tema.artigos)} artigos ({'; '.join(titulos)}): "
+        f"{tema.titulo}",
         texto="\n".join(textos),
     )
     return combinado, material_do_tema(tema)
 
 
-def escrever(post: Post) -> Post:
-    """Escreve (ou reescreve) o post. Sem modelo agora: levanta, e quem chamou
-    (a tarefa) tenta mais tarde."""
-    from apps.social import focos, iscas, laminas, proprio
+# Quantas vezes o modelo escreve, no maximo, ate passar na conferencia (numeros,
+# termos, clareza) e no revisor.
+TENTATIVAS = 3
+
+
+def artigo_e_material(post: Post):
+    """(artigo, material) do post — do artigo, do tema ou do material proprio.
+    (None, None) se o artigo nao existe mais."""
+    from apps.social import proprio
 
     entrada = post.entrada if post.entrada_id else None
     artigo = proprio.como_artigo(entrada) if entrada else fontes.artigo(post.artigo_id)
     if artigo is None:
-        post.situacao = Post.Situacao.FALHOU
-        post.erro = "o artigo nao existe mais."
-        post.save(update_fields=["situacao", "erro", "atualizado_em"])
-        return post
-    destino = post.destino
-    r = rede(destino.rede)
+        return None, None
     if post.tema_id:
-        artigo, mat = _do_tema(post.tema, artigo)
-    else:
-        mat = material.montar(
-            artigo, publico=destino.publico or r.publico_padrao, negocio=fontes.negocio()
-        )
-    post.situacao = Post.Situacao.GERANDO
-    post.save(update_fields=["situacao", "atualizado_em"])
+        return _do_tema(post.tema, artigo)
+    r = rede(post.destino.rede)
+    mat = material.montar(
+        artigo, publico=post.destino.publico or r.publico_padrao, negocio=fontes.negocio()
+    )
+    return artigo, mat
 
+
+def com_fotos(post: Post) -> bool:
+    return bool(post.entrada_id) and post.entrada.midias.exists()
+
+
+def com_laminas(post: Post) -> bool:
+    return bool(rede(post.destino.rede).formato.max_laminas) and not com_fotos(post)
+
+
+def instrucoes(post: Post, artigo) -> str:
+    """Tudo o que vai para quem escreve alem do material: clareza, foco, isca,
+    formato, ideia sugerida, recado, cuidados do assunto."""
+    from apps.social import clareza, focos, iscas, proprio
+
+    entrada = post.entrada if post.entrada_id else None
     # O angulo sugerido (outra IA, evento) vai como sugestao, nao como ordem:
     # o material continua sendo o limite do que se afirma.
     ideia = (post.extras or {}).get("ideia", "")
@@ -340,40 +365,39 @@ def escrever(post: Post) -> Post:
         + "\nHashtags com cada palavra iniciando em maiuscula (#SaudeMental, nao "
         "#saudemental): o leitor de tela le palavra por palavra.\n" + base
     )
-    com_fotos = entrada is not None and entrada.midias.exists()
-    ajuste, avisos, texto, extras = base, [], "", {}
-    for _tentativa in range(2):
-        try:
-            dados = _ler(
-                fontes.executar(
-                    r.prompt, _variaveis(post, artigo, mat, ajuste), json_schema=ESQUEMA
-                )
-            )
-        except ValueError as exc:
-            avisos = [f"o modelo devolveu algo que nao e JSON: {exc}"]
-            ajuste = base + "A resposta anterior nao era um JSON valido. Responda SOMENTE o JSON."
-            continue
-        if com_fotos:
-            dados["laminas"] = []  # as imagens sao as fotos reais
-        texto, extras = montar(post, dados)
-        if extras.get("laminas"):
-            extras["laminas"] = laminas.com_as_fontes(extras["laminas"], artigo.fontes_das_frases)
-        avisos = conferir(post, texto, extras, artigo, com_fotos=com_fotos)
-        if e_enquete(post) and "enquete" not in extras:
-            avisos.append("a enquete veio sem pergunta ou com menos de 2 opcoes")
-        if entrada is not None:
-            avisos += [
-                f"pode identificar alguem: {a}"
-                for a in proprio.identificacao(" ".join([texto, *_textos_das_laminas(extras)]))
-            ]
-        if not avisos:
-            break
-        ajuste = base + (
-            "A versao anterior teve estes problemas; corrija sem mudar o resto: "
-            + "; ".join(avisos)
-            + "."
-        )
+    return clareza.instrucao(post, laminas=com_laminas(post)) + base
 
+
+def montar_e_conferir(post: Post, dados: dict, artigo) -> tuple[str, dict, list[str]]:
+    """O texto e os extras a partir do JSON (do modelo ou da outra IA) e os
+    avisos da conferencia: numeros, termos, enquete, identificacao, clareza."""
+    from apps.social import clareza, laminas, proprio
+
+    fotos = com_fotos(post)
+    if fotos:
+        dados["laminas"] = []  # as imagens sao as fotos reais
+    texto, extras = montar(post, dados)
+    if extras.get("laminas"):
+        extras["laminas"] = laminas.com_as_fontes(extras["laminas"], artigo.fontes_das_frases)
+    avisos = conferir(post, texto, extras, artigo, com_fotos=fotos)
+    if e_enquete(post) and "enquete" not in extras:
+        avisos.append("a enquete veio sem pergunta ou com menos de 2 opcoes")
+    if post.entrada_id:
+        avisos += [
+            f"pode identificar alguem: {a}"
+            for a in proprio.identificacao(" ".join([texto, *_textos_das_laminas(extras)]))
+        ]
+    avisos += clareza.avisos(extras, artigo.texto, laminas=com_laminas(post))
+    return texto, extras, avisos
+
+
+def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat) -> Post:
+    """Grava o texto escrito, monta as imagens e aprova sozinho se a conta pede."""
+    from apps.social import focos, iscas, laminas, proprio
+
+    entrada = post.entrada if post.entrada_id else None
+    antes = post.extras or {}
+    ideia, recado = antes.get("ideia", ""), antes.get("recado") or {}
     post.texto = iscas.garantir_chamada(post, texto)
     foco = focos.do_post(post)
     # O que veio da sugestao (ideia, recado em teste, foco) continua no post.
@@ -400,8 +424,53 @@ def escrever(post: Post) -> Post:
             logger.exception("Imagens do post %s nao montadas.", post.pk)
             post.avisos = [*post.avisos, f"imagens nao montadas: {exc}"]
             post.save(update_fields=["avisos", "atualizado_em"])
+    destino = post.destino
     if texto and not avisos and destino.aprovacao == destino.Aprovacao.AUTOMATICO:
         from apps.social.publicacao import aprovar
 
         aprovar(post, por=None)
     return post
+
+
+def escrever(post: Post) -> Post:
+    """Escreve (ou reescreve) o post. Sem modelo agora: levanta, e quem chamou
+    (a tarefa) tenta mais tarde. Ate TENTATIVAS voltas: cada aviso da
+    conferencia (ou do revisor de clareza) volta para quem escreve."""
+    from apps.social import clareza
+
+    artigo, mat = artigo_e_material(post)
+    if artigo is None:
+        post.situacao = Post.Situacao.FALHOU
+        post.erro = "o artigo nao existe mais."
+        post.save(update_fields=["situacao", "erro", "atualizado_em"])
+        return post
+    r = rede(post.destino.rede)
+    post.situacao = Post.Situacao.GERANDO
+    post.save(update_fields=["situacao", "atualizado_em"])
+
+    base = instrucoes(post, artigo)
+    ajuste, avisos, texto, extras = base, [], "", {}
+    for _tentativa in range(TENTATIVAS):
+        try:
+            dados = _ler(
+                fontes.executar(
+                    r.prompt, _variaveis(post, artigo, mat, ajuste), json_schema=ESQUEMA
+                )
+            )
+        except ValueError as exc:
+            avisos = [f"o modelo devolveu algo que nao e JSON: {exc}"]
+            ajuste = base + "A resposta anterior nao era um JSON valido. Responda SOMENTE o JSON."
+            continue
+        texto, extras, avisos = montar_e_conferir(post, dados, artigo)
+        if not avisos:
+            # Passou no algoritmo: o revisor le sem o artigo. Na ultima volta, a
+            # nota baixa fica como aviso para quem revisa.
+            avisos = clareza.revisar(post, texto, extras)
+        if not avisos:
+            break
+        ajuste = base + (
+            "A versao anterior teve estes problemas; corrija sem mudar o resto: "
+            + "; ".join(avisos)
+            + "."
+        )
+    return guardar(post, texto, extras, avisos, artigo, mat)

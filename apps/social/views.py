@@ -209,6 +209,47 @@ def _artigo_do_post(post):
 
 
 @login_required
+def post_pela_outra_ia(request: HttpRequest, pk) -> HttpResponse:
+    """O post inteiro escrito por outra IA: o pedido (com o material do artigo,
+    a clareza e o estilo das imagens) e a resposta colada, que passa pela mesma
+    conferencia da nossa IA."""
+    from apps.social import criacao
+
+    post = get_object_or_404(Post.objects.select_related("destino", "abordagem"), pk=pk)
+    if request.method == "POST":
+        aplicou, avisos, comentarios = criacao.aplicar(post, request.POST.get("resposta", ""))
+        if not aplicou:
+            messages.error(
+                request,
+                _(
+                    "Nao achei GANCHO nem LEGENDA na resposta. Peca 'pode gerar' e cole a "
+                    "resposta inteira."
+                ),
+            )
+            return redirect("social:post_pela_outra_ia", post.pk)
+        messages.success(
+            request,
+            _("Post da outra IA aplicado. Confira os avisos e envie as imagens das laminas.")
+            if avisos
+            else _("Post da outra IA aplicado, sem avisos. Envie as imagens das laminas."),
+        )
+        if comentarios:
+            messages.info(request, comentarios[:1000])
+        return redirect(f"{reverse('social:inicio')}?aba=revisar#post-{post.pk}")
+    return render(
+        request,
+        "social/post_outra_ia.html",
+        {
+            "aba": "redes",
+            "aba_das_redes": "revisar",
+            "contagens": _contagens(),
+            "post": post,
+            "pedido": criacao.pedido(post),
+        },
+    )
+
+
+@login_required
 def editar_lamina(request: HttpRequest, pk) -> HttpResponse:
     """O editor da 1a lamina: arrastar a foto e o texto, tamanho, alinhamento,
     cor e escurecimento, com o desenho na hora no navegador. Salvar grava o
@@ -288,11 +329,7 @@ def _refazer_imagens(post) -> bool:
     proprio) com o texto e a foto atuais. Falso se o artigo sumiu."""
     from apps.social import laminas
 
-    artigo = _artigo_do_post(post)
-    if artigo is None:
-        return False
-    laminas.preparar_imagens(post, artigo)
-    return True
+    return laminas.refazer_imagens(post)
 
 
 @login_required
@@ -337,6 +374,26 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             post.save(update_fields=["extras", "atualizado_em"])
             _refazer_imagens(post)
             messages.success(request, _("Foto trocada e imagens refeitas."))
+    elif acao == "gerar_imagens_aqui":
+        from apps.social.tasks import gerar_imagens_das_laminas
+
+        if not fontes.ha_modelo_de_imagem():
+            messages.error(
+                request,
+                _(
+                    "Nao ha gerador de imagem cadastrado (Configuracao > Inferencia, tipo "
+                    "'image'). Use o pedido para uma IA de imagem de fora."
+                ),
+            )
+        else:
+            gerar_imagens_das_laminas.delay(str(post.pk))
+            messages.info(
+                request,
+                _(
+                    "Gerando as imagens das laminas sem imagem (uma por vez, alguns minutos). "
+                    "Recarregue depois."
+                ),
+            )
     elif acao in ("fundo_da_lamina", "tirar_fundo_da_lamina"):
         # A imagem de uma lamina (feita numa IA de imagem com o pedido do post).
         try:

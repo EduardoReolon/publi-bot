@@ -20,6 +20,7 @@ urlpatterns = [
     path("posts/<uuid:pk>/", views.acao_no_post, name="acao_no_post"),
     path("posts/<uuid:pk>/previa/", views.previa_da_lamina, name="previa_da_lamina"),
     path("posts/<uuid:pk>/lamina/", views.editar_lamina, name="editar_lamina"),
+    path("posts/<uuid:pk>/outra-ia/", views.post_pela_outra_ia, name="post_pela_outra_ia"),
     path("posts/<uuid:pk>/lamina/foto/", views.foto_da_lamina, name="foto_da_lamina"),
     path("fonte-da-lamina/<str:peso>/", views.fonte_da_lamina, name="fonte_da_lamina"),
     path("artigo/<uuid:artigo_id>/levar/", views.levar_as_redes, name="levar_as_redes"),

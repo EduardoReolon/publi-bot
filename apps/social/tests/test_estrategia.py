@@ -312,13 +312,16 @@ def test_instagram_posta_o_tema_com_material_de_varios_artigos(
     pedidos = []
 
     def executar(chave, variaveis, json_schema=None):
+        if chave == "social_revisor":
+            return json.dumps({"entendi": "cansaco tem causas", "nota": 8})
         pedidos.append(variaveis)
         return json.dumps(
             {
                 "gancho": "Cansaco que nao passa?",
                 "texto": "Pode ser ferro, sono ou tireoide.",
                 "laminas": [
-                    {"titulo": t, "texto": ""} for t in ("Cansado?", "Ferro", "Sono", "Tireoide")
+                    {"titulo": t, "texto": "", "visual": f"cena: {t}"}
+                    for t in ("Cansado?", "Ferro", "Sono", "Tireoide")
                 ],
             }
         )
@@ -346,7 +349,8 @@ def test_instagram_posta_o_tema_com_material_de_varios_artigos(
     redacao.escrever(post)
     post.refresh_from_db()
     assert post.situacao == Post.Situacao.RASCUNHO
-    assert "Tema que aparece em" in pedidos[0]["resumo"]
+    assert "Ideia que aparece em 3 artigos" in pedidos[0]["resumo"]
+    assert pedidos[0]["titulo"] != post.tema.titulo  # o titulo e o do artigo, nao a frase
     assert len(post.material["secoes"]) >= 2  # titulos dos artigos do tema
     assert destino.posts.count() == 1
 

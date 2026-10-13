@@ -5,6 +5,8 @@ dela (`apps/social/redes/<rede>.py`)."""
 
 from __future__ import annotations
 
+from apps.social.clareza import PROMPT_DO_REVISOR
+from apps.social.identidade import PROMPT_DA_CENA
 from apps.social.redes import REDES
 
 _CAMPOS = {
@@ -101,6 +103,11 @@ def _semente(rede) -> dict:
 
 
 PROMPTS = {rede.prompt: _semente(rede) for rede in REDES.values()}
+
+# O revisor de clareza (le o post sem o artigo; ver clareza.py).
+PROMPTS["social_revisor"] = PROMPT_DO_REVISOR
+# A cena da lamina para o gerador de imagem (ver identidade.gerar_imagens).
+PROMPTS["social_cena"] = PROMPT_DA_CENA
 
 # Descrever uma foto do banco (modelo que enxerga imagem; opcional, ver
 # ConfiguracaoSocial.descrever_fotos). A descricao entra no material do post.

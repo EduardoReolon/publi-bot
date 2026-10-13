@@ -64,6 +64,8 @@ def modulo(monkeypatch):
     )
 
     def executar(chave, variaveis, json_schema=None):
+        if chave == "social_revisor":  # o revisor de clareza aprova (ver test_clareza)
+            return json.dumps({"entendi": "o post e claro", "nota": 9, "problemas": []})
         chamadas.append((chave, variaveis))
         return json.dumps(respostas.pop(0))
 
@@ -145,11 +147,15 @@ def test_instagram_laminas_e_link_na_bio(ambiente, modulo, settings, tmp_path):
             "texto": "Tem explicacao.",
             "hashtags": ["a", "b", "c", "d", "e", "f"],
             "laminas": [
-                {"titulo": "Acorda cansado?", "texto": ""},
-                {"titulo": "38% dos adultos", "texto": "relatam cansaco que nao passa"},
-                {"titulo": "Anemia", "texto": "12,5% dos casos em mulheres"},
-                {"titulo": "Exame simples", "texto": "esclarece a maior parte"},
-                {"titulo": "Link na bio", "texto": ""},
+                {"titulo": "Acorda cansado?", "texto": "", "visual": "pessoa bocejando"},
+                {
+                    "titulo": "38% dos adultos",
+                    "texto": "relatam cansaco que nao passa",
+                    "visual": "v",
+                },
+                {"titulo": "Anemia", "texto": "12,5% dos casos em mulheres", "visual": "v"},
+                {"titulo": "Exame simples", "texto": "esclarece a maior parte", "visual": "v"},
+                {"titulo": "Link na bio", "texto": "", "visual": "v"},
             ],
         }
     )
