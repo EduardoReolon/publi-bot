@@ -415,6 +415,7 @@ padroes = [
   "templates/ops/**",
   "tests/test_orchestrator.py",
   "tests/test_painel.py",
+  "tests/test_acompanhamento.py",
   "tests/test_broker_backend.py",
   "tests/test_comandos_dev.py",
   "tests/test_check_db.py",

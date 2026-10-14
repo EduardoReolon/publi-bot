@@ -44,25 +44,21 @@ não estiver disponível; o publi-bot lê os dois pelo ffmpeg).
 - **`model`** é informativo; manda o `.env` do worker.
 - Textos curtos: uma fala por lâmina, até ~400 caracteres.
 
-### Sugestão: Kokoro-82M
+### Implementado: Kokoro (worker 2.11)
 
-- Licença Apache-2.0; tem vozes de português do Brasil: `pf_dora` (feminina),
-  `pm_alex` e `pm_santa` (masculinas).
-- Fala português pelo `espeak-ng` (`apt install espeak-ng`).
-- Roda bem em **CPU**, mais rápido que tempo real. Assim não precisa do lock da
-  placa e não disputa VRAM com o Ollama nem com a difusão.
+A rota existe no worker desde a 2.11 (`voz.py` e `falar_kokoro.py`). Ela roda
+na **CPU**, sem passar pelo árbitro, num ambiente à parte (`voz/`), que o
+`deploy/instalar_voz.sh` cria. O instalador grava `voz/teste.mp3` para você
+ouvir a voz antes de ligar.
 
-```python
-from kokoro import KPipeline
-pipeline = KPipeline(lang_code="p")          # p = português do Brasil
-partes = [audio for _, _, audio in pipeline(texto, voice="pf_dora")]
-# 24 kHz; MP3 com soundfile (libsndfile >= 1.1): sf.write(buf, audio, 24000, format="MP3")
-```
+Para ligar:
+1. No `.env` do worker, `VOZ_ATIVA=sim`.
+2. No servidor, `manage.py configurar_api worker_voz`.
+3. Na conta (Identidade visual > voz da narração), escolha `pf_dora`,
+   `pm_alex` ou `pm_santa`.
 
-Em GPU, entrar no árbitro como `voz` (estimativa de 10 s).
-
-`/health/` deve publicar `rotas.voz: true` e um bloco `voz` com `modelo`,
-`dispositivo` e `voz_padrao`.
+Com duas conexões de voz (worker e ElevenLabs), desligue a que não quer usar
+em Configuração > Inferência: a voz da conta é de um serviço só.
 
 ---
 

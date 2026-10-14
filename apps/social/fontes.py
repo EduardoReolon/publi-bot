@@ -699,3 +699,19 @@ def destinos_do_link(limite: int = 50) -> list[tuple[str, str]]:
         if a and a.url:
             saida.append((f"Artigo: {a.titulo}", a.url))
     return saida
+
+
+# -- A tela de Operacao ---------------------------------------------------------------------
+def na_fila(tarefa, *args, rotulo: str, alvo=None, **kwargs) -> str:
+    """Despacha a tarefa e a mostra na tela de Operacao desde ja (Aguardando,
+    Executando, Aguardando capacidade, Concluido, Falhou)."""
+    from apps.ops.acompanhamento import na_fila as registrar
+
+    return registrar(tarefa, *args, rotulo=rotulo, alvo=alvo, **kwargs)
+
+
+def acompanhar(trabalho: str | None):
+    """Dentro da tarefa: marca o andamento do registro (ver `na_fila`)."""
+    from apps.ops.acompanhamento import acompanhar as marcar
+
+    return marcar(trabalho)

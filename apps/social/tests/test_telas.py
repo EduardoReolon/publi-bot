@@ -65,7 +65,7 @@ def test_do_artigo_as_redes_e_as_abas(ambiente, monkeypatch, django_capture_on_c
 
     _, _, client = ambiente
     escritos = []
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: escritos.append(pk))
     artigo = _artigo_publicado()
     pagina = client.get(reverse("content:revisar", args=[artigo.pk], urlconf=U)).content.decode()
     assert "Levar as redes" in pagina

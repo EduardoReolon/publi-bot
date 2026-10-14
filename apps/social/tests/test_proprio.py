@@ -119,7 +119,7 @@ def _destinos():
 @pytest.mark.django_db
 def test_caso_real_pede_autorizacao_e_vira_post_em_cada_conta(ambiente, monkeypatch):
     escritos = []
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: escritos.append(pk))
     insta, linkedin = _destinos()
     with pytest.raises(proprio.EntradaInvalida, match="autorizou"):
         proprio.criar(tipo="caso", texto="Um caso", arquivos=[], destinos=[insta.pk])
@@ -180,7 +180,7 @@ def test_redacao_do_caso_so_com_o_relato_e_avisa_identificacao(ambiente, monkeyp
 @pytest.mark.django_db
 def test_novidade_com_fotos_usa_as_fotos_e_serve_jpeg(ambiente, monkeypatch, midia_no_disco):
     _, _, client = ambiente
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     insta, linkedin = _destinos()
     entrada = proprio.criar(
         tipo="novidade",
@@ -209,7 +209,7 @@ def test_novidade_com_fotos_usa_as_fotos_e_serve_jpeg(ambiente, monkeypatch, mid
 
 @pytest.mark.django_db
 def test_audio_transcrito_cria_os_posts(ambiente, monkeypatch, midia_no_disco):
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     monkeypatch.setattr(tasks.transcrever_entrada, "delay", lambda *a: None)
     insta, _ = _destinos()
     audio = SimpleUploadedFile("caso.ogg", b"OggS...", content_type="audio/ogg")
@@ -236,7 +236,7 @@ def test_audio_transcrito_cria_os_posts(ambiente, monkeypatch, midia_no_disco):
 @pytest.mark.django_db
 def test_tela_do_novo_post(ambiente, monkeypatch):
     _, _, client = ambiente
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     insta, _ = _destinos()
     url = reverse("social:novo_post", urlconf=U)
     assert "Quem aparece ou e citado autorizou" in client.get(url).content.decode()
@@ -264,7 +264,7 @@ def _banco(n_grupos: int):
 def test_rodada_tira_do_banco_na_proporcao_e_cada_conta_tem_o_seu(
     ambiente, monkeypatch, midia_no_disco
 ):
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     config = ConfiguracaoSocial.carregar()
     config.ligado = True
     config.save()
@@ -475,7 +475,7 @@ def test_enquete_no_linkedin_e_post_comum_no_instagram(ambiente, monkeypatch):
 def test_trocar_o_link_e_refazer_como_enquete_pela_tela(ambiente, monkeypatch):
     _, _, client = ambiente
     escritos = []
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: escritos.append(pk))
     monkeypatch.setattr(
         fontes,
         "destinos_do_link",
@@ -514,7 +514,7 @@ def test_trocar_o_link_e_refazer_como_enquete_pela_tela(ambiente, monkeypatch):
 
 @pytest.mark.django_db
 def test_ideia_aprovada_vem_antes_na_rodada_e_nao_repete(ambiente, monkeypatch):
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     monkeypatch.setattr(fontes, "artigo_mais_parecido", lambda texto: None)
     ideia = {
         "id": "abc",

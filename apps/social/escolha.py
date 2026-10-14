@@ -240,7 +240,11 @@ def sugerir(
             )
             posts.append(post)
         for post in posts:
-            transaction.on_commit(lambda pk=str(post.pk): escrever_post.delay(pk))
+            transaction.on_commit(
+                lambda pk=str(post.pk): fontes.na_fila(
+                    escrever_post, pk, rotulo="Escrever o post", alvo=pk
+                )
+            )
     return posts
 
 

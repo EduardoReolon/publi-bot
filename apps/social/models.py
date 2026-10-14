@@ -171,6 +171,25 @@ class Destino(models.Model):
     video = models.CharField(
         _("video"), max_length=12, choices=Video.choices, default=Video.SUGERIR
     )
+
+    class Escritor(models.TextChoices):
+        LOCAL = "local", _("O modelo do PubliBot (o da placa)")
+        OUTRA_IA = "outra_ia", _("Uma IA grande, por API (Claude, ChatGPT, Gemini)")
+
+    # Quem escreve os posts desta conta. A IA grande recebe o MESMO pedido do
+    # "Escrever com outra IA" (material, publico, clareza, persuasao, video) e a
+    # resposta passa pela mesma conferencia. Sem API cadastrada, escreve o local.
+    escritor = models.CharField(
+        _("quem escreve os posts"),
+        max_length=12,
+        choices=Escritor.choices,
+        default=Escritor.LOCAL,
+        help_text=_(
+            "A IA grande escreve melhor para publico nao tecnico; precisa de uma API cadastrada "
+            "(manage.py configurar_api anthropic, openai ou gemini). Sem ela, escreve o modelo "
+            "do PubliBot."
+        ),
+    )
     voz = models.CharField(
         _("voz da narracao"),
         max_length=100,

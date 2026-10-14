@@ -134,7 +134,7 @@ def test_conta_automatica_gera_o_video_quando_a_ia_sugere(
     from apps.social import tasks
 
     pedidos = []
-    monkeypatch.setattr(tasks.gerar_video, "delay", lambda pk: pedidos.append(pk))
+    monkeypatch.setattr(tasks.gerar_video, "delay", lambda pk, **_kw: pedidos.append(pk))
     monkeypatch.setattr(fontes, "tem_voz", lambda: True)
     post = _post(_destino("instagram", video="automatico"))
     criacao.aplicar(post, RESPOSTA_COM_VIDEO)
@@ -156,7 +156,7 @@ def test_outra_ia_por_api_usa_o_mesmo_pedido_e_os_mesmos_leitores(
     from apps.social import tasks
 
     fila = []
-    monkeypatch.setattr(tasks.perguntar_a_outra_ia, "delay", lambda pk: fila.append(pk))
+    monkeypatch.setattr(tasks.perguntar_a_outra_ia, "delay", lambda pk, **_kw: fila.append(pk))
     monkeypatch.setattr(fontes, "outra_ia_por_api", lambda: "Claude (API) (claude-x)")
     respostas = {}
     monkeypatch.setattr(fontes, "perguntar_a_outra_ia", lambda pedido: respostas["proxima"])
@@ -202,3 +202,26 @@ def test_sem_api_o_botao_some_e_o_pedido_e_recusado(ambiente, modulo):
     assert "Pedir pela API" not in client.get(url).content.decode()
     client.post(reverse("social:pedir_a_outra_ia", urlconf=U), {"tipo": "post", "post": post.pk})
     assert not RespostaDaOutraIA.objects.exists()
+
+
+@pytest.mark.django_db
+def test_conta_com_ia_grande_manda_o_post_para_ela(ambiente, modulo, monkeypatch):
+    from apps.social import tasks
+
+    pedidos = []
+    monkeypatch.setattr(fontes, "outra_ia_por_api", lambda: "Claude (API) (claude-x)")
+    monkeypatch.setattr(tasks.perguntar_a_outra_ia, "delay", lambda pk, **_kw: pedidos.append(pk))
+    post = _post(_destino("instagram", escritor="outra_ia"), extras={})
+    post.situacao = Post.Situacao.SUGERIDO
+    post.save()
+    assert tasks.escrever_post.apply(args=[str(post.pk)]).get() == "pedido a outra IA"
+    registro = RespostaDaOutraIA.objects.get()
+    assert registro.tipo == "post" and pedidos == [str(registro.pk)]
+    tasks.escrever_post.apply(args=[str(post.pk)])  # retomada: nao pede duas vezes
+    assert RespostaDaOutraIA.objects.count() == 1
+
+    # a IA grande falhou: o post nao fica "Escrevendo" para sempre
+    monkeypatch.setattr(fontes, "perguntar_a_outra_ia", lambda pedido: 1 / 0)
+    outra_ia_por_api.responder(registro)
+    post.refresh_from_db()
+    assert post.situacao == Post.Situacao.FALHOU and "IA grande" in post.erro

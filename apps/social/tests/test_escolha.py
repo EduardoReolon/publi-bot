@@ -27,7 +27,7 @@ def nucleo(monkeypatch):
     escritos = []
     from apps.social import tasks
 
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: escritos.append(pk))
     return artigos, sinais, escritos
 
 

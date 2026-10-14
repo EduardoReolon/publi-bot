@@ -439,7 +439,7 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
                 ),
             )
         else:
-            gerar_video.delay(str(post.pk))
+            fontes.na_fila(gerar_video, str(post.pk), rotulo="Video do post", alvo=post.pk)
             messages.info(request, _("Gerando o video (narracao e montagem). Recarregue depois."))
     elif acao == "voltar_ao_carrossel":
         from apps.social import video
@@ -468,7 +468,12 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
                 ),
             )
         else:
-            gerar_imagens_das_laminas.delay(str(post.pk))
+            fontes.na_fila(
+                gerar_imagens_das_laminas,
+                str(post.pk),
+                rotulo="Imagens das laminas",
+                alvo=post.pk,
+            )
             messages.info(
                 request,
                 _(
@@ -573,14 +578,14 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         post.abordagem = abordagem
         post.situacao = Post.Situacao.SUGERIDO
         post.save(update_fields=["abordagem", "situacao", "atualizado_em"])
-        escrever_post.delay(str(post.pk))
+        fontes.na_fila(escrever_post, str(post.pk), rotulo="Escrever o post", alvo=post.pk)
         messages.info(request, _("Reescrevendo com a abordagem '%(a)s'.") % {"a": abordagem})
     elif acao == "tentar_de_novo":
         fora = [f"{nome}: {motivo}" for nome, ok, motivo in fontes.reabrir_modelo() if not ok]
         post.situacao = Post.Situacao.SUGERIDO
         post.erro = ""
         post.save(update_fields=["situacao", "erro", "atualizado_em"])
-        escrever_post.delay(str(post.pk))
+        fontes.na_fila(escrever_post, str(post.pk), rotulo="Escrever o post", alvo=post.pk)
         if fora:
             messages.warning(
                 request,
@@ -598,7 +603,7 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         if post.situacao in (Post.Situacao.RASCUNHO, Post.Situacao.FALHOU):
             post.situacao = Post.Situacao.SUGERIDO
             post.save(update_fields=["situacao", "atualizado_em"])
-            escrever_post.delay(str(post.pk))
+            fontes.na_fila(escrever_post, str(post.pk), rotulo="Escrever o post", alvo=post.pk)
             messages.info(request, _("Reescrevendo com a oferta para quem comentar."))
         else:
             if post.situacao != Post.Situacao.PUBLICADO:
@@ -617,7 +622,7 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         post.extras = extras
         post.situacao = Post.Situacao.SUGERIDO
         post.save(update_fields=["extras", "situacao", "atualizado_em"])
-        escrever_post.delay(str(post.pk))
+        fontes.na_fila(escrever_post, str(post.pk), rotulo="Escrever o post", alvo=post.pk)
         messages.info(
             request,
             _("Reescrevendo como enquete.")
@@ -1268,7 +1273,14 @@ def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
             messages.error(request, _("Nao ha gerador de imagem cadastrado."))
             return
         opcoes = identidade.OPCOES_POR_LAMINA if acao == "opcoes_de_imagem" else 1
-        gerar_imagens_das_laminas.delay(str(post.pk), apenas=n, opcoes=opcoes)
+        fontes.na_fila(
+            gerar_imagens_das_laminas,
+            str(post.pk),
+            apenas=n,
+            opcoes=opcoes,
+            rotulo=f"Imagem da lamina {n}" + (f" ({opcoes} opcoes)" if opcoes > 1 else ""),
+            alvo=post.pk,
+        )
         messages.info(
             request,
             _("Gerando %(q)s imagem(ns) da lamina %(n)s. Recarregue em alguns minutos.")
@@ -1299,7 +1311,13 @@ def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
                 ),
             )
             return
-        animar_laminas.delay(str(post.pk), apenas=n if acao == "animar" else None)
+        fontes.na_fila(
+            animar_laminas,
+            str(post.pk),
+            apenas=n if acao == "animar" else None,
+            rotulo=f"Animar a lamina {n}" if acao == "animar" else "Animar as laminas",
+            alvo=post.pk,
+        )
         messages.info(request, _("Animando (leva minutos por lamina). Recarregue depois."))
     elif acao == "clipe_da_lamina":
         arquivo = request.FILES.get("clipe")

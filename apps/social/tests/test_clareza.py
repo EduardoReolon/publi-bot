@@ -150,7 +150,7 @@ def test_proposta_pede_abordagem_e_formato(ambiente, monkeypatch):
     escritos = []
     from apps.social import tasks
 
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: escritos.append(pk))
     artigo = _artigo_publicado()
     tema = _tema(artigo)
     destino = _destino("instagram")
@@ -178,7 +178,7 @@ FIM
 def test_proposta_em_video_com_estilo(ambiente, monkeypatch):
     from apps.social import redacao, tasks, video
 
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     artigo = _artigo_publicado()
     tema = _tema(artigo)
     destino = _destino("instagram", estilos_permitidos=["quadrinhos", "apresentacao"])

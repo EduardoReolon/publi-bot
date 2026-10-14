@@ -467,7 +467,7 @@ def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat
         # O video sai em segundo plano; a aprovacao automatica vem depois dele.
         from apps.social.tasks import gerar_video
 
-        gerar_video.delay(str(post.pk))
+        fontes.na_fila(gerar_video, str(post.pk), rotulo="Video do post", alvo=post.pk)
         return post
     if texto and not avisos and destino.aprovacao == destino.Aprovacao.AUTOMATICO:
         from apps.social.publicacao import aprovar

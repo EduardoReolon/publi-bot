@@ -49,7 +49,12 @@ def pedir(
     registro = RespostaDaOutraIA.objects.create(
         tipo=tipo, destino=destino or (post.destino if post else None), post=post, pedido=texto
     )
-    perguntar_a_outra_ia.delay(str(registro.pk))
+    fontes.na_fila(
+        perguntar_a_outra_ia,
+        str(registro.pk),
+        rotulo=f"Outra IA por API: {registro.get_tipo_display().lower()}",
+        alvo=registro.pk,
+    )
     return registro
 
 
@@ -67,6 +72,7 @@ def responder(registro: RespostaDaOutraIA) -> None:
         registro.erro = str(exc)[:2000]
         registro.save(update_fields=["situacao", "erro", "atualizado_em"])
         logger.info("Outra IA por API falhou (%s): %s", registro.tipo, exc)
+        _post_falhou(registro)
         return
 
     tipo, situacao = registro.tipo, RespostaDaOutraIA.Situacao.APLICADA
@@ -84,3 +90,17 @@ def responder(registro: RespostaDaOutraIA) -> None:
         situacao = RespostaDaOutraIA.Situacao.PRONTA
     registro.situacao = situacao
     registro.save(update_fields=["resposta", "situacao", "erro", "atualizado_em"])
+    if situacao == RespostaDaOutraIA.Situacao.ERRO:
+        _post_falhou(registro)
+
+
+def _post_falhou(registro: RespostaDaOutraIA) -> None:
+    """O post que esperava a IA grande nao fica "Escrevendo..." para sempre (e
+    nao e pedido de novo a cada meia hora): vira falho, com o motivo."""
+    post = registro.post
+    if registro.tipo != RespostaDaOutraIA.Tipo.POST or post is None:
+        return
+    if post.situacao in (Post.Situacao.SUGERIDO, Post.Situacao.GERANDO):
+        post.situacao = Post.Situacao.FALHOU
+        post.erro = f"a IA grande nao escreveu: {registro.erro}"[:2000]
+        post.save(update_fields=["situacao", "erro", "atualizado_em"])
