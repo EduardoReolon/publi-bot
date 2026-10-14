@@ -359,3 +359,41 @@ def test_pdfs_resolvidos_sem_texto_tem_botao_e_varredura(ambiente, monkeypatch):
     disparos = []
     monkeypatch.setattr(gerar_b_quando_pronta, "delay", lambda pk: disparos.append(pk))
     assert fluxos.geracoes_esperando() == 1 and disparos == [str(pauta.pk)]
+
+
+@pytest.mark.django_db
+def test_lista_de_pautas_so_busca_por_fluxo_e_leva_a_outra_ia(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.content.models import Topic
+    from apps.knowledge.tasks import buscar_fontes_da_pauta, pesquisar_pauta
+    from apps.radar.models import ConfiguracaoDoRadar
+
+    pesquisas, buscas = [], []
+    monkeypatch.setattr(pesquisar_pauta, "delay", lambda pk: pesquisas.append(pk))
+    monkeypatch.setattr(buscar_fontes_da_pauta, "delay", lambda pk, v: buscas.append(pk))
+    config = ConfiguracaoDoRadar.carregar()
+    config.fluxo_do_acervo = config.fluxo_da_pesquisa = True
+    config.save()
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Sono e foco", status=Topic.Status.APPROVED)
+
+    lista = client.get(reverse("content:pautas", urlconf="core.urls_tenants")).content.decode()
+    assert "Buscar fontes (A)" in lista and "Pesquisar artigos (B)" in lista
+    assert "Outra IA (A)" in lista and "Outra IA (B)" not in lista  # B: so com a pesquisa pronta
+
+    # Da lista, sem recarregar: so a busca, nada de gerar.
+    with django_capture_on_commit_callbacks(execute=True):
+        busca = client.post(
+            reverse("content:buscar_fontes", args=[pauta.pk], urlconf="core.urls_tenants"),
+            HTTP_X_EM_SEGUNDO_PLANO="1",
+        )
+        pesquisa = client.post(
+            reverse("content:pesquisar_artigos", args=[pauta.pk], urlconf="core.urls_tenants"),
+            HTTP_X_EM_SEGUNDO_PLANO="1",
+        )
+    assert "detalhe" in busca.json() and "detalhe" in pesquisa.json()
+    assert buscas == [str(pauta.pk)] and pesquisas == [str(pauta.pk)]
+    assert not pauta.articles.exists()

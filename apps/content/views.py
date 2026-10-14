@@ -526,6 +526,8 @@ def buscar_fontes(request: HttpRequest, pk) -> HttpResponse:
     pauta = get_object_or_404(Topic, pk=pk)
     variar = request.POST.get("variar") == "1"
     transaction.on_commit(lambda: buscar_fontes_da_pauta.delay(str(pauta.pk), variar))
+    if request.headers.get("X-Em-Segundo-Plano"):
+        return JsonResponse({"detalhe": str(_("Buscando; recarregue em instantes."))})
     messages.success(
         request,
         _("Buscando com outras palavras. Recarregue em instantes para ver o resultado.")
@@ -545,6 +547,19 @@ def pesquisar_artigos(request: HttpRequest, pk) -> HttpResponse:
     from apps.content.fluxos import B, artigo_do_fluxo
 
     ativo = artigo_do_fluxo(pauta, B)
+    if request.headers.get("X-Em-Segundo-Plano"):
+        # Da lista de pautas, sem recarregar: o detalhe vai no title do botao.
+        if ativo is None:
+            iniciar_pesquisa(pauta, gerar_depois=None)
+        return JsonResponse(
+            {
+                "detalhe": str(
+                    _("Esta pauta ja tem artigo no B.")
+                    if ativo
+                    else _("Pesquisando; leva alguns minutos.")
+                )
+            }
+        )
     if ativo is not None:
         # Pesquisar de novo com um artigo do B ativo deixaria as referencias da
         # pauta diferentes das do artigo: refazer e pelo artigo.
