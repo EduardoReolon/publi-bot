@@ -158,7 +158,7 @@ def _fontes(artigo) -> str:
 
 def pedido(artigo) -> str:
     from apps.content.chamada import texto_da_oferta
-    from apps.content.flows import _publico_padrao
+    from apps.content.flows import _publico_padrao, dores_do_artigo
     from apps.content.prompts_iniciais import (
         AVISO_DE_DELIMITADOR,
         REGRA_DO_EMBASAMENTO,
@@ -213,13 +213,18 @@ A pauta:
 - Palavra-chave: {artigo.focus_keyword or artigo.title}
 - Publico: {artigo.audience or _publico_padrao(None)}
 - Orientacao: {orientacao or "(sem orientacao)"}
+- Dores do publico ligadas ao tema (a dor — falas reais, entre aspas):
+{dores_do_artigo(artigo)}
 {debate}
 {guia}
 
 {chamada}
 
 Forma:
-- Abertura de 1 a 2 paragrafos sem titulo, entregando a resposta cedo.
+- Abertura de 1 a 2 paragrafos sem titulo: comece pela dor de quem le, com o
+  jeito de dizer das falas acima (sem copiar nome nem detalhe de ninguem, sem
+  alarmismo), e entregue a resposta cedo.
+- Titulos das secoes como a pessoa pensa o problema, nao como indice.
 - Secoes com titulo de nivel 2 (##); nivel 3 (###) so se a secao tiver duas
   partes. Nada de titulo de nivel 1.
 - Frases curtas. Sem "vale ressaltar", "no cenario atual", "jornada".

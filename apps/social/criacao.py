@@ -75,7 +75,9 @@ MATERIAL — frases do artigo proximas das dores do publico (identificacao):
 MATERIAL — achados com numero:
 {achados}
 
-Dores do publico que o artigo toca:
+DORES do publico que o artigo toca (a dor — falas reais do publico, entre aspas;
+abra o post pela dor, com o jeito de dizer delas, sem copiar nome nem detalhe de
+ninguem, e sem alarmismo: a dor mostrada ganha o caminho que o artigo da):
 {dores}
 
 ## A conta

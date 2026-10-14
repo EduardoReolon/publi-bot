@@ -1,0 +1,59 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Dores do publico" %} · PubliBot{% endblock %}
+{% block largura %}largo{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+{% include "radar/_abas.html" %}
+<h1>{% translate "Dores do publico" %}</h1>
+<div class="explica">
+  {% blocktranslate trimmed %}
+    O problema de quem le, com as palavras dele. Os posts comecam pela dor e o
+    artigo parte dela, usando o <strong>jeito de dizer</strong> destas falas. As falas vem dos
+    comentarios do YouTube (desabafos e perguntas que carregam o problema), das
+    avaliacoes ruins de concorrentes no Google, dos comentarios nos posts das
+    suas contas e das perguntas do site. Cada post prefere as falas da propria
+    rede; enquanto a rede nao tem falas, usa as das outras fontes e as dores
+    digitadas em Configuracao.
+  {% endblocktranslate %}
+</div>
+
+<section class="secao">
+  <p>
+    {% blocktranslate trimmed count n=total_de_falas %}{{ n }} fala colhida{% plural %}{{ n }} falas colhidas{% endblocktranslate %}{% if por_fonte %}:
+    {% for rotulo, n in por_fonte %}{{ rotulo|lower }} {{ n }}{% if not forloop.last %} · {% endif %}{% endfor %}{% endif %}.
+    {% if soltas %}<span class="selo espera">{% blocktranslate count n=soltas %}{{ n }} ainda sem dor{% plural %}{{ n }} ainda sem dor{% endblocktranslate %}</span>{% endif %}
+  </p>
+  <div class="acoes">
+    <form method="post" action="{% url 'radar:acao_nas_dores' %}">{% csrf_token %}
+      <button type="submit" name="acao" value="agrupar" class="botao discreto pequeno">{% translate "Juntar as falas soltas agora" %}</button>
+    </form>
+    <a class="botao discreto pequeno" href="{% url 'radar:configuracao' %}">{% translate "Editar as dores digitadas" %}</a>
+  </div>
+  <form method="post" action="{% url 'radar:acao_nas_dores' %}" class="acoes" style="margin-top:.6rem">{% csrf_token %}
+    <input type="text" name="texto" placeholder="{% translate 'Uma frase que voce ouviu de um cliente, do jeito que ele disse' %}" style="flex:1">
+    <button type="submit" name="acao" value="anotar" class="botao secundario pequeno">{% translate "Anotar fala" %}</button>
+  </form>
+  <p class="ajuda">{% translate "Sem nome nem detalhe que identifique a pessoa." %}</p>
+</section>
+
+{% for dor in dores %}
+  <article class="secao">
+    <header style="display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+      <strong>{{ dor.rotulo|truncatechars:160 }}</strong>
+      {% if dor.digitada %}<span class="selo">{% translate "digitada" %}</span>{% endif %}
+      <span class="selo {% if dor.falas_total >= 5 %}ok{% elif dor.falas_total %}espera{% endif %}">{% blocktranslate count n=dor.falas_total %}{{ n }} fala{% plural %}{{ n }} falas{% endblocktranslate %}</span>
+      {% if dor.falas_total %}<span class="ajuda">{% translate "intensidade" %} {{ dor.intensidade|floatformat:2 }} · {% for rotulo, n in dor.fontes_legiveis %}{{ rotulo|lower }} {{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+      <form method="post" action="{% url 'radar:acao_nas_dores' %}" style="margin-left:auto">{% csrf_token %}<input type="hidden" name="dor" value="{{ dor.pk }}">
+        <button type="submit" name="acao" value="descartar" class="botao discreto pequeno" title="{% translate 'Nao e dor do seu publico: sai dos posts e artigos' %}">{% translate "Descartar" %}</button>
+      </form>
+    </header>
+    {% if dor.exemplos %}
+      <ul class="sinais">{% for fala in dor.exemplos %}<li>“{{ fala.texto|truncatechars:240 }}” <span class="ajuda">— {{ fala.get_fonte_display|lower }}</span></li>{% endfor %}</ul>
+    {% elif dor.digitada %}
+      <p class="ajuda">{% translate "Ainda sem fala colhida: os posts usam esta frase enquanto as falas nao chegam." %}</p>
+    {% endif %}
+  </article>
+{% empty %}
+  <div class="vazio-grande">{% translate "Nenhuma dor ainda. Escreva algumas em Configuracao (as que voce ja conhece) e rode o radar: as falas chegam com o YouTube, as avaliacoes de concorrentes e os comentarios das contas." %}</div>
+{% endfor %}
+{% endblock %}

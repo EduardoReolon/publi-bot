@@ -303,3 +303,24 @@ def test_post_sem_material_abre_a_tela_sem_vetorizar(ambiente, modulo, monkeypat
     tasks.preparar_material(str(post.pk))
     post.refresh_from_db()
     assert post.material["achados"]
+
+
+@pytest.mark.django_db
+def test_pedido_leva_as_dores_com_as_falas_da_rede(ambiente, modulo, monkeypatch):  # noqa: F811
+    pedidos = []
+
+    def dores_para(texto, *, rede="", quantas=3):
+        pedidos.append(rede)
+        return ["acordar cansado — “Eu acordo cansada todo dia”"]
+
+    monkeypatch.setattr(fontes, "dores_para", dores_para)
+    post = Post.objects.create(
+        destino=_destino("instagram"),
+        artigo_id=ARTIGO.id,
+        artigo_titulo=ARTIGO.titulo,
+        motivo=Post.Motivo.NOVO,
+        situacao=Post.Situacao.SUGERIDO,
+    )
+    texto = criacao.pedido(post)
+    assert "“Eu acordo cansada todo dia”" in texto and "abra o post pela dor" in texto
+    assert pedidos == ["instagram"]

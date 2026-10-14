@@ -218,6 +218,10 @@ def _perguntas_do_site(rodada, limite: int = 50) -> list[SinalDeDemanda]:
         :limite
     ]:
         sinal = _novo_sinal(texto, SinalDeDemanda.Fonte.PERGUNTA_DO_SITE, rodada=rodada)
+        from apps.radar.dores import registrar
+        from apps.radar.models import FalaDoPublico
+
+        registrar(texto, FalaDoPublico.Fonte.SITE)
         if sinal is not None:
             novos.append(sinal)
     return novos
@@ -472,6 +476,9 @@ def avancar(rodada: RodadaDoRadar) -> RodadaDoRadar:
         resumo["sinais"] = len(sinais)
         grupos = agrupar(sinais)
         resumo["pautas"] = propor_pautas(grupos, limite=plano.pautas)
+        from apps.radar.dores import agrupar as agrupar_dores
+
+        resumo["falas_agrupadas"] = agrupar_dores()
         from apps.radar.oportunidades import atualizar_oportunidades
         from apps.radar.sugestoes import sugerir_pelo_radar
 

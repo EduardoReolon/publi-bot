@@ -1003,3 +1003,65 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
     if link.situacao == LinkQuebrado.Situacao.DESCARTADO:
         return redirect(reverse("radar:imprensa") + "#links-quebrados")
     return redirect(reverse("radar:imprensa") + f"#link-{link.pk}")
+
+
+@login_required
+def dores(request: HttpRequest) -> HttpResponse:
+    """As dores do publico com as falas reais, da mais forte para a mais fraca."""
+    from apps.radar import dores as banco
+    from apps.radar.models import FalaDoPublico
+
+    lista = banco.principais(40)
+    for dor in lista:
+        dor.exemplos = list(dor.falas.all()[:3])
+        dor.fontes_legiveis = [
+            (FalaDoPublico.Fonte(f).label if f in FalaDoPublico.Fonte.values else f, n)
+            for f, n in sorted(dor.por_fonte.items(), key=lambda par: -par[1])
+        ]
+    return render(
+        request,
+        "radar/dores.html",
+        {
+            "aba": "radar",
+            "subaba": "dores",
+            "dores": lista,
+            "soltas": FalaDoPublico.objects.filter(dor__isnull=True).count(),
+            "total_de_falas": FalaDoPublico.objects.count(),
+            "por_fonte": [
+                (FalaDoPublico.Fonte(f).label, n)
+                for f, n in FalaDoPublico.objects.values_list("fonte")
+                .annotate(n=Count("pk"))
+                .order_by("-n")
+                if f in FalaDoPublico.Fonte.values
+            ],
+        },
+    )
+
+
+@login_required
+@require_POST
+def acao_nas_dores(request: HttpRequest) -> HttpResponse:
+    """Descartar uma dor, anotar uma fala ouvida (consultorio, WhatsApp) ou
+    juntar agora as falas soltas."""
+    from apps.radar import dores as banco
+    from apps.radar.models import DorDoPublico, FalaDoPublico
+    from apps.radar.tasks import agrupar_dores
+
+    acao = request.POST.get("acao")
+    if acao == "descartar":
+        DorDoPublico.objects.filter(pk=request.POST.get("dor")).update(descartada=True)
+        messages.info(request, _("Dor descartada: nao vai mais para posts nem artigos."))
+    elif acao == "anotar":
+        texto = request.POST.get("texto", "")
+        fala = banco.registrar(texto, FalaDoPublico.Fonte.MANUAL, tipo=FalaDoPublico.Tipo.DESABAFO)
+        if fala is None:
+            messages.error(
+                request, _("Nao entrou: frase curta demais (minimo 15 letras) ou ja anotada.")
+            )
+        else:
+            transaction.on_commit(agrupar_dores.delay)
+            messages.success(request, _("Fala anotada. Ela entra numa dor em instantes."))
+    elif acao == "agrupar":
+        transaction.on_commit(agrupar_dores.delay)
+        messages.success(request, _("Juntando as falas soltas. Recarregue em instantes."))
+    return redirect("radar:dores")

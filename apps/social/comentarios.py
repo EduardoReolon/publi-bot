@@ -95,6 +95,13 @@ def ler(post: Post, *, http=None, criar_perguntas: bool = True) -> int:
                 comentario.save(update_fields=["respondido_em"])
             continue
         novos += 1
+        # Reclamacao e relato sao dor nas palavras de quem segue a conta (o
+        # historico importado tambem conta): vao para as Dores do Radar.
+        fontes.registrar_fala(
+            comentario.texto,
+            post.destino.rede,
+            certo=comentario.tipo in (Comentario.Tipo.RECLAMACAO, Comentario.Tipo.RELATO),
+        )
         if criar_perguntas:
             from apps.social import iscas
 

@@ -358,7 +358,8 @@ def artigo_e_material(post: Post, *, guardado: bool = False, sem_vetores: bool =
             artigo = _do_tema(post.tema, artigo)[0]
         return artigo, {**MATERIAL_VAZIO, **salvo}
     if post.tema_id:
-        return _do_tema(post.tema, artigo)
+        artigo, mat = _do_tema(post.tema, artigo)
+        return artigo, _com_as_dores(post, artigo, mat)
     r = rede(post.destino.rede)
     mat = material.montar(
         artigo,
@@ -366,7 +367,19 @@ def artigo_e_material(post: Post, *, guardado: bool = False, sem_vetores: bool =
         negocio=fontes.negocio(),
         sem_vetores=sem_vetores,
     )
-    return artigo, mat
+    return artigo, _com_as_dores(post, artigo, mat)
+
+
+def _com_as_dores(post: Post, artigo, mat: dict) -> dict:
+    """As dores que o artigo toca vem do banco de dores do Radar: a dor, com
+    as falas reais do publico (as desta rede primeiro). Sem nada colhido, as
+    digitadas; sem nem isso, as que o material ja tinha."""
+    try:
+        linhas = fontes.dores_para(f"{artigo.titulo}. {artigo.resumo}", rede=post.destino.rede)
+    except Exception:
+        logger.exception("Dores do post %s nao lidas; seguem as do material.", post.pk)
+        linhas = []
+    return {**mat, "dores": linhas} if linhas else mat
 
 
 def com_fotos(post: Post) -> bool:

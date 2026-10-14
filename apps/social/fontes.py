@@ -9,11 +9,14 @@ arquivo que vira cliente de API — o resto do modulo nao muda. O teste
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 
 from django.utils import timezone
+
+logger = logging.getLogger("publibot.social")
 
 _FIM_DE_FRASE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÀ-Ú\"“(0-9])")
 _MARCAS = re.compile(r"\[[^\]]*\]\([^)]*\)|<[^>]+>|\*\*|__|`")
@@ -566,6 +569,28 @@ def ler_link(url: str) -> dict:
         "data": pagina.data.isoformat() if pagina.data else "",
         "texto": texto[:12000],
     }
+
+
+def registrar_fala(texto: str, rede: str, *, certo: bool = False) -> None:
+    """Um comentario da rede que diz dor vai para as Dores do Radar (ver
+    radar/dores.py). `certo`: a classificacao do comentario ja disse que e
+    reclamacao ou relato. Falha aqui nunca derruba a leitura dos comentarios."""
+    from apps.radar import dores
+    from apps.radar.models import FalaDoPublico
+
+    fonte = rede if rede in FalaDoPublico.Fonte.values else FalaDoPublico.Fonte.MANUAL
+    try:
+        dores.registrar(texto, fonte, tipo=FalaDoPublico.Tipo.DESABAFO if certo else "", rede=rede)
+    except Exception:
+        logger.exception("Fala do comentario nao registrada.")
+
+
+def dores_para(texto: str, *, rede: str = "", quantas: int = 3) -> list[str]:
+    """As dores ligadas ao texto, com as falas do publico (as da rede primeiro),
+    prontas para o prompt. Sem nada colhido ainda: as dores digitadas."""
+    from apps.radar import dores
+
+    return dores.em_linhas(dores.dores_para(texto, rede=rede, quantas=quantas))
 
 
 def vetores(textos: list[str], *, consulta: bool = False) -> list[list[float]]:

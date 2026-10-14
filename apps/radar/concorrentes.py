@@ -440,6 +440,18 @@ def ler_avaliacoes(resultado: dict, contexto: dict, *, rodada) -> list:
         nota = (item.get("rating") or {}).get("value")
         if not texto:
             continue
+        if nota is not None and nota <= NOTA_DE_RECLAMACAO:
+            from apps.radar import dores
+            from apps.radar.models import FalaDoPublico
+
+            # A nota baixa ja diz que e reclamacao, mesmo sem palavra marcada.
+            dores.registrar(
+                texto,
+                FalaDoPublico.Fonte.AVALIACAO,
+                tipo=FalaDoPublico.Tipo.RECLAMACAO,
+                concorrente=contexto.get("concorrente", ""),
+                nota=nota,
+            )
         if (nota is not None and nota <= NOTA_DE_RECLAMACAO) or "?" in texto:
             sinal = _novo_sinal(
                 texto,

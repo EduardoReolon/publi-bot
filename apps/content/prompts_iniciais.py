@@ -147,7 +147,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
     # -----------------------------------------------------------------------
     "article_outline": {
         "descricao": "Planeja a estrutura do artigo e propoe as palavras-chave.",
-        "variaveis": ["titulo", "tese", "fontes", "palavra_chave", "publico", "idioma"],
+        "variaveis": ["titulo", "tese", "fontes", "palavra_chave", "publico", "dores", "idioma"],
         "temperatura": 0.3,
         "sistema": (
             "Voce planeja artigos de conteudo tecnico para busca organica.\n\n"
@@ -177,6 +177,11 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Isso e melhor que inventar sustentacao.\n"
             '- Pelo menos uma secao precisa ter "sustenta_ideia_central": true '
             "— e a secao onde a afirmacao e feita.\n\n"
+            "Sobre a dor do publico:\n"
+            "- Se houver DORES (com falas reais, entre aspas), o plano parte "
+            'delas: a "intencao" e o problema que a pessoa quer resolver, e os '
+            "titulos usam o jeito dela de dizer. So a dor que as fontes tratam: "
+            "nao prometa resolver o que as fontes nao sustentam.\n\n"
             "Sobre as secoes:\n"
             '- "titulo" e o H2 como aparecera no artigo. Escreva-o como a '
             "pessoa pensa a duvida, nao como um indice academico "
@@ -202,6 +207,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Palavra-chave sugerida: {palavra_chave}\n"
             "Publico: {publico}\n"
             "Idioma: {idioma}\n\n"
+            "DORES do publico ligadas ao tema (a dor — falas reais, entre aspas):\n{dores}\n\n"
             "Tese consolidada:\n{tese}\n\n"
             "Fontes disponiveis:\n\n{fontes}\n\n"
             "Produza o JSON do plano."
@@ -258,7 +264,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
     },
     "article_framing": {
         "descricao": "Escreve a abertura e o fecho, depois de o corpo existir.",
-        "variaveis": ["titulo", "tese", "esqueleto", "palavra_chave", "idioma"],
+        "variaveis": ["titulo", "tese", "esqueleto", "palavra_chave", "dores", "idioma"],
         "temperatura": 0.4,
         "sistema": (
             "Voce escreve a abertura e o fecho de um artigo tecnico ja "
@@ -273,7 +279,9 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             '  "abertura": 1 a 2 paragrafos curtos. A primeira frase tem de '
             "prender em 2 segundos: o problema de quem le, como ele o vive "
             "(a pessoa se reconhece), ou a pergunta que ela faz — nunca "
-            "definicao de dicionario nem contexto historico. Depois, diga o que "
+            "definicao de dicionario nem contexto historico. Havendo DORES com "
+            "falas reais, use o jeito de dizer delas (sem copiar nome nem "
+            "detalhe de ninguem, sem alarmismo). Depois, diga o que "
             "o leitor leva do artigo (o que ele vai saber fazer). "
             'Nao escreva "neste artigo vamos".\n'
             '  "fecho": 1 paragrafo. Feche o raciocinio. Nao resuma o que ja '
@@ -289,6 +297,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             "Palavra-chave: {palavra_chave}\n"
             "Idioma: {idioma}\n\n"
             "Tese:\n{tese}\n\n"
+            "DORES do publico ligadas ao tema (a dor — falas reais, entre aspas):\n{dores}\n\n"
             "Esqueleto do que o artigo cobre:\n{esqueleto}\n\n"
             "Produza o JSON."
         ),

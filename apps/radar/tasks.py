@@ -185,3 +185,11 @@ def virar_pauta(grupo_id: str) -> str:
     if not criadas:
         logger.info("Grupo %s nao virou pauta (perto do que ja foi escrito).", grupo_id)
     return criadas[0] if criadas else ""
+
+
+@shared_task
+def agrupar_dores() -> int:
+    """Junta as falas soltas nas dores (pedido na tela). Despachada de dentro do tenant."""
+    from apps.radar.dores import agrupar
+
+    return agrupar()
