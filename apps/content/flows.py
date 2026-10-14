@@ -259,6 +259,22 @@ def _tese_do_job(job: GenerationJob, article: Article) -> str:
     return payload.get("tese") or (article.thesis_json or {}).get("tese", "")
 
 
+def dores_do_artigo(article: Article) -> str:
+    """As dores do publico ligadas ao artigo, com as falas reais (banco de
+    dores do Radar), uma por linha. Sem nada: o aviso, e o prompt segue."""
+    from apps.radar.dores import dores_para, em_linhas
+
+    alvo = ". ".join(
+        p for p in (article.title, article.focus_keyword, getattr(article.topic, "title", "")) if p
+    )
+    try:
+        linhas = em_linhas(dores_para(alvo))
+    except Exception:
+        logger.exception("Dores do artigo %s nao lidas.", article.pk)
+        linhas = []
+    return "\n".join(f"- {linha}" for linha in linhas) or "(nenhuma anotada)"
+
+
 def passo_planejar(job: GenerationJob) -> dict:
     """Decide a estrutura do artigo e as palavras-chave, numa chamada curta.
 
@@ -278,6 +294,7 @@ def passo_planejar(job: GenerationJob) -> dict:
             "fontes": montar_contexto_das_fontes(trechos),
             "palavra_chave": article.focus_keyword or article.title,
             "publico": article.audience or _publico_padrao(site),
+            "dores": dores_do_artigo(article),
             "idioma": _idioma(site),
         },
         site=site,
@@ -466,6 +483,7 @@ def passo_abertura_e_fecho(job: GenerationJob) -> dict:
             "tese": _com_debate(_tese_do_job(job, article), article),
             "esqueleto": esqueleto_do_artigo(article),
             "palavra_chave": article.focus_keyword or article.title,
+            "dores": dores_do_artigo(article),
             "idioma": _idioma(site),
         },
         site=site,

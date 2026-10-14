@@ -268,7 +268,9 @@ def post_pela_outra_ia(request: HttpRequest, pk) -> HttpResponse:
 
     post = get_object_or_404(Post.objects.select_related("destino", "abordagem"), pk=pk)
     if request.method == "POST":
-        aplicou, avisos, comentarios = criacao.aplicar(post, request.POST.get("resposta", ""))
+        aplicou, avisos, comentarios = criacao.aplicar(
+            post, request.POST.get("resposta", ""), na_tela=True
+        )
         if not aplicou:
             messages.error(
                 request,
@@ -295,7 +297,7 @@ def post_pela_outra_ia(request: HttpRequest, pk) -> HttpResponse:
             "aba_das_redes": "revisar",
             "contagens": _contagens(request),
             "post": post,
-            "pedido": criacao.pedido(post),
+            "pedido": criacao.pedido(post, na_tela=True),
             "api_da_outra_ia": _api_da_outra_ia(),
         },
     )

@@ -22,8 +22,8 @@ import unicodedata
 
 import httpx
 
-from apps.radar import custos
-from apps.radar.models import ChamadaExterna, ContasExternas, SinalDeDemanda
+from apps.radar import custos, dores
+from apps.radar.models import ChamadaExterna, ContasExternas, FalaDoPublico, SinalDeDemanda
 from apps.radar.provedores import ProvedorIndisponivel
 
 logger = logging.getLogger("publibot.radar")
@@ -366,6 +366,14 @@ def colher_sinais(
         for video in achados:
             lidos = comentarios(video["id"], contas=contas, canal_id=video["canal_id"])
             for comentario in lidos:
+                # A dor nas palavras de quem comenta (desabafo, reclamacao,
+                # pergunta que carrega o problema): vai para as Dores.
+                dores.registrar(
+                    comentario["texto"],
+                    FalaDoPublico.Fonte.YOUTUBE,
+                    video=video["id"],
+                    curtidas=comentario["curtidas"],
+                )
                 if not e_pergunta(comentario["texto"]):
                     continue
                 texto = re.sub(r"\s+", " ", comentario["texto"]).strip()

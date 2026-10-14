@@ -1253,3 +1253,81 @@ class LinkQuebrado(models.Model):
 
     def __str__(self) -> str:
         return f"{self.pagina_url} -> {self.link_url}"
+
+
+class DorDoPublico(models.Model):
+    """Uma dor do publico: as falas que dizem o mesmo problema, juntas.
+
+    Nasce de duas formas: digitada na Configuracao do Radar (a "semente" que
+    funciona desde o primeiro dia) ou aberta por uma fala que nao coube em
+    nenhuma outra. A nota sobe com quantas falas, de quantas fontes, e quao
+    intensas (ver `dores.nota`)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    rotulo = models.CharField(_("dor"), max_length=300)
+    centroide = VectorField(_("centroide"), dimensions=settings.EMBEDDING_DIM, null=True)
+    digitada = models.BooleanField(_("digitada"), default=False)
+    falas_total = models.PositiveIntegerField(_("falas"), default=0)
+    intensidade = models.FloatField(_("intensidade media"), default=0)
+    # {"youtube": 4, "instagram": 1, ...}: a mesma dor em lugares diferentes
+    # e sinal mais forte, e o post de cada rede prefere as falas dela.
+    por_fonte = models.JSONField(_("falas por fonte"), default=dict, blank=True)
+    nota = models.FloatField(_("nota"), default=0)
+    descartada = models.BooleanField(_("descartada"), default=False)
+    criada_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("dor do publico")
+        verbose_name_plural = _("dores do publico")
+        ordering = ["-nota"]
+
+    def __str__(self) -> str:
+        return self.rotulo
+
+
+class FalaDoPublico(models.Model):
+    """O que alguem disse, com as palavras dela: comentario, avaliacao,
+    pergunta. E a materia-prima da copy ("voz do cliente"): o post e o artigo
+    usam a FRASE, e nao um resumo dela."""
+
+    class Fonte(models.TextChoices):
+        YOUTUBE = "youtube", _("Comentario no YouTube")
+        AVALIACAO = "avaliacao", _("Avaliacao de concorrente")
+        INSTAGRAM = "instagram", _("Comentario no Instagram")
+        LINKEDIN = "linkedin", _("Comentario no LinkedIn")
+        GMN = "gmn", _("Google Meu Negocio")
+        SITE = "site", _("Pergunta no site")
+        MANUAL = "manual", _("Anotada a mao")
+
+    class Tipo(models.TextChoices):
+        DESABAFO = "desabafo", _("Desabafo ou relato")
+        RECLAMACAO = "reclamacao", _("Reclamacao")
+        PERGUNTA = "pergunta", _("Pergunta")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    texto = models.CharField(_("texto"), max_length=600)
+    # O texto normalizado (sem acento, minusculo): a mesma fala nao entra duas vezes.
+    chave = models.CharField(max_length=64, unique=True)
+    fonte = models.CharField(_("fonte"), max_length=12, choices=Fonte.choices)
+    tipo = models.CharField(_("tipo"), max_length=12, choices=Tipo.choices)
+    intensidade = models.FloatField(_("intensidade"), default=0)
+    dor = models.ForeignKey(
+        DorDoPublico,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="falas",
+        verbose_name=_("dor"),
+    )
+    extra = models.JSONField(_("detalhes"), default=dict, blank=True)
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("fala do publico")
+        verbose_name_plural = _("falas do publico")
+        ordering = ["-intensidade", "-criada_em"]
+        indexes = [models.Index(fields=["dor", "fonte"])]
+
+    def __str__(self) -> str:
+        return self.texto

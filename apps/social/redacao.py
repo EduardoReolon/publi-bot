@@ -338,13 +338,14 @@ TENTATIVAS = 3
 MATERIAL_VAZIO = {"secoes": [], "identificacao": [], "achados": [], "dores": []}
 
 
-def artigo_e_material(post: Post, *, guardado: bool = False):
+def artigo_e_material(post: Post, *, guardado: bool = False, sem_vetores: bool = False):
     """(artigo, material) do post — do artigo, do tema ou do material proprio.
     (None, None) se o artigo nao existe mais.
 
     `guardado`: o material que o post ja recebeu ao ser escrito, se houver. A
     tela da outra IA usa: montar de novo vetoriza ate 200 frases dentro da
-    requisicao, e numa maquina pequena isso passa do prazo (502)."""
+    requisicao, e numa maquina pequena isso passa do prazo (502). `sem_vetores`:
+    sem material guardado, o caminho rapido (ver `material.montar`)."""
     from apps.social import proprio
 
     entrada = post.entrada if post.entrada_id else None
@@ -357,12 +358,28 @@ def artigo_e_material(post: Post, *, guardado: bool = False):
             artigo = _do_tema(post.tema, artigo)[0]
         return artigo, {**MATERIAL_VAZIO, **salvo}
     if post.tema_id:
-        return _do_tema(post.tema, artigo)
+        artigo, mat = _do_tema(post.tema, artigo)
+        return artigo, _com_as_dores(post, artigo, mat)
     r = rede(post.destino.rede)
     mat = material.montar(
-        artigo, publico=post.destino.publico or r.publico_padrao, negocio=fontes.negocio()
+        artigo,
+        publico=post.destino.publico or r.publico_padrao,
+        negocio=fontes.negocio(),
+        sem_vetores=sem_vetores,
     )
-    return artigo, mat
+    return artigo, _com_as_dores(post, artigo, mat)
+
+
+def _com_as_dores(post: Post, artigo, mat: dict) -> dict:
+    """As dores que o artigo toca vem do banco de dores do Radar: a dor, com
+    as falas reais do publico (as desta rede primeiro). Sem nada colhido, as
+    digitadas; sem nem isso, as que o material ja tinha."""
+    try:
+        linhas = fontes.dores_para(f"{artigo.titulo}. {artigo.resumo}", rede=post.destino.rede)
+    except Exception:
+        logger.exception("Dores do post %s nao lidas; seguem as do material.", post.pk)
+        linhas = []
+    return {**mat, "dores": linhas} if linhas else mat
 
 
 def com_fotos(post: Post) -> bool:
