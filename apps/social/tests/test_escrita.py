@@ -53,7 +53,12 @@ def modulo(monkeypatch):
     monkeypatch.setattr(
         fontes,
         "negocio",
-        lambda: {"dores": ["acordar cansado todo dia"], "regioes": ["Curitiba"], "idioma": "pt-BR"},
+        lambda: {
+            "dores": ["acordar cansado todo dia"],
+            "regioes": ["Curitiba"],
+            "local": "Curitiba e regiao",
+            "idioma": "pt-BR",
+        },
     )
     monkeypatch.setattr(fontes, "vetores", VetoresFalsos())
     monkeypatch.setattr(
@@ -120,6 +125,7 @@ def test_linkedin_link_no_primeiro_comentario_e_numero_errado_volta_ao_modelo(am
     post.refresh_from_db()
     assert len(chamadas) == 2
     assert "Nossa, que incrivel" in chamadas[0][1]["abordagem"]
+    assert chamadas[0][1]["regiao"] == "Curitiba e regiao"
     assert "numero que o artigo nao tem: 45" in chamadas[1][1]["ajuste"]
     assert post.situacao == Post.Situacao.RASCUNHO and post.avisos == []
     assert post.texto.startswith("38% dos adultos")
@@ -410,3 +416,17 @@ def test_chamada_final_tem_titulo_e_texto():
 
     itens = laminas.com_a_chamada([{"titulo": "A", "texto": ""}], laminas.CHAMADA)
     assert itens[-1]["titulo"].startswith("Mande para quem") and "link na bio" in itens[-1]["texto"]
+
+
+def test_onde_atende_do_negocio_vence_as_regioes_do_radar(ambiente):
+    """O Radar diz de onde vem o volume de busca; o Negocio, como o cliente chama
+    o lugar. Sem nenhum dos dois, o pais: o post nao fala de lugar."""
+    from apps.editorial.models import PerfilDoNegocio
+
+    assert fontes.negocio()["local"] == ""
+    perfil = PerfilDoNegocio.carregar()
+    perfil.onde_atende = "Curitiba e regiao metropolitana"
+    perfil.save()
+    negocio = fontes.negocio()
+    assert negocio["local"] == "Curitiba e regiao metropolitana"
+    assert negocio["regioes"][0] == "Curitiba e regiao metropolitana"

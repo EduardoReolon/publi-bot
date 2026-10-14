@@ -44,7 +44,11 @@ _SISTEMA = (
     "- Nada de link ou endereco no texto: o PubliBot poe o link no lugar certo.\n"
     "- Nao comece com 'Voce sabia' nem repetindo o titulo do artigo.\n"
     "- Escreva para o PUBLICO desta conta, no TOM pedido, seguindo a ABORDAGEM.\n"
-    "- Respeite as REGRAS QUE NUNCA SE QUEBRAM e as instrucoes do negocio.\n\n"
+    "- Respeite as REGRAS QUE NUNCA SE QUEBRAM e as instrucoes do negocio.\n"
+    "- Se o negocio atende numa REGIAO, traga o lugar para perto do leitor em ao menos "
+    "um ponto do post (o gancho, uma lamina ou a chamada: 'aqui em <a cidade>'), e uma "
+    "hashtag do lugar, se houver hashtag. Sem inventar dado local: numero do lugar, so "
+    "se estiver no MATERIAL.\n\n"
     "Responda SOMENTE com um objeto JSON:\n{campos}"
 )
 
@@ -63,6 +67,7 @@ _USUARIO = (
     "REGRAS QUE NUNCA SE QUEBRAM: {regras}\n"
     "Limites: {limites}\n"
     "Idioma: {idioma}\n"
+    "REGIAO onde o negocio atende: {regiao}\n"
     "{ajuste}\n"
     "Produza o JSON."
 )
@@ -81,6 +86,7 @@ VARIAVEIS = [
     "regras",
     "limites",
     "idioma",
+    "regiao",
     "ajuste",
 ]
 

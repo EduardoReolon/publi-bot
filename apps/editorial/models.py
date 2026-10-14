@@ -164,6 +164,16 @@ class PerfilDoNegocio(models.Model):
             "custos e diz se voce pagou caro'."
         ),
     )
+    onde_atende = models.CharField(
+        _("onde atende"),
+        max_length=200,
+        blank=True,
+        help_text=_(
+            "Como o cliente diria. Ex.: 'Curitiba e regiao metropolitana'. Os posts das "
+            "redes trazem o lugar para perto do leitor. Vazio: as regioes do Radar (ou o "
+            "pais, e ai os posts nao falam de lugar)."
+        ),
+    )
     frentes = models.TextField(
         _("frentes validadas"),
         blank=True,

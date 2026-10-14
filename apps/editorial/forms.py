@@ -148,7 +148,7 @@ class PerfilDoNegocioForm(forms.ModelForm):
 
     class Meta:
         model = PerfilDoNegocio
-        fields = ["tema", "publico", "oferta", "frentes", "nichos_de_dados"]
+        fields = ["tema", "publico", "oferta", "onde_atende", "frentes", "nichos_de_dados"]
         widgets = {
             "oferta": forms.Textarea(attrs={"rows": 3}),
             "frentes": forms.Textarea(attrs={"rows": 4}),
