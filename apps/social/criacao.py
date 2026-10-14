@@ -51,6 +51,12 @@ REGRAS:
 - Nada de link ou endereco no texto: o sistema poe o link no lugar certo.
 - Nao comece com 'Voce sabia' nem repetindo o titulo do artigo.
 - Respeite as REGRAS QUE NUNCA SE QUEBRAM e as instrucoes do negocio.
+- Deixe claro, numa frase simples (a penultima lamina ou o fim da legenda), o
+  que o negocio faz por essa dor (a OFERTA abaixo), como quem explica e nao como
+  anuncio: sem preco, sem promessa de resultado.
+- Se o negocio atende numa REGIAO, traga o lugar para perto do leitor em ao menos
+  um ponto (o gancho, uma lamina ou a chamada: "aqui em <a cidade>") e, se houver
+  hashtag, uma do lugar.
 
 Converse antes, se algo nao estiver claro. Quando eu pedir ("pode gerar"),
 responda SO nos blocos abaixo e termine com FIM (a resposta volta para o
@@ -84,6 +90,8 @@ ninguem, e sem alarmismo: a dor mostrada ganha o caminho que o artigo da):
 PUBLICO: {publico}
 TOM: {tom}
 ABORDAGEM: {abordagem}
+OFERTA do negocio (o que ele faz): {oferta}
+REGIAO onde atende: {regiao}
 Instrucoes do negocio: {instrucoes_do_negocio}
 REGRAS QUE NUNCA SE QUEBRAM: {regras}
 Idioma: {idioma}
@@ -171,6 +179,8 @@ def pedido(post: Post, *, na_tela: bool = False) -> str:
         instrucoes_do_negocio=v["instrucoes"],
         regras=v["regras"],
         idioma=v["idioma"],
+        oferta=v["oferta"],
+        regiao=v["regiao"],
     )
 
 

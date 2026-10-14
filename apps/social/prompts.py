@@ -49,6 +49,9 @@ _SISTEMA = (
     "DORES sao reais: use o jeito de dizer, sem copiar nome nem detalhe de ninguem). A "
     "pessoa precisa se reconhecer no gancho; o dado e a saida do artigo vem depois. Sem "
     "alarmismo: toda dor mostrada ganha, no mesmo post, o caminho que o artigo da.\n"
+    "- Deixe claro, numa frase simples (a penultima lamina ou o fim da legenda), o que o "
+    "negocio faz por essa dor (a OFERTA), como quem explica e nao como anuncio: sem preco, "
+    "sem promessa de resultado.\n"
     "- Se o negocio atende numa REGIAO, traga o lugar para perto do leitor em ao menos "
     "um ponto do post (o gancho, uma lamina ou a chamada: 'aqui em <a cidade>'), e uma "
     "hashtag do lugar, se houver hashtag. Sem inventar dado local: numero do lugar, so "
@@ -73,6 +76,7 @@ _USUARIO = (
     "Limites: {limites}\n"
     "Idioma: {idioma}\n"
     "REGIAO onde o negocio atende: {regiao}\n"
+    "OFERTA do negocio (o que ele faz): {oferta}\n"
     "{ajuste}\n"
     "Produza o JSON."
 )
@@ -92,6 +96,7 @@ VARIAVEIS = [
     "limites",
     "idioma",
     "regiao",
+    "oferta",
     "ajuste",
 ]
 

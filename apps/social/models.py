@@ -172,6 +172,11 @@ class Destino(models.Model):
         _("video"), max_length=12, choices=Video.choices, default=Video.SUGERIR
     )
 
+    class Local(models.TextChoices):
+        SEMPRE = "sempre", _("Em todo post")
+        ALTERNAR = "alternar", _("Um post sim, outro nao")
+        NUNCA = "nunca", _("Nunca")
+
     class Escritor(models.TextChoices):
         LOCAL = "local", _("O modelo do PubliBot (o da placa)")
         OUTRA_IA = "outra_ia", _("Uma IA grande, por API (Claude, ChatGPT, Gemini)")
@@ -188,6 +193,20 @@ class Destino(models.Model):
             "A IA grande escreve melhor para publico nao tecnico; precisa de uma API cadastrada "
             "(manage.py configurar_api anthropic, openai ou gemini). Sem ela, escreve o modelo "
             "do PubliBot."
+        ),
+    )
+    # Onde o negocio atende (tela Negocio) no texto do post. Quem atende numa
+    # cidade quase sempre ganha com "aqui em Curitiba"; quem nao quer o lugar
+    # nos posts (ou nao em todos) escolhe aqui.
+    local_nos_posts = models.CharField(
+        _("citar onde atende"),
+        max_length=10,
+        choices=Local.choices,
+        default=Local.SEMPRE,
+        blank=True,  # vazio (formulario antigo) vale como "sempre"
+        help_text=_(
+            "O lugar de 'Onde atende' (tela Negocio) no post: o texto traz o lugar e, se nao "
+            "trouxer, entra uma linha com ele no fim da legenda."
         ),
     )
     voz = models.CharField(

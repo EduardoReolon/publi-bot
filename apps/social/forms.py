@@ -45,6 +45,7 @@ class DestinoForm(forms.ModelForm):
             "ligado",
             "aprovacao",
             "escritor",
+            "local_nos_posts",
             "teto_semanal",
             "fotos_por_cento",
             "publico",
