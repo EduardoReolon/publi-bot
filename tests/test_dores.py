@@ -106,3 +106,24 @@ def test_artigo_recebe_as_dores_da_pauta(radar, settings):  # noqa: F811
     )
     dores.recalcular(dor)
     assert dores_do_artigo(artigo) == "- acordar cansado — “Eu acordo cansado sempre”"
+
+
+@pytest.mark.django_db
+def test_tela_mostra_as_digitadas_sem_esperar_rodada(
+    ambiente,  # noqa: F811
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.radar import tasks
+
+    agrupados = []
+    monkeypatch.setattr(tasks.agrupar_dores, "delay", lambda: agrupados.append(1))
+    _, _, client = ambiente
+    config = ConfiguracaoDoRadar.carregar()
+    config.dores = "equipe desmotivada\nclientes somem depois da primeira compra"
+    config.save()
+    with django_capture_on_commit_callbacks(execute=True):
+        pagina = client.get(reverse("radar:dores", urlconf=U)).content.decode()
+    assert "equipe desmotivada" in pagina and "clientes somem" in pagina
+    assert "Nenhuma dor ainda" not in pagina
+    assert agrupados  # o vetor das digitadas vem em segundo plano
