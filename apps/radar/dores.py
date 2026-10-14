@@ -11,9 +11,22 @@ tema e conta frequencia e emocao). Aqui isso vira dado:
   frustracao, medo, mais os intensificadores).
 * **Dor** — as falas que dizem o mesmo problema, juntas por embedding, do
   jeito do agrupamento dos sinais (incremental: uma dor que ja foi usada nao
-  muda de nome). As dores digitadas na Configuracao do Radar entram como
-  sementes: funcionam no primeiro dia, antes de existir fala colhida, e as
-  falas parecidas se juntam a elas.
+  muda de nome). As dores digitadas na Configuracao do Radar (ou trazidas
+  pela outra IA) entram como **hipoteses**: funcionam no primeiro dia, antes
+  de existir fala colhida, e as falas parecidas se juntam a elas.
+
+Achismo e evidencia, lado a lado (`situacao`):
+
+* hipotese **confirmada** — digitada, e o publico disse (CONFIRMA falas);
+* **descoberta** — nasceu das falas, sem hipotese: o que o achismo nao previa.
+  Se parecer com uma hipotese, a tela oferece juntar as duas;
+* **hipotese** — digitada, ainda sem fala: vale (nem toda dor e dita), com
+  peso menor;
+* **sem evidencia** — hipotese que, com o banco ja cheio de falas e o tempo
+  passando, ninguem disse. Continua valendo, com peso bem menor, e a tela
+  sugere descartar;
+* **descartada** — sai dos posts e artigos e da caixa de texto, mas fica
+  guardada: digitar de novo (ou a IA sugerir) mostra o aviso.
 
 Quem usa: o post de cada rede prefere as falas da propria rede (o Instagram
 fala diferente do Google), e cai nas outras enquanto a rede ainda nao tem
@@ -40,6 +53,14 @@ MINIMO, MAXIMO = 15, 600
 DISTANCIA_DA_DOR = 0.13
 # Uma dor so vale para um texto (post, pauta) se estiver ao menos tao perto.
 DISTANCIA_PARA_USAR = 0.22
+# Descoberta tao perto de uma hipotese: "parece a mesma", a tela oferece juntar.
+DISTANCIA_PARECIDA = 0.22
+# Falas para a hipotese contar como confirmada.
+CONFIRMA = 2
+# Hipotese sem fala vira "sem evidencia" so com o banco ja cheio e o tempo
+# passado: antes disso, a falta de fala e falta de coleta, e nao de dor.
+FALAS_NO_BANCO = 30
+DIAS_SEM_EVIDENCIA = 45
 
 # Sofrimento, frustracao, medo, perda, esforco que nao deu certo. Sem acento.
 _DOR = re.compile(
@@ -152,6 +173,9 @@ def semear_digitadas(*, com_vetores: bool = True) -> None:
     na_config = {normalizar(d) for d in digitadas}
     existentes = set()
     for dor in DorDoPublico.objects.filter(digitada=True):
+        if dor.descartada:  # guardada para o aviso, e nao renasce
+            existentes.add(normalizar(dor.rotulo))
+            continue
         if normalizar(dor.rotulo) in na_config:
             existentes.add(normalizar(dor.rotulo))
         elif dor.falas_total:  # tirada da lista, mas com falas: fica, como colhida
@@ -163,7 +187,9 @@ def semear_digitadas(*, com_vetores: bool = True) -> None:
         if normalizar(rotulo) not in existentes:
             existentes.add(normalizar(rotulo))
             DorDoPublico.objects.create(rotulo=rotulo[:300], digitada=True, nota=0.5)
-    sem_vetor = list(DorDoPublico.objects.filter(digitada=True, centroide__isnull=True))
+    sem_vetor = list(
+        DorDoPublico.objects.filter(digitada=True, descartada=False, centroide__isnull=True)
+    )
     if not com_vetores or not sem_vetor:
         return
     for dor, vetor in zip(sem_vetor, _vetores([d.rotulo for d in sem_vetor]), strict=True):
@@ -179,6 +205,7 @@ def agrupar() -> int:
     try:
         semear_digitadas()
         if not soltas:
+            ligar_as_parecidas()
             return 0
         vetores = _vetores([f.texto for f in soltas])
     except Exception as exc:
@@ -209,7 +236,112 @@ def agrupar() -> int:
         tocadas[dor.pk] = dor
     for dor in tocadas.values():
         recalcular(dor)
+    ligar_as_parecidas()
     return len(soltas)
+
+
+def ligar_as_parecidas() -> int:
+    """Cada descoberta perto de uma hipotese ganha o `parecida_com`: a tela
+    oferece juntar (a hipotese recebe as falas). Nao junta sozinho: "equipe
+    desmotivada" e "ninguem quer vir trabalhar" podem ser a mesma dor ou nao,
+    e quem conhece o publico decide."""
+    hipoteses = [
+        (h, np.asarray(h.centroide, dtype=np.float32))
+        for h in DorDoPublico.objects.filter(digitada=True, descartada=False).exclude(
+            centroide__isnull=True
+        )
+    ]
+    ligadas = 0
+    for dor in DorDoPublico.objects.filter(digitada=False, descartada=False).exclude(
+        centroide__isnull=True
+    ):
+        v = np.asarray(dor.centroide, dtype=np.float32)
+        melhor, distancia = None, 2.0
+        for h, c in hipoteses:
+            if str(h.pk) in dor.nao_e:
+                continue
+            d = 1.0 - float(v @ c / ((np.linalg.norm(v) * np.linalg.norm(c)) + 1e-9))
+            if d < distancia:
+                melhor, distancia = h, d
+        parecida = melhor if melhor is not None and distancia <= DISTANCIA_PARECIDA else None
+        if (parecida.pk if parecida else None) != dor.parecida_com_id:
+            dor.parecida_com = parecida
+            dor.save(update_fields=["parecida_com", "atualizada_em"])
+        ligadas += parecida is not None
+    return ligadas
+
+
+def juntar(descoberta: DorDoPublico, hipotese: DorDoPublico) -> None:
+    """A descoberta entra na hipotese: as falas passam para ela (que fica
+    confirmada com as palavras do publico), e a descoberta deixa de existir."""
+    descoberta.falas.update(dor=hipotese)
+    if descoberta.centroide is not None and hipotese.centroide is not None:
+        a = np.asarray(hipotese.centroide, dtype=np.float32)
+        b = np.asarray(descoberta.centroide, dtype=np.float32)
+        hipotese.centroide = ((a + b) / 2).tolist()
+    descoberta.parecidas.update(parecida_com=None)
+    descoberta.delete()
+    recalcular(hipotese)
+
+
+def descartar(dor: DorDoPublico) -> None:
+    """Fora dos posts e artigos e da caixa de texto da Configuracao, mas
+    guardada (com a data) para o aviso se ela voltar."""
+    from django.utils import timezone
+
+    dor.descartada, dor.descartada_em = True, timezone.now()
+    dor.save(update_fields=["descartada", "descartada_em", "atualizada_em"])
+    if dor.digitada:
+        config = ConfiguracaoDoRadar.carregar()
+        alvo = normalizar(dor.rotulo)
+        config.dores = "\n".join(d for d in config.lista_de_dores if normalizar(d) != alvo)
+        config.save(update_fields=["dores"])
+
+
+def reativar(dor: DorDoPublico) -> None:
+    """Volta a valer; a digitada volta para a caixa de texto."""
+    dor.descartada, dor.descartada_em = False, None
+    dor.save(update_fields=["descartada", "descartada_em", "atualizada_em"])
+    if dor.digitada:
+        config = ConfiguracaoDoRadar.carregar()
+        if normalizar(dor.rotulo) not in {normalizar(d) for d in config.lista_de_dores}:
+            config.dores = (config.dores.rstrip() + "\n" + dor.rotulo).strip()
+            config.save(update_fields=["dores"])
+
+
+def descartadas() -> dict[str, DorDoPublico]:
+    """Texto normalizado -> dor descartada: para avisar quando ela volta."""
+    return {normalizar(d.rotulo): d for d in DorDoPublico.objects.filter(descartada=True)}
+
+
+def situacao(dor: DorDoPublico, *, falas_no_banco: int | None = None) -> str:
+    """Confirmada, descoberta, hipotese, sem evidencia ou descartada (ver o topo)."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    S = DorDoPublico.Situacao
+    if dor.descartada:
+        return S.DESCARTADA
+    if not dor.digitada:
+        return S.DESCOBERTA
+    if dor.falas_total >= CONFIRMA:
+        return S.CONFIRMADA
+    if dor.falas_total == 0 and dor.criada_em:
+        if falas_no_banco is None:
+            falas_no_banco = FalaDoPublico.objects.count()
+        velha = timezone.now() - dor.criada_em > timedelta(days=DIAS_SEM_EVIDENCIA)
+        if velha and falas_no_banco >= FALAS_NO_BANCO:
+            return S.SEM_EVIDENCIA
+    return S.HIPOTESE
+
+
+def peso(dor: DorDoPublico, *, falas_no_banco: int | None = None) -> float:
+    """A nota para escolher e ordenar: a hipotese sem evidencia pesa bem
+    menos que a que ainda espera coleta (que pesa menos que a confirmada)."""
+    if situacao(dor, falas_no_banco=falas_no_banco) == DorDoPublico.Situacao.SEM_EVIDENCIA:
+        return 0.15
+    return dor.nota
 
 
 def nota(falas: int, media: float, fontes: int, *, digitada: bool) -> float:
@@ -264,8 +396,11 @@ def dores_para(texto: str, *, rede: str = "", quantas: int = 3, falas: int = 2) 
             perto = [
                 (float(distancias[i]), d) for i, d in enumerate(dores) if distancias[i] <= limite
             ]
-            # Mais perto primeiro; entre as parecidas (0,02), a de nota maior.
-            perto.sort(key=lambda par: (round(par[0] / 0.02), -par[1].nota))
+            # Mais perto primeiro; entre as parecidas (0,02), a de peso maior.
+            no_banco = FalaDoPublico.objects.count()
+            perto.sort(
+                key=lambda par: (round(par[0] / 0.02), -peso(par[1], falas_no_banco=no_banco))
+            )
             escolhidas = [d for _dist, d in perto[:quantas]]
     if not escolhidas:
         return [
@@ -286,6 +421,9 @@ def em_linhas(dores: list[dict]) -> list[str]:
 
 def principais(quantas: int = 20) -> list[DorDoPublico]:
     """Para a tela: as dores com mais evidencia."""
-    return list(
-        DorDoPublico.objects.filter(descartada=False).order_by("-nota", "-falas_total")[:quantas]
-    )
+    no_banco = FalaDoPublico.objects.count()
+    dores = list(DorDoPublico.objects.filter(descartada=False).select_related("parecida_com"))
+    dores.sort(key=lambda d: (-peso(d, falas_no_banco=no_banco), -d.falas_total))
+    for dor in dores:
+        dor.situacao_atual = situacao(dor, falas_no_banco=no_banco)
+    return dores[:quantas]

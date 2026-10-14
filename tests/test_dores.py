@@ -87,7 +87,9 @@ def test_tela_das_dores_anota_e_descarta(ambiente, monkeypatch):  # noqa: F811
     assert "sair da consulta sem entender" in pagina and "Toda consulta eu saio" in pagina
     client.post(url, {"acao": "descartar", "dor": str(dor.pk)})
     dor.refresh_from_db()
-    assert dor.descartada
+    assert dor.descartada and dor.descartada_em
+    pagina = client.get(reverse("radar:dores", urlconf=U)).content.decode()
+    assert "Descartadas" in pagina and "Reativar" in pagina
 
 
 @pytest.mark.django_db
@@ -127,3 +129,66 @@ def test_tela_mostra_as_digitadas_sem_esperar_rodada(
     assert "equipe desmotivada" in pagina and "clientes somem" in pagina
     assert "Nenhuma dor ainda" not in pagina
     assert agrupados  # o vetor das digitadas vem em segundo plano
+
+
+@pytest.mark.django_db
+def test_hipotese_evidencia_e_descarte_que_nao_volta_escondido(radar, settings):  # noqa: F811
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.radar.models import SementeSugerida
+    from apps.radar.sugestoes import _registrar
+
+    settings.RADAR_DISTANCIA_DA_DOR = 0.3
+    S = DorDoPublico.Situacao
+    config = ConfiguracaoDoRadar.carregar()
+    config.dores = "equipe desmotivada no trabalho\nclientes somem depois da compra"
+    config.save()
+    dores.semear_digitadas()
+    equipe = DorDoPublico.objects.get(rotulo__startswith="equipe")
+    assert equipe.situacao == S.HIPOTESE
+
+    # Uma descoberta parecida: a tela oferece juntar, e juntar confirma.
+    descoberta = DorDoPublico.objects.create(
+        rotulo="ninguem quer vir trabalhar",
+        centroide=dores._vetores(["equipe desmotivada no trabalho hoje"])[0].tolist(),
+    )
+    for i, texto in enumerate(["A equipe toda desmotivada, sofro", "Equipe desmotivada demais"]):
+        FalaDoPublico.objects.create(
+            texto=texto, chave=str(i), fonte="youtube", tipo="desabafo", dor=descoberta
+        )
+    dores.recalcular(descoberta)
+    assert descoberta.situacao == S.DESCOBERTA
+    assert dores.ligar_as_parecidas() == 1
+    descoberta.refresh_from_db()
+    assert descoberta.parecida_com == equipe
+    dores.juntar(descoberta, equipe)
+    equipe.refresh_from_db()
+    assert equipe.falas_total == 2 and equipe.situacao == S.CONFIRMADA
+
+    # Hipotese que ninguem disse, com banco cheio e tempo passado: sem evidencia.
+    clientes = DorDoPublico.objects.get(rotulo__startswith="clientes")
+    DorDoPublico.objects.filter(pk=clientes.pk).update(
+        criada_em=timezone.now() - timedelta(days=dores.DIAS_SEM_EVIDENCIA + 1)
+    )
+    clientes.refresh_from_db()
+    assert dores.situacao(clientes, falas_no_banco=5) == S.HIPOTESE  # pouca coleta ainda
+    assert dores.situacao(clientes, falas_no_banco=dores.FALAS_NO_BANCO) == S.SEM_EVIDENCIA
+    assert dores.peso(clientes, falas_no_banco=dores.FALAS_NO_BANCO) < 0.5
+
+    # Descartar tira da caixa de texto, mas guarda; digitar de novo nao ressuscita,
+    # e a IA nao sugere de novo.
+    dores.descartar(clientes)
+    config.refresh_from_db()
+    assert config.lista_de_dores == ["equipe desmotivada no trabalho"]
+    config.dores += "\nclientes somem depois da compra"
+    config.save()
+    dores.semear_digitadas()
+    clientes.refresh_from_db()
+    assert clientes.descartada
+    assert DorDoPublico.objects.filter(rotulo__startswith="clientes").count() == 1
+    assert _registrar("Clientes somem depois da compra", SementeSugerida.Tipo.DOR, "modelo") is None
+    dores.reativar(clientes)
+    clientes.refresh_from_db()
+    assert not clientes.descartada

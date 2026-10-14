@@ -136,6 +136,12 @@ def _registrar(texto: str, tipo: str, origem: str, **evidencia) -> SementeSugeri
     chave = normalizar(texto)
     if chave in {normalizar(a) for a in atuais}:
         return None
+    if tipo != SementeSugerida.Tipo.SEMENTE:
+        from apps.radar.dores import descartadas
+        from apps.radar.dores import normalizar as sem_acento
+
+        if sem_acento(texto) in descartadas():  # ja descartada: nao volta sugerida
+            return None
     sugestao, criada = SementeSugerida.objects.get_or_create(
         chave=chave,
         tipo=tipo,

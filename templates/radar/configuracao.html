@@ -26,6 +26,8 @@
                 <br><strong>{% translate "Proxima rodada busca:" %}</strong>
                 {{ proxima_rodada.sementes|join:"; "|default:"-" }}
                 {% if proxima_rodada.dores %}<br><strong>{% translate "e as dores:" %}</strong> {{ proxima_rodada.dores|join:"; " }}{% endif %}
+                <br>{% translate "Estas sao hipoteses: o que voce (ou a outra IA) supoe. Quais o publico confirmou, quais ele trouxe sem ninguem supor e quais ninguem disse estao em" %}
+                <a href="{% url 'radar:dores' %}">{% translate "Dores do publico" %}</a>.
               </div>
             {% endif %}
           {% endfor %}
