@@ -189,7 +189,7 @@ def fontes_da_pauta(topic, *, fluxo: str = "") -> list:
     return so_os_curados(trechos)
 
 
-def montar_contexto_das_fontes(trechos) -> str:
+def montar_contexto_das_fontes(trechos, ja_citadas: dict | None = None) -> str:
     """Monta o bloco de fontes para o prompt, com delimitadores explicitos.
 
     Conteudo nao confiavel (texto vindo de um PDF de terceiro) fica SEMPRE
@@ -197,18 +197,23 @@ def montar_contexto_das_fontes(trechos) -> str:
     analisar, nunca instrucao a obedecer. Um PDF pode conter texto invisivel —
     fonte branca sobre branco, tamanho zero — que o extrator le normalmente e o
     curador nao ve.
+
+    `ja_citadas`: id do trecho -> titulo da secao anterior que ja o citou (ver
+    `fontes_ja_citadas`); o trecho ganha o aviso de nao recontar o mesmo dado.
     """
     partes = []
     for i, t in enumerate(trechos, start=1):
         chunk = t.chunk if hasattr(t, "chunk") else t
+        citada_em = (ja_citadas or {}).get(str(getattr(chunk, "pk", "")))
         partes.append(
             f'<fonte numero="{i}" autores="{chunk.source_authors}" '
-            f'ano="{chunk.source_year or ""}"{_uso_da_fonte(chunk)}>\n{chunk.content}\n</fonte>'
+            f'ano="{chunk.source_year or ""}"{_uso_da_fonte(chunk, citada_em)}>\n'
+            f"{chunk.content}\n</fonte>"
         )
     return "\n\n".join(partes)
 
 
-def _uso_da_fonte(chunk) -> str:
+def _uso_da_fonte(chunk, citada_em: str | None = None) -> str:
     """O que o modelo precisa saber sobre COMO usar esta fonte.
 
     Vai como atributo da tag, e nao como instrucao do prompt, porque vale por
@@ -224,6 +229,12 @@ def _uso_da_fonte(chunk) -> str:
         avisos.append("fonte primaria: prefira-a para sustentar a ideia central")
     if getattr(chunk, "citation_mode", "link") == "interna":
         avisos.append("citacao interna: ponha o marcador so no fim da frase, sem 'segundo'")
+    if citada_em:
+        titulo = citada_em.replace('"', "'")[:80]
+        avisos.append(
+            f"ja citada na secao '{titulo}': use so o que ela ainda nao disse, "
+            "nunca o mesmo dado de novo"
+        )
     return f' uso="{"; ".join(avisos)}"' if avisos else ""
 
 
@@ -1040,6 +1051,8 @@ def esqueleto_do_artigo(article: Article, *, exceto=None) -> str:
 
 # Quantas frases das secoes anteriores a secao recebe para nao repetir.
 FRASES_JA_ESCRITAS = 6
+# Quantos fatos (frase com numero ou com fonte citada) ja usados ela recebe.
+FATOS_JA_USADOS = 12
 
 
 def _centralidade(vetores, *, amortecimento: float = 0.85, voltas: int = 30):
@@ -1114,6 +1127,13 @@ def ja_escrito(article: Article, secao) -> str:
         except Exception as exc:  # sem vetores, so as aberturas
             logger.info("Ja escrito sem vetores (%s): so as aberturas.", exc)
     linhas = [f"- {f[:220]}" for f in escolhidas[:FRASES_JA_ESCRITAS]]
+    fatos = _fatos_ja_usados(anteriores, fora=set(escolhidas[:FRASES_JA_ESCRITAS]))
+    if fatos:
+        linhas.append(
+            "Fatos e dados ja usados (NAO reconte nenhum; se precisar, so remeta a eles "
+            "em poucas palavras):"
+        )
+        linhas += [f"- {f[:160]}" for f in fatos]
     repetidas = expressoes_repetidas("\n".join(s.body_markdown for s in anteriores))
     aviso = ""
     if repetidas:
@@ -1125,6 +1145,50 @@ def ja_escrito(article: Article, secao) -> str:
         "formulas, e NAO comece a secao reapresentando o tema: entre direto no que "
         "so esta secao traz.\n" + "\n".join(linhas) + aviso
     )
+
+
+def _fatos_ja_usados(anteriores, *, fora: set) -> list[str]:
+    """As frases das secoes anteriores que carregam um fato: as com numero ou
+    com fonte citada. Sao elas que o modelo pequeno reconta com outras
+    palavras, porque as poucas frases de `ja_escrito` nao as mostram todas.
+    Sem modelo: o numero e o marcador ja dizem onde esta o fato. As mais
+    recentes ficam, quando passa de FATOS_JA_USADOS."""
+    import re
+
+    from apps.content.chamada import tirar_marcas
+    from apps.content.rendering import PADRAO_MARCADOR
+
+    fatos = []
+    for anterior in anteriores:
+        texto = tirar_marcas(anterior.body_markdown or "")
+        for frase in re.split(r"(?<=[.!?])\s+|\n+", texto):
+            if not (PADRAO_MARCADOR.search(frase) or re.search(r"\d", frase)):
+                continue
+            limpa = re.sub(r"\[\[[^\]]*\]\]|\[([^\]]*)\]\([^)]*\)", r"\1", frase)
+            limpa = re.sub(r"^[#>*\-\s]+", "", limpa).strip()
+            if len(limpa.split()) >= 5 and limpa not in fora and limpa not in fatos:
+                fatos.append(limpa)
+    return fatos[-FATOS_JA_USADOS:]
+
+
+def fontes_ja_citadas(article: Article, secao) -> dict[str, str]:
+    """Id do trecho -> titulo da primeira secao anterior que o citou.
+
+    Secoes diferentes recebem trechos em comum no plano, e o modelo pequeno
+    reconta o mesmo dado em cada uma. O marcador [[FONTE_N]] da secao anterior
+    aponta para o N-esimo trecho DELA (`chunk_ids`)."""
+    from apps.content.rendering import PADRAO_MARCADOR
+
+    citadas: dict[str, str] = {}
+    for anterior in article.sections.all():
+        if anterior.order >= secao.order or not (anterior.body_markdown or "").strip():
+            continue
+        ids = list(anterior.chunk_ids or [])
+        for n in PADRAO_MARCADOR.findall(anterior.body_markdown):
+            i = int(n) - 1
+            if 0 <= i < len(ids):
+                citadas.setdefault(str(ids[i]), anterior.heading)
+    return citadas
 
 
 def montar_markdown_das_secoes(article: Article) -> str:
