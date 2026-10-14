@@ -133,6 +133,7 @@ def _variaveis(post: Post, artigo, mat: dict, ajuste: str) -> dict:
         "regras": config.regras or "(nenhuma)",
         "limites": _limites(r),
         "idioma": negocio.get("idioma") or "pt-BR",
+        "regiao": negocio.get("local") or "(o pais inteiro: nao fale de lugar)",
         "ajuste": ajuste,
     }
 

@@ -140,6 +140,12 @@ def negocio() -> dict:
         nome = str(regiao.get("nome") or "").split(",")[0].strip()
         if nome:
             regioes.append(nome)
+    # O que a pessoa escreveu no Negocio vale mais que as regioes do Radar (que
+    # dizem de onde vem o volume de busca, nao como o cliente chama o lugar).
+    onde = (getattr(perfil, "onde_atende", "") or "").strip()
+    local = onde or ", ".join(regioes[:3])
+    if onde and onde not in regioes:
+        regioes.insert(0, onde)
     if not regioes:  # nenhuma regiao no Radar: o pais inteiro
         regioes = [_nome_do_pais(radar.codigo_de_local)]
     return {
@@ -148,6 +154,8 @@ def negocio() -> dict:
         "oferta": getattr(perfil, "oferta", "") or "",
         "dores": radar.lista_de_dores,
         "regioes": regioes,
+        # Vazio quando o negocio atende o pais inteiro: o post nao fala de lugar.
+        "local": local,
         "idioma": getattr(site(), "content_language", "") or "pt-BR",
     }
 
