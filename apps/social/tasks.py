@@ -347,3 +347,21 @@ def descrever_fotos(schema: str) -> int:
 
     with schema_context(schema):
         return descrever_pendentes()
+
+
+@shared_task
+def preparar_material(post_id: str, trabalho: str | None = None) -> str:
+    """O material completo (com vetores) do post que ainda nao tem, para a tela
+    da outra IA nao vetorizar dentro da requisicao (ver criacao)."""
+    from apps.social import fontes
+    from apps.social.models import Post
+    from apps.social.redacao import artigo_e_material
+
+    with fontes.acompanhar(trabalho):
+        post = Post.objects.select_related("destino").filter(pk=post_id).first()
+        if post is None or post.material:
+            return "nada a fazer"
+        _artigo, mat = artigo_e_material(post)
+        if mat:
+            Post.objects.filter(pk=post.pk, material={}).update(material=mat)
+        return "pronto"

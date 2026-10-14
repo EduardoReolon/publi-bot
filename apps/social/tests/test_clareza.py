@@ -270,3 +270,36 @@ def test_pedido_da_outra_ia_usa_o_material_ja_guardado(ambiente, modulo, monkeyp
     resposta = client.get(url)
     assert resposta.status_code == 200
     assert "A anemia responde por 12,5% dos casos." in resposta.content.decode()
+
+
+@pytest.mark.django_db
+def test_post_sem_material_abre_a_tela_sem_vetorizar(ambiente, modulo, monkeypatch):  # noqa: F811
+    """Post ainda nao escrito: a tela sai pelo caminho rapido, e o material
+    completo vai para a fila (uma vez so)."""
+    from apps.social import tasks
+
+    _, _, client = ambiente
+
+    def sem_vetores(*_a, **_k):
+        raise AssertionError("vetorizou dentro da requisicao")
+
+    fila = []
+    monkeypatch.setattr(fontes, "vetores", sem_vetores)
+    monkeypatch.setattr(tasks.preparar_material, "delay", lambda pk, **_kw: fila.append(pk))
+    post = Post.objects.create(
+        destino=_destino("instagram"),
+        artigo_id=ARTIGO.id,
+        artigo_titulo=ARTIGO.titulo,
+        motivo=Post.Motivo.NOVO,
+        situacao=Post.Situacao.SUGERIDO,
+    )
+    url = reverse("social:post_pela_outra_ia", args=[post.pk], urlconf=U)
+    assert client.get(url).status_code == 200
+    assert "Em um estudo com 2.300 adultos" in client.get(url).content.decode()
+    assert fila == [str(post.pk)]
+
+    # Na fila (fora da requisicao), com vetores: o material completo fica no post.
+    monkeypatch.setattr(fontes, "vetores", lambda t, consulta=False: [[1.0, 0.0] for _ in t])
+    tasks.preparar_material(str(post.pk))
+    post.refresh_from_db()
+    assert post.material["achados"]

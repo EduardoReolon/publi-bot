@@ -105,11 +105,27 @@ IMAGENS_DEPOIS = (
 MATERIAL_VAZIO = redacao.MATERIAL_VAZIO
 
 
-def _artigo_e_material(post: Post):
+def _artigo_e_material(post: Post, *, na_tela: bool = False):
     """O material, como a nossa IA recebe; sem os vetores agora (placa
-    desligada), so o resumo e as secoes — o pedido sai do mesmo jeito."""
+    desligada), so o resumo e as secoes — o pedido sai do mesmo jeito.
+
+    `na_tela`: dentro de uma requisicao. Post ainda sem material guardado sai
+    pelo caminho rapido (sem vetorizar o artigo, que passava do prazo e dava
+    502), e o material completo e preparado em segundo plano para a proxima
+    vez."""
     try:
-        return redacao.artigo_e_material(post, guardado=True)
+        if na_tela and not post.material:
+            from django.core.cache import cache
+
+            from apps.social import fontes
+            from apps.social.tasks import preparar_material
+
+            # Abrir a tela de novo enquanto prepara nao enfileira outra vez.
+            if cache.add(f"social:material:{post.pk}", 1, timeout=600):
+                fontes.na_fila(
+                    preparar_material, str(post.pk), rotulo="Material do post", alvo=post.pk
+                )
+        return redacao.artigo_e_material(post, guardado=True, sem_vetores=na_tela)
     except Exception as exc:
         logger.info("Material do post %s sem vetores: %s", post.pk, exc)
         from apps.social import fontes, proprio
@@ -119,10 +135,10 @@ def _artigo_e_material(post: Post):
         return artigo, dict(MATERIAL_VAZIO)
 
 
-def pedido(post: Post) -> str:
+def pedido(post: Post, *, na_tela: bool = False) -> str:
     from apps.social.outra_ia import _estilo_visual
 
-    artigo, mat = _artigo_e_material(post)
+    artigo, mat = _artigo_e_material(post, na_tela=na_tela)
     if artigo is None:
         return ""
     r = rede(post.destino.rede)
@@ -200,13 +216,13 @@ def ler(resposta: str) -> tuple[dict, str]:
     return dados, blocos.get("COMENTARIOS", "").strip()
 
 
-def aplicar(post: Post, resposta: str) -> tuple[bool, list[str], str]:
+def aplicar(post: Post, resposta: str, *, na_tela: bool = False) -> tuple[bool, list[str], str]:
     """Le a resposta e grava como o texto do post (rascunho, para revisar).
     (aplicou, avisos da conferencia, comentarios da outra IA)."""
     dados, comentarios = ler(resposta)
     if not (dados["gancho"] or dados["texto"]):
         return False, [], comentarios
-    artigo, mat = _artigo_e_material(post)
+    artigo, mat = _artigo_e_material(post, na_tela=na_tela)
     if artigo is None:
         return False, ["o artigo nao existe mais"], comentarios
     texto, extras, avisos = redacao.montar_e_conferir(post, dados, artigo)

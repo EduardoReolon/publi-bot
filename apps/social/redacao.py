@@ -338,13 +338,14 @@ TENTATIVAS = 3
 MATERIAL_VAZIO = {"secoes": [], "identificacao": [], "achados": [], "dores": []}
 
 
-def artigo_e_material(post: Post, *, guardado: bool = False):
+def artigo_e_material(post: Post, *, guardado: bool = False, sem_vetores: bool = False):
     """(artigo, material) do post — do artigo, do tema ou do material proprio.
     (None, None) se o artigo nao existe mais.
 
     `guardado`: o material que o post ja recebeu ao ser escrito, se houver. A
     tela da outra IA usa: montar de novo vetoriza ate 200 frases dentro da
-    requisicao, e numa maquina pequena isso passa do prazo (502)."""
+    requisicao, e numa maquina pequena isso passa do prazo (502). `sem_vetores`:
+    sem material guardado, o caminho rapido (ver `material.montar`)."""
     from apps.social import proprio
 
     entrada = post.entrada if post.entrada_id else None
@@ -360,7 +361,10 @@ def artigo_e_material(post: Post, *, guardado: bool = False):
         return _do_tema(post.tema, artigo)
     r = rede(post.destino.rede)
     mat = material.montar(
-        artigo, publico=post.destino.publico or r.publico_padrao, negocio=fontes.negocio()
+        artigo,
+        publico=post.destino.publico or r.publico_padrao,
+        negocio=fontes.negocio(),
+        sem_vetores=sem_vetores,
     )
     return artigo, mat
 

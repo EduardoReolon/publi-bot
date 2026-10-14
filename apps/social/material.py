@@ -33,8 +33,13 @@ def _normalizados(vetores) -> np.ndarray:
     return v / (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
 
 
-def montar(artigo: fontes.ArtigoParaRedes, *, publico: str, negocio: dict) -> dict:
-    """{"identificacao": [...], "achados": [...], "dores": [...], "secoes": [...]}"""
+def montar(
+    artigo: fontes.ArtigoParaRedes, *, publico: str, negocio: dict, sem_vetores: bool = False
+) -> dict:
+    """{"identificacao": [...], "achados": [...], "dores": [...], "secoes": [...]}
+
+    `sem_vetores`: o caminho rapido (dentro de uma requisicao da tela): o comeco
+    de cada secao e as frases com numero, sem vetorizar o artigo."""
     frases = artigo.frases[:200]
     dores = [d for d in negocio.get("dores", []) if d][:15]
     secoes = [titulo for titulo, _texto in artigo.secoes]
@@ -43,6 +48,8 @@ def montar(artigo: fontes.ArtigoParaRedes, *, publico: str, negocio: dict) -> di
         return {"identificacao": [], "achados": [], "dores": dores[:3], "secoes": secoes}
 
     try:
+        if sem_vetores:
+            raise RuntimeError("caminho rapido, pedido pela tela")
         vf = _normalizados(fontes.vetores(frases))
         alvos = [a for a in [*dores, publico] if a]
         va = _normalizados(fontes.vetores(alvos, consulta=True)) if alvos else None
