@@ -1278,6 +1278,7 @@ class DorDoPublico(models.Model):
     # Fica guardado: digitar de novo (ou a IA sugerir de novo) uma dor que
     # voce ja descartou mostra o aviso, em vez de ela voltar escondida.
     descartada_em = models.DateTimeField(_("descartada em"), null=True, blank=True)
+    motivo_do_descarte = models.CharField(_("por que saiu"), max_length=200, blank=True)
     # A hipotese (digitada) mais parecida com esta dor descoberta: a tela
     # oferece juntar as duas — a hipotese ganha as falas, e a evidencia.
     parecida_com = models.ForeignKey(

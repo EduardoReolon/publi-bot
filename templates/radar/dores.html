@@ -37,6 +37,24 @@
   <p class="ajuda">{% translate "Sem nome nem detalhe que identifique a pessoa." %}</p>
 </section>
 
+{% if pedido_ia %}
+<details class="secao">
+  <summary><strong>{% translate "Revisar as descobertas com outra IA" %}</strong></summary>
+  <p class="ajuda">{% blocktranslate trimmed %}
+    O filtro de palavras acha frase com cara de dor, mas nao entende: agradecimento e elogio
+    ao video passam. Copie o pedido para o Claude, ChatGPT ou Gemini e cole a resposta: o que
+    nao for dor e descartado (com o motivo), o resto ganha um nome curto, e o que for a mesma
+    de uma hipotese sua e juntado a ela (que fica confirmada).
+  {% endblocktranslate %}</p>
+  <div class="acoes"><button type="button" class="botao pequeno" data-copiar="pedido-dores">{% translate "Copiar o pedido" %}</button></div>
+  <textarea id="pedido-dores" readonly rows="8" style="width:100%">{{ pedido_ia }}</textarea>
+  <form method="post" action="{% url 'radar:acao_nas_dores' %}" style="margin-top:.6rem">{% csrf_token %}
+    <textarea name="resposta" rows="6" style="width:100%" placeholder="{% translate 'Cole aqui a resposta inteira da outra IA' %}"></textarea>
+    <div class="acoes"><button type="submit" name="acao" value="resposta_ia" class="botao secundario pequeno">{% translate "Aplicar a resposta" %}</button></div>
+  </form>
+</details>
+{% endif %}
+
 {% for titulo, explica, lista in secoes %}{% if lista %}
   <h2 style="margin-top:1.2rem">{{ titulo }} <span class="contagem-aba">{{ lista|length }}</span></h2>
   <p class="ajuda">{{ explica }}</p>
@@ -79,7 +97,7 @@
     {% for dor in descartadas %}
       <div class="acoes" style="align-items:center">
         <span>{{ dor.rotulo|truncatechars:140 }}</span>
-        <span class="ajuda">{% translate "descartada em" %} {{ dor.descartada_em|date:"d/m/Y" }}{% if dor.falas_total %} · {% blocktranslate count n=dor.falas_total %}{{ n }} fala{% plural %}{{ n }} falas{% endblocktranslate %}{% endif %}</span>
+        <span class="ajuda">{% translate "descartada em" %} {{ dor.descartada_em|date:"d/m/Y" }}{% if dor.motivo_do_descarte %} · {{ dor.motivo_do_descarte|truncatechars:120 }}{% endif %}{% if dor.falas_total %} · {% blocktranslate count n=dor.falas_total %}{{ n }} fala{% plural %}{{ n }} falas{% endblocktranslate %}{% endif %}</span>
         {% if dor.de_volta %}<span class="selo alerta">{% translate "voce digitou de novo: ela continua descartada ate reativar" %}</span>{% endif %}
         <form method="post" action="{% url 'radar:acao_nas_dores' %}">{% csrf_token %}<input type="hidden" name="dor" value="{{ dor.pk }}">
           <button type="submit" name="acao" value="reativar" class="botao discreto pequeno">{% translate "Reativar" %}</button>

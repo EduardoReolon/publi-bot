@@ -192,3 +192,72 @@ def test_hipotese_evidencia_e_descarte_que_nao_volta_escondido(radar, settings):
     dores.reativar(clientes)
     clientes.refresh_from_db()
     assert not clientes.descartada
+
+
+def test_agradecimento_ao_video_nao_e_dor():
+    for texto in (
+        "Quero agradecer porque nunca consegui aprender ate ver esse video. Muito obrigada",
+        "Fiz um curso ha anos e esqueci tudo, e meu amigo, voce me ajudou demais",
+        "Estava procurando um video pra quem nao sabe nada. Gostei e aprendi, ganhou uma inscrita",
+    ):
+        assert dores.classificar(texto) == "", texto
+
+
+@pytest.mark.django_db
+def test_limpeza_e_revisao_pela_outra_ia(radar):  # noqa: F811
+    from apps.radar import dores_ia
+
+    config = ConfiguracaoDoRadar.carregar()
+    config.dores = "minha equipe perde muito tempo com trabalho manual"
+    config.save()
+    dores.semear_digitadas(com_vetores=False)
+    hipotese = DorDoPublico.objects.get(digitada=True)
+
+    gratidao = DorDoPublico.objects.create(rotulo="Fiz um curso profissional a muitos anos")
+    FalaDoPublico.objects.create(
+        texto="Nunca consegui aprender ate ver esse video, obrigada",
+        chave="g",
+        fonte="youtube",
+        tipo="desabafo",
+        dor=gratidao,
+    )
+    excel = DorDoPublico.objects.create(rotulo="Eu perco horas copiando planilha")
+    for i, texto in enumerate(
+        [
+            "Eu perco horas copiando planilha toda semana, cansada",
+            "Eu nao aguento mais digitar tudo a mao",
+        ]
+    ):
+        FalaDoPublico.objects.create(
+            texto=texto, chave=f"e{i}", fonte="youtube", tipo="desabafo", dor=excel
+        )
+    outra = DorDoPublico.objects.create(rotulo="Atendimento demorado")
+    FalaDoPublico.objects.create(
+        texto="Esperei duas horas e ninguem explicou nada",
+        chave="o",
+        fonte="avaliacao",
+        tipo="reclamacao",
+        dor=outra,
+    )
+    for dor in (gratidao, excel, outra):
+        dores.recalcular(dor)
+
+    # A limpeza tira a gratidao que entrou antes do filtro novo (e a dor vazia).
+    assert dores.limpar() == 1
+    assert not DorDoPublico.objects.filter(pk=gratidao.pk).exists()
+
+    pedido = dores_ia.pedido()
+    cod_excel, cod_outra, cod_h = (dores_ia.codigo(d) for d in (excel, outra, hipotese))
+    assert cod_excel in pedido and cod_h in pedido and "Eu perco horas" in pedido
+    resposta = f"""Claro! Aqui esta:
+**DORES:**
+- {cod_excel} | dor | perder horas com planilha feita a mao | {cod_h}
+- {cod_outra} | nao e dor | reclamacao de atendimento de outra empresa
+- D000000 | dor | inventada | -
+FIM"""
+    feito = dores_ia.aplicar(resposta)
+    assert feito == {"descartadas": 1, "renomeadas": 1, "juntadas": 1, "nao_achados": ["D000000"]}
+    hipotese.refresh_from_db()
+    assert hipotese.falas_total == 2 and hipotese.situacao == DorDoPublico.Situacao.CONFIRMADA
+    outra.refresh_from_db()
+    assert outra.descartada and "atendimento" in outra.motivo_do_descarte

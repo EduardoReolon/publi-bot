@@ -1016,6 +1016,7 @@ def dores(request: HttpRequest) -> HttpResponse:
     """As dores do publico: o que o publico disse (confirmadas e descobertas)
     separado do que se supoe (hipoteses), com as falas reais."""
     from apps.radar import dores as banco
+    from apps.radar import dores_ia
     from apps.radar.models import DorDoPublico, FalaDoPublico
     from apps.radar.tasks import agrupar_dores
 
@@ -1078,6 +1079,7 @@ def dores(request: HttpRequest) -> HttpResponse:
                 ),
             ],
             "descartadas": descartadas,
+            "pedido_ia": dores_ia.pedido(),
             "soltas": FalaDoPublico.objects.filter(dor__isnull=True).count(),
             "total_de_falas": FalaDoPublico.objects.count(),
             "por_fonte": [
@@ -1140,4 +1142,28 @@ def acao_nas_dores(request: HttpRequest) -> HttpResponse:
     elif acao == "agrupar":
         transaction.on_commit(agrupar_dores.delay)
         messages.success(request, _("Juntando as falas soltas. Recarregue em instantes."))
+    elif acao == "resposta_ia":
+        from apps.radar import dores_ia
+
+        feito = dores_ia.aplicar(request.POST.get("resposta", ""))
+        if not (feito["descartadas"] or feito["renomeadas"] or feito["juntadas"]):
+            messages.error(
+                request,
+                _("Nao achei nenhuma linha 'Dxxxxxx | ...' na resposta. Cole a resposta inteira."),
+            )
+        else:
+            messages.success(
+                request,
+                _(
+                    "Aplicado: %(d)s descartada(s) por nao serem dor, %(r)s renomeada(s) e "
+                    "%(j)s juntada(s) a uma hipotese."
+                )
+                % {"d": feito["descartadas"], "r": feito["renomeadas"], "j": feito["juntadas"]},
+            )
+        if feito["nao_achados"]:
+            messages.info(
+                request,
+                _("Codigos que nao existem mais (ja descartados ou juntados): %(c)s")
+                % {"c": ", ".join(feito["nao_achados"])},
+            )
     return redirect("radar:dores")
