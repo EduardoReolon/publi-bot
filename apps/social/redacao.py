@@ -335,15 +335,27 @@ def _do_tema(tema, principal):
 TENTATIVAS = 3
 
 
-def artigo_e_material(post: Post):
+MATERIAL_VAZIO = {"secoes": [], "identificacao": [], "achados": [], "dores": []}
+
+
+def artigo_e_material(post: Post, *, guardado: bool = False):
     """(artigo, material) do post — do artigo, do tema ou do material proprio.
-    (None, None) se o artigo nao existe mais."""
+    (None, None) se o artigo nao existe mais.
+
+    `guardado`: o material que o post ja recebeu ao ser escrito, se houver. A
+    tela da outra IA usa: montar de novo vetoriza ate 200 frases dentro da
+    requisicao, e numa maquina pequena isso passa do prazo (502)."""
     from apps.social import proprio
 
     entrada = post.entrada if post.entrada_id else None
     artigo = proprio.como_artigo(entrada) if entrada else fontes.artigo(post.artigo_id)
     if artigo is None:
         return None, None
+    salvo = post.material if guardado and isinstance(post.material, dict) else {}
+    if any(salvo.get(k) for k in ("identificacao", "achados", "secoes")):
+        if post.tema_id:
+            artigo = _do_tema(post.tema, artigo)[0]
+        return artigo, {**MATERIAL_VAZIO, **salvo}
     if post.tema_id:
         return _do_tema(post.tema, artigo)
     r = rede(post.destino.rede)

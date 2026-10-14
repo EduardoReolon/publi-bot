@@ -102,14 +102,14 @@ IMAGENS_DEPOIS = (
     "texto por cima) — eu envio cada uma na lamina dela.\n"
 )
 
-MATERIAL_VAZIO = {"secoes": [], "identificacao": [], "achados": [], "dores": []}
+MATERIAL_VAZIO = redacao.MATERIAL_VAZIO
 
 
 def _artigo_e_material(post: Post):
     """O material, como a nossa IA recebe; sem os vetores agora (placa
     desligada), so o resumo e as secoes — o pedido sai do mesmo jeito."""
     try:
-        return redacao.artigo_e_material(post)
+        return redacao.artigo_e_material(post, guardado=True)
     except Exception as exc:
         logger.info("Material do post %s sem vetores: %s", post.pk, exc)
         from apps.social import fontes, proprio
