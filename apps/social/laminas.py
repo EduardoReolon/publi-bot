@@ -183,6 +183,30 @@ def _fonte_da_lamina(desenho, cores: dict, rotulo: str) -> None:
         )
 
 
+def _selo_do_lugar(desenho, cores: dict, local: str) -> None:
+    """O lugar onde o negocio atende, num selo no alto da capa: e a capa que
+    faz a pessoa parar, e "e daqui" pesa nessa hora."""
+    fonte = _fonte(34, negrito=True)
+    texto = _desenhavel(local.upper()[:40], fonte)
+    largura = desenho.textlength(texto, font=fonte)
+    folga = 18
+    caixa = (MARGEM, MARGEM, MARGEM + largura + 2 * folga, MARGEM + fonte.size + 2 * folga)
+    desenho.rounded_rectangle(caixa, radius=fonte.size // 2 + folga, fill=cores["destaque"])
+    desenho.text((MARGEM + folga, MARGEM + folga - 2), texto, font=fonte, fill=cores["fundo"])
+
+
+def local_para_a_capa(post, laminas: list[dict]) -> str:
+    """O lugar para o selo da capa: o da conta (ver redacao.local_do_post), se
+    a capa e a segunda lamina ainda nao o citam no texto."""
+    from apps.social.redacao import _cita_o_lugar, local_do_post
+
+    local = local_do_post(post)
+    if not local:
+        return ""
+    inicio = " ".join(f"{x.get('titulo', '')} {x.get('texto', '')}" for x in laminas[:2])
+    return "" if _cita_o_lugar(inicio, local) else local
+
+
 def _rodape(desenho, cores: dict, marca: str, n: int, total: int) -> None:
     pequena = _fonte(30)
     desenho.text(
@@ -424,6 +448,7 @@ def desenhar(
     cores_da_capa: dict | None = None,
     camada: str = "tudo",
     clipes: set[int] | frozenset = frozenset(),
+    local: str = "",
 ) -> list[bytes]:
     """As laminas em PNG. `laminas[0]` e o gancho, sobre a capa (com o
     `ajuste` de enquadramento). `fundos`: {n: {"caminho", "modelo", "cores"}}
@@ -432,7 +457,8 @@ def desenhar(
     `camada` (para o video, que anima o fundo e poe o texto por cima):
     "tudo" (o carrossel), "fundo" (sem texto; nas laminas com clipe de video,
     `clipes`, so o escurecimento, transparente) ou "texto" (so o texto, o
-    rodape e a fonte citada, em fundo transparente)."""
+    rodape e a fonte citada, em fundo transparente). `local`: o selo do lugar
+    no alto da capa (ver `local_para_a_capa`)."""
     from PIL import Image, ImageDraw
 
     cores = {**CORES, **{k: v for k, v in (cores or {}).items() if v}}
@@ -495,6 +521,8 @@ def desenhar(
         if item.get("fonte"):
             _fonte_da_lamina(desenho, cores, item["fonte"])
         _rodape(desenho, cores, marca, n, total)
+        if n == 1 and local:
+            _selo_do_lugar(desenho, cores, local)
         buffer = io.BytesIO()
         imagem.save(buffer, format="PNG", optimize=True)
         saida.append(buffer.getvalue())
@@ -661,6 +689,7 @@ def previa_da_primeira(
         ajuste=ajuste,
         apenas=1,
         cores_da_capa=cores_da_capa(post),
+        local=local_para_a_capa(post, laminas),
     )[0]
     imagem = Image.open(io.BytesIO(png))
     imagem.thumbnail((largura, largura * ALTURA // LARGURA))
@@ -685,6 +714,7 @@ def pngs_do_carrossel(post, artigo, *, camada: str = "tudo") -> list[bytes]:
         cores_da_capa=cores_da_capa(post),
         camada=camada,
         clipes=set(clipes_das_laminas(post)),
+        local=local_para_a_capa(post, laminas),
     )
 
 

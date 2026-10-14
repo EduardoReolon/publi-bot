@@ -54,9 +54,10 @@ REGRAS:
 - Deixe claro, numa frase simples (a penultima lamina ou o fim da legenda), o
   que o negocio faz por essa dor (a OFERTA abaixo), como quem explica e nao como
   anuncio: sem preco, sem promessa de resultado.
-- Se o negocio atende numa REGIAO, traga o lugar para perto do leitor em ao menos
-  um ponto (o gancho, uma lamina ou a chamada: "aqui em <a cidade>") e, se houver
-  hashtag, uma do lugar.
+- Se o negocio atende numa REGIAO, traga o lugar para perto do leitor logo no
+  comeco (o gancho, a capa ou a segunda lamina: "aqui em <a cidade>") e, se houver
+  hashtag, uma do lugar. Se a capa e a segunda nao citarem, o sistema poe um selo
+  com o lugar no alto da capa.
 
 Converse antes, se algo nao estiver claro. Quando eu pedir ("pode gerar"),
 responda SO nos blocos abaixo e termine com FIM (a resposta volta para o

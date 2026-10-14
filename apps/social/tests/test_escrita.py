@@ -438,3 +438,21 @@ def test_onde_atende_do_negocio_vence_as_regioes_do_radar(ambiente):
     negocio = fontes.negocio()
     assert negocio["local"] == "Curitiba e regiao metropolitana"
     assert negocio["regioes"][0] == "Curitiba e regiao metropolitana"
+
+
+@pytest.mark.django_db
+def test_selo_do_lugar_na_capa_quando_o_comeco_nao_cita(ambiente, modulo):
+    from apps.social import laminas
+
+    post = Post.objects.create(
+        destino=_destino("instagram"),
+        artigo_id=ARTIGO.id,
+        artigo_titulo=ARTIGO.titulo,
+        motivo=Post.Motivo.NOVO,
+    )
+    sem = [{"titulo": "Cansado de acordar cansado?", "texto": ""}, {"titulo": "O que fazer"}]
+    com = [{"titulo": "Aqui em Curitiba, muita gente acorda cansada", "texto": ""}]
+    assert laminas.local_para_a_capa(post, sem) == "Curitiba e regiao"
+    assert laminas.local_para_a_capa(post, com) == ""
+    capa_com_selo = laminas.desenhar(sem, apenas=1, local="Curitiba e regiao")[0]
+    assert capa_com_selo != laminas.desenhar(sem, apenas=1)[0]
