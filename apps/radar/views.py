@@ -1009,8 +1009,14 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
 def dores(request: HttpRequest) -> HttpResponse:
     """As dores do publico com as falas reais, da mais forte para a mais fraca."""
     from apps.radar import dores as banco
-    from apps.radar.models import FalaDoPublico
+    from apps.radar.models import DorDoPublico, FalaDoPublico
+    from apps.radar.tasks import agrupar_dores
 
+    # As digitadas aparecem ja (sem esperar uma rodada); o vetor delas vem
+    # do agrupamento, em segundo plano.
+    banco.semear_digitadas(com_vetores=False)
+    if DorDoPublico.objects.filter(centroide__isnull=True, descartada=False).exists():
+        transaction.on_commit(agrupar_dores.delay)
     lista = banco.principais(40)
     for dor in lista:
         dor.exemplos = list(dor.falas.all()[:3])

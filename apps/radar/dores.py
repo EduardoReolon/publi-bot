@@ -143,8 +143,11 @@ def _vetores(textos: list[str]) -> np.ndarray:
     return v / (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
 
 
-def semear_digitadas() -> None:
-    """As dores da Configuracao do Radar viram dores (sem fala ainda)."""
+def semear_digitadas(*, com_vetores: bool = True) -> None:
+    """As dores da Configuracao do Radar viram dores (sem fala ainda).
+
+    `com_vetores=False` (a tela): so cria as linhas, na hora; o centroide vem
+    depois, no agrupamento (que roda em segundo plano)."""
     digitadas = ConfiguracaoDoRadar.carregar().lista_de_dores
     na_config = {normalizar(d) for d in digitadas}
     existentes = set()
@@ -156,11 +159,16 @@ def semear_digitadas() -> None:
             dor.save(update_fields=["digitada", "atualizada_em"])
         else:
             dor.delete()
-    novas = [d for d in digitadas if normalizar(d) not in existentes]
-    if not novas:
+    for rotulo in digitadas:
+        if normalizar(rotulo) not in existentes:
+            existentes.add(normalizar(rotulo))
+            DorDoPublico.objects.create(rotulo=rotulo[:300], digitada=True, nota=0.5)
+    sem_vetor = list(DorDoPublico.objects.filter(digitada=True, centroide__isnull=True))
+    if not com_vetores or not sem_vetor:
         return
-    for rotulo, vetor in zip(novas, _vetores(novas), strict=True):
-        DorDoPublico.objects.create(rotulo=rotulo[:300], digitada=True, centroide=vetor.tolist())
+    for dor, vetor in zip(sem_vetor, _vetores([d.rotulo for d in sem_vetor]), strict=True):
+        dor.centroide = vetor.tolist()
+        dor.save(update_fields=["centroide", "atualizada_em"])
 
 
 def agrupar() -> int:
