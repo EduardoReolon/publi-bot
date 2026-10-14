@@ -23,7 +23,7 @@ import httpx
 import pytest
 
 CONTRATO = Path(__file__).resolve().parent / "contrato_do_worker"
-VERSAO_ESPERADA = "2.10"
+VERSAO_ESPERADA = "2.11"
 
 
 def _exemplo(nome: str) -> dict:
