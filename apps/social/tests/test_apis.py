@@ -455,7 +455,7 @@ def test_post_parado_esperando_o_modelo_volta_para_a_fila(ambiente, monkeypatch)
     recente = _post(destino, situacao=Post.Situacao.SUGERIDO)
     Post.objects.filter(pk=parado.pk).update(atualizado_em=timezone.now() - timedelta(hours=3))
     despachados = []
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: despachados.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: despachados.append(pk))
     assert tasks.retomar_escrita() == 1
     assert despachados == [str(parado.pk)] and str(recente.pk) not in despachados
     assert tasks.retomar_escrita() == 0  # tocado: so daqui a meia hora
@@ -493,7 +493,7 @@ def test_tentar_de_novo_testa_o_servidor_e_fecha_o_disjuntor_de_quem_responde(
         for nome, porta in (("viva", porta_viva), ("fora", porta_morta))
     )
     despachados = []
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: despachados.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: despachados.append(pk))
     destino = _conectado("instagram", "17841")
     post = _post(destino, situacao=Post.Situacao.SUGERIDO)
     Post.objects.filter(pk=post.pk).update(erro="esperando o modelo: disjuntor aberto")

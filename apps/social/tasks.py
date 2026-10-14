@@ -8,29 +8,53 @@ logger = logging.getLogger("publibot.social")
 
 
 @shared_task(bind=True, max_retries=12)
-def escrever_post(self, post_id: str) -> str:
+def escrever_post(self, post_id: str, trabalho: str | None = None) -> str:
     """Escreve o post. Sem modelo agora (nao configurado, placa ocupada):
-    tenta de novo em 10 minutos, ate 2 horas."""
+    tenta de novo em 10 minutos, ate 2 horas. `trabalho`: o registro na tela
+    de Operacao (ver `fontes.na_fila`)."""
     from apps.social import fontes
     from apps.social.models import Post
     from apps.social.redacao import escrever
 
-    post = Post.objects.select_related("destino", "abordagem").filter(pk=post_id).first()
-    if post is None or post.situacao not in {Post.Situacao.SUGERIDO, Post.Situacao.GERANDO}:
-        return "nada a fazer"
-    try:
-        escrever(post)
-    except fontes.modelo_indisponivel() as exc:
-        post.situacao = Post.Situacao.SUGERIDO
-        post.erro = f"esperando o modelo: {exc}"[:2000]
-        post.save(update_fields=["situacao", "erro", "atualizado_em"])
-        raise self.retry(exc=exc, countdown=600) from exc
-    return post.situacao
+    with fontes.acompanhar(trabalho) as andamento:
+        post = Post.objects.select_related("destino", "abordagem").filter(pk=post_id).first()
+        if post is None or post.situacao not in {Post.Situacao.SUGERIDO, Post.Situacao.GERANDO}:
+            return "nada a fazer"
+        if _pela_ia_grande(post):
+            return "pedido a outra IA"
+        try:
+            escrever(post)
+        except fontes.modelo_indisponivel() as exc:
+            post.situacao = Post.Situacao.SUGERIDO
+            post.erro = f"esperando o modelo: {exc}"[:2000]
+            post.save(update_fields=["situacao", "erro", "atualizado_em"])
+            raise self.retry(exc=exc, countdown=600) from exc
+        if post.situacao == Post.Situacao.FALHOU:
+            andamento.falhou(post.erro or "o modelo nao escreveu")
+        return post.situacao
+
+
+def _pela_ia_grande(post) -> bool:
+    """A conta quer a IA grande e ha API: o pedido vai a ela (outra tarefa, que
+    aplica a resposta como a colada). Sem API, segue o modelo local."""
+    from apps.social import outra_ia_por_api
+    from apps.social.models import Destino, Post, RespostaDaOutraIA
+
+    if post.destino.escritor != Destino.Escritor.OUTRA_IA or not outra_ia_por_api.disponivel():
+        return False
+    if post.respostas_ia.filter(
+        tipo=RespostaDaOutraIA.Tipo.POST, situacao=RespostaDaOutraIA.Situacao.ESPERANDO
+    ).exists():
+        return True  # ja pedido: nao pede duas vezes
+    post.situacao = Post.Situacao.GERANDO
+    post.save(update_fields=["situacao", "atualizado_em"])
+    outra_ia_por_api.pedir(RespostaDaOutraIA.Tipo.POST, post=post)
+    return True
 
 
 @shared_task(bind=True, max_retries=12)
 def gerar_imagens_das_laminas(
-    self, post_id: str, apenas: int | None = None, opcoes: int = 1
+    self, post_id: str, apenas: int | None = None, opcoes: int = 1, trabalho: str | None = None
 ) -> int:
     """As imagens das laminas pelo gerador do PubliBot (todas as que faltam, ou
     so a `apenas`; com `opcoes`, varias para escolher). Gerador ocupado: tenta
@@ -38,103 +62,115 @@ def gerar_imagens_das_laminas(
     from apps.social import fontes, identidade, laminas
     from apps.social.models import Post
 
-    post = Post.objects.select_related("destino").filter(pk=post_id).first()
-    if post is None:
-        return 0
-    try:
-        feitas = identidade.gerar_imagens(post, apenas=apenas, opcoes=opcoes)
-    except fontes.imagem_indisponivel() + fontes.modelo_indisponivel() as exc:
+    with fontes.acompanhar(trabalho):
+        post = Post.objects.select_related("destino").filter(pk=post_id).first()
+        if post is None:
+            return 0
+        try:
+            feitas = identidade.gerar_imagens(post, apenas=apenas, opcoes=opcoes)
+        except fontes.imagem_indisponivel() + fontes.modelo_indisponivel() as exc:
+            laminas.refazer_imagens(post)
+            raise self.retry(exc=exc, countdown=600) from exc
         laminas.refazer_imagens(post)
-        raise self.retry(exc=exc, countdown=600) from exc
-    laminas.refazer_imagens(post)
-    return feitas
+        return feitas
 
 
 @shared_task(bind=True, max_retries=6)
-def gerar_video(self, post_id: str) -> str:
+def gerar_video(self, post_id: str, trabalho: str | None = None) -> str:
     """O video do post (narracao + laminas). Voz ou servidor ocupados: tenta
     de novo em 10 minutos; erro de verdade vira aviso no post."""
     from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
-    from apps.social import video
+    from apps.social import fontes, video
     from apps.social.models import Post
 
-    post = Post.objects.select_related("destino").filter(pk=post_id).first()
-    if post is None:
-        return "sem post"
-    try:
-        video.montar(post)
-    except ProviderTransientError as exc:
-        raise self.retry(exc=exc, countdown=600) from exc
-    except (video.VideoIndisponivel, ProviderPermanentError) as exc:
-        post.avisos = [*(post.avisos or []), f"video nao gerado: {exc}"]
-        post.save(update_fields=["avisos", "atualizado_em"])
-        return "erro"
-    destino = post.destino
-    if (
-        post.situacao == Post.Situacao.RASCUNHO
-        and not post.avisos
-        and destino.aprovacao == destino.Aprovacao.AUTOMATICO
-    ):
-        from apps.social.publicacao import aprovar
+    with fontes.acompanhar(trabalho) as andamento:
+        post = Post.objects.select_related("destino").filter(pk=post_id).first()
+        if post is None:
+            return "sem post"
+        try:
+            video.montar(post)
+        except ProviderTransientError as exc:
+            raise self.retry(exc=exc, countdown=600) from exc
+        except (video.VideoIndisponivel, ProviderPermanentError) as exc:
+            post.avisos = [*(post.avisos or []), f"video nao gerado: {exc}"]
+            post.save(update_fields=["avisos", "atualizado_em"])
+            andamento.falhou(f"video nao gerado: {exc}")
+            return "erro"
+        destino = post.destino
+        if (
+            post.situacao == Post.Situacao.RASCUNHO
+            and not post.avisos
+            and destino.aprovacao == destino.Aprovacao.AUTOMATICO
+        ):
+            from apps.social.publicacao import aprovar
 
-        aprovar(post, por=None)
-    return "ok"
+            aprovar(post, por=None)
+        return "ok"
 
 
 @shared_task(bind=True, max_retries=12)
-def animar_laminas(self, post_id: str, apenas: int | None = None) -> int:
+def animar_laminas(
+    self, post_id: str, apenas: int | None = None, trabalho: str | None = None
+) -> int:
     """Anima as laminas que tem imagem e ainda nao tem clipe (ou so a `apenas`).
     Placa ocupada: tenta de novo em 10 minutos (o que ja saiu fica). No fim,
     se o post ja e video, monta de novo com os clipes."""
     from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
-    from apps.social import laminas, video
+    from apps.social import fontes, laminas, video
     from apps.social.models import Post
 
-    post = Post.objects.select_related("destino").filter(pk=post_id).first()
-    if post is None:
-        return 0
-    total = len(
-        laminas.com_a_chamada(
-            (post.extras or {}).get("laminas") or [],
-            post.destino.chamada_final or laminas.CHAMADA,
+    with fontes.acompanhar(trabalho) as andamento:
+        post = Post.objects.select_related("destino").filter(pk=post_id).first()
+        if post is None:
+            return 0
+        total = len(
+            laminas.com_a_chamada(
+                (post.extras or {}).get("laminas") or [],
+                post.destino.chamada_final or laminas.CHAMADA,
+            )
         )
-    )
-    com_clipe = laminas.clipes_das_laminas(post)
-    feitas = 0
-    for n in [apenas] if apenas else range(1, total + 1):
-        if apenas is None and (n in com_clipe or not video.imagem_da_lamina(post, n)):
-            continue
-        try:
-            video.animar_lamina(post, n)
-        except ProviderTransientError as exc:
-            raise self.retry(exc=exc, countdown=600) from exc
-        except (video.VideoIndisponivel, ProviderPermanentError) as exc:
-            post.avisos = [*(post.avisos or []), f"lamina {n} nao animada: {exc}"]
-            post.save(update_fields=["avisos", "atualizado_em"])
-            continue
-        feitas += 1
-    if feitas and (post.extras or {}).get("formato") == "video":
-        gerar_video.delay(str(post.pk))
-    return feitas
+        com_clipe = laminas.clipes_das_laminas(post)
+        feitas, falhas = 0, []
+        for n in [apenas] if apenas else range(1, total + 1):
+            if apenas is None and (n in com_clipe or not video.imagem_da_lamina(post, n)):
+                continue
+            try:
+                video.animar_lamina(post, n)
+            except ProviderTransientError as exc:
+                raise self.retry(exc=exc, countdown=600) from exc
+            except (video.VideoIndisponivel, ProviderPermanentError) as exc:
+                post.avisos = [*(post.avisos or []), f"lamina {n} nao animada: {exc}"]
+                post.save(update_fields=["avisos", "atualizado_em"])
+                falhas.append(f"lamina {n}: {exc}")
+                continue
+            feitas += 1
+        if falhas and not feitas:
+            andamento.falhou("; ".join(falhas))
+        if feitas and (post.extras or {}).get("formato") == "video":
+            fontes.na_fila(gerar_video, str(post.pk), rotulo="Video do post", alvo=post.pk)
+        return feitas
 
 
 @shared_task(bind=True, max_retries=3)
-def perguntar_a_outra_ia(self, resposta_id: str) -> str:
+def perguntar_a_outra_ia(self, resposta_id: str, trabalho: str | None = None) -> str:
     """O pedido vai a outra IA por API; a resposta passa pelos mesmos leitores
     da colada. Post, iscas e publicos ja se aplicam (entram para revisar);
     propostas esperam a pessoa escolher na previa."""
     from apps.inference.providers.base import ProviderTransientError
-    from apps.social import outra_ia_por_api
+    from apps.social import fontes, outra_ia_por_api
     from apps.social.models import RespostaDaOutraIA
 
-    pedido = RespostaDaOutraIA.objects.filter(pk=resposta_id).first()
-    if pedido is None:
-        return "sem pedido"
-    try:
-        outra_ia_por_api.responder(pedido)
-    except ProviderTransientError as exc:
-        raise self.retry(exc=exc, countdown=300) from exc
-    return pedido.situacao
+    with fontes.acompanhar(trabalho) as andamento:
+        pedido = RespostaDaOutraIA.objects.filter(pk=resposta_id).first()
+        if pedido is None:
+            return "sem pedido"
+        try:
+            outra_ia_por_api.responder(pedido)
+        except ProviderTransientError as exc:
+            raise self.retry(exc=exc, countdown=300) from exc
+        if pedido.situacao == RespostaDaOutraIA.Situacao.ERRO:
+            andamento.falhou(pedido.erro or "a outra IA nao respondeu")
+        return pedido.situacao
 
 
 @shared_task

@@ -81,7 +81,7 @@ def test_pedido_leva_negocio_placar_candidatos_e_pede_pesquisa_na_web(ambiente):
 def test_resposta_vira_previa_e_so_aplica_o_marcado(ambiente, monkeypatch):
     _, _, client = ambiente
     escritos = []
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: escritos.append(pk))
     artigo = _artigo_publicado()
     tema = _tema(artigo)
     destino = Destino.objects.create(rede="instagram", nome="Insta")

@@ -48,7 +48,7 @@
         <tbody>
           {% for trabalho in trabalhos %}
             <tr>
-              <td><a href="{% url 'operacao:trabalho' trabalho.pk %}">{{ trabalho.get_kind_display }}</a></td>
+              <td><a href="{% url 'operacao:trabalho' trabalho.pk %}">{{ trabalho.rotulo }}</a></td>
               <td class="numero">{{ trabalho.current_step }}/{{ trabalho.total_steps }}</td>
               <td>
                 <span class="selo

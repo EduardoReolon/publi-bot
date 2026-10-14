@@ -46,6 +46,9 @@ class GenerationJob(models.Model):
         ARTICLE_COVER = "article_cover", _("Gerar opcoes de capa")
         QA_ANSWER = "qa_answer", _("Resposta a pergunta")
         PDF_INGESTION = "pdf_ingestion", _("Conversao de PDF")
+        # Tarefa avulsa (fora do orquestrador), so para aparecer na tela:
+        # escrever post, gerar video, animar... (ver ops/acompanhamento.py).
+        TAREFA = "tarefa", _("Tarefa")
 
     class Status(models.TextChoices):
         PENDING = "pending", _("Aguardando")
@@ -104,6 +107,11 @@ class GenerationJob(models.Model):
     @property
     def reserva_valida(self) -> bool:
         return bool(self.lease_expires_at and self.lease_expires_at > timezone.now())
+
+    @property
+    def rotulo(self) -> str:
+        """O nome na tela: o da tarefa avulsa, ou o do tipo."""
+        return (self.step_payloads or {}).get("rotulo") or self.get_kind_display()
 
     def resultado_do_passo(self, passo: int):
         return (self.step_payloads or {}).get(str(passo))

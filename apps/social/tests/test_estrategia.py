@@ -268,7 +268,7 @@ def test_pagina_de_estrategia_e_acoes(ambiente, acervo, monkeypatch):
     from apps.social import tasks
 
     _, _, client = ambiente
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     destino = Destino.objects.create(rede="instagram", nome="Insta")
     pagina = reverse("social:estrategia", urlconf=U)
     acao = reverse("social:acao_na_estrategia", urlconf=U)
@@ -339,7 +339,7 @@ def test_instagram_posta_o_tema_com_material_de_varios_artigos(
     from apps.social import tasks
 
     escritos = []
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: escritos.append(pk))
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: escritos.append(pk))
     with django_capture_on_commit_callbacks(execute=True):
         assert escolha.rodada() == 1
     post = Post.objects.get()

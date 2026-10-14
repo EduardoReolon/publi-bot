@@ -70,6 +70,12 @@ def redespachar(request: HttpRequest, pk) -> HttpResponse:
         )
         return redirect("operacao:trabalhos")
 
+    if job.kind == GenerationJob.Kind.TAREFA:
+        from apps.ops.acompanhamento import redespachar as mandar_de_novo
+
+        mandar_de_novo(job)
+        messages.success(request, _("Tarefa mandada de novo para a fila."))
+        return redirect("operacao:trabalhos")
     devolver_a_fila(job)
     messages.success(
         request, _("Trabalho devolvido a fila, do passo %(n)s.") % {"n": job.current_step}

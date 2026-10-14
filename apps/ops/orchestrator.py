@@ -307,8 +307,10 @@ def jobs_para_retomar(limite: int = 50) -> list[GenerationJob]:
     aguardando = Q(status=GenerationJob.Status.WAITING_CAPACITY, next_attempt_at__lte=agora)
     abandonados = Q(status=GenerationJob.Status.RUNNING, lease_expires_at__lte=agora)
 
+    # As tarefas avulsas (ops/acompanhamento.py) so aparecem na tela: quem as
+    # retoma e o Celery, nao este varredor.
     return list(
-        GenerationJob.objects.filter(prontos | aguardando | abandonados).order_by("created_at")[
-            :limite
-        ]
+        GenerationJob.objects.filter(prontos | aguardando | abandonados)
+        .exclude(kind=GenerationJob.Kind.TAREFA)
+        .order_by("created_at")[:limite]
     )

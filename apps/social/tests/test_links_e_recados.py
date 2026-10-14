@@ -31,7 +31,7 @@ PAGINA = {
 def test_comentario_le_os_links_e_o_post_cita_a_fonte(ambiente, monkeypatch):
     lidos = []
     monkeypatch.setattr(tasks.ler_links, "delay", lambda *a: lidos.append(a))
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     insta = Destino.objects.create(rede="instagram", nome="Insta")
 
     with pytest.raises(proprio.EntradaInvalida, match="https"):
@@ -103,7 +103,7 @@ def test_tela_tem_o_campo_de_links(ambiente, monkeypatch):
 # -- Recados ------------------------------------------------------------------------------------
 @pytest.mark.django_db
 def test_recado_entra_so_em_parte_dos_posts_e_vai_no_pedido(ambiente, monkeypatch):
-    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk: None)
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     insta = Destino.objects.create(rede="instagram", nome="Insta")
     Recado.objects.create(nome="Checado", instrucao="aqui tudo tem fonte", por_cento=30)
     Recado.objects.create(nome="So LinkedIn", instrucao="x", por_cento=100, redes=["linkedin"])
