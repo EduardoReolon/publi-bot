@@ -213,8 +213,14 @@ def aplicar(leitura: Leitura, partes=PARTES) -> dict:
     if leitura.sementes and "sementes" in partes:
         config.sementes = "\n".join(leitura.sementes)
         campos.append("sementes")
+    descartadas_de_volta = []
     if leitura.dores and "dores" in partes:
-        config.dores = "\n".join(leitura.dores)
+        from apps.radar.dores import descartadas, normalizar
+
+        ja = descartadas()
+        # Dor que voce ja descartou nao volta pela IA: fica de fora e e avisada.
+        descartadas_de_volta = [d for d in leitura.dores if normalizar(d) in ja]
+        config.dores = "\n".join(d for d in leitura.dores if normalizar(d) not in ja)
         campos.append("dores")
     if campos:
         config.save(update_fields=campos)
@@ -246,7 +252,8 @@ def aplicar(leitura: Leitura, partes=PARTES) -> dict:
             avaliados += 1
     return {
         "sementes": len(leitura.sementes) if "sementes" in campos else 0,
-        "dores": len(leitura.dores) if "dores" in campos else 0,
+        "dores": len(leitura.dores) - len(descartadas_de_volta) if "dores" in campos else 0,
         "temas": avaliados,
         "negocio": negocio,
+        "descartadas_de_volta": descartadas_de_volta,
     }

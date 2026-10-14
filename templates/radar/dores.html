@@ -12,8 +12,9 @@
     comentarios do YouTube (desabafos e perguntas que carregam o problema), das
     avaliacoes ruins de concorrentes no Google, dos comentarios nos posts das
     suas contas e das perguntas do site. Cada post prefere as falas da propria
-    rede; enquanto a rede nao tem falas, usa as das outras fontes e as dores
-    digitadas em Configuracao.
+    rede; enquanto a rede nao tem falas, usa as das outras fontes e as
+    hipoteses (as dores digitadas ou trazidas pela outra IA). A evidencia pesa
+    mais que o achismo: dor que o publico disse vem antes da que so foi suposta.
   {% endblocktranslate %}
 </div>
 
@@ -36,24 +37,55 @@
   <p class="ajuda">{% translate "Sem nome nem detalhe que identifique a pessoa." %}</p>
 </section>
 
-{% for dor in dores %}
-  <article class="secao">
-    <header style="display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap">
-      <strong>{{ dor.rotulo|truncatechars:160 }}</strong>
-      {% if dor.digitada %}<span class="selo">{% translate "digitada" %}</span>{% endif %}
-      <span class="selo {% if dor.falas_total >= 5 %}ok{% elif dor.falas_total %}espera{% endif %}">{% blocktranslate count n=dor.falas_total %}{{ n }} fala{% plural %}{{ n }} falas{% endblocktranslate %}</span>
-      {% if dor.falas_total %}<span class="ajuda">{% translate "intensidade" %} {{ dor.intensidade|floatformat:2 }} · {% for rotulo, n in dor.fontes_legiveis %}{{ rotulo|lower }} {{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
-      <form method="post" action="{% url 'radar:acao_nas_dores' %}" style="margin-left:auto">{% csrf_token %}<input type="hidden" name="dor" value="{{ dor.pk }}">
-        <button type="submit" name="acao" value="descartar" class="botao discreto pequeno" title="{% translate 'Nao e dor do seu publico: sai dos posts e artigos' %}">{% translate "Descartar" %}</button>
-      </form>
-    </header>
-    {% if dor.exemplos %}
-      <ul class="sinais">{% for fala in dor.exemplos %}<li>“{{ fala.texto|truncatechars:240 }}” <span class="ajuda">— {{ fala.get_fonte_display|lower }}</span></li>{% endfor %}</ul>
-    {% elif dor.digitada %}
-      <p class="ajuda">{% translate "Ainda sem fala colhida: os posts usam esta frase enquanto as falas nao chegam." %}</p>
-    {% endif %}
-  </article>
-{% empty %}
+{% for titulo, explica, lista in secoes %}{% if lista %}
+  <h2 style="margin-top:1.2rem">{{ titulo }} <span class="contagem-aba">{{ lista|length }}</span></h2>
+  <p class="ajuda">{{ explica }}</p>
+  {% for dor in lista %}
+    <article class="secao">
+      <header style="display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+        <strong>{{ dor.rotulo|truncatechars:160 }}</strong>
+        {% if dor.situacao_atual == 'confirmada' %}<span class="selo ok">{% translate "confirmada" %}</span>
+        {% elif dor.situacao_atual == 'descoberta' %}<span class="selo ok">{% translate "descoberta" %}</span>
+        {% elif dor.situacao_atual == 'sem_evidencia' %}<span class="selo ruim">{% translate "sem evidencia" %}</span>
+        {% else %}<span class="selo">{% translate "hipotese" %}</span>{% endif %}
+        <span class="selo {% if dor.falas_total >= 5 %}ok{% elif dor.falas_total %}espera{% endif %}">{% blocktranslate count n=dor.falas_total %}{{ n }} fala{% plural %}{{ n }} falas{% endblocktranslate %}</span>
+        {% if dor.falas_total %}<span class="ajuda">{% translate "intensidade" %} {{ dor.intensidade|floatformat:2 }} · {% for rotulo, n in dor.fontes_legiveis %}{{ rotulo|lower }} {{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+        <form method="post" action="{% url 'radar:acao_nas_dores' %}" style="margin-left:auto">{% csrf_token %}<input type="hidden" name="dor" value="{{ dor.pk }}">
+          <button type="submit" name="acao" value="descartar" class="botao discreto pequeno" title="{% translate 'Nao e dor do seu publico: sai dos posts, dos artigos e da Configuracao (fica guardada)' %}">{% translate "Descartar" %}</button>
+        </form>
+      </header>
+      {% if dor.parecida_com and not dor.parecida_com.descartada %}
+        <form method="post" action="{% url 'radar:acao_nas_dores' %}" class="acoes" style="align-items:center">{% csrf_token %}<input type="hidden" name="dor" value="{{ dor.pk }}">
+          <span class="selo espera">{% translate "parece a hipotese" %}</span> <span class="ajuda">“{{ dor.parecida_com.rotulo|truncatechars:100 }}”</span>
+          <button type="submit" name="acao" value="juntar" class="botao secundario pequeno" title="{% translate 'As falas desta vao para a hipotese, que fica confirmada' %}">{% translate "E a mesma: juntar" %}</button>
+          <button type="submit" name="acao" value="nao_e_a_mesma" class="botao discreto pequeno">{% translate "Nao e a mesma" %}</button>
+        </form>
+      {% endif %}
+      {% if dor.exemplos %}
+        <ul class="sinais">{% for fala in dor.exemplos %}<li>“{{ fala.texto|truncatechars:240 }}” <span class="ajuda">— {{ fala.get_fonte_display|lower }}</span></li>{% endfor %}</ul>
+      {% endif %}
+    </article>
+  {% endfor %}
+{% endif %}{% endfor %}
+
+{% if not secoes.0.2 and not secoes.1.2 and not secoes.2.2 and not secoes.3.2 %}
   <div class="vazio-grande">{% translate "Nenhuma dor ainda. Escreva algumas em Radar > Configuracao e custos (as que voce ja conhece) e rode o radar: as falas chegam com o YouTube, as avaliacoes de concorrentes e os comentarios das contas." %}</div>
-{% endfor %}
+{% endif %}
+
+{% if descartadas %}
+  <details style="margin-top:1.2rem"{% for d in descartadas %}{% if d.de_volta %} open{% endif %}{% endfor %}>
+    <summary><strong>{% translate "Descartadas" %}</strong> <span class="contagem-aba">{{ descartadas|length }}</span></summary>
+    <p class="ajuda">{% translate "Fora dos posts e artigos. Ficam aqui para voce lembrar por que saíram; se uma delas voltar a Configuracao (digitada ou pela IA), aparece o aviso." %}</p>
+    {% for dor in descartadas %}
+      <div class="acoes" style="align-items:center">
+        <span>{{ dor.rotulo|truncatechars:140 }}</span>
+        <span class="ajuda">{% translate "descartada em" %} {{ dor.descartada_em|date:"d/m/Y" }}{% if dor.falas_total %} · {% blocktranslate count n=dor.falas_total %}{{ n }} fala{% plural %}{{ n }} falas{% endblocktranslate %}{% endif %}</span>
+        {% if dor.de_volta %}<span class="selo alerta">{% translate "voce digitou de novo: ela continua descartada ate reativar" %}</span>{% endif %}
+        <form method="post" action="{% url 'radar:acao_nas_dores' %}">{% csrf_token %}<input type="hidden" name="dor" value="{{ dor.pk }}">
+          <button type="submit" name="acao" value="reativar" class="botao discreto pequeno">{% translate "Reativar" %}</button>
+        </form>
+      </div>
+    {% endfor %}
+  </details>
+{% endif %}
 {% endblock %}

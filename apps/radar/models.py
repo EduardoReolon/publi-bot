@@ -320,13 +320,14 @@ class ConfiguracaoDoRadar(models.Model):
     )
 
     dores = models.TextField(
-        _("dores do publico"),
+        _("dores do publico (hipoteses)"),
         blank=True,
         help_text=_(
-            "Uma por linha: problemas que o seu publico sente, nas palavras dele, "
-            "e NAO os seus servicos. Ex.: 'manchas no rosto', 'clientes somem "
-            "depois da primeira compra'. Alimentam as Oportunidades: temas que o "
-            "publico procura e que o site ainda nao oferece."
+            "Uma por linha: problemas que voce supoe que o seu publico sente, nas "
+            "palavras dele, e NAO os seus servicos. Ex.: 'manchas no rosto', "
+            "'clientes somem depois da primeira compra'. Sao buscadas pelo radar, "
+            "alimentam as Oportunidades e sao conferidas com as falas reais do "
+            "publico em Dores do publico."
         ),
     )
 
@@ -1274,8 +1275,30 @@ class DorDoPublico(models.Model):
     por_fonte = models.JSONField(_("falas por fonte"), default=dict, blank=True)
     nota = models.FloatField(_("nota"), default=0)
     descartada = models.BooleanField(_("descartada"), default=False)
+    # Fica guardado: digitar de novo (ou a IA sugerir de novo) uma dor que
+    # voce ja descartou mostra o aviso, em vez de ela voltar escondida.
+    descartada_em = models.DateTimeField(_("descartada em"), null=True, blank=True)
+    # A hipotese (digitada) mais parecida com esta dor descoberta: a tela
+    # oferece juntar as duas — a hipotese ganha as falas, e a evidencia.
+    parecida_com = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="parecidas",
+        verbose_name=_("parecida com"),
+    )
+    # Hipoteses que a pessoa disse que NAO sao esta dor: nao sao oferecidas de novo.
+    nao_e = models.JSONField(_("nao e a mesma que"), default=list, blank=True)
     criada_em = models.DateTimeField(auto_now_add=True)
     atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Situacao:
+        CONFIRMADA = "confirmada"
+        DESCOBERTA = "descoberta"
+        HIPOTESE = "hipotese"
+        SEM_EVIDENCIA = "sem_evidencia"
+        DESCARTADA = "descartada"
 
     class Meta:
         verbose_name = _("dor do publico")
@@ -1284,6 +1307,12 @@ class DorDoPublico(models.Model):
 
     def __str__(self) -> str:
         return self.rotulo
+
+    @property
+    def situacao(self) -> str:
+        from apps.radar.dores import situacao
+
+        return situacao(self)
 
 
 class FalaDoPublico(models.Model):

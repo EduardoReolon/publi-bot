@@ -482,6 +482,12 @@ def aplicar_resposta_ia(request: HttpRequest) -> HttpResponse:
         )
         % {"s": feito["sementes"], "d": feito["dores"], "t": feito["temas"], "n": feito["negocio"]},
     )
+    if feito.get("descartadas_de_volta"):
+        messages.info(
+            request,
+            _("A IA sugeriu de novo dor(es) que voce ja descartou; ficaram de fora: %(d)s")
+            % {"d": "; ".join(feito["descartadas_de_volta"])},
+        )
     return redirect(reverse("radar:radar") + "?ia=ruim#temas")
 
 
@@ -1007,7 +1013,8 @@ def decidir_link_quebrado(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 def dores(request: HttpRequest) -> HttpResponse:
-    """As dores do publico com as falas reais, da mais forte para a mais fraca."""
+    """As dores do publico: o que o publico disse (confirmadas e descobertas)
+    separado do que se supoe (hipoteses), com as falas reais."""
     from apps.radar import dores as banco
     from apps.radar.models import DorDoPublico, FalaDoPublico
     from apps.radar.tasks import agrupar_dores
@@ -1017,20 +1024,60 @@ def dores(request: HttpRequest) -> HttpResponse:
     banco.semear_digitadas(com_vetores=False)
     if DorDoPublico.objects.filter(centroide__isnull=True, descartada=False).exists():
         transaction.on_commit(agrupar_dores.delay)
-    lista = banco.principais(40)
-    for dor in lista:
+    S = DorDoPublico.Situacao
+    grupos = {s: [] for s in (S.CONFIRMADA, S.DESCOBERTA, S.HIPOTESE, S.SEM_EVIDENCIA)}
+    for dor in banco.principais(200):
         dor.exemplos = list(dor.falas.all()[:3])
         dor.fontes_legiveis = [
             (FalaDoPublico.Fonte(f).label if f in FalaDoPublico.Fonte.values else f, n)
             for f, n in sorted(dor.por_fonte.items(), key=lambda par: -par[1])
         ]
+        grupos[dor.situacao_atual].append(dor)
+    # Digitada de novo (ou trazida pela IA) depois de descartada: avisa.
+    digitadas = {banco.normalizar(d) for d in ConfiguracaoDoRadar.carregar().lista_de_dores}
+    descartadas = list(DorDoPublico.objects.filter(descartada=True).order_by("-descartada_em"))
+    for dor in descartadas:
+        dor.de_volta = banco.normalizar(dor.rotulo) in digitadas
     return render(
         request,
         "radar/dores.html",
         {
             "aba": "radar",
             "subaba": "dores",
-            "dores": lista,
+            "secoes": [
+                (
+                    _("Confirmadas"),
+                    _("Voce supos e o publico disse: a hipotese com falas reais."),
+                    grupos[S.CONFIRMADA],
+                ),
+                (
+                    _("Descobertas"),
+                    _(
+                        "O publico disse e ninguem tinha suposto. Se for a mesma de uma "
+                        "hipotese, junte: ela fica confirmada, com as palavras do publico."
+                    ),
+                    grupos[S.DESCOBERTA],
+                ),
+                (
+                    _("Hipoteses"),
+                    _(
+                        "Digitadas por voce ou trazidas pela outra IA, ainda sem fala. Valem "
+                        "(nem toda dor e dita em comentario), com peso menor."
+                    ),
+                    grupos[S.HIPOTESE],
+                ),
+                (
+                    _("Sem evidencia"),
+                    _(
+                        "Hipoteses que ninguem disse, com o banco ja cheio de falas e mais de "
+                        "%(d)s dias. Continuam valendo com peso bem menor; descarte se o seu "
+                        "sentimento tambem nao sustenta."
+                    )
+                    % {"d": banco.DIAS_SEM_EVIDENCIA},
+                    grupos[S.SEM_EVIDENCIA],
+                ),
+            ],
+            "descartadas": descartadas,
             "soltas": FalaDoPublico.objects.filter(dor__isnull=True).count(),
             "total_de_falas": FalaDoPublico.objects.count(),
             "por_fonte": [
@@ -1047,16 +1094,39 @@ def dores(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_POST
 def acao_nas_dores(request: HttpRequest) -> HttpResponse:
-    """Descartar uma dor, anotar uma fala ouvida (consultorio, WhatsApp) ou
-    juntar agora as falas soltas."""
+    """Descartar ou reativar uma dor, juntar uma descoberta a hipotese
+    parecida, anotar uma fala ouvida (consultorio, WhatsApp) ou juntar agora
+    as falas soltas."""
     from apps.radar import dores as banco
     from apps.radar.models import DorDoPublico, FalaDoPublico
     from apps.radar.tasks import agrupar_dores
 
     acao = request.POST.get("acao")
-    if acao == "descartar":
-        DorDoPublico.objects.filter(pk=request.POST.get("dor")).update(descartada=True)
-        messages.info(request, _("Dor descartada: nao vai mais para posts nem artigos."))
+    dor = DorDoPublico.objects.filter(pk=request.POST.get("dor") or None).first()
+    if acao == "descartar" and dor is not None:
+        banco.descartar(dor)
+        messages.info(
+            request,
+            _(
+                "Dor descartada: sai dos posts, dos artigos e da Configuracao, e fica "
+                "guardada no fim desta pagina (se voltar, voce e avisado)."
+            ),
+        )
+    elif acao == "reativar" and dor is not None:
+        banco.reativar(dor)
+        messages.success(request, _("Dor reativada."))
+    elif acao == "juntar" and dor is not None and dor.parecida_com_id:
+        hipotese = dor.parecida_com
+        banco.juntar(dor, hipotese)
+        messages.success(
+            request,
+            _("Juntadas: '%(h)s' agora tem as falas do publico.") % {"h": hipotese.rotulo[:80]},
+        )
+    elif acao == "nao_e_a_mesma" and dor is not None:
+        if dor.parecida_com_id:
+            dor.nao_e = [*dor.nao_e, str(dor.parecida_com_id)]
+        dor.parecida_com = None
+        dor.save(update_fields=["parecida_com", "nao_e", "atualizada_em"])
     elif acao == "anotar":
         texto = request.POST.get("texto", "")
         fala = banco.registrar(texto, FalaDoPublico.Fonte.MANUAL, tipo=FalaDoPublico.Tipo.DESABAFO)
