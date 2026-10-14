@@ -91,6 +91,16 @@ _INTENSO = re.compile(
     r"\b(muito|demais|sempre|nunca|todo dia|todos os dias|toda vez|toda noite|"
     r"ha anos|ha meses|insuportavel|extremamente|super|mais nada)\b"
 )
+# Agradecimento e elogio ao conteudo: "nunca consegui aprender ate ver esse
+# video, obrigada" tem palavra de dor, mas e gratidao a quem ensinou — no
+# YouTube, a maioria dos comentarios e assim.
+_GRATIDAO = re.compile(
+    r"\b(obrigad[oa]s?|obg|agrade[cç]\w*|parabens|gratidao|valeu|"
+    r"(me )?ajudou( muito| demais)?|salvou|gostei|amei|adorei|aprendi|"
+    r"explica\w* (muito )?bem|didatic\w*|melhor (video|aula|explicacao)|"
+    r"(ganhou|ganhei) (um|uma|mais um|mais uma) inscrit\w*|inscrit[oa]|"
+    r"excelente|otim[oa]|show|top|sensacional|muito bom|perfeit[oa])\b"
+)
 _INTERROGATIVA = re.compile(
     r"^(como|quanto|quantos|quantas|qual|quais|quando|onde|por que|porque|pq|"
     r"pode|posso|devo|e normal|tem como|da pra|da para|vale a pena|alguem sabe|"
@@ -122,6 +132,8 @@ def classificar(texto: str) -> str:
     if not MINIMO <= len(limpo) <= MAXIMO or "http" in limpo:
         return ""
     doi = bool(_DOR.search(limpo))
+    if _GRATIDAO.search(limpo):
+        return ""
     if "?" in limpo or _INTERROGATIVA.search(limpo):
         # Pergunta so e dor quando carrega o problema ("como paro de acordar
         # cansado?"); a pergunta neutra ja e sinal de demanda do Radar.
@@ -141,7 +153,10 @@ def registrar(texto: str, fonte: str, *, tipo: str = "", **extra) -> FalaDoPubli
     """Guarda a fala, se ela for dor (ou se quem chamou ja sabe o tipo, como
     a avaliacao de nota baixa). A mesma frase nao entra duas vezes."""
     texto = re.sub(r"\s+", " ", texto or "").strip()
-    tipo = classificar(texto) or tipo
+    pelo_filtro = classificar(texto)
+    if not pelo_filtro and tipo:
+        extra["certo"] = True  # quem chamou garantiu; a limpeza nao tira
+    tipo = pelo_filtro or tipo
     if not tipo or not MINIMO <= len(texto) <= MAXIMO:
         return None
     fala, criada = FalaDoPublico.objects.get_or_create(
@@ -197,10 +212,35 @@ def semear_digitadas(*, com_vetores: bool = True) -> None:
         dor.save(update_fields=["centroide", "atualizada_em"])
 
 
+def limpar() -> int:
+    """Tira as falas que o filtro de hoje nao aceitaria (o filtro melhora; o
+    que entrou antes nao fica para sempre). A avaliacao de nota baixa e a
+    fala anotada a mao ficam: ali quem disse que e dor foi a nota, ou voce.
+    Dor descoberta que fica sem fala nenhuma some."""
+    fora, tocadas = [], set()
+    guardadas = (FalaDoPublico.Fonte.AVALIACAO, FalaDoPublico.Fonte.MANUAL)
+    # (Nao `exclude(extra__certo=True)`: sem a chave o SQL da NULL e a linha some.)
+    for fala in FalaDoPublico.objects.exclude(fonte__in=guardadas):
+        if not (fala.extra or {}).get("certo") and not classificar(fala.texto):
+            fora.append(fala.pk)
+            if fala.dor_id:
+                tocadas.add(fala.dor_id)
+    if not fora:
+        return 0
+    FalaDoPublico.objects.filter(pk__in=fora).delete()
+    for dor in DorDoPublico.objects.filter(pk__in=tocadas):
+        recalcular(dor)
+        if not dor.falas_total and not dor.digitada and not dor.descartada:
+            dor.parecidas.update(parecida_com=None)
+            dor.delete()
+    return len(fora)
+
+
 def agrupar() -> int:
     """Poe cada fala sem dor numa dor (ou abre uma). Devolve quantas agrupou.
     Sem vetores agora: fica para a proxima vez."""
     limiar = float(getattr(settings, "RADAR_DISTANCIA_DA_DOR", DISTANCIA_DA_DOR))
+    limpar()
     soltas = list(FalaDoPublico.objects.filter(dor__isnull=True).order_by("-intensidade")[:500])
     try:
         semear_digitadas()
@@ -284,13 +324,14 @@ def juntar(descoberta: DorDoPublico, hipotese: DorDoPublico) -> None:
     recalcular(hipotese)
 
 
-def descartar(dor: DorDoPublico) -> None:
+def descartar(dor: DorDoPublico, *, motivo: str = "") -> None:
     """Fora dos posts e artigos e da caixa de texto da Configuracao, mas
     guardada (com a data) para o aviso se ela voltar."""
     from django.utils import timezone
 
     dor.descartada, dor.descartada_em = True, timezone.now()
-    dor.save(update_fields=["descartada", "descartada_em", "atualizada_em"])
+    dor.motivo_do_descarte = motivo[:200]
+    dor.save(update_fields=["descartada", "descartada_em", "motivo_do_descarte", "atualizada_em"])
     if dor.digitada:
         config = ConfiguracaoDoRadar.carregar()
         alvo = normalizar(dor.rotulo)
