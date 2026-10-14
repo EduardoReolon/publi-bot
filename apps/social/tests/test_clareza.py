@@ -246,3 +246,27 @@ def test_gerar_as_imagens_aqui(ambiente, modulo, settings, tmp_path, monkeypatch
     assert post.extras["imagem_propria"].endswith("propria.jpg")
     assert set(post.extras["fundos"]) == {"2", "3"}
     assert identidade.gerar_imagens(post) == 0  # ja tem tudo
+
+
+@pytest.mark.django_db
+def test_pedido_da_outra_ia_usa_o_material_ja_guardado(ambiente, modulo, monkeypatch):  # noqa: F811
+    """Post ja escrito: a tela nao vetoriza o artigo de novo (numa maquina
+    pequena, 200 frases dentro da requisicao davam 502)."""
+    _, _, client = ambiente
+
+    def sem_vetores(*_a, **_k):
+        raise AssertionError("vetorizou dentro da requisicao")
+
+    monkeypatch.setattr(fontes, "vetores", sem_vetores)
+    post = Post.objects.create(
+        destino=_destino("instagram"),
+        artigo_id=ARTIGO.id,
+        artigo_titulo=ARTIGO.titulo,
+        motivo=Post.Motivo.NOVO,
+        situacao=Post.Situacao.RASCUNHO,
+        material={"achados": ["A anemia responde por 12,5% dos casos."], "secoes": ["O que fazer"]},
+    )
+    url = reverse("social:post_pela_outra_ia", args=[post.pk], urlconf=U)
+    resposta = client.get(url)
+    assert resposta.status_code == 200
+    assert "A anemia responde por 12,5% dos casos." in resposta.content.decode()
