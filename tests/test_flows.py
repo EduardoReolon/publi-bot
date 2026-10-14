@@ -874,6 +874,54 @@ def test_secao_recebe_o_que_ja_foi_escrito(tenant_com_acervo):
 
 
 @pytest.mark.django_db
+def test_secao_recebe_os_fatos_e_as_fontes_ja_usados(tenant_com_acervo, monkeypatch):
+    """O modelo pequeno reconta o mesmo dado em cada secao: a seguinte recebe os
+    fatos ja usados (frase com numero ou fonte) e o aviso na fonte ja citada."""
+    from types import SimpleNamespace
+
+    from apps.content import services
+    from apps.content.models import ArticleSection
+    from apps.content.services import (
+        fontes_ja_citadas,
+        ja_escrito,
+        montar_contexto_das_fontes,
+    )
+
+    artigo = Article.objects.create(title="Tema")
+    ArticleSection.objects.create(
+        article=artigo,
+        order=1,
+        heading="Os numeros",
+        chunk_ids=["c-a", "c-b"],
+        body_markdown=(
+            "Abertura longa o bastante para ser a primeira frase da secao. "
+            "Outra frase sem dado nenhum, so para encher a secao. "
+            "Em 2023, 38% das empresas cresceram so somando gente [[FONTE_2]]. "
+            "Margem caiu para 4 pontos no ano seguinte, segundo o mesmo estudo."
+        ),
+    )
+    segunda = ArticleSection.objects.create(
+        article=artigo, order=2, heading="O que fazer", chunk_ids=["c-b", "c-c"]
+    )
+
+    monkeypatch.setattr(services, "FRASES_JA_ESCRITAS", 1)  # so a abertura
+    contexto = ja_escrito(artigo, segunda)
+    assert "Fatos e dados ja usados" in contexto
+    assert "38% das empresas" in contexto
+    assert "Margem caiu para 4 pontos" in contexto
+    assert "FONTE_" not in contexto
+
+    citadas = fontes_ja_citadas(artigo, segunda)
+    assert citadas == {"c-b": "Os numeros"}
+    trechos = [
+        SimpleNamespace(pk=pk, source_authors="X", source_year=2023, content="texto")
+        for pk in ("c-b", "c-c")
+    ]
+    fontes = montar_contexto_das_fontes(trechos, citadas)
+    assert fontes.count("ja citada na secao 'Os numeros'") == 1
+
+
+@pytest.mark.django_db
 def test_gerado_de_novo_nasce_como_versao_do_publicado(tenant_com_acervo, conexao, monkeypatch):
     from apps.content.tasks import gerar_artigo
 

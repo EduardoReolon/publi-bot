@@ -42,6 +42,7 @@ from apps.content.services import (
     aplicar_rascunho,
     esqueleto_do_artigo,
     fontes_da_pauta,
+    fontes_ja_citadas,
     interpretar_plano,
     interpretar_tese,
     ja_escrito,
@@ -358,7 +359,9 @@ def passo_redigir_secoes(job: GenerationJob):
             "palavras_chave": ", ".join(secao.keywords) or article.focus_keyword,
             "esqueleto": esqueleto_do_artigo(article, exceto=secao) + ja_escrito(article, secao),
             "fontes": com_dados(
-                montar_contexto_das_fontes(trechos), article, f"{secao.heading}. {secao.intent}"
+                montar_contexto_das_fontes(trechos, fontes_ja_citadas(article, secao)),
+                article,
+                f"{secao.heading}. {secao.intent}",
             ),
             "idioma": _idioma(site),
             "aviso_da_ideia_central": _com_debate(_aviso_da_ideia_central(article, secao), article),
