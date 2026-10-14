@@ -133,7 +133,8 @@ def _variaveis(post: Post, artigo, mat: dict, ajuste: str) -> dict:
         "regras": config.regras or "(nenhuma)",
         "limites": _limites(r),
         "idioma": negocio.get("idioma") or "pt-BR",
-        "regiao": negocio.get("local") or "(o pais inteiro: nao fale de lugar)",
+        "regiao": local_do_post(post) or "(nao fale de lugar neste post)",
+        "oferta": negocio.get("oferta") or "(nao informada)",
         "ajuste": ajuste,
     }
 
@@ -166,6 +167,34 @@ def _cortar(texto: str, maximo: int) -> str:
     return saida or texto[:maximo].rsplit(" ", 1)[0]
 
 
+def local_do_post(post: Post) -> str:
+    """O lugar que este post cita, conforme a conta: sempre, um post sim e
+    outro nao (pela contagem dos posts da conta), ou nunca. Vazio: nao cita."""
+    local = (fontes.negocio().get("local") or "").strip()
+    escolha = post.destino.local_nos_posts
+    if not local or escolha == post.destino.Local.NUNCA:
+        return ""
+    if escolha == post.destino.Local.ALTERNAR:
+        anteriores = post.destino.posts.filter(criado_em__lt=post.criado_em).count()
+        return local if anteriores % 2 == 0 else ""
+    return local
+
+
+def _sem_acento(texto: str) -> str:
+    import unicodedata
+
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c)
+    ).lower()
+
+
+def _cita_o_lugar(texto: str, local: str) -> bool:
+    """O texto ja fala do lugar? Basta o nome principal ("Curitiba", de
+    "Curitiba e regiao metropolitana")."""
+    principal = re.split(r",| e | - |/", _sem_acento(local))[0].strip()
+    return bool(principal) and principal in _sem_acento(texto)
+
+
 def montar(post: Post, dados: dict) -> tuple[str, dict]:
     """O texto final e os extras, a partir do JSON do modelo."""
     r = rede(post.destino.rede)
@@ -177,6 +206,11 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     hashtags = _hashtags(dados.get("hashtags"), post.destino.hashtags_fixas, f.max_hashtags)
     if f.link == "bio" and "bio" not in corpo.lower():
         corpo = f"{corpo}\n\nLink na bio.".strip()
+    # Negocio local: todo post diz onde atende. Se o texto nao citou o lugar,
+    # a linha vai no fim (antes das hashtags) — garantido, sem depender do modelo.
+    local = local_do_post(post)
+    if local and not _cita_o_lugar(f"{gancho} {corpo}", local):
+        corpo = f"{corpo}\n\n\U0001f4cd {local}".strip()
     rodape = " ".join(f"#{h}" for h in hashtags)
     texto = "\n\n".join(p for p in [gancho, corpo] if p)
     texto = _cortar(texto, f.max_caracteres - (len(rodape) + 2 if rodape else 0))

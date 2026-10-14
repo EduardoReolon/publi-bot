@@ -131,6 +131,14 @@ def test_linkedin_link_no_primeiro_comentario_e_numero_errado_volta_ao_modelo(am
     assert post.texto.startswith("38% dos adultos")
     assert "https://x.com" not in post.texto
     assert post.texto.rstrip().endswith("#cansaco #medicina #saude")
+    # Negocio local: o post diz onde atende, mesmo que o modelo nao tenha dito.
+    assert "\U0001f4cd Curitiba e regiao" in post.texto
+    assert redacao._cita_o_lugar("Aqui em CURITIBA a fila e grande", "Curitiba e regiao")
+    # A conta escolhe: nunca (ou um post sim, outro nao).
+    post.destino.local_nos_posts = Destino.Local.NUNCA
+    assert redacao.local_do_post(post) == ""
+    post.destino.local_nos_posts = Destino.Local.ALTERNAR
+    assert redacao.local_do_post(post) == "Curitiba e regiao"  # o primeiro post da conta
     assert post.extras["primeiro_comentario"] == "Os sinais, no artigo:"
     assert post.extras["link"] == f"https://painel.exemplo.org/redes/r/{post.chave_publica}/"
     assert post.material["achados"]
