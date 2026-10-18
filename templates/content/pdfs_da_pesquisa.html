@@ -35,17 +35,16 @@
       {% endif %}
       {% if item.estado == 'pendente' and c %}
         <div class="acoes">
-          {% if item.pdf_aberto %}
-            <form method="post" action="{% url 'content:pdf_da_pesquisa' pauta.pk c.pk %}" style="display:inline">{% csrf_token %}
-              <button type="submit" class="botao pequeno" title="{{ item.pdf_aberto }}">{% translate "Baixar o PDF aberto" %}</button>
-            </form>
-          {% endif %}
           {% if not item.pdf_aberto %}
             <a class="botao discreto pequeno" href="https://scholar.google.com/scholar?q={{ a.titulo|urlencode }}" target="_blank" rel="noopener noreferrer" title="{% translate 'O Google Academico costuma achar o PDF em outro repositorio (link [PDF] a direita)' %}">{% translate "Procurar o PDF no Google Academico" %}</a>
           {% endif %}
+          {# Um formulario so: escolhido um arquivo, qualquer botao o envia. #}
           <form method="post" enctype="multipart/form-data" action="{% url 'content:enviar_pdf_da_pesquisa' pauta.pk c.pk %}" style="display:inline">{% csrf_token %}
             <input type="file" name="pdf" accept="application/pdf" required>
             <button type="submit" class="botao secundario pequeno">{% translate "Enviar o PDF" %}</button>
+            {% if item.pdf_aberto %}
+              <button type="submit" class="botao pequeno" formaction="{% url 'content:pdf_da_pesquisa' pauta.pk c.pk %}" formnovalidate title="{{ item.pdf_aberto }}">{% translate "Baixar o PDF aberto" %}</button>
+            {% endif %}
           </form>
           <form method="post" action="{% url 'knowledge:seguir_com_o_resumo' c.pk %}" style="display:inline">{% csrf_token %}
             <input type="hidden" name="voltar" value="{{ request.get_full_path }}">

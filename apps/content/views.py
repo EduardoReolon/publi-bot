@@ -591,6 +591,9 @@ def pdf_da_pesquisa(request: HttpRequest, pk, candidato) -> HttpResponse:
     from apps.knowledge.models import CandidatoDeFonte
     from apps.knowledge.perfis import categoria_da_natureza
 
+    if request.FILES.get("pdf"):
+        # A pessoa escolheu o arquivo e apertou este botao: vale o arquivo.
+        return enviar_pdf_da_pesquisa(request, pk, candidato)
     pauta = get_object_or_404(Topic, pk=pk)
     alvo = get_object_or_404(CandidatoDeFonte, pk=candidato, pauta=pauta)
     alvo = aprovar_artigo(alvo, categoria=categoria_da_natureza("cientifico"), por=request.user)

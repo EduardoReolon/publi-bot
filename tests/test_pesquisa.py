@@ -463,9 +463,10 @@ def test_pagina_dos_pdfs_mostra_o_pedido_e_recebe_o_arquivo(ambiente, openalex, 
         assert "scholar.google.com/scholar?q=" in sem_doi
 
     candidato = itens[0]["candidato"]
+    # Arquivo escolhido e o botao "Baixar o PDF aberto" apertado: vale o arquivo.
     resposta = client.post(
         reverse(
-            "content:enviar_pdf_da_pesquisa",
+            "content:pdf_da_pesquisa",
             args=[pauta.pk, candidato.pk],
             urlconf="core.urls_tenants",
         ),
