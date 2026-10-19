@@ -99,20 +99,34 @@
             <button type="submit" class="pequeno">{% translate "Tentar a pesquisa de novo" %}</button>
           </form>
         </div>
+      {% elif gerando_de_novo.etapa == 'falhou' %}
+        <strong>{% blocktranslate trimmed with p=gerando_de_novo.passo %}A geracao do texto novo parou no passo {{ p }}. O texto abaixo ainda e o anterior.{% endblocktranslate %}</strong>
+        <details class="ajuda"><summary>{{ gerando_de_novo.motivo|truncatechars:160 }}</summary><div style="white-space:pre-wrap">{{ gerando_de_novo.motivo }}</div></details>
+        <div class="acoes">
+          <form method="post" action="{% url 'content:retomar_texto_novo' artigo.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="botao pequeno" title="{% translate 'Continua do passo em que parou, com as mesmas fontes' %}">{% translate "Tentar de novo aqui" %}</button>
+          </form>
+          <a class="botao pequeno secundario" href="{% url 'content:artigo_por_outra_ia' artigo.topic_id %}?refaz={{ artigo.pk }}{% if artigo.fluxo %}&fluxo=pesquisa{% endif %}">{% translate "Fazer com outra IA" %}</a>
+          <form method="post" action="{% url 'content:deixar_a_falha' artigo.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="botao discreto pequeno" title="{% translate 'Fica com o texto atual; o aviso some' %}">{% translate "Deixar para la" %}</button>
+          </form>
+        </div>
       {% elif gerando_de_novo.etapa == 'esperando' %}
         {% translate "Etapa 1 de 2 concluida (pesquisa). O texto ainda nao comecou:" %}
-        <strong>{{ gerando_de_novo.motivo|default:_("motivo desconhecido; clique em Gerar de novo do zero para tentar outra vez.") }}</strong>
-        {% if gerando_de_novo.pdfs %}<a class="botao pequeno" href="{% url 'content:pdfs_da_pesquisa' gerando_de_novo.pauta.pk %}">{% translate "Conferir os PDFs pedidos" %}</a>
-          <form method="post" action="{% url 'content:comecar_texto_novo' artigo.pk %}" style="display:inline">{% csrf_token %}
-            <button type="submit" class="botao pequeno secundario">{% translate "Ja resolvi todos: conferir e comecar" %}</button>
+        <strong>{{ gerando_de_novo.motivo|default:_("motivo desconhecido; use Conferir, ou refaca aqui ou com outra IA.") }}</strong>
+        <div class="acoes">
+          {% if gerando_de_novo.pdfs %}<a class="botao pequeno" href="{% url 'content:pdfs_da_pesquisa' gerando_de_novo.pauta.pk %}">{% translate "Conferir os PDFs pedidos" %}</a>{% endif %}
+          <form method="post" action="{% url 'content:conferir_texto_novo' artigo.pk %}" style="display:inline">{% csrf_token %}
+            <button type="submit" class="botao pequeno secundario" title="{% translate 'So confere se os PDFs ja foram lidos; nao gera nada' %}">{% translate "Conferir" %}</button>
           </form>
-          <div class="pre-visualizacao">{% translate "Resolvido o ultimo (enviado ou seguir com o resumo), o texto comeca sozinho e aparece em Operacao." %}</div>
-        {% else %}
-          <form method="post" action="{% url 'content:comecar_texto_novo' artigo.pk %}" style="display:inline">{% csrf_token %}
-            <button type="submit" class="botao pequeno">{% translate "Comecar o texto agora" %}</button>
-          </form>
-          <div class="pre-visualizacao">{% translate "Os PDFs ja foram resolvidos. Se o texto nao comecou sozinho, comece aqui (a verificacao automatica tambem retoma em ate 15 minutos)." %}</div>
-        {% endif %}
+          {% if not gerando_de_novo.pdfs %}
+            <form method="post" action="{% url 'content:comecar_texto_novo' artigo.pk %}" style="display:inline">{% csrf_token %}
+              <button type="submit" class="botao pequeno" title="{% translate 'O modelo daqui escreve o texto (aparece em Operacao)' %}">{% translate "Gerar aqui" %}</button>
+            </form>
+            <a class="botao pequeno secundario" href="{% url 'content:artigo_por_outra_ia' artigo.topic_id %}?refaz={{ artigo.pk }}{% if artigo.fluxo %}&fluxo=pesquisa{% endif %}" title="{% translate 'Monta o pedido com as fontes da pesquisa para uma IA grande' %}">{% translate "Gerar com outra IA" %}</a>
+          {% endif %}
+        </div>
+        <div class="pre-visualizacao">{% if gerando_de_novo.pdfs %}{% translate "Resolvido o ultimo PDF (enviado ou seguir com o resumo), o texto comeca sozinho aqui; para fazer com outra IA, use o botao assim que os PDFs estiverem lidos." %}{% else %}{% translate "Os PDFs ja foram resolvidos. Escolha onde escrever o texto (a verificacao automatica gera aqui em ate 15 minutos, se ninguem escolher)." %}{% endif %}</div>
       {% else %}
         {% blocktranslate trimmed with p=gerando_de_novo.passo %}
           Etapa 2 de 2: escrevendo o texto (passo {{ p }}). Aparece em Operacao.
@@ -123,10 +137,8 @@
   {% endif %}
   {% if not gerando_de_novo and artigo.topic_id and artigo.status == 'pending_review' or not gerando_de_novo and artigo.topic_id and artigo.status == 'push_failed' or not gerando_de_novo and artigo.topic_id and artigo.status == 'approved_scheduled' %}
     <div class="pre-visualizacao" style="margin-bottom:.6rem">
-      {% translate "Nao gostou deste texto?" %}
-      <form method="post" action="{% url 'content:gerar_de_novo' artigo.pk %}" style="display:inline" onsubmit="return confirm('{% translate "Gerar um texto novo do zero? Este rascunho continua aqui ate o novo ficar pronto; depois e arquivado." %}')">{% csrf_token %}
-        <button type="submit" class="pequeno discreto" title="{% if artigo.fluxo == 'pesquisa' %}{% translate 'Nova pesquisa de artigos e texto escrito do zero, com as regras atuais' %}{% else %}{% translate 'Texto escrito do zero, com as fontes e as regras atuais' %}{% endif %}">{% translate "Gerar de novo do zero" %}</button>
-      </form>
+      {% translate "Nao gostou deste texto? Refazer com as mesmas fontes:" %}
+      {% include "content/_refazer.html" %}
     </div>
   {% endif %}
   {% if artigo.status == 'published' or artigo.status == 'superseded' %}
@@ -140,9 +152,7 @@
           <form method="post" action="{% url 'content:nova_versao' artigo.pk %}" style="display:inline">
             {% csrf_token %}<button type="submit" class="pequeno" title="{% translate 'Copia o texto atual para voce editar' %}">{% translate "Criar versao nova (editar)" %}</button>
           </form>
-          <form method="post" action="{% url 'content:gerar_de_novo' artigo.pk %}" style="display:inline">
-            {% csrf_token %}<button type="submit" class="pequeno discreto" title="{% if artigo.fluxo == 'pesquisa' %}{% translate 'Nova pesquisa de artigos e texto escrito do zero, com as regras atuais' %}{% else %}{% translate 'Texto escrito do zero, com as fontes e as regras atuais' %}{% endif %}">{% translate "Gerar de novo do zero" %}</button>
-          </form>
+          {% include "content/_refazer.html" %}
         {% else %}
           {% translate "Esta versao foi substituida por uma mais nova." %}
         {% endif %}

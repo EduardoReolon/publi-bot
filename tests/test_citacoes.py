@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -354,7 +355,10 @@ def test_pdfs_resolvidos_sem_texto_tem_botao_e_varredura(ambiente, monkeypatch):
     pauta.save()
 
     url = reverse("content:revisar", args=[publicado.pk], urlconf="core.urls_tenants")
-    assert "Comecar o texto agora" in client.get(url).content.decode()
+    pagina = client.get(url).content.decode()
+    # Conferir so confere; gerar aqui ou com outra IA sao botoes a parte.
+    assert "Conferir" in pagina and "Gerar aqui" in pagina and "Gerar com outra IA" in pagina
+    assert f"refaz={publicado.pk}" in pagina
 
     disparos = []
     monkeypatch.setattr(gerar_b_quando_pronta, "delay", lambda pk: disparos.append(pk))
@@ -397,3 +401,79 @@ def test_lista_de_pautas_so_busca_por_fluxo_e_leva_a_outra_ia(
     assert "detalhe" in busca.json() and "detalhe" in pesquisa.json()
     assert buscas == [str(pauta.pk)] and pesquisas == [str(pauta.pk)]
     assert not pauta.articles.exists()
+
+
+@pytest.mark.django_db
+def test_texto_novo_que_falhou_aparece_no_artigo_e_pode_ser_retomado(ambiente):  # noqa: F811
+    """A geracao do texto novo parou (servico de vetores fora): a pagina do
+    rascunho diz isso, com tentar de novo aqui, outra IA ou deixar para la."""
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Crescimento linear")
+    rascunho = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PENDING_REVIEW,
+    )
+    falha = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        status=GenerationJob.Status.FAILED,
+        current_step=0,
+        last_error="passo 0 (recuperar fontes): o servico de vetores nao respondeu",
+        step_payloads={"fluxo": fluxos.B, "substitui": str(rascunho.pk)},
+    )
+    url = reverse("content:revisar", args=[rascunho.pk], urlconf="core.urls_tenants")
+    pagina = client.get(url).content.decode()
+    assert "parou no passo 0" in pagina and "servico de vetores" in pagina
+    assert "Tentar de novo aqui" in pagina and "Fazer com outra IA" in pagina
+
+    client.post(
+        reverse("content:retomar_texto_novo", args=[rascunho.pk], urlconf="core.urls_tenants")
+    )
+    falha.refresh_from_db()
+    assert falha.status != GenerationJob.Status.FAILED
+
+    GenerationJob.objects.filter(pk=falha.pk).update(status=GenerationJob.Status.FAILED)
+    client.post(reverse("content:deixar_a_falha", args=[rascunho.pk], urlconf="core.urls_tenants"))
+    assert "parou no passo" not in client.get(url).content.decode()
+
+
+@pytest.mark.django_db
+def test_refazer_o_b_aqui_com_as_mesmas_fontes_nao_pesquisa(ambiente, monkeypatch):  # noqa: F811
+    from apps.content import fluxos, tasks
+    from apps.content.models import Topic
+    from apps.knowledge.tasks import pesquisar_pauta
+
+    pesquisas, geradas = [], []
+    monkeypatch.setattr(pesquisar_pauta, "delay", lambda pk: pesquisas.append(pk))
+    monkeypatch.setattr(
+        tasks,
+        "gerar_artigo",
+        lambda pauta, **kw: geradas.append(kw) or types.SimpleNamespace(pk="x"),
+    )
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Crescimento linear")
+    pauta.busca_de_fontes = {"pesquisa": {"situacao": "pronta"}}
+    pauta.save()
+    rascunho = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PENDING_REVIEW,
+    )
+    pagina = client.get(
+        reverse("content:revisar", args=[rascunho.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Refazer aqui" in pagina and "Refazer com outra IA" in pagina
+    assert "Pesquisa nova e refazer" in pagina
+
+    client.post(
+        reverse("content:gerar_de_novo", args=[rascunho.pk], urlconf="core.urls_tenants"),
+        {"fontes": "mesmas"},
+    )
+    assert pesquisas == [] and geradas == [{"fluxo": fluxos.B, "substitui": str(rascunho.pk)}]

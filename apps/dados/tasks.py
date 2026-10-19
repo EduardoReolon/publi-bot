@@ -2,6 +2,15 @@ from celery import shared_task
 
 
 @shared_task
+def vetorizar_series() -> int:
+    """As series aprovadas ainda sem vetor (pedido por uma pagina, que nao
+    espera por isso)."""
+    from apps.dados.catalogo import vetorizar_pendentes
+
+    return vetorizar_pendentes()
+
+
+@shared_task
 def varrer_dados_do_acervo() -> dict:
     """Uma vez por dia: o que as fontes de todos os clientes citam de dados, e
     (so na primeira vez de cada instituicao) as series iniciais dos nichos."""

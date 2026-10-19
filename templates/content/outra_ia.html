@@ -23,9 +23,13 @@
     <form method="post" class="acoes">
       {% csrf_token %}<input type="hidden" name="acao" value="preparar">
       <input type="hidden" name="fluxo" value="{{ fluxo }}">
+      {% if refaz %}<input type="hidden" name="refaz" value="{{ refaz.pk }}">
+        <div class="aviso espera">{% blocktranslate trimmed with t=refaz.title %}Refazendo <strong>{{ t }}</strong> com as mesmas fontes (nenhuma busca nova).{% endblocktranslate %}
+          {% if refaz.status == 'published' %}{% translate "Ele continua no ar: o texto novo vira a versao seguinte, e so substitui a pagina quando voce aprovar." %}{% else %}{% translate "Ele continua aqui ate o texto novo ser colado e aceito; ai fica arquivado." %}{% endif %}</div>
+      {% endif %}
       {% if fluxo == 'pesquisa' %}<p class="ajuda">{% translate "Pela pesquisa de artigos: as fontes sao os resumos achados para a pauta, e a resposta pode pedir o texto completo de algum (PEDIDOS)." %}</p>{% endif %}
       <button type="submit">{% translate "Separar as fontes e montar o pedido" %}</button>
-      <a class="botao discreto" href="{% url 'content:pautas' %}">{% translate "Voltar" %}</a>
+      <a class="botao discreto" href="{% if refaz %}{% url 'content:revisar' refaz.pk %}{% else %}{% url 'content:pautas' %}{% endif %}">{% translate "Voltar" %}</a>
     </form>
   </section>
 {% else %}

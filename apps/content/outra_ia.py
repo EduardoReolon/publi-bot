@@ -85,11 +85,16 @@ def artigo_em_espera(pauta, fluxo: str = ""):
     return None
 
 
-def preparar(pauta, fluxo: str = ""):
+def preparar(pauta, fluxo: str = "", *, refaz=None):
     """Busca as fontes no acervo e cria o artigo que espera o texto de fora.
 
     Sem fonte que sustente a pauta, nao ha artigo: `fontes_da_pauta` levanta
     `SemFontesSuficientes`, exatamente como no caminho de sempre.
+
+    `refaz`: o artigo que este texto refaz, com as MESMAS fontes (nenhuma
+    busca nova). Publicado, o novo e a versao seguinte dele; rascunho, o novo o
+    substitui quando o texto colado for aceito. Uma geracao local pedida para
+    ele (em curso ou esperando) para: e um texto ou o outro.
     """
     from apps.content.services import fontes_da_pauta
 
@@ -97,23 +102,46 @@ def preparar(pauta, fluxo: str = ""):
     # Fora da transacao: a pauta marcada "aguardando fontes" tem de ficar.
     trechos = fontes_da_pauta(pauta, fluxo=fluxo)
     with transaction.atomic():
-        return _criar_artigo(pauta, trechos, fluxo)
+        if refaz is not None:
+            _parar_a_geracao_local(pauta, fluxo, refaz)
+        return _criar_artigo(pauta, trechos, fluxo, refaz=refaz)
 
 
-def _criar_artigo(pauta, trechos, fluxo: str = ""):
+def _parar_a_geracao_local(pauta, fluxo: str, refaz) -> None:
+    from apps.content import fluxos
+    from apps.knowledge.referencias import registrar
+
+    trabalho = fluxos.em_andamento(pauta, fluxo or fluxos.A)
+    payload = (trabalho.step_payloads or {}) if trabalho is not None else {}
+    if str(refaz.pk) in (payload.get("substitui"), payload.get("versao_de")):
+        fluxos.desistir(trabalho, "Trocada pelo texto da outra IA.")
+    dados = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    if str(refaz.pk) in (dados.get("substitui"), dados.get("versao_de")):
+        # O texto do B esperado ao fim da pesquisa nao sai mais sozinho.
+        registrar(pauta, "pesquisa", gerar_depois=False, substitui="", versao_de="")
+
+
+def _criar_artigo(pauta, trechos, fluxo: str = "", *, refaz=None):
     from apps.content.chamada import aplicar_decisao
+    from apps.content.flows import versao_seguinte
     from apps.content.models import Article, Author, Topic
     from apps.content.services import registrar_citacoes
 
     padrao = Author.do_site()
+    tese = {"origem": ORIGEM, "situacao_da_pauta": pauta.status}
+    publicado = refaz is not None and refaz.status == Article.Status.PUBLISHED
+    anterior, de_versao = versao_seguinte(refaz.pk if publicado else None)
+    if refaz is not None and not publicado:
+        tese["substitui"] = str(refaz.pk)
     artigo = Article.objects.create(
+        **de_versao,
         topic=pauta,
         title=pauta.title,
-        slug=slugify(pauta.title)[:300],
+        slug=(anterior.slug if anterior else slugify(pauta.title))[:300],
         focus_keyword=pauta.target_keyword,
         content_type=pauta.content_type,
         fluxo=fluxo,
-        thesis_json={"origem": ORIGEM, "situacao_da_pauta": pauta.status},
+        thesis_json=tese,
         single_source=len(trechos) == 1,
         author=padrao,
         author_name=getattr(padrao, "name", "") or "",
@@ -390,4 +418,9 @@ def aplicar(artigo, resposta: str):
                 answer=texto,
                 is_selected=posicao <= MARCADAS,
             )
-    return aplicar_rascunho(artigo, corpo)
+    resultado = aplicar_rascunho(artigo, corpo)
+    from apps.content.flows import arquivar_substituido
+
+    # Refeito por aqui: o rascunho antigo sai de cena agora que o texto chegou.
+    arquivar_substituido((artigo.thesis_json or {}).get("substitui"), artigo)
+    return resultado

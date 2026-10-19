@@ -46,18 +46,30 @@ def vetorizar_pendentes(limite: int = 200) -> int:
     return len(series)
 
 
-def sugerir(texto: str, *, limite: int = 5, excluir=(), nichos=()) -> list[Serie]:
+def sugerir(
+    texto: str, *, limite: int = 5, excluir=(), nichos=(), na_tela: bool = False
+) -> list[Serie]:
     """As series aprovadas mais proximas do texto (titulo e orientacao da pauta).
-    `nichos`: so series desses nichos (da serie ou da instituicao); vazio, todas."""
+    `nichos`: so series desses nichos (da serie ou da instituicao); vazio, todas.
+    `na_tela`: chamada por uma pagina aberta. Nada de vetorizar o catalogo ali
+    (pode levar minutos com o servico ocupado: vai para a fila), e o vetor da
+    consulta vem do cache ou com prazo curto."""
     from pgvector.django import CosineDistance
 
-    from apps.knowledge.embeddings import get_embedding_client
+    from apps.knowledge.embeddings import get_embedding_client, vetor_da_consulta_na_tela
 
     if not texto.strip() or not Serie.objects.filter(situacao=Serie.Situacao.APROVADA).exists():
         return []
     try:
-        vetorizar_pendentes()
-        alvo = get_embedding_client().embed_query(texto)
+        if na_tela:
+            if Serie.objects.filter(situacao=Serie.Situacao.APROVADA, vetor__isnull=True).exists():
+                from apps.dados.tasks import vetorizar_series
+
+                vetorizar_series.delay()
+            alvo = vetor_da_consulta_na_tela(texto)
+        else:
+            vetorizar_pendentes()
+            alvo = get_embedding_client().embed_query(texto)
     except Exception as exc:
         logger.warning("Sugestao de dados indisponivel: %s", exc)
         return []

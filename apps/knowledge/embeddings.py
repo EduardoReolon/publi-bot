@@ -41,6 +41,11 @@ class EmbeddingClient(ABC):
     def embed_passage(self, textos: list[str]) -> list[list[float]]:
         """Vetoriza PASSAGENS (o que esta no corpus)."""
 
+    def embed_query_na_tela(self, texto: str) -> list[float]:
+        """A mesma consulta, para quem esta com uma pagina aberta esperando:
+        o cliente remoto desiste cedo em vez de segurar a pagina."""
+        return self.embed_query(texto)
+
     def embed_queries(self, textos: list[str]) -> list[list[float]]:
         """Varias CONSULTAS de uma vez. Por padrao, uma a uma; os clientes reais
         mandam em lote (centenas de titulos numa chamada so, e nao centenas)."""
@@ -212,6 +217,11 @@ class ServicoDeVetoresClient(FastEmbedClient):
     def embed_query(self, texto: str) -> list[float]:
         return self._pedir([texto], prazo=60)[0]
 
+    def embed_query_na_tela(self, texto: str) -> list[float]:
+        # Ocupado (vetorizando um PDF grande, por exemplo), o servico atende em
+        # fila: uma pagina nao pode esperar atras disso.
+        return self._pedir([texto], prazo=PRAZO_NA_TELA)[0]
+
     def embed_queries(self, textos: list[str]) -> list[list[float]]:
         vetores = []
         for inicio in range(0, len(textos), self.LOTE):
@@ -288,6 +298,31 @@ class FakeEmbeddingClient(EmbeddingClient):
     def contar_tokens(self, texto: str) -> int:
         # Aproximacao suficiente para teste; o cliente real usa o tokenizador.
         return max(1, len(texto) // 4)
+
+
+# Segundos que uma pagina espera o vetor de uma consulta antes de seguir sem ele.
+PRAZO_NA_TELA = 4.0
+# O vetor de uma consulta nao muda (mesmo modelo, mesmo texto): guardado, a
+# pagina aberta de novo nao pede outra vez.
+VETOR_GUARDADO_POR = 7 * 24 * 3600
+
+
+def vetor_da_consulta_na_tela(texto: str) -> list[float]:
+    """O vetor de uma consulta feita por uma pagina: do cache, ou do cliente
+    com prazo curto. Levanta se o servico nao responder a tempo: quem chama
+    mostra a pagina sem aquela parte."""
+    import hashlib
+
+    from django.core.cache import cache
+
+    cliente = get_embedding_client()
+    modelo = getattr(cliente, "model_name", "")
+    chave = "vetor:" + hashlib.sha256(f"{modelo}|{texto}".encode()).hexdigest()
+    vetor = cache.get(chave)
+    if vetor is None:
+        vetor = getattr(cliente, "embed_query_na_tela", cliente.embed_query)(texto)
+        cache.set(chave, vetor, VETOR_GUARDADO_POR)
+    return vetor
 
 
 @lru_cache(maxsize=1)

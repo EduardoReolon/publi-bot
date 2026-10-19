@@ -208,3 +208,36 @@ def test_pauta_investigada_leva_o_debate_e_o_plano_por_frentes(artigo):
     )
     assert "'O que a midia diz'" not in plano
     assert "pauta investigada (frentes e debate: muito material)" in outra_ia.motivos_de_peso(pauta)
+
+
+@pytest.mark.django_db
+def test_refazer_com_outra_ia_usa_as_mesmas_fontes_e_arquiva_o_rascunho(tenant_com_acervo):
+    """Do botao no artigo: o pedido sai das mesmas fontes, a geracao local
+    pedida para ele para, e o rascunho antigo so sai de cena quando o texto
+    colado e aceito."""
+    from apps.content import fluxos
+    from apps.ops.models import GenerationJob
+
+    pauta = Topic.objects.create(
+        title="Efeito no metabolismo", target_keyword="metabolismo", status="used"
+    )
+    antigo = Article.objects.create(
+        title="Efeito no metabolismo", topic=pauta, status=Article.Status.PENDING_REVIEW
+    )
+    local = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        status=GenerationJob.Status.PENDING,
+        step_payloads={"fluxo": fluxos.A, "substitui": str(antigo.pk)},
+    )
+    novo = outra_ia.preparar(pauta, refaz=antigo)
+    local.refresh_from_db()
+    assert local.status == GenerationJob.Status.FAILED and "outra IA" in local.last_error
+    assert novo.thesis_json["substitui"] == str(antigo.pk)
+    antigo.refresh_from_db()
+    assert antigo.status == Article.Status.PENDING_REVIEW  # ainda aqui
+
+    outra_ia.aplicar(novo, RESPOSTA)
+    antigo.refresh_from_db()
+    assert antigo.status == Article.Status.REJECTED
+    assert antigo.thesis_json["substituido_por"] == str(novo.pk)
