@@ -35,7 +35,7 @@ def nichos_do_cliente() -> list[str]:
     return list(getattr(perfil, "nichos_de_dados", None) or [])
 
 
-def garantir_automaticos(pauta) -> None:
+def garantir_automaticos(pauta, *, na_tela: bool = False) -> None:
     """As series muito proximas da pauta entram sozinhas (sem repetir as tiradas)."""
     from apps.content.models import DadoDaPauta
     from apps.dados.catalogo import DISTANCIA_AUTOMATICA, MAXIMO_AUTOMATICOS, sugerir
@@ -45,7 +45,11 @@ def garantir_automaticos(pauta) -> None:
     if vagas <= 0:
         return
     for serie in sugerir(
-        _texto_da_pauta(pauta), limite=vagas, excluir=ja, nichos=nichos_do_cliente()
+        _texto_da_pauta(pauta),
+        limite=vagas,
+        excluir=ja,
+        nichos=nichos_do_cliente(),
+        na_tela=na_tela,
     ):
         if serie.distancia <= DISTANCIA_AUTOMATICA:
             DadoDaPauta.objects.get_or_create(
@@ -54,19 +58,26 @@ def garantir_automaticos(pauta) -> None:
 
 
 def sugestoes(pauta, limite: int = 5) -> list:
-    """Series proximas que nao entraram (nem foram tiradas)."""
+    """Series proximas que nao entraram (nem foram tiradas). So a pagina da
+    pauta chama: prazo curto."""
     from apps.dados.catalogo import sugerir
 
     ja = pauta.dados.values_list("serie_id", flat=True)
-    return sugerir(_texto_da_pauta(pauta), limite=limite, excluir=ja, nichos=nichos_do_cliente())
+    return sugerir(
+        _texto_da_pauta(pauta),
+        limite=limite,
+        excluir=ja,
+        nichos=nichos_do_cliente(),
+        na_tela=True,
+    )
 
 
-def escolhidos(pauta) -> list:
+def escolhidos(pauta, *, na_tela: bool = False) -> list:
     """Os dados que vao para o artigo, com os valores em cada recorte."""
     from apps.dados.catalogo import fato
     from apps.dados.locais import recortes_do_site
 
-    garantir_automaticos(pauta)
+    garantir_automaticos(pauta, na_tela=na_tela)
     recortes = recortes_do_site()
     itens = []
     for dado in pauta.dados.filter(tirado=False).select_related("serie__instituicao"):

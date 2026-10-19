@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -204,22 +206,35 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
         ),
         pk=pk,
     )
-    _preparar_pautas([alvo], config, completo=True)
     from apps.content.dados_da_pauta import escolhidos, sugestoes
 
-    return render(
-        request,
-        "content/pauta.html",
-        {
-            "aba": "pautas",
-            "pauta": alvo,
-            "config": config,
-            "dados_escolhidos": escolhidos(alvo),
-            "dados_sugeridos": sugestoes(alvo),
-            "blocos_da_pauta": blocos_da_pauta(),
-            "no_google": _no_google_da_pauta(alvo),
-        },
-    )
+    # Cada parte medida: passando de 2 s, o log diz qual pesou (como no artigo).
+    tempos: dict[str, float] = {}
+
+    def medir(nome, funcao, *args, **kwargs):
+        inicio = time.perf_counter()
+        resultado = funcao(*args, **kwargs)
+        tempos[nome] = time.perf_counter() - inicio
+        return resultado
+
+    medir("pauta", _preparar_pautas, [alvo], config, completo=True)
+    contexto = {
+        "aba": "pautas",
+        "pauta": alvo,
+        "config": config,
+        "dados_escolhidos": medir("dados_escolhidos", escolhidos, alvo, na_tela=True),
+        "dados_sugeridos": medir("dados_sugeridos", sugestoes, alvo),
+        "blocos_da_pauta": blocos_da_pauta(),
+        "no_google": medir("no_google", _no_google_da_pauta, alvo),
+    }
+    if sum(tempos.values()) > 2:
+        logger.warning(
+            "Pagina da pauta %s lenta (%.1fs): %s",
+            alvo.pk,
+            sum(tempos.values()),
+            ", ".join(f"{n} {t:.1f}s" for n, t in sorted(tempos.items(), key=lambda i: -i[1])),
+        )
+    return render(request, "content/pauta.html", contexto)
 
 
 def _no_google_da_pauta(pauta) -> dict | None:
@@ -354,8 +369,10 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
         "pesquisa" if (request.POST.get("fluxo") or request.GET.get("fluxo")) == "pesquisa" else ""
     )
     artigo = outra_ia.artigo_em_espera(pauta, fluxo)
+    # Refazer um artigo que ja existe, com as mesmas fontes (do botao no artigo).
+    refaz = _artigo_a_refazer(pauta, request.POST.get("refaz") or request.GET.get("refaz"))
     pronto = artigo_do_fluxo(pauta, fluxo)
-    if artigo is None and pronto is not None:
+    if artigo is None and pronto is not None and refaz is None:
         return redirect("content:revisar", pronto.pk)
 
     colado = ""
@@ -373,7 +390,7 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
                     messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
                     return redirect("content:pautas")
             try:
-                outra_ia.preparar(pauta, fluxo)
+                outra_ia.preparar(pauta, fluxo, refaz=refaz)
             except SemFontesSuficientes as exc:
                 messages.error(request, str(exc))
                 return redirect("content:pautas")
@@ -406,9 +423,27 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
             "motivos": outra_ia.motivos_de_peso(pauta),
             "colado": colado,
             "fluxo": fluxo,
+            "refaz": refaz,
         },
         status=400 if colado else 200,
     )
+
+
+def _artigo_a_refazer(pauta, pk):
+    """O artigo da pauta que a outra IA vai refazer: rascunho ja escrito ou
+    publicado (os mesmos que 'Gerar de novo' aceita)."""
+    from apps.content import fluxos
+
+    if not pk:
+        return None
+    try:
+        artigo = pauta.articles.filter(pk=pk).first()
+    except (ValueError, ValidationError):
+        return None
+    if artigo is None:
+        return None
+    publicado = artigo.status == Article.Status.PUBLISHED and bool(artigo.remote_id)
+    return artigo if publicado or artigo.status in fluxos.RASCUNHOS else None
 
 
 @login_required
@@ -630,11 +665,33 @@ def pdfs_da_pesquisa(request: HttpRequest, pk) -> HttpResponse:
     from apps.knowledge.pesquisa import pdfs_pedidos
 
     alvo = get_object_or_404(Topic, pk=pk)
+    itens = pdfs_pedidos(alvo)
     return render(
         request,
         "content/pdfs_da_pesquisa.html",
-        {"aba": "pautas", "pauta": alvo, "itens": pdfs_pedidos(alvo)},
+        {"aba": "pautas", "pauta": alvo, "itens": itens, "grupos": _grupos_dos_pdfs(itens)},
     )
+
+
+# Os grupos da pagina dos PDFs, na ordem em que a pessoa trabalha: primeiro o
+# que depende dela, depois o que esta andando sozinho, por ultimo o resolvido.
+GRUPOS_DOS_PDFS = (
+    ("fazer", ("pendente",), _("Providenciar o PDF"), True),
+    ("andando", ("lendo",), _("PDF recebido, lendo"), True),
+    ("feito", ("pdf", "sem_pdf"), _("Resolvidos"), False),
+)
+
+
+def _grupos_dos_pdfs(itens: list[dict]) -> list[dict]:
+    return [
+        {
+            "chave": chave,
+            "titulo": titulo,
+            "aberto": aberto,
+            "itens": [i for i in itens if i["estado"] in estados],
+        }
+        for chave, estados, titulo, aberto in GRUPOS_DOS_PDFS
+    ]
 
 
 @login_required
@@ -980,6 +1037,15 @@ def _gerando_de_novo(artigo) -> dict | None:
             "desde": trabalho.created_at,
             "passo": trabalho.current_step,
         }
+    falhou = _texto_novo_que_falhou(artigo, chave) if trabalho is None else None
+    if falhou is not None:
+        return {
+            **base,
+            "etapa": "falhou",
+            "trabalho": falhou,
+            "passo": falhou.current_step,
+            "motivo": falhou.last_error,
+        }
     if pedido and trabalho is None:
         # A pesquisa terminou e a geracao nao comecou: o motivo (PDFs pedidos,
         # pesquisa sem resultado, erro) fica visivel aqui, e nao so na pauta.
@@ -995,6 +1061,20 @@ def _gerando_de_novo(artigo) -> dict | None:
             "pauta": artigo.topic,
         }
     return None
+
+
+def _texto_novo_que_falhou(artigo, chave: str):
+    """A geracao do texto novo deste artigo que falhou (e nao foi retomada nem
+    trocada por outra): sem isto a pagina mostraria o texto antigo como se
+    nada tivesse acontecido."""
+    from apps.content import fluxos
+
+    falhou = fluxos.ultimas_falhas([artigo.topic]).get((artigo.topic_id, artigo.fluxo or fluxos.A))
+    if falhou is None or (falhou.step_payloads or {}).get(chave) != str(artigo.pk):
+        return None
+    if (falhou.step_payloads or {}).get("descartada"):
+        return None
+    return falhou
 
 
 def _resumo_da_conferencia(artigo) -> dict:
@@ -1372,11 +1452,69 @@ def comecar_texto_novo(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 @require_POST
+def conferir_texto_novo(request: HttpRequest, pk) -> HttpResponse:
+    """So confere se o texto novo ja pode comecar (PDFs lidos, pesquisa
+    pronta). Nao gera nada: gerar aqui ou com outra IA sao botoes a parte."""
+    from apps.knowledge.pesquisa import pronta_para_gerar, reconciliar_pedidos
+
+    artigo = get_object_or_404(Article, pk=pk)
+    if artigo.topic is not None:
+        reconciliar_pedidos(artigo.topic)
+        motivo = pronta_para_gerar(artigo.topic)
+        if motivo:
+            messages.info(request, _("Ainda nao: %(m)s") % {"m": motivo})
+        else:
+            messages.success(request, _("Tudo pronto: escolha gerar aqui ou com outra IA."))
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+@login_required
+@require_POST
+def retomar_texto_novo(request: HttpRequest, pk) -> HttpResponse:
+    """A geracao do texto novo que falhou volta para a fila, do passo em que
+    parou."""
+    from apps.ops.orchestrator import devolver_a_fila
+
+    artigo = get_object_or_404(Article, pk=pk)
+    chave = "versao_de" if artigo.status == Article.Status.PUBLISHED else "substitui"
+    falhou = _texto_novo_que_falhou(artigo, chave) if artigo.topic_id else None
+    if falhou is None:
+        messages.info(request, _("Nao ha geracao com falha para retomar neste artigo."))
+    else:
+        devolver_a_fila(falhou)
+        messages.success(
+            request,
+            _("Geracao retomada do passo %(n)s: acompanhe em Operacao.")
+            % {"n": falhou.current_step},
+        )
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+@login_required
+@require_POST
+def deixar_a_falha(request: HttpRequest, pk) -> HttpResponse:
+    """Esquece a geracao que falhou (o aviso some; o texto atual fica)."""
+    from apps.ops.models import GenerationJob
+
+    artigo = get_object_or_404(Article, pk=pk)
+    chave = "versao_de" if artigo.status == Article.Status.PUBLISHED else "substitui"
+    falhou = _texto_novo_que_falhou(artigo, chave) if artigo.topic_id else None
+    if falhou is not None:
+        GenerationJob.objects.filter(pk=falhou.pk).update(
+            step_payloads={**(falhou.step_payloads or {}), "descartada": True}
+        )
+    return redirect("content:revisar", pk=artigo.pk)
+
+
+@login_required
+@require_POST
 def gerar_de_novo(request: HttpRequest, pk) -> HttpResponse:
     from apps.content import fluxos
 
     artigo = get_object_or_404(Article, pk=pk)
-    nivel, mensagem = fluxos.gerar_de_novo(artigo)
+    nivel, mensagem = fluxos.gerar_de_novo(
+        artigo, mesmas_fontes=request.POST.get("fontes") == "mesmas"
+    )
     getattr(messages, nivel)(request, mensagem)
     return redirect("content:revisar", pk=artigo.pk)
 

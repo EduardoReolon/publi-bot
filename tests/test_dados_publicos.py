@@ -146,6 +146,14 @@ def test_da_pauta_ao_artigo(ambiente, monkeypatch):  # noqa: F811
     pauta = Topic.objects.create(title="Obesidade em adultos", status=Topic.Status.APPROVED)
     url_da_pauta = reverse("content:pauta", args=[pauta.pk], urlconf=U)
 
+    # A pagina nao vetoriza o catalogo (com o servico ocupado, levaria minutos):
+    # pede a fila. Vetorizada a serie, ela aparece.
+    pedidos = []
+    monkeypatch.setattr("apps.dados.tasks.vetorizar_series.delay", lambda: pedidos.append(1))
+    assert "entrou sozinho" not in client.get(url_da_pauta).content.decode()
+    assert pedidos and not DadoDaPauta.objects.filter(topic=pauta).exists()
+    catalogo.vetorizar_pendentes()
+
     # Muito proximo: entra sozinho, em destaque, com o Parana e o Brasil.
     pagina = client.get(url_da_pauta).content.decode()
     assert "entrou sozinho" in pagina and "24,1" in pagina and "25,9" in pagina

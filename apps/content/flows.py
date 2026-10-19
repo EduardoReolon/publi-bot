@@ -22,6 +22,7 @@ minutos atras.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 
 from django.db import transaction
 from django.utils import timezone
@@ -113,6 +114,18 @@ def fluxo_do_job(job: GenerationJob) -> str:
     return (job.step_payloads or {}).get("fluxo", "")
 
 
+@contextmanager
+def _vetores_ocupados_adiam():
+    """Servico de vetores ocupado (vetorizando um PDF grande, reiniciando) nao e
+    falha da geracao: o passo volta para a fila e tenta de novo sozinho."""
+    from apps.knowledge.embeddings import VetorizacaoAdiada
+
+    try:
+        yield
+    except VetorizacaoAdiada as exc:
+        raise PassoAdiado(str(exc), tentar_em_segundos=exc.retry_after or 180) from exc
+
+
 def passo_recuperar_fontes(job: GenerationJob) -> dict:
     """Busca no acervo o que sustenta a pauta.
 
@@ -124,7 +137,8 @@ def passo_recuperar_fontes(job: GenerationJob) -> dict:
     if topic is None:
         raise ValueError(f"pauta {job.target_object_id} nao existe")
 
-    trechos = fontes_da_pauta(topic, fluxo=fluxo_do_job(job))
+    with _vetores_ocupados_adiam():
+        trechos = fontes_da_pauta(topic, fluxo=fluxo_do_job(job))
 
     return {
         "chunk_ids": [str(t.chunk.pk) for t in trechos],
@@ -167,24 +181,39 @@ def passo_filtrar_consenso(job: GenerationJob) -> dict:
     }
 
 
+def versao_seguinte(versao_de) -> tuple:
+    """Gerado de novo do zero sobre um artigo publicado: e a versao seguinte
+    dele (mesmo endereco no site; aprovada, substitui a pagina). Devolve
+    (anterior, campos do artigo novo)."""
+    anterior = Article.objects.filter(pk=versao_de).first() if versao_de else None
+    if anterior is None:
+        return None, {}
+    return anterior, {
+        "previous_version": anterior,
+        "version_number": anterior.version_number + 1,
+        "remote_id": anterior.remote_id,
+        "published_url": anterior.published_url,
+        "update_notes": "Gerado de novo, do zero, com as fontes e regras atuais.",
+    }
+
+
+def arquivar_substituido(substitui, novo) -> None:
+    """O rascunho que o texto novo substitui sai de cena (fica como rejeitado,
+    apontando para o novo)."""
+    if not substitui:
+        return
+    antigo = Article.objects.filter(pk=substitui).exclude(pk=novo.pk).first()
+    if antigo is not None and antigo.status != Article.Status.PUBLISHED:
+        antigo.status = Article.Status.REJECTED
+        antigo.scheduled_for = None
+        antigo.thesis_json = {**(antigo.thesis_json or {}), "substituido_por": str(novo.pk)}
+        antigo.save(update_fields=["status", "scheduled_for", "thesis_json", "updated_at"])
+
+
 def _criar_artigo_do_consenso(job, topic, tese, trechos, padrao):
     from apps.content.services import MAPA_DE_CONCORDANCIA
 
-    # Gerado de novo do zero: e a versao seguinte do artigo publicado (mesmo
-    # endereco no site; aprovada, substitui a pagina).
-    anterior = None
-    versao_de = (job.step_payloads or {}).get("versao_de")
-    if versao_de:
-        anterior = Article.objects.filter(pk=versao_de).first()
-    de_versao = {}
-    if anterior is not None:
-        de_versao = {
-            "previous_version": anterior,
-            "version_number": anterior.version_number + 1,
-            "remote_id": anterior.remote_id,
-            "published_url": anterior.published_url,
-            "update_notes": "Gerado de novo, do zero, com as fontes e regras atuais.",
-        }
+    anterior, de_versao = versao_seguinte((job.step_payloads or {}).get("versao_de"))
     article = Article.objects.create(
         **de_versao,
         topic=topic,
@@ -205,14 +234,7 @@ def _criar_artigo_do_consenso(job, topic, tese, trechos, padrao):
 
     # Gerado de novo do zero sobre um rascunho: o rascunho antigo sai de cena
     # agora que o novo existe (antes disso, continuava la para ser lido).
-    substitui = (job.step_payloads or {}).get("substitui")
-    if substitui:
-        antigo = Article.objects.filter(pk=substitui).exclude(pk=article.pk).first()
-        if antigo is not None and antigo.status != Article.Status.PUBLISHED:
-            antigo.status = Article.Status.REJECTED
-            antigo.scheduled_for = None
-            antigo.thesis_json = {**(antigo.thesis_json or {}), "substituido_por": str(article.pk)}
-            antigo.save(update_fields=["status", "scheduled_for", "thesis_json", "updated_at"])
+    arquivar_substituido((job.step_payloads or {}).get("substitui"), article)
 
     # A pauta vira USED aqui, e nao no fim: a partir do momento em que existe
     # um artigo ligado a ela, sugeri-la de novo produziria dois textos sobre o
@@ -824,7 +846,8 @@ def passo_recuperar_para_pergunta(job: GenerationJob) -> dict:
     if documentos and _resumos_por_indexar(documentos, pesquisa):
         raise PassoAdiado("indexando os resumos dos artigos achados", tentar_em_segundos=120)
 
-    _, trechos = recuperar(consulta=question.question_text, origem=RetrievalQuery.Origin.QA)
+    with _vetores_ocupados_adiam():
+        _, trechos = recuperar(consulta=question.question_text, origem=RetrievalQuery.Origin.QA)
     if documentos:
         from apps.knowledge.pesquisa import POR_PERGUNTA
 

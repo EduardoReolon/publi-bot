@@ -185,7 +185,7 @@ def test_artigo_sem_pdf_aprovado_diz_onde_ficou_e_aceita_pdf_junto(ambiente, mon
     html = resposta.content.decode()
     assert "ainda nao foi para o acervo" in html and 'id="aguardando-pdf"' in html
     # A secao dos que esperam o PDF vem antes das sugestoes.
-    assert html.index('id="aguardando-pdf"') < html.index("Sugestoes esperando decisao")
+    assert html.index('id="aguardando-pdf"') < html.index('id="esperando-decisao"')
 
     enviados = []
     monkeypatch.setattr(

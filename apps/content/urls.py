@@ -62,6 +62,11 @@ urlpatterns = [
     path("artigos/<uuid:pk>/citacoes/aceitar/", views.aceitar_sem_fonte, name="aceitar_sem_fonte"),
     path("artigos/<uuid:pk>/gerar-de-novo/", views.gerar_de_novo, name="gerar_de_novo"),
     path("artigos/<uuid:pk>/comecar-texto/", views.comecar_texto_novo, name="comecar_texto_novo"),
+    path(
+        "artigos/<uuid:pk>/conferir-texto/", views.conferir_texto_novo, name="conferir_texto_novo"
+    ),
+    path("artigos/<uuid:pk>/retomar-texto/", views.retomar_texto_novo, name="retomar_texto_novo"),
+    path("artigos/<uuid:pk>/deixar-a-falha/", views.deixar_a_falha, name="deixar_a_falha"),
     path("artigos/<uuid:pk>/indexacao/", views.conferir_indexacao, name="conferir_indexacao"),
     path("artigos/<uuid:pk>/capas/", views.gerar_capas, name="gerar_capas"),
     path("artigos/<uuid:pk>/capas/escolher/", views.escolher_capa, name="escolher_capa"),

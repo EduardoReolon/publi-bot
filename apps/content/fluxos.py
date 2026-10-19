@@ -131,9 +131,10 @@ RASCUNHOS = (
 )
 
 
-def gerar_de_novo(artigo) -> tuple[str, str]:
+def gerar_de_novo(artigo, *, mesmas_fontes: bool = False) -> tuple[str, str]:
     """Gera o artigo de novo, do zero, com as regras atuais (conferencia de
-    citacoes, filtro de area...). No B, com uma pesquisa de artigos nova.
+    citacoes, filtro de area...). No B, com uma pesquisa de artigos nova, a
+    nao ser com `mesmas_fontes` (a pesquisa que ja existe, sem buscar nada).
 
     * publicado -> versao nova (mesma pagina; so substitui ao aprovar);
     * rascunho -> texto novo que arquiva este quando nascer (ate la, este fica).
@@ -152,7 +153,10 @@ def gerar_de_novo(artigo) -> tuple[str, str]:
     if em_andamento(pauta, fluxo) is not None:
         return "info", _("Ja ha uma geracao desta pauta em andamento.")
     chave = "versao_de" if publicado else "substitui"
-    if fluxo == B:
+    pesquisa_pronta = ((pauta.busca_de_fontes or {}).get("pesquisa") or {}).get(
+        "situacao"
+    ) == "pronta"
+    if fluxo == B and not (mesmas_fontes and pesquisa_pronta):
         from apps.knowledge.referencias import registrar
 
         pesquisa = situacao_da_pesquisa(pauta)

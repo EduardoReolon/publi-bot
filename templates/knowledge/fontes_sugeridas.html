@@ -26,40 +26,58 @@
     </div>
   {% endif %}
 
-  {% if aguardando_audio %}
-    <h2 id="aguardando-audio">{% translate "Videos aguardando o audio" %}</h2>
-    {% for candidato in aguardando_audio %}
-      {% include "knowledge/_aguardando_arquivo.html" %}
-    {% endfor %}
-  {% endif %}
+  <div class="cartoes">
+    <a class="cartao {% if aguardando_pdf %}fazer{% else %}feito{% endif %}" href="#aguardando-pdf"><div class="valor">{{ aguardando_pdf|length }}</div><div class="rotulo">{% translate "Artigos aguardando o PDF" %}</div></a>
+    <a class="cartao {% if aguardando_audio %}fazer{% else %}feito{% endif %}" href="#aguardando-audio"><div class="valor">{{ aguardando_audio|length }}</div><div class="rotulo">{% translate "Videos aguardando o audio" %}</div></a>
+    <a class="cartao {% if pendentes %}fazer{% else %}feito{% endif %}" href="#esperando-decisao"><div class="valor">{{ pendentes|length }}</div><div class="rotulo">{% translate "Esperando a sua decisao" %}</div></a>
+    {% if recentes %}<a class="cartao feito" href="#decididas"><div class="valor">{{ recentes|length }}</div><div class="rotulo">{% if so_recusados %}{% translate "Recusados" %}{% else %}{% translate "Decididas recentemente" %}{% endif %}</div></a>{% endif %}
+  </div>
 
   {% if aguardando_pdf %}
-    <h2 id="aguardando-pdf">{% translate "Artigos aguardando o PDF" %}</h2>
-    <p class="pre-visualizacao">
-      {% blocktranslate trimmed %}
-        Aprovados, mas sem PDF de acesso aberto (ou o site recusou o download
-        por robo). Abra o link no navegador — ou pela biblioteca da sua
-        instituicao — baixe o PDF e envie aqui.
-      {% endblocktranslate %}
-    </p>
-    {% for candidato in aguardando_pdf %}
-      {% include "knowledge/_aguardando_arquivo.html" %}
-    {% endfor %}
+    <details class="ramo fazer" id="aguardando-pdf" open>
+      <summary><strong>{% translate "Artigos aguardando o PDF" %}</strong> <span class="selo">{{ aguardando_pdf|length }}</span>
+        <span class="ajuda">· {% translate "baixe o PDF no navegador (ou pela biblioteca da sua instituicao) e envie" %}</span></summary>
+      <p class="pre-visualizacao">
+        {% blocktranslate trimmed %}
+          Aprovados, mas sem PDF de acesso aberto (ou o site recusou o download
+          por robo). Abra o link no navegador — ou pela biblioteca da sua
+          instituicao — baixe o PDF e envie aqui.
+        {% endblocktranslate %}
+      </p>
+      {% for candidato in aguardando_pdf %}
+        {% include "knowledge/_aguardando_arquivo.html" %}
+      {% endfor %}
+    </details>
   {% endif %}
 
-  {% if aguardando_audio or aguardando_pdf %}<h2>{% translate "Sugestoes esperando decisao" %}</h2>{% endif %}
-  {% for candidato in pendentes %}
-    {% include "knowledge/_candidato.html" %}
-  {% empty %}
-    <p class="vazio">{% translate "Nenhuma fonte sugerida esperando decisao." %}</p>
-    {% if pauta and documentos_em_curadoria %}
-      <div class="aviso espera">{% blocktranslate trimmed count n=documentos_em_curadoria %}{{ n }} fonte desta pauta ja aprovada espera a curadoria do documento (conferir os blocos).{% plural %}{{ n }} fontes desta pauta ja aprovadas esperam a curadoria do documento (conferir os blocos).{% endblocktranslate %}
-        <a class="botao pequeno" href="{% url 'knowledge:documentos' %}?pauta={{ pauta.pk }}">{% translate "Curar os documentos" %}</a></div>
-    {% endif %}
-  {% endfor %}
+  {% if aguardando_audio %}
+    <details class="ramo fazer" id="aguardando-audio" open>
+      <summary><strong>{% translate "Videos aguardando o audio" %}</strong> <span class="selo">{{ aguardando_audio|length }}</span>
+        <span class="ajuda">· {% translate "video sem legenda: envie o audio" %}</span></summary>
+      {% for candidato in aguardando_audio %}
+        {% include "knowledge/_aguardando_arquivo.html" %}
+      {% endfor %}
+    </details>
+  {% endif %}
+
+  <details class="ramo fazer" id="esperando-decisao" open>
+    <summary><strong>{% translate "Esperando a sua decisao" %}</strong> <span class="selo">{{ pendentes|length }}</span>
+      <span class="ajuda">· {% translate "aprovar ou recusar cada sugestao, de cima para baixo" %}</span></summary>
+    {% for candidato in pendentes %}
+      {% include "knowledge/_candidato.html" %}
+    {% empty %}
+      <p class="vazio">{% translate "Nenhuma fonte sugerida esperando decisao." %}</p>
+      {% if pauta and documentos_em_curadoria %}
+        <div class="aviso espera">{% blocktranslate trimmed count n=documentos_em_curadoria %}{{ n }} fonte desta pauta ja aprovada espera a curadoria do documento (conferir os blocos).{% plural %}{{ n }} fontes desta pauta ja aprovadas esperam a curadoria do documento (conferir os blocos).{% endblocktranslate %}
+          <a class="botao pequeno" href="{% url 'knowledge:documentos' %}?pauta={{ pauta.pk }}">{% translate "Curar os documentos" %}</a></div>
+      {% endif %}
+    {% endfor %}
+  </details>
 
   {% if recentes %}
-    <h2 id="decididas">{% if so_recusados %}{% translate "Recusados" %}{% else %}{% translate "Decididas recentemente" %}{% endif %}</h2>
+    <details class="ramo feito" id="decididas" {% if so_recusados %}open{% endif %}>
+    <summary><strong>{% if so_recusados %}{% translate "Recusados" %}{% else %}{% translate "Decididas recentemente" %}{% endif %}</strong> <span class="selo">{{ recentes|length }}</span>
+      <span class="ajuda">· {% translate "resolvidas: abra so para desfazer um engano" %}</span></summary>
     <p class="ajuda">
       {% if so_recusados %}<a href="{% url 'knowledge:fontes_sugeridas' %}#decididas">{% translate "Ver todas as decididas" %}</a>
       {% else %}<a href="{% url 'knowledge:fontes_sugeridas' %}?recusados=1#decididas">{% translate "Ver so os recusados" %}</a>{% endif %}
@@ -86,5 +104,6 @@
         {% endfor %}
       </tbody>
     </table>
+    </details>
   {% endif %}
 {% endblock %}
