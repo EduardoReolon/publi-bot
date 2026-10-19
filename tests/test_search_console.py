@@ -267,7 +267,11 @@ def test_artigos_pauta_e_artigo_mostram_como_aparecem_no_google(ambiente):  # no
         propriedade="sc-domain:exemplo.com", inicio=hoje, fim=hoje
     )
     LinhaDoConsole.objects.create(
-        coleta=antiga, consulta="capital de giro clinica", pagina=url + "/", impressoes=50, posicao=18
+        coleta=antiga,
+        consulta="capital de giro clinica",
+        pagina=url + "/",
+        impressoes=50,
+        posicao=18,
     )
     atual = ColetaDoConsole.objects.create(
         propriedade="sc-domain:exemplo.com",

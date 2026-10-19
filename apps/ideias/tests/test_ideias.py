@@ -930,7 +930,9 @@ def test_ideia_para_explorar_tem_limites_no_lugar_do_contra_e_leva_as_dores(
 
     _, _, client = ambiente
     monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
-    dores = [{"dor": "o dinheiro some no fim do mes", "falas": ["vendo bem e falta caixa"], "nota": 1}]
+    dores = [
+        {"dor": "o dinheiro some no fim do mes", "falas": ["vendo bem e falta caixa"], "nota": 1}
+    ]
     monkeypatch.setattr("apps.radar.dores.dores_para", lambda texto, **kw: dores)
     chamadas = []
     leitura = {
@@ -938,7 +940,11 @@ def test_ideia_para_explorar_tem_limites_no_lugar_do_contra_e_leva_as_dores(
         "afirmacao": "Metodo contabil de calculo da necessidade de capital de giro.",
         "tese": "Mostrar ao dono de clinica como calcular o caixa minimo.",
         "frentes": [
-            {"nome": "Como funciona", "papel": "a_favor", "buscas": ["necessidade capital de giro"]},
+            {
+                "nome": "Como funciona",
+                "papel": "a_favor",
+                "buscas": ["necessidade capital de giro"],
+            },
             {"nome": "Passo a passo", "papel": "a_favor", "buscas": ["calcular capital de giro"]},
         ],
         "onde": "site",
