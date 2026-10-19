@@ -477,3 +477,46 @@ def test_refazer_o_b_aqui_com_as_mesmas_fontes_nao_pesquisa(ambiente, monkeypatc
         {"fontes": "mesmas"},
     )
     assert pesquisas == [] and geradas == [{"fluxo": fluxos.B, "substitui": str(rascunho.pk)}]
+
+
+@pytest.mark.django_db
+def test_aprovar_cancela_o_texto_novo_que_o_substituiria(ambiente):  # noqa: F811
+    """O texto que esta na tela pode ser aprovado mesmo com a tentativa de texto
+    novo falhada; aprovado, a tentativa nao volta (retomada, ela arquivaria o
+    texto aprovado)."""
+    from apps.content import fluxos
+    from apps.content.models import Topic
+    from apps.ops.models import GenerationJob
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Crescimento linear")
+    pauta.busca_de_fontes = {"pesquisa": {"situacao": "pronta"}}
+    pauta.save()
+    rascunho = Article.objects.create(
+        title="Crescimento linear",
+        topic=pauta,
+        fluxo=fluxos.B,
+        status=Article.Status.PENDING_REVIEW,
+    )
+    falha = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        status=GenerationJob.Status.FAILED,
+        last_error="vetores fora",
+        step_payloads={"fluxo": fluxos.B, "substitui": str(rascunho.pk)},
+    )
+    em_curso = GenerationJob.objects.create(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE,
+        target_object_id=str(pauta.pk),
+        status=GenerationJob.Status.PENDING,
+        step_payloads={"fluxo": fluxos.A, "substitui": str(rascunho.pk)},
+    )
+    url = reverse("content:revisar", args=[rascunho.pk], urlconf="core.urls_tenants")
+    assert "Aprovar cancela o texto novo" in client.get(url).content.decode()
+
+    fluxos.abandonar_texto_novo(rascunho)
+    falha.refresh_from_db()
+    em_curso.refresh_from_db()
+    assert falha.step_payloads["descartada"] is True
+    assert em_curso.status == GenerationJob.Status.FAILED
+    assert "parou no passo" not in client.get(url).content.decode()

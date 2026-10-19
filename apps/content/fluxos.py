@@ -359,6 +359,35 @@ def geracoes_esperando() -> int:
     return retomadas
 
 
+def abandonar_texto_novo(artigo) -> None:
+    """Este texto foi aprovado: o texto novo pedido para substitui-lo (em curso,
+    que falhou ou esperado ao fim da pesquisa) nao vem mais. Sem isto, retomado
+    depois, ele arquivaria o texto aprovado."""
+    from apps.knowledge.referencias import registrar
+
+    pauta = artigo.topic
+    if pauta is None:
+        return
+    meu = str(artigo.pk)
+    chaves = ("substitui", "versao_de")
+    trabalhos = GenerationJob.objects.filter(
+        kind=GenerationJob.Kind.PILLAR_ARTICLE, target_object_id=str(pauta.pk)
+    ).exclude(status=GenerationJob.Status.DONE)
+    for trabalho in trabalhos:
+        payload = trabalho.step_payloads or {}
+        if meu not in (payload.get(c) for c in chaves):
+            continue
+        if trabalho.status == GenerationJob.Status.FAILED:
+            GenerationJob.objects.filter(pk=trabalho.pk).update(
+                step_payloads={**payload, "descartada": True}
+            )
+        else:
+            desistir(trabalho, "O texto que ele substituiria foi aprovado.")
+    dados = (pauta.busca_de_fontes or {}).get("pesquisa") or {}
+    if meu in (dados.get(c) for c in chaves):
+        registrar(pauta, "pesquisa", gerar_depois=False, substitui="", versao_de="")
+
+
 def desistir(trabalho, motivo: str) -> None:
     """Encerra uma geracao em curso (placa desligada ha horas, por exemplo):
     o fluxo volta a poder ser gerado. O que ja foi feito fica no trabalho."""

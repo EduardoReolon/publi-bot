@@ -270,6 +270,9 @@
       {% elif artigo.status == 'pending_review' %}
         <div class="aviso ok">{% translate "Tudo pronto para aprovar. Confira as escolhas abaixo, leia o artigo como vai sair e aprove." %}</div>
       {% endif %}
+      {% if gerando_de_novo and artigo.status == 'pending_review' %}
+        <div class="aviso espera">{% translate "Este texto pode ser aprovado como esta. Aprovar cancela o texto novo pedido para substitui-lo (o aviso no topo)." %}</div>
+      {% endif %}
         {% if not conferencia.vazia %}
           {% comment %}
             Termos proibidos bloqueiam a aprovacao ate o revisor confirmar;
