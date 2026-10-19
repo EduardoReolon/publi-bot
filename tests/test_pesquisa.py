@@ -797,6 +797,13 @@ def test_pdf_de_artigo_sem_resumo_guardado_tambem_vale_para_a_pesquisa(ambiente,
     candidato.refresh_from_db()
     assert candidato.documento_completo is not None
     assert pesquisa.pdfs_pedidos(pauta)[0]["estado"] == "lendo"
+    # A pagina separa em grupos: o que e com a pessoa primeiro, o resolvido recolhido.
+    html = client.get(
+        reverse("content:pdfs_da_pesquisa", args=[pauta.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert 'id="grupo-andando"' in html and "Providenciar o PDF" in html
+    if 'id="grupo-fazer"' in html:
+        assert html.index('id="grupo-fazer"') < html.index('id="grupo-andando"')
 
     # Enviado antes do conserto, o PDF tinha virado o documento: reenviado, vale.
     CandidatoDeFonte.objects.filter(pk=candidato.pk).update(

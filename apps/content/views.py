@@ -630,11 +630,33 @@ def pdfs_da_pesquisa(request: HttpRequest, pk) -> HttpResponse:
     from apps.knowledge.pesquisa import pdfs_pedidos
 
     alvo = get_object_or_404(Topic, pk=pk)
+    itens = pdfs_pedidos(alvo)
     return render(
         request,
         "content/pdfs_da_pesquisa.html",
-        {"aba": "pautas", "pauta": alvo, "itens": pdfs_pedidos(alvo)},
+        {"aba": "pautas", "pauta": alvo, "itens": itens, "grupos": _grupos_dos_pdfs(itens)},
     )
+
+
+# Os grupos da pagina dos PDFs, na ordem em que a pessoa trabalha: primeiro o
+# que depende dela, depois o que esta andando sozinho, por ultimo o resolvido.
+GRUPOS_DOS_PDFS = (
+    ("fazer", ("pendente",), _("Providenciar o PDF"), True),
+    ("andando", ("lendo",), _("PDF recebido, lendo"), True),
+    ("feito", ("pdf", "sem_pdf"), _("Resolvidos"), False),
+)
+
+
+def _grupos_dos_pdfs(itens: list[dict]) -> list[dict]:
+    return [
+        {
+            "chave": chave,
+            "titulo": titulo,
+            "aberto": aberto,
+            "itens": [i for i in itens if i["estado"] in estados],
+        }
+        for chave, estados, titulo, aberto in GRUPOS_DOS_PDFS
+    ]
 
 
 @login_required
