@@ -400,7 +400,9 @@ def criar_pauta(ideia: Ideia):
     explorar = ideia.tipo == Ideia.Tipo.EXPLORAR
     briefing = "\n".join(
         [
-            f"A ideia: {debate['afirmacao']}" if explorar else f"O que se diz: {debate['afirmacao']}",
+            f"A ideia: {debate['afirmacao']}"
+            if explorar
+            else f"O que se diz: {debate['afirmacao']}",
             (
                 f"O que o autor quer mostrar ou aplicar: {debate['tese']}"
                 if explorar
