@@ -1,4 +1,5 @@
 {% load i18n %}{# Refazer o texto: aqui ou com outra IA, com as mesmas fontes; no B, tambem com pesquisa nova. Recebe `artigo`. #}
+{% if artigo.topic_id %}
 <form method="post" action="{% url 'content:gerar_de_novo' artigo.pk %}" style="display:inline" onsubmit="return confirm('{% if artigo.status == 'published' %}{% translate "Gerar um texto novo aqui? Ele vira a versao seguinte e so substitui a pagina quando voce aprovar." %}{% else %}{% translate "Gerar um texto novo aqui? Este rascunho continua ate o novo ficar pronto; depois e arquivado." %}{% endif %}')">{% csrf_token %}
   <input type="hidden" name="fontes" value="mesmas">
   <button type="submit" class="pequeno" title="{% translate 'Texto escrito do zero pelo modelo daqui, com as mesmas fontes (nenhuma busca nova)' %}">{% translate "Refazer aqui" %}</button>
@@ -8,4 +9,5 @@
   <form method="post" action="{% url 'content:gerar_de_novo' artigo.pk %}" style="display:inline" onsubmit="return confirm('{% translate "Pesquisar artigos de novo e escrever do zero? A pesquisa nova pode trazer outros artigos e pedir outros PDFs." %}')">{% csrf_token %}
     <button type="submit" class="pequeno discreto" title="{% translate 'Nova pesquisa de artigos cientificos e texto escrito do zero' %}">{% translate "Pesquisa nova e refazer" %}</button>
   </form>
+{% endif %}
 {% endif %}
