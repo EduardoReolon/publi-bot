@@ -37,6 +37,16 @@
     {% endif %}
   </details>
 
+  {% if no_google %}
+    <details class="ramo" id="no-google">
+      <summary><strong>{% translate "Como aparece no Google" %}</strong>
+        <span class="ajuda">· {{ no_google.resumo.cliques }} {% translate "cliques" %} · {{ no_google.resumo.impressoes }} {% translate "impressoes" %} · {% translate "posicao" %} {{ no_google.resumo.posicao|default:"—" }}</span>
+      </summary>
+      <p class="ajuda">{% translate "Do artigo publicado" %}: <a href="{% url 'content:revisar' no_google.artigo.pk %}">{{ no_google.artigo.title }}</a></p>
+      {% include "content/_no_google.html" with google=no_google %}
+    </details>
+  {% endif %}
+
   {# --- A e B: cada modo com o seu artigo, o que esta em curso e as fontes dele --- #}
   {% for f in pauta.fluxos %}
     <details class="ramo" id="fluxo-{% if f.fluxo %}b{% else %}a{% endif %}" {% if f.falhou and not f.trabalho %}open{% endif %}>

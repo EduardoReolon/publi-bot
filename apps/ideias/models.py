@@ -30,7 +30,14 @@ class Ideia(models.Model):
         REDES = "redes", _("Post nas redes")
         OS_DOIS = "os_dois", _("Os dois")
 
+    class Tipo(models.TextChoices):
+        # "Dizem X, eu suspeito Y": testa a afirmacao, com o maior esforco no contra.
+        QUESTIONAR = "questionar", _("Questionar algo que se diz")
+        # "Vi um metodo e quero aplicar": entende, mostra como aplicar e onde nao serve.
+        EXPLORAR = "explorar", _("Explorar e aplicar uma ideia")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.QUESTIONAR)
     texto = models.TextField(_("a ideia"), blank=True)
     audio = models.FileField(upload_to="ideias/audios/%Y/%m/", max_length=300, blank=True)
     transcricao = models.TextField(blank=True)

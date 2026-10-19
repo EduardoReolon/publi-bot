@@ -50,6 +50,20 @@ def plano(debate: dict) -> str:
             "que a evidencia mostra (a favor e contra) -> conclusao honesta."
         )
     ordem = {papel: n for n, papel in enumerate(ORDEM_DOS_PAPEIS)}
+    if debate.get("tipo") == "explorar":
+        # Explicar -> aplicar -> limites: o "contra" (limites e riscos) vem por ultimo.
+        ordem = {"discurso": 0, "a_favor": 1, "alternativa": 2, "contra": 3}
+        passos = ["o problema do leitor e a ideia que responde a ele"]
+        for frente in sorted(frentes, key=lambda f: ordem.get(f.get("papel"), len(ordem))):
+            if frente.get("papel") != "discurso":
+                passos.append(f"'{frente.get('nome', '')}'")
+        passos.append("fechamento pratico: por onde comecar e quando procurar ajuda")
+        return (
+            "- Plano sugerido das secoes, nesta ordem (uma secao por passo, ou duas se o "
+            "passo tiver muito material; o titulo de cada secao e seu, nao o nome da frente): "
+            + " -> ".join(passos)
+            + "."
+        )
     passos = ["o cenario: o que se diz e por que convence"]
     for frente in sorted(frentes, key=lambda f: ordem.get(f.get("papel"), len(ordem))):
         if frente.get("papel") == "discurso":
@@ -72,6 +86,8 @@ def bloco(pauta) -> str:
     exemplos = discursos(pauta)
     if not (debate.get("afirmacao") or debate.get("tese") or exemplos):
         return ""
+    if debate.get("tipo") == "explorar":
+        return _bloco_explorar(debate)
     linhas = [
         "DEBATE DESTA PAUTA — o autor quer TESTAR uma ideia, nao defende-la a qualquer custo.",
     ]
@@ -79,6 +95,7 @@ def bloco(pauta) -> str:
         linhas.append(f"- O que se diz (a afirmacao em discussao): {debate['afirmacao']}")
     if debate.get("tese"):
         linhas.append(f"- O que o autor suspeita: {debate['tese']}")
+    linhas += _linhas_das_dores(debate)
     for outra in debate.get("linhas") or []:
         linhas.append(f"- Outra explicacao possivel, a considerar: {outra}")
     papeis = {
@@ -116,4 +133,41 @@ def bloco(pauta) -> str:
             linhas.append(
                 f"Discurso {n}: {origem} — {candidato.titulo}\n{texto[:TRECHO_POR_DISCURSO]}"
             )
+    return "\n".join(linhas)
+
+
+def _linhas_das_dores(debate: dict) -> list[str]:
+    dores = debate.get("dores") or []
+    if not dores:
+        return []
+    return [
+        "- Dores do publico ligadas a esta pauta (o PONTO DE PARTIDA do leitor, nas palavras "
+        "dele): o texto deve responder a elas, sem prometer o que as fontes nao sustentam: "
+        + "; ".join(dores)
+    ]
+
+
+def _bloco_explorar(debate: dict) -> str:
+    """Pauta que explora uma ideia (um metodo, um conceito a aplicar): explicar,
+    mostrar como aplicar e dizer onde nao serve. Nada a derrubar."""
+    papeis = {
+        "discurso": "como o mercado fala disso (analisar, nao provar)",
+        "a_favor": "explica ou mostra a aplicacao",
+        "contra": "limites e riscos",
+        "alternativa": "outro caminho, para comparar",
+    }
+    linhas = [
+        "EXPLORACAO DESTA PAUTA — o autor quer EXPLICAR e APLICAR uma ideia ao publico dele.",
+        f"- A ideia (o que e e de onde vem): {debate.get('afirmacao', '')}",
+        f"- O que o autor quer mostrar ou aplicar: {debate.get('tese', '')}",
+        *_linhas_das_dores(debate),
+        *[
+            f"- Frente '{f.get('nome', '')}' — {papeis.get(f.get('papel'), '')}: "
+            f"{f.get('descricao', '')}"
+            for f in debate.get("frentes") or []
+        ],
+        "- Explique com as FONTES, adapte ao leitor com exemplos concretos e diga com clareza "
+        "onde a ideia nao serve ou exige cuidado; nao venda a ideia como solucao para tudo.",
+        plano(debate),
+    ]
     return "\n".join(linhas)

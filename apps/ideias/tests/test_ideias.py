@@ -558,9 +558,10 @@ def test_refinar_mantem_as_frentes_e_so_busca_as_novas(ambiente, buscador, monke
 
 
 def test_pedido_da_outra_ia_conversa_antes_do_json():
-    from apps.ideias.investigacao import PARA_A_OUTRA_IA, fundir_frentes
+    from apps.ideias.investigacao import PARA_A_OUTRA_IA, PASSOS_DA_CONVERSA, fundir_frentes
 
-    assert "CONVERSE COM O AUTOR" in PARA_A_OUTRA_IA and "CONTRASTE" in PARA_A_OUTRA_IA
+    assert "CONVERSE COM O AUTOR" in PARA_A_OUTRA_IA
+    assert "CONTRASTE" in PASSOS_DA_CONVERSA["questionar"]
     antigas = [
         {"nome": "Discurso", "papel": "discurso", "descricao": "a"},
         {"nome": "Contra", "papel": "contra", "descricao": "b"},
@@ -916,3 +917,72 @@ def test_documento_grande_guarda_so_os_trechos_pedidos(ambiente, monkeypatch, em
         category=categoria, file_sha256="c" * 64, title="Artigo", markdown_full="Curto."
     )
     assert academicos.guardar_so_os_trechos(pequeno) is False
+
+
+def test_ideia_para_explorar_tem_limites_no_lugar_do_contra_e_leva_as_dores(
+    ambiente, buscador, monkeypatch
+):
+    """Explorar ("vi um metodo e quero aplicar"): o prompt e outro, nao ha
+    discurso obrigatorio, o contra vira 'Limites e riscos'; as dores mais perto
+    da ideia vao no prompt, na leitura, na pauta e no bloco da geracao."""
+    from apps.content import debate
+    from apps.ideias import investigacao
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.processar_ideia, "delay", lambda pk: None)
+    dores = [{"dor": "o dinheiro some no fim do mes", "falas": ["vendo bem e falta caixa"], "nota": 1}]
+    monkeypatch.setattr("apps.radar.dores.dores_para", lambda texto, **kw: dores)
+    chamadas = []
+    leitura = {
+        "titulo": "Quanto caixa a empresa precisa para nao parar",
+        "afirmacao": "Metodo contabil de calculo da necessidade de capital de giro.",
+        "tese": "Mostrar ao dono de clinica como calcular o caixa minimo.",
+        "frentes": [
+            {"nome": "Como funciona", "papel": "a_favor", "buscas": ["necessidade capital de giro"]},
+            {"nome": "Passo a passo", "papel": "a_favor", "buscas": ["calcular capital de giro"]},
+        ],
+        "onde": "site",
+    }
+
+    def executar(**kw):
+        chamadas.append(kw)
+        return types.SimpleNamespace(texto=json.dumps(leitura))
+
+    monkeypatch.setattr("apps.content.inference.executar_prompt", executar)
+    resposta = client.post(
+        reverse("ideias:inicio", urlconf=U),
+        {"tipo": "explorar", "texto": "Vi um metodo de contabilidade para o capital de giro."},
+    )
+    assert resposta.status_code == 302
+    ideia = Ideia.objects.get()
+    assert ideia.tipo == Ideia.Tipo.EXPLORAR
+
+    tasks.processar_ideia(str(ideia.pk))
+    ideia.refresh_from_db()
+    assert chamadas[0]["key"] == "ideia_leitura_explorar"
+    assert "o dinheiro some no fim do mes" in chamadas[0]["variaveis"]["ideia"]
+    frentes = [(f["nome"], f["papel"]) for f in ideia.leitura["frentes"]]
+    assert ("Limites e riscos", "contra") in frentes
+    assert all(papel != "discurso" for _nome, papel in frentes)
+    assert ideia.leitura["dores"] == ["o dinheiro some no fim do mes"]
+
+    pauta = ideia.pauta
+    assert pauta.debate["tipo"] == "explorar" and pauta.debate["dores"]
+    bloco = debate.bloco(pauta)
+    assert "EXPLORACAO DESTA PAUTA" in bloco and "limites e riscos" in bloco
+    assert "o dinheiro some no fim do mes" in bloco
+    assert bloco.index("Passo a passo") < bloco.index("Limites e riscos")
+
+    pedido = investigacao.pedido_para_outra_ia(ideia)
+    assert "NAO esta contestando" in pedido and "CONTRASTE" not in pedido
+
+    html = client.get(reverse("ideias:inicio", urlconf=U)).content.decode()
+    assert "Explorar e aplicar uma ideia" in html and "limites e riscos" in html
+
+
+def test_ideia_padrao_continua_questionando():
+    from apps.ideias.investigacao import _frentes
+
+    frentes = _frentes({"afirmacao": "a", "tese": "b", "frentes": []}, [])
+    assert [f["papel"] for f in frentes] == ["discurso", "contra"]
+    assert frentes[1]["nome"] == "Contra a tese"

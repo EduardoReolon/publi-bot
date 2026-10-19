@@ -56,7 +56,9 @@ def inicio(request: HttpRequest) -> HttpResponse:
                 _("Para preparar com outra IA, escreva a ideia (o audio vai pelo modelo daqui)."),
             )
             return redirect("ideias:inicio")
+        tipo = request.POST.get("tipo", "")
         ideia = Ideia.objects.create(
+            tipo=tipo if tipo in Ideia.Tipo.values else Ideia.Tipo.QUESTIONAR,
             texto=texto[:20000],
             links=_links(request.POST.get("links", "")),
             criada_por=request.user,
@@ -95,6 +97,7 @@ def inicio(request: HttpRequest) -> HttpResponse:
             "ideias": ideias,
             "grupos": _grupos(ideias),
             "redes": _destinos_das_redes(),
+            "tipos": Ideia.Tipo.choices,
         },
     )
 

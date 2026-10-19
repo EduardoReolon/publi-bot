@@ -217,8 +217,21 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
             "dados_escolhidos": escolhidos(alvo),
             "dados_sugeridos": sugestoes(alvo),
             "blocos_da_pauta": blocos_da_pauta(),
+            "no_google": _no_google_da_pauta(alvo),
         },
     )
+
+
+def _no_google_da_pauta(pauta) -> dict | None:
+    """O artigo publicado da pauta (o mais recente) no Google."""
+    publicados = [
+        a for a in pauta.articles.all() if a.status == Article.Status.PUBLISHED and a.published_url
+    ]
+    if not publicados:
+        return None
+    artigo = max(publicados, key=lambda a: a.published_at or a.updated_at)
+    google = _no_google(artigo.published_url)
+    return {**google, "artigo": artigo} if google else None
 
 
 @login_required
@@ -707,14 +720,34 @@ def artigos(request: HttpRequest) -> HttpResponse:
 
         consulta = consulta.filter(pk__in=fora().values("pk"))
 
+    busca = request.GET.get("q", "").strip()
+    if busca:
+        consulta = consulta.filter(Q(title__icontains=busca) | Q(focus_keyword__icontains=busca))
+
     contagens = dict(visiveis.values_list("status").annotate(total=Count("status")).order_by())
+    artigos = list(consulta[:200])
+    google = _google_dos_artigos(artigos)
+    ordem = request.GET.get("ordem", "")
+    if ordem in ORDENS_DO_GOOGLE and google:
+        chave, decrescente = ORDENS_DO_GOOGLE[ordem]
+        com = [a for a in artigos if a.google and a.google.get(chave) is not None]
+        sem = [a for a in artigos if a not in com]
+        artigos = sorted(com, key=lambda a: a.google[chave], reverse=decrescente) + sem
 
     return render(
         request,
         "content/artigos.html",
         {
             "aba": "artigos",
-            "artigos": consulta[:200],
+            "artigos": artigos,
+            "com_google": bool(google),
+            "ordens": [
+                ("cliques", _("cliques")),
+                ("impressoes", _("impressoes")),
+                ("posicao", _("melhor posicao")),
+            ],
+            "ordem": ordem,
+            "busca": busca,
             "situacao": situacao,
             "fora_do_google": fora_do_google,
             "situacoes": [
@@ -722,6 +755,25 @@ def artigos(request: HttpRequest) -> HttpResponse:
             ],
         },
     )
+
+
+# ?ordem= da lista de artigos: (campo do Search Console, maior primeiro).
+ORDENS_DO_GOOGLE = {
+    "cliques": ("cliques", True),
+    "impressoes": ("impressoes", True),
+    "posicao": ("posicao", False),
+}
+
+
+def _google_dos_artigos(artigos: list) -> dict:
+    """Pendura em cada artigo publicado os numeros do Search Console
+    (`artigo.google`), numa consulta so. Devolve o mapa por URL."""
+    from apps.radar.search_console import no_google
+
+    dados = no_google([a.published_url for a in artigos if a.published_url])
+    for artigo in artigos:
+        artigo.google = dados.get(artigo.published_url) if artigo.published_url else None
+    return dados
 
 
 @login_required
@@ -843,6 +895,7 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "modos_de_chamada": CHAMADAS,
         "partes_da_chamada": _partes_da_chamada(artigo),
         "indexacao_ligada": _indexacao_ligada(artigo),
+        "no_google": medir("no_google", _no_google, artigo.published_url),
         "dados_citados": [d for d in artigo.dados_usados or [] if d.get("citado")],
         "citacoes_conferidas": _resumo_da_conferencia(artigo),
         "gerando_de_novo": _gerando_de_novo(artigo),
@@ -850,6 +903,17 @@ def _montar_contexto_de_revisao(artigo, form, agendamento, medir) -> dict:
         "site_sem_chamada": site is not None and not site.suporta("call_to_action"),
         "proximo_horario": medir("proximo_horario", _proximo_horario),
     }
+
+
+def _no_google(url: str) -> dict | None:
+    """O cartao "Como aparece no Google": os totais da pagina e as buscas que
+    levam a ela, do ultimo retrato do Search Console. Sem dado, None."""
+    from apps.radar.search_console import consultas_da_pagina, no_google
+
+    resumo = no_google([url]).get(url) if url else None
+    if not resumo:
+        return None
+    return {"resumo": resumo, "consultas": consultas_da_pagina(url)}
 
 
 def _pendencias_com_aba(artigo) -> list[dict]:

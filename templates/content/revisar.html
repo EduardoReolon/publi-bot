@@ -190,6 +190,12 @@
       </div>
     {% endwith %}
   {% endif %}
+  {% if no_google %}
+    <details class="aviso" id="como-aparece-no-google" open>
+      <summary><strong>{% translate "Como aparece no Google" %}</strong> <span class="ajuda">({% translate "Search Console" %})</span></summary>
+      {% include "content/_no_google.html" with google=no_google %}
+    </details>
+  {% endif %}
   {% if artigo.exige_confirmacao_de_divergencia %}
     {% comment %}
       Sem este aviso o revisor leria um texto aparentemente pacifico sobre algo

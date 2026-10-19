@@ -308,48 +308,134 @@ def colher_sinais(*, rodada) -> list[SinalDeDemanda]:
     return novos
 
 
+def _chave_da_pagina(url: str) -> str:
+    """A mesma pagina com e sem barra final, http ou https, e a mesma."""
+    url = (url or "").strip().split("#")[0].rstrip("/")
+    return url.split("://", 1)[-1].lower()
+
+
+def _ultimas_coletas() -> list[ColetaDoConsole]:
+    return list(ColetaDoConsole.objects.order_by("-coletada_em")[:2])
+
+
+def _totais_por_pagina(coleta, chaves: set[str] | None = None) -> dict[str, dict]:
+    """{chave da pagina: {cliques, impressoes, posicao}} numa consulta so. A
+    posicao e a media ponderada pelas impressoes (a do Search Console)."""
+    from django.db.models import F, Sum
+
+    saida: dict[str, dict] = {}
+    linhas = (
+        coleta.linhas_set.values("pagina")
+        .annotate(
+            total_cliques=Sum("cliques"),
+            total_impressoes=Sum("impressoes"),
+            peso=Sum(F("posicao") * F("impressoes")),
+        )
+        .order_by()
+    )
+    for linha in linhas:
+        chave = _chave_da_pagina(linha["pagina"])
+        if chaves is not None and chave not in chaves:
+            continue
+        atual = saida.setdefault(chave, {"cliques": 0, "impressoes": 0, "peso": 0.0})
+        atual["cliques"] += linha["total_cliques"] or 0
+        atual["impressoes"] += linha["total_impressoes"] or 0
+        atual["peso"] += linha["peso"] or 0.0
+    for atual in saida.values():
+        peso = atual.pop("peso")
+        atual["posicao"] = round(peso / atual["impressoes"], 1) if atual["impressoes"] else None
+    return saida
+
+
+def no_google(urls) -> dict[str, dict]:
+    """Por URL publicada: {cliques, impressoes, posicao, posicao_anterior,
+    periodo} do ultimo retrato do Search Console (e a posicao do anterior,
+    para a direcao). URL sem dado nao aparece."""
+    coletas = _ultimas_coletas()
+    urls = [u for u in urls if u]
+    if not coletas or not urls:
+        return {}
+    chaves = {_chave_da_pagina(u) for u in urls}
+    atual = _totais_por_pagina(coletas[0], chaves)
+    anterior = _totais_por_pagina(coletas[1], chaves) if len(coletas) > 1 else {}
+    saida = {}
+    for url in urls:
+        chave = _chave_da_pagina(url)
+        if chave in atual:
+            saida[url] = {
+                **atual[chave],
+                "posicao_anterior": (anterior.get(chave) or {}).get("posicao"),
+                "periodo": (coletas[0].inicio, coletas[0].fim),
+            }
+    return saida
+
+
+def consultas_da_pagina(url: str, limite: int = 25) -> list[dict]:
+    """As buscas que levam a uma pagina, no ultimo retrato, com a posicao do
+    retrato anterior e a marca de "quase la" (perto da primeira pagina: e onde
+    atualizar o artigo rende mais)."""
+    coletas = _ultimas_coletas()
+    if not coletas or not url:
+        return []
+    chave = _chave_da_pagina(url)
+
+    def da_pagina(coleta):
+        return [
+            linha
+            for linha in coleta.linhas_set.filter(pagina__icontains=chave.split("/", 1)[-1])
+            if _chave_da_pagina(linha.pagina) == chave
+        ]
+
+    anteriores = (
+        {linha.consulta: linha.posicao for linha in da_pagina(coletas[1])}
+        if len(coletas) > 1
+        else {}
+    )
+    baixo, alto = POSICAO_QUASE_LA
+    linhas = sorted(da_pagina(coletas[0]), key=lambda linha: -linha.impressoes)[:limite]
+    return [
+        {
+            "consulta": linha.consulta,
+            "cliques": linha.cliques,
+            "impressoes": linha.impressoes,
+            "ctr": linha.ctr,
+            "posicao": round(linha.posicao, 1),
+            "posicao_anterior": anteriores.get(linha.consulta),
+            "quase_la": baixo <= linha.posicao <= alto and linha.impressoes >= IMPRESSOES_MINIMAS,
+        }
+        for linha in linhas
+    ]
+
+
 def desempenho_dos_artigos(limite: int = 30) -> list[dict]:
     """Cliques, impressoes e posicao de cada artigo publicado, no ultimo retrato.
 
     Compara com o retrato anterior quando ha, para a tela mostrar a direcao.
     """
-    from django.db.models import Avg, Sum
-
     from apps.content.models import Article
 
-    coletas = list(ColetaDoConsole.objects.order_by("-coletada_em")[:2])
-    if not coletas:
+    if not _ultimas_coletas():
         return []
-
-    def totais(coleta, url):
-        agregado = coleta.linhas_set.filter(pagina=url).aggregate(
-            cliques=Sum("cliques"), impressoes=Sum("impressoes"), posicao=Avg("posicao")
-        )
-        return agregado
-
-    saida = []
-    artigos = (
+    artigos = list(
         Article.objects.filter(status=Article.Status.PUBLISHED)
         .exclude(published_url="")
         .order_by("-published_at")[:limite]
     )
+    dados = no_google([a.published_url for a in artigos])
+    saida = []
     for artigo in artigos:
-        atual = totais(coletas[0], artigo.published_url)
-        anterior = totais(coletas[1], artigo.published_url) if len(coletas) > 1 else {}
-        principais = list(
-            coletas[0]
-            .linhas_set.filter(pagina=artigo.published_url)
-            .order_by("-impressoes")
-            .values("consulta", "impressoes", "posicao")[:3]
-        )
+        atual = dados.get(artigo.published_url) or {}
         saida.append(
             {
                 "artigo": artigo,
-                "cliques": atual["cliques"] or 0,
-                "impressoes": atual["impressoes"] or 0,
-                "posicao": atual["posicao"],
-                "posicao_anterior": (anterior or {}).get("posicao"),
-                "consultas": principais,
+                "cliques": atual.get("cliques", 0),
+                "impressoes": atual.get("impressoes", 0),
+                "posicao": atual.get("posicao"),
+                "posicao_anterior": atual.get("posicao_anterior"),
+                "consultas": [
+                    {k: c[k] for k in ("consulta", "impressoes", "posicao")}
+                    for c in consultas_da_pagina(artigo.published_url, limite=3)
+                ],
             }
         )
     return saida

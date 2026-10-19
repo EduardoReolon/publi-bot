@@ -772,3 +772,43 @@ def test_pesquisa_antiga_com_candidatos_desalinhados_e_realinhada(ambiente):  # 
     pauta.refresh_from_db()
     assert pauta.busca_de_fontes["pesquisa"]["artigos"][1]["candidato"] == str(a2.pk)
     assert pesquisa.realinhar_candidatos(pauta) == 0  # ja alinhada
+
+
+def test_pdf_de_artigo_sem_resumo_guardado_tambem_vale_para_a_pesquisa(ambiente, openalex, modelo):  # noqa: F811
+    """Candidato recriado pelo realinhamento nao tem o resumo como documento: o
+    PDF enviado ainda e da pesquisa (vai para documento_completo e a pagina o
+    mostra sendo lido)."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Recuperar o cliente")
+    pesquisa.pesquisar(pauta)
+    candidato = pesquisa.pdfs_pedidos(pauta)[0]["candidato"]
+    CandidatoDeFonte.objects.filter(pk=candidato.pk).update(documento=None)
+
+    client.post(
+        reverse(
+            "content:enviar_pdf_da_pesquisa",
+            args=[pauta.pk, candidato.pk],
+            urlconf="core.urls_tenants",
+        ),
+        {"pdf": SimpleUploadedFile("estudo.pdf", b"%PDF-1.4 y", content_type="application/pdf")},
+    )
+    candidato.refresh_from_db()
+    assert candidato.documento_completo is not None
+    assert pesquisa.pdfs_pedidos(pauta)[0]["estado"] == "lendo"
+
+    # Enviado antes do conserto, o PDF tinha virado o documento: reenviado, vale.
+    CandidatoDeFonte.objects.filter(pk=candidato.pk).update(
+        documento=candidato.documento_completo, documento_completo=None
+    )
+    client.post(
+        reverse(
+            "content:enviar_pdf_da_pesquisa",
+            args=[pauta.pk, candidato.pk],
+            urlconf="core.urls_tenants",
+        ),
+        {"pdf": SimpleUploadedFile("estudo.pdf", b"%PDF-1.4 y", content_type="application/pdf")},
+    )
+    candidato.refresh_from_db()
+    assert candidato.documento_completo is not None

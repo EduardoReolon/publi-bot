@@ -7,17 +7,24 @@
   <p class="sub">{% translate "Nenhum artigo e publicado sem passar pela revisao." %}
     · <a href="{% url 'content:desempenho' %}">{% translate "Desempenho no site" %}</a></p>
 
-  <p class="pre-visualizacao">
-    <a href="{% url 'content:artigos' %}">{% translate "Todos" %}</a>
+  <form method="get" class="acoes">
+    <a class="botao pequeno {% if situacao %}discreto{% endif %}" href="{% url 'content:artigos' %}">{% translate "Todos" %}</a>
     {% for valor, rotulo, total in situacoes %}
       {% if total %}
-        &middot;
-        <a href="?situacao={{ valor }}" {% if situacao == valor %}style="font-weight:600"{% endif %}>
-          {{ rotulo }} ({{ total }})
-        </a>
+        <a class="botao pequeno {% if situacao != valor %}discreto{% endif %}" href="?situacao={{ valor }}{% if ordem %}&ordem={{ ordem }}{% endif %}">{{ rotulo }} ({{ total }})</a>
       {% endif %}
     {% endfor %}
-  </p>
+    {% if situacao %}<input type="hidden" name="situacao" value="{{ situacao }}">{% endif %}
+    {% if ordem %}<input type="hidden" name="ordem" value="{{ ordem }}">{% endif %}
+    <input type="search" name="q" value="{{ busca }}" placeholder="{% translate 'Buscar pelo titulo ou palavra-chave' %}" aria-label="{% translate 'Buscar' %}">
+  </form>
+  {% if com_google %}
+    <p class="ajuda">
+      {% translate "No Google (ultimo retrato do Search Console). Ordenar por:" %}
+      {% for valor, rotulo in ordens %}<a href="?{% if situacao %}situacao={{ situacao }}&{% endif %}{% if busca %}q={{ busca|urlencode }}&{% endif %}ordem={{ valor }}" {% if ordem == valor %}style="font-weight:600"{% endif %}>{{ rotulo }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
+      {% if ordem %} · <a href="?{% if situacao %}situacao={{ situacao }}{% endif %}">{% translate "mais recentes" %}</a>{% endif %}
+    </p>
+  {% endif %}
 
   {% if fora_do_google %}
     <div class="aviso">
@@ -39,6 +46,11 @@
             <th>{% translate "Fontes" %}</th>
             <th class="numero">{% translate "Palavras" %}</th>
             <th>{% translate "Agendado" %}</th>
+            {% if com_google %}
+              <th class="numero">{% translate "Cliques" %}</th>
+              <th class="numero">{% translate "Impressoes" %}</th>
+              <th class="numero">{% translate "Posicao" %}</th>
+            {% endif %}
           </tr>
         </thead>
         <tbody>
@@ -68,6 +80,13 @@
               </td>
               <td class="numero">{{ artigo.word_count }}</td>
               <td class="pre-visualizacao">{{ artigo.scheduled_for|date:"d/m H:i"|default:"—" }}</td>
+              {% if com_google %}
+                {% with g=artigo.google %}
+                  <td class="numero">{{ g.cliques|default_if_none:"—" }}</td>
+                  <td class="numero">{{ g.impressoes|default_if_none:"—" }}</td>
+                  <td class="numero">{% if g.posicao %}<a href="{% url 'content:revisar' artigo.pk %}#como-aparece-no-google" title="{% translate 'Ver as buscas' %}">{{ g.posicao }}</a>{% if g.posicao_anterior %}{% if g.posicao < g.posicao_anterior %} <span class="selo ok">▲</span>{% elif g.posicao > g.posicao_anterior %} <span class="selo ruim">▼</span>{% endif %}{% endif %}{% else %}—{% endif %}</td>
+                {% endwith %}
+              {% endif %}
             </tr>
           {% endfor %}
         </tbody>

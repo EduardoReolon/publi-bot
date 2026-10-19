@@ -593,10 +593,13 @@ def _guardar_o_pdf(candidato, documento) -> bool:
     fonte e o PDF vai para `documento_completo` (dele saem so os trechos
     pedidos). Fora da pesquisa: o PDF toma o lugar do resumo. Devolve se e da
     pesquisa."""
-    from apps.knowledge.pesquisa import em_pesquisa
+    from apps.knowledge.pesquisa import em_pesquisa, pautas_do_candidato
     from apps.knowledge.provisorias import descartar_resumo
 
-    if em_pesquisa(candidato):
+    # O mesmo PDF reenviado depois de ter caido como documento (antes do
+    # conserto de `em_pesquisa`) tambem e da pesquisa.
+    reenviado = candidato.documento_id == documento.pk and pautas_do_candidato(candidato)
+    if em_pesquisa(candidato) or reenviado:
         candidato.documento_completo = documento
         CandidatoDeFonte.objects.filter(pk=candidato.pk).update(documento_completo=documento)
         return True
