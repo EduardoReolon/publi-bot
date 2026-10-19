@@ -15,7 +15,10 @@ from apps.integrations.scheduling import (
     contar_reserva,
     conteudo_pronto_para_publicar,
     excedeu_o_teto_mensal,
+    garantir_horarios_livres,
     gerar_horarios,
+    horarios_livres,
+    proximo_horario,
     reserva_esta_baixa,
 )
 
@@ -119,6 +122,69 @@ def test_horarios_semanais_sao_criados_no_fuso_do_site(site):
         assert horario.local_slot_at is not None
         # Sao Paulo fica atras de UTC, entao 10h local sai depois das 10h UTC.
         assert horario.local_slot_at.hour == 10
+
+
+@pytest.mark.django_db
+def test_com_os_30_dias_ocupados_gerar_vai_alem_ate_ter_horarios_livres(site):
+    """Todos os horarios dos proximos 30 dias com artigo aprovado: gerar "ate
+    30 dias" nao criava nada ("0 horarios gerados") e o aprovado nao tinha onde
+    entrar."""
+    schedule = PublicationSchedule.objects.create(site=site, weekdays=[0], times_of_day=["10:00"])
+    for horario in gerar_horarios(schedule):
+        horario.article = _artigo(
+            status=Article.Status.APPROVED_SCHEDULED, scheduled_for=horario.slot_at
+        )
+        horario.save()
+    assert horarios_livres().count() == 0
+
+    criados = garantir_horarios_livres(schedule)
+
+    assert len(criados) >= 5
+    assert horarios_livres().count() >= 5
+    assert garantir_horarios_livres(schedule) == []  # ja tem livres: nada a fazer
+
+
+@pytest.mark.django_db
+def test_intervalo_em_dias_tambem_vai_alem_dos_30_dias(site):
+    schedule = PublicationSchedule.objects.create(
+        site=site,
+        mode=PublicationSchedule.Mode.INTERVAL_DAYS,
+        interval_days=10,
+        times_of_day=["09:00"],
+    )
+    garantir_horarios_livres(schedule)
+    assert horarios_livres().count() >= 5
+
+
+@pytest.mark.django_db
+def test_proximo_horario_sem_livre_gera_mais_e_nunca_e_agora(site):
+    schedule = PublicationSchedule.objects.create(site=site, weekdays=[2], times_of_day=["10:00"])
+    for horario in gerar_horarios(schedule):
+        horario.article = _artigo(
+            status=Article.Status.APPROVED_SCHEDULED, scheduled_for=horario.slot_at
+        )
+        horario.save()
+
+    quando = proximo_horario()
+
+    assert quando > timezone.now() + timedelta(days=25)
+    assert quando == horarios_livres().first().slot_at
+
+
+@pytest.mark.django_db
+def test_proximo_horario_sem_cadencia_e_o_dia_seguinte_ao_ultimo_agendado(site):
+    """Sem cadencia, agendar ainda agenda (no dia seguinte, na hora padrao do
+    site); publicar na hora e so o botao "Publicar ja"."""
+    quando = proximo_horario()
+    assert quando > timezone.now() + timedelta(hours=1)
+
+    _artigo(
+        status=Article.Status.APPROVED_SCHEDULED,
+        scheduled_for=timezone.now() + timedelta(days=5),
+    )
+    depois = proximo_horario()
+    assert depois > timezone.now() + timedelta(days=5)
+    assert proximo_horario() == depois
 
 
 @pytest.mark.django_db
