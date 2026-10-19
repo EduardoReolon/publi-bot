@@ -279,8 +279,10 @@ Forma:
   jeito de dizer das falas acima (sem copiar nome nem detalhe de ninguem, sem
   alarmismo), e entregue a resposta cedo.
 - Titulos das secoes como a pessoa pensa o problema, nao como indice.
-- Secoes com titulo de nivel 2 (##); nivel 3 (###) so se a secao tiver duas
-  partes. Nada de titulo de nivel 1.
+- Titulo de cada secao numa linha propria, comecando com "SECAO: " (ex.:
+  "SECAO: Onde a automacao paga a conta"). Subtitulo so se a secao tiver duas
+  partes, com "SUBSECAO: ". Nada de #, nem titulo para o artigo inteiro.
+- Cada paragrafo numa linha so, com uma linha em branco entre eles.
 - Frases curtas. Sem "vale ressaltar", "no cenario atual", "jornada".
 - Um fecho curto, sem titulo "Conclusao".
 - Nao inclua perguntas frequentes nem referencias dentro do corpo: elas tem
@@ -347,46 +349,41 @@ def _perguntas(bloco: str) -> list[tuple[str, str]]:
     return pares[:SUGERIDAS]
 
 
-# Linha que vira titulo quando o corpo chega sem Markdown: curta, sem ponto
-# no fim e seguida de um paragrafo.
-PALAVRAS_DO_TITULO = 14
-_FIM_DE_FRASE = (".", ",", ";", ":")
+# Os titulos vem como rotulos de texto puro, que sobrevivem a qualquer jeito
+# de copiar (o ## some quando se seleciona o texto ja desenhado na tela do
+# chat). O ## continua aceito, para quem copia pelo botao.
+_ROTULO_DE_TITULO = re.compile(
+    r"^\s*[*_]*\s*(SUB)?SE[CÇ][AÃ]O\s*[*_]*\s*:\s*[*_]*\s*(.+?)\s*[*_]*\s*$",
+    flags=re.IGNORECASE,
+)
+_ITEM_DE_LISTA = re.compile(r"^\s*([-*+]|\d+[.)])\s+")
 
 
-def _parece_titulo(linha: str, seguinte: str) -> bool:
-    return (
-        bool(linha)
-        and len(linha.split()) <= PALAVRAS_DO_TITULO
-        and not linha.endswith(_FIM_DE_FRASE)
-        and "[[" not in linha
-        and linha[0].isupper()
-        and len(seguinte) > len(linha)
-        and "[[CHAMADA]]" not in seguinte
-    )
-
-
-def recuperar_formatacao(corpo: str) -> str:
-    """O texto copiado da tela do chat (selecionado, e nao pelo botao de
-    copiar) chega sem os ## e sem as linhas em branco: os titulos virariam
-    paragrafos e o artigo, um paragrafo so. Sem nenhum titulo marcado, a linha
-    curta sem ponto final seguida de paragrafo volta a ser titulo de secao, e
-    cada linha vira um paragrafo."""
-    if re.search(r"^\s*#{1,6}\s", corpo or "", flags=re.MULTILINE):
-        return corpo
-    linhas = [linha.strip() for linha in (corpo or "").splitlines() if linha.strip()]
-    saida = []
-    for i, linha in enumerate(linhas):
-        seguinte = linhas[i + 1] if i + 1 < len(linhas) else ""
-        if i > 0 and _parece_titulo(linha, seguinte):
-            saida.append(f"## {linha}")
+def com_titulos_marcados(corpo: str) -> str:
+    """SECAO: vira ## e SUBSECAO: vira ###; cada linha de texto e um paragrafo
+    (o pedido manda um paragrafo por linha), e os itens de lista seguidos
+    ficam juntos."""
+    blocos: list[str] = []
+    for linha in (corpo or "").splitlines():
+        if not linha.strip():
+            continue
+        if achado := _ROTULO_DE_TITULO.match(linha):
+            nivel = "###" if achado.group(1) else "##"
+            blocos.append(f"{nivel} {achado.group(2).strip()}")
+        elif (
+            _ITEM_DE_LISTA.match(linha)
+            and blocos
+            and _ITEM_DE_LISTA.match(blocos[-1].splitlines()[-1])
+        ):
+            blocos[-1] += "\n" + linha.strip()
         else:
-            saida.append(linha)
-    return "\n\n".join(saida)
+            blocos.append(linha.strip())
+    return "\n\n".join(blocos)
 
 
 def ler(resposta: str) -> dict:
     corpo, resto = _corpo(resposta)
-    corpo = recuperar_formatacao(corpo)
+    corpo = com_titulos_marcados(corpo)
     blocos = ler_blocos(resto, ROTULOS)
     return {
         "titulo": " ".join(blocos.get("TITULO SUGERIDO", "").split()).strip('"')[:300],
@@ -444,6 +441,13 @@ def aplicar(artigo, resposta: str):
         )
 
     abertura, secoes = _secoes(tirar_marcas(corpo))
+    if not secoes:
+        # Gravar assim daria um artigo sem titulo nenhum e sem lugar para a
+        # chamada do meio: melhor recusar e dizer o que fazer.
+        raise ValueError(
+            "a resposta veio sem os titulos das secoes (linhas 'SECAO:'). Copie de novo "
+            "pelo botao de copiar da IA, ou peca a ela para reenviar no formato pedido."
+        )
     artigo.sections.all().delete()
     for ordem, (nivel, titulo, texto) in enumerate(secoes, start=1):
         ArticleSection.objects.create(

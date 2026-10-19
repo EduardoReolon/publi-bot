@@ -243,19 +243,20 @@ def test_refazer_com_outra_ia_usa_as_mesmas_fontes_e_arquiva_o_rascunho(tenant_c
     assert antigo.thesis_json["substituido_por"] == str(novo.pk)
 
 
-def test_texto_copiado_da_tela_sem_markdown_recupera_titulos_e_paragrafos():
-    """Selecionado na tela do chat (e nao pelo botao de copiar), o texto chega
-    sem ## e sem linhas em branco: os titulos voltam a ser secoes e cada linha
-    um paragrafo; frase comum, a marca da chamada e fonte nunca viram titulo."""
+def test_titulos_por_rotulo_de_texto_e_um_paragrafo_por_linha():
+    """SECAO:/SUBSECAO: sobrevivem a qualquer copia (o ## some quando se
+    seleciona o texto na tela do chat); cada linha vira um paragrafo e a lista
+    fica junta. Nada e adivinhado: frase curta continua frase."""
     colado = (
         f"CORPO DO ARTIGO:\nAbertura que comeca pela dor de quem le. {PARAGRAFO}\n"
-        f"Segundo paragrafo da abertura, sem titulo. {PARAGRAFO}\n"
-        "Por que o esforco manual consome o lucro\n"
+        f"Segundo paragrafo da abertura. {PARAGRAFO}\n"
+        "**SECAO:** Por que o esforco manual consome o lucro\n"
         f"Texto da secao com fonte [[FONTE_1]]. {PARAGRAFO}\n"
         "[[CHAMADA]]\n"
-        "Onde aplicar no seu negocio\n"
-        f"Mais texto. {PARAGRAFO}\n"
-        "Uma frase curta que termina com ponto.\n"
+        "SUBSECAO: Um detalhe\n"
+        "- item um\n- item dois\n"
+        "SECAO: Onde aplicar no seu negocio\n"
+        "Uma frase curta\n"
         f"Fecho do artigo. {PARAGRAFO}\n"
         "FIM DO ARTIGO"
     )
@@ -266,22 +267,27 @@ def test_texto_copiado_da_tela_sem_markdown_recupera_titulos_e_paragrafos():
         "Onde aplicar no seu negocio",
     ]
     assert "\n\n" in abertura and "[[CHAMADA]]" in secoes[0][2]
+    assert "### Um detalhe" in secoes[0][2] and "- item um\n- item dois" in secoes[0][2]
     assert "## Uma frase curta" not in corpo
-
-    # Com Markdown, nada muda.
-    com = "## Titulo\n\nTexto curto.\nLinha seguinte"
-    assert outra_ia.recuperar_formatacao(com) == com
     assert "BLOCO DE CODIGO" in outra_ia.PEDIDO_EM_BLOCO
 
 
 @pytest.mark.django_db
+def test_resposta_sem_titulo_nenhum_e_recusada_com_o_que_fazer(artigo):
+    sem_titulos = RESPOSTA.replace("## ", "").replace("# Metabolismo\n\n", "")
+    with pytest.raises(ValueError, match="sem os titulos"):
+        outra_ia.aplicar(artigo, sem_titulos)
+    assert artigo.sections.count() == 0
+
+
+@pytest.mark.django_db
 def test_colar_de_novo_no_artigo_que_veio_da_outra_ia(artigo):
-    """A primeira colagem perdeu os titulos: a mesma resposta, colada de novo no
-    mesmo artigo (mesmas fontes), refaz as secoes."""
-    sem_markdown = RESPOSTA.replace("## ", "").replace("# Metabolismo\n\n", "")
-    outra_ia.aplicar(artigo, sem_markdown)
+    """A mesma resposta, colada de novo no mesmo artigo (mesmas fontes), refaz
+    o texto e as secoes."""
+    por_rotulo = RESPOSTA.replace("## ", "SECAO: ").replace("# Metabolismo\n\n", "")
+    outra_ia.aplicar(artigo, por_rotulo)
     artigo.refresh_from_db()
-    assert artigo.sections.count() == 3  # recuperados ja na primeira
+    assert artigo.sections.count() == 3
 
     pauta = artigo.topic
     assert outra_ia.para_colar_de_novo(pauta, str(artigo.pk)) == artigo
