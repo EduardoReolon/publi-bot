@@ -1370,6 +1370,10 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
         messages.error(request, str(exc))
         return redirect("content:revisar", pk=artigo.pk)
 
+    from apps.content.fluxos import abandonar_texto_novo
+
+    abandonar_texto_novo(artigo)
+
     if acao == "publicar_ja":
         from apps.integrations.tasks import publicar_vencidos
 
