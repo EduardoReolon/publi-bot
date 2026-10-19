@@ -1,5 +1,5 @@
 {% load i18n %}<section class="secao" id="ideia-{{ ideia.pk }}">
-  <h2>{{ ideia.titulo }} <span class="selo {% if ideia.situacao == 'erro' %}ruim{% elif ideia.situacao == 'curadoria' %}alerta{% elif ideia.situacao == 'pauta' or ideia.situacao == 'aprovada' %}ok{% endif %}">{{ ideia.get_situacao_display }}</span>{% if ideia.onde %} <span class="selo">{{ ideia.get_onde_display }}</span>{% endif %}</h2>
+  <h2>{{ ideia.titulo }} <span class="selo {% if ideia.situacao == 'erro' %}ruim{% elif ideia.situacao == 'curadoria' %}alerta{% elif ideia.situacao == 'pauta' or ideia.situacao == 'aprovada' %}ok{% endif %}">{{ ideia.get_situacao_display }}</span>{% if ideia.onde %} <span class="selo">{{ ideia.get_onde_display }}</span>{% endif %}{% if ideia.tipo == 'explorar' %} <span class="selo">{{ ideia.get_tipo_display }}</span>{% endif %}</h2>
   <p class="ajuda">{{ ideia.criada_em|date:"d/m/Y H:i" }}{% if ideia.audio %} · {% translate "por audio" %}{% endif %}</p>
   {% if ideia.erro %}<div class="aviso ruim">{{ ideia.erro }}</div>{% endif %}
   {% if ideia.situacao == 'outra_ia' %}
@@ -25,8 +25,17 @@
   {% if ideia.leitura.pela_outra_ia %}<p class="ajuda">{% translate "Leitura feita pela outra IA." %}</p>{% endif %}
   {% if ideia.leitura.afirmacao %}
     <ul>
-      <li><strong>{% translate "O que se diz:" %}</strong> {{ ideia.leitura.afirmacao }}</li>
-      <li><strong>{% translate "O que voce suspeita:" %}</strong> {{ ideia.leitura.tese }}</li>
+      {% if ideia.tipo == 'explorar' %}
+        <li><strong>{% translate "A ideia:" %}</strong> {{ ideia.leitura.afirmacao }}</li>
+        <li><strong>{% translate "O que voce quer mostrar ou aplicar:" %}</strong> {{ ideia.leitura.tese }}</li>
+      {% else %}
+        <li><strong>{% translate "O que se diz:" %}</strong> {{ ideia.leitura.afirmacao }}</li>
+        <li><strong>{% translate "O que voce suspeita:" %}</strong> {{ ideia.leitura.tese }}</li>
+      {% endif %}
+      {% if ideia.leitura.dores %}
+        <li><strong>{% translate "Dores do publico que o texto responde:" %}</strong> {{ ideia.leitura.dores|join:"; " }}
+          <span class="ajuda">({% translate "do banco de dores, as mais perto da ideia: o ponto de partida do leitor, nas palavras dele" %})</span></li>
+      {% endif %}
     </ul>
   {% endif %}
   {% if ideia.pauta %}
@@ -36,7 +45,7 @@
         {% for f in ideia.frentes %}
           <tr>
             <td><strong>{{ f.nome }}</strong>{% if f.descricao %}<div class="ajuda">{{ f.descricao }}</div>{% endif %}</td>
-            <td>{% if f.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso (o que se diz)" %}</span>{% elif f.papel == 'a_favor' %}<span class="selo ok">{% translate "a favor da sua ideia" %}</span>{% elif f.papel == 'contra' %}<span class="selo ruim">{% translate "contra a sua ideia" %}</span>{% else %}<span class="selo">{% translate "outra explicacao" %}</span>{% endif %}</td>
+            <td>{% if f.papel == 'discurso' %}<span class="selo alerta">{% translate "discurso (o que se diz)" %}</span>{% elif f.papel == 'a_favor' %}<span class="selo ok">{% if ideia.tipo == 'explorar' %}{% translate "explica ou aplica" %}{% else %}{% translate "a favor da sua ideia" %}{% endif %}</span>{% elif f.papel == 'contra' %}<span class="selo ruim">{% if ideia.tipo == 'explorar' %}{% translate "limites e riscos" %}{% else %}{% translate "contra a sua ideia" %}{% endif %}</span>{% else %}<span class="selo">{% translate "outra explicacao" %}</span>{% endif %}</td>
             <td class="numero">{{ f.esperando }}</td>
             <td class="numero">{{ f.aprovadas }}</td>
           </tr>

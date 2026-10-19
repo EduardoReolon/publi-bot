@@ -12,6 +12,17 @@ papel:
 * **alternativa** — outra explicacao, que nem a afirmacao nem a tese
   consideram.
 
+Dois TIPOS de ideia (`Ideia.tipo`), com o mesmo esquema e as mesmas frentes:
+
+* **questionar** (padrao) — "dizem X, eu suspeito Y": testa a afirmacao, com o
+  maior esforco no contra;
+* **explorar** — "vi um metodo e quero aplicar": a afirmacao e a ideia como
+  existe, a tese e como o autor quer aplica-la; o contra vira LIMITES E RISCOS
+  e o discurso e opcional.
+
+Nos dois, as DORES DO PUBLICO (banco do Radar) mais perto da ideia vao junto:
+a dor e o ponto de partida do leitor, nao o tema do autor.
+
 A pessoa pode nomear e classificar as frentes no proprio texto ("considere a
 frente X como contraria"); o modelo segue, e completa com as que faltarem.
 Os links colados vao para a frente que o texto indicar (ou para o discurso).
@@ -44,6 +55,8 @@ VAGAS = {"discurso": 4, "a_favor": 3, "contra": 5, "alternativa": 3}
 ESTUDOS = {"discurso": 0, "a_favor": 2, "contra": 3, "alternativa": 2}
 VIDEOS = 2
 MAXIMO_DE_FRENTES = 6
+PROMPT_DO_TIPO = {"questionar": "ideia_leitura", "explorar": "ideia_leitura_explorar"}
+DORES_DA_IDEIA = 3
 
 ESQUEMA = {
     "type": "object",
@@ -94,10 +107,11 @@ def _lista(valor, maximo: int) -> list[str]:
     return [str(x).strip()[:200] for x in (valor or []) if str(x).strip()][:maximo]
 
 
-def _frentes(dados: dict, links_da_ideia: list[str]) -> list[dict]:
-    """As frentes limpas. Sem discurso nem contra, a leitura nao serve para
-    investigar: garante as duas. Link que o modelo inventou fica de fora (so os
-    que a pessoa colou)."""
+def _frentes(dados: dict, links_da_ideia: list[str], tipo: str = "questionar") -> list[dict]:
+    """As frentes limpas. Questionar sem discurso nem contra nao serve para
+    investigar: garante as duas. Explorar garante so o contra (limites e
+    riscos): nao ha "o que se diz" a derrubar. Link que o modelo inventou fica
+    de fora (so os que a pessoa colou)."""
     frentes = []
     for item in dados.get("frentes") or []:
         if not isinstance(item, dict) or not str(item.get("nome", "")).strip():
@@ -116,7 +130,8 @@ def _frentes(dados: dict, links_da_ideia: list[str]) -> list[dict]:
         )
     frentes = frentes[:MAXIMO_DE_FRENTES]
     papeis = {f["papel"] for f in frentes}
-    if "discurso" not in papeis:
+    explorar = tipo == "explorar"
+    if "discurso" not in papeis and not explorar:
         frentes.insert(
             0,
             {
@@ -132,9 +147,13 @@ def _frentes(dados: dict, links_da_ideia: list[str]) -> list[dict]:
     if "contra" not in papeis:
         frentes.append(
             {
-                "nome": "Contra a tese",
+                "nome": "Limites e riscos" if explorar else "Contra a tese",
                 "papel": "contra",
-                "descricao": f"A melhor evidencia contra: {dados.get('tese', '')}"[:300],
+                "descricao": (
+                    f"Onde nao serve, erros comuns e riscos: {dados.get('tese', '')}"
+                    if explorar
+                    else f"A melhor evidencia contra: {dados.get('tese', '')}"
+                )[:300],
                 "buscas": [str(dados.get("tese", ""))[:120]],
                 "estudos": True,
                 "videos": False,
@@ -171,23 +190,58 @@ def _bloco_do_refino(ideia: Ideia) -> str:
     return "\n".join(linhas)
 
 
-def _variaveis(ideia: Ideia) -> dict:
+def dores_da_ideia(ideia: Ideia) -> list[dict]:
+    """As dores do publico mais perto da ideia (por vetor, sem modelo), com as
+    falas reais. Sem banco de dores, vazio."""
+    from apps.radar.dores import dores_para
+
+    try:
+        return dores_para(ideia.relato, quantas=DORES_DA_IDEIA)
+    except Exception:
+        logger.exception("Dores da ideia %s nao lidas.", ideia.pk)
+        return []
+
+
+def _bloco_das_dores(dores: list[dict]) -> str:
+    """Vai dentro da variavel `ideia` (e nao numa variavel nova) para valer
+    tambem nos prompts ja gravados no banco."""
+    from apps.radar.dores import em_linhas
+
+    if not dores:
+        return ""
+    return "\n".join(
+        [
+            "",
+            "DORES DO PUBLICO PERTO DESTA IDEIA (do banco de dores, com falas reais). A dor e "
+            "o PONTO DE PARTIDA DO LEITOR, nao o tema do autor: o texto deve responder a ela "
+            "nas palavras de quem a sente (ex.: 'o dinheiro some no fim do mes', e nao so "
+            "'capital de giro insuficiente'). Use-as para escolher frentes e buscas que "
+            "respondam a elas; se uma nao tiver nada a ver com a ideia, ignore-a; nunca "
+            "invente dor:",
+            *[f"- {linha}" for linha in em_linhas(dores)],
+        ]
+    )
+
+
+def _variaveis(ideia: Ideia, dores: list[dict] | None = None) -> dict:
     from apps.integrations.models import Site
 
     site = Site.objects.first()
+    if dores is None:
+        dores = dores_da_ideia(ideia)
     return {
-        "ideia": ideia.relato + _bloco_do_refino(ideia),
+        "ideia": ideia.relato + _bloco_do_refino(ideia) + _bloco_das_dores(dores),
         "links": "\n".join(ideia.links or []) or "(nenhum)",
         "negocio": _negocio() or "(nao informado)",
         "idioma": getattr(site, "content_language", "") or "pt-BR",
     }
 
 
-def _guardar_leitura(ideia: Ideia, dados: dict, *, links_permitidos=None) -> dict:
+def _guardar_leitura(ideia: Ideia, dados: dict, *, links_permitidos=None, dores=None) -> dict:
     """A leitura limpa (as mesmas regras, venha do modelo daqui ou da outra IA)."""
     permitidos = (ideia.links or []) if links_permitidos is None else links_permitidos
     antigas = _frentes_atuais(ideia)
-    novas = _frentes(dados, permitidos)
+    novas = _frentes(dados, permitidos, ideia.tipo)
     frentes, a_buscar = fundir_frentes(antigas, novas) if antigas else (novas, None)
     if antigas and (ideia.refino or {}).get("buscar_existentes"):
         a_buscar = [f["nome"] for f in frentes]
@@ -196,6 +250,7 @@ def _guardar_leitura(ideia: Ideia, dados: dict, *, links_permitidos=None) -> dic
         "afirmacao": str(dados["afirmacao"])[:500],
         "tese": str(dados["tese"])[:500],
         "frentes": frentes,
+        "dores": [d["dor"] for d in (dores if dores is not None else dores_da_ideia(ideia))],
     }
     ideia.leitura = leitura
     ideia.onde = dados.get("onde") if dados.get("onde") in Ideia.Onde.values else Ideia.Onde.SITE
@@ -205,7 +260,7 @@ def _guardar_leitura(ideia: Ideia, dados: dict, *, links_permitidos=None) -> dic
 
 
 # As frentes que `_frentes` acrescenta quando a leitura nao traz discurso ou contra.
-_AUTOMATICAS = {"O que se diz": "discurso", "Contra a tese": "contra"}
+_AUTOMATICAS = {"O que se diz": "discurso", "Contra a tese": "contra", "Limites e riscos": "contra"}
 
 
 def fundir_frentes(antigas: list[dict], novas: list[dict]) -> tuple[list[dict], list[str]]:
@@ -238,14 +293,15 @@ def ler(ideia: Ideia) -> dict:
     from apps.content.inference import executar_prompt
     from apps.integrations.models import Site
 
+    dores = dores_da_ideia(ideia)
     resultado = executar_prompt(
-        key="ideia_leitura",
-        variaveis=_variaveis(ideia),
+        key=PROMPT_DO_TIPO.get(ideia.tipo, "ideia_leitura"),
+        variaveis=_variaveis(ideia, dores),
         site=Site.objects.first(),
         json_schema=ESQUEMA,
         com_convite=False,
     )
-    return _guardar_leitura(ideia, _json(resultado.texto))
+    return _guardar_leitura(ideia, _json(resultado.texto), dores=dores)
 
 
 # -- A leitura feita por outra IA (maior, com pesquisa na web) ---------------------
@@ -256,26 +312,42 @@ PARA_A_OUTRA_IA = (
     "nenhum deles e usado sem passar pela curadoria do autor. Nunca invente link.\n\n"
     "ANTES DO JSON, CONVERSE COM O AUTOR. A ideia vem escrita as pressas, e um erro de "
     "leitura aqui contamina toda a investigacao. Entao:\n"
-    "1. Reescreva com as suas palavras: o que se diz (e quem diz), qual e a suspeita do "
-    "autor e qual CONTRASTE ele quer mostrar.\n"
-    "2. Aponte as ambiguidades e as palavras que podem ser lidas de dois jeitos (por "
-    "exemplo: 'falta' de que? de quem constroi ou de quem usa? a critica e ao fato ou ao "
-    "enquadramento?).\n"
+    "{passos}"
     "3. Pergunte o que for preciso, poucas perguntas por vez, e espere as respostas.\n"
     "4. Proponha as frentes e confirme com o autor.\n"
     "So depois que ele confirmar, responda com o JSON, num bloco de codigo (e e so o "
     "bloco que ele vai colar de volta)."
 )
+PASSOS_DA_CONVERSA = {
+    "questionar": (
+        "1. Reescreva com as suas palavras: o que se diz (e quem diz), qual e a suspeita do "
+        "autor e qual CONTRASTE ele quer mostrar.\n"
+        "2. Aponte as ambiguidades e as palavras que podem ser lidas de dois jeitos (por "
+        "exemplo: 'falta' de que? de quem constroi ou de quem usa? a critica e ao fato ou ao "
+        "enquadramento?).\n"
+    ),
+    # Explorar nao contesta nada: as perguntas sao sobre o leitor e o uso.
+    "explorar": (
+        "1. Reescreva com as suas palavras: qual e a ideia (o que e e de onde vem) e o que o "
+        "autor quer que o leitor consiga fazer com ela. Ele NAO esta contestando nada.\n"
+        "2. Pergunte o que muda a aplicacao: para quem e (porte, area, momento do leitor), "
+        "se ele quer um metodo pratico ou uma explicacao, ate onde vai a adaptacao e que "
+        "exemplo ou numero ele ja tem.\n"
+    ),
+}
 
 
 def pedido_para_outra_ia(ideia: Ideia) -> str:
-    """O mesmo pedido do modelo daqui (a versao em uso do prompt `ideia_leitura`),
-    com licenca para pesquisar, para colar numa IA grande."""
+    """O mesmo pedido do modelo daqui (a versao em uso do prompt do tipo da
+    ideia), com licenca para pesquisar, para colar numa IA grande."""
     from apps.content.services import escolher_versao_de_prompt
 
-    versao = escolher_versao_de_prompt("ideia_leitura")
+    versao = escolher_versao_de_prompt(PROMPT_DO_TIPO.get(ideia.tipo, "ideia_leitura"))
     corpo = versao.user_prompt_template.format(**_variaveis(ideia))
-    return f"{versao.system_prompt}{PARA_A_OUTRA_IA}\n\n{corpo}"
+    conversa = PARA_A_OUTRA_IA.replace(
+        "{passos}", PASSOS_DA_CONVERSA.get(ideia.tipo, PASSOS_DA_CONVERSA["questionar"])
+    )
+    return f"{versao.system_prompt}{conversa}\n\n{corpo}"
 
 
 def aplicar_resposta(ideia: Ideia, texto: str) -> dict:
@@ -322,13 +394,25 @@ def criar_pauta(ideia: Ideia):
         "tese": leitura.get("tese", ""),
         "frentes": frentes,
         "ideia": str(ideia.pk),
+        "tipo": ideia.tipo,
+        "dores": list(leitura.get("dores") or []),
     }
+    explorar = ideia.tipo == Ideia.Tipo.EXPLORAR
     briefing = "\n".join(
         [
-            f"O que se diz: {debate['afirmacao']}",
-            f"O que o autor suspeita: {debate['tese']}",
+            f"A ideia: {debate['afirmacao']}" if explorar else f"O que se diz: {debate['afirmacao']}",
+            (
+                f"O que o autor quer mostrar ou aplicar: {debate['tese']}"
+                if explorar
+                else f"O que o autor suspeita: {debate['tese']}"
+            ),
             *[f"Frente '{f['nome']}' ({f['papel']}): {f['descricao']}" for f in frentes],
-            "Investigar: a conclusao sai da evidencia, a favor ou contra o autor.",
+            *[f"Dor do publico a responder: {d}" for d in debate["dores"]],
+            (
+                "Explorar: explicar a ideia, mostrar como aplicar e dizer onde ela nao serve."
+                if explorar
+                else "Investigar: a conclusao sai da evidencia, a favor ou contra o autor."
+            ),
         ]
     )
     if ideia.pauta_id:

@@ -18,6 +18,19 @@
   <form method="post" enctype="multipart/form-data" class="secao">
     {% csrf_token %}
     <div class="campo">
+      <label for="tipo">{% translate "Que tipo de ideia" %}</label>
+      <select id="tipo" name="tipo">
+        {% for valor, rotulo in tipos %}<option value="{{ valor }}">{{ rotulo }}</option>{% endfor %}
+      </select>
+      <div class="ajuda">{% blocktranslate trimmed %}
+        <strong>Questionar</strong>: "dizem X, eu acho Y" — o PubliBot testa a afirmacao e procura,
+        com mais esforco, a evidencia contra a sua ideia. <strong>Explorar</strong>: "vi um metodo
+        e quero aplicar" — explica a ideia, mostra como aplicar e diz onde ela nao serve (limites e
+        riscos), sem tratar a ideia como acusacao. Nos dois, as dores do publico mais perto da ideia
+        entram como ponto de partida do leitor.
+      {% endblocktranslate %}</div>
+    </div>
+    <div class="campo">
       <label for="texto">{% translate "A ideia" %}</label>
       <textarea id="texto" name="texto" class="curto" rows="5" placeholder="{% translate 'Ex.: Vi no jornal que o problema da IA agora e falta de mao de obra. Eu acho que... Considere a frente Produtividade como outra explicacao; o link do g1 e da frente O que o jornal diz.' %}"></textarea>
       <div class="ajuda">{% translate "O PubliBot monta FRENTES (linhas de raciocinio), cada uma com as proprias fontes. Voce pode nomear e classificar as frentes no texto: 'considere a frente X como contraria', 'a frente Y e outra explicacao', 'o link tal e da frente Z'." %}</div>
