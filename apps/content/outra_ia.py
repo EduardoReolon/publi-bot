@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.text import slugify
 
@@ -157,6 +158,23 @@ def _criar_artigo(pauta, trechos, fluxo: str = "", *, refaz=None):
     return artigo
 
 
+def para_colar_de_novo(pauta, pk):
+    """O artigo da pauta, ja escrito pela outra IA e ainda nao publicado, em
+    que a resposta pode ser colada de novo (as citacoes ficam as mesmas)."""
+    from apps.content import fluxos
+    from apps.content.models import Article
+
+    if not pk:
+        return None
+    try:
+        artigo = pauta.articles.filter(pk=pk).first()
+    except (ValueError, ValidationError):
+        return None
+    if artigo is None or (artigo.thesis_json or {}).get("origem") != ORIGEM:
+        return None
+    return artigo if artigo.status in (*fluxos.RASCUNHOS, Article.Status.DRAFTING) else None
+
+
 @transaction.atomic
 def desistir(artigo) -> None:
     """Apaga o artigo que esperava o texto, e a pauta volta a como estava."""
@@ -182,6 +200,14 @@ def _fontes(artigo) -> str:
             f"{chunk.content}\n</fonte>"
         )
     return "\n\n".join(partes)
+
+
+# A resposta inteira num bloco de codigo: copiada da tela, ela leva os ## dos
+# titulos (fora do bloco, a selecao copia o texto ja formatado, sem eles).
+PEDIDO_EM_BLOCO = (
+    "Responda EXATAMENTE neste formato, sem nada antes, TUDO DENTRO DE UM UNICO\n"
+    "BLOCO DE CODIGO (```): quem copiar leva os ## dos titulos junto."
+)
 
 
 def pedido(artigo) -> str:
@@ -264,7 +290,7 @@ Fontes (numeradas; o numero e o do marcador [[FONTE_N]]):
 
 {_fontes(artigo)}
 
-Responda EXATAMENTE neste formato, sem nada antes:
+{PEDIDO_EM_BLOCO}
 
 TITULO SUGERIDO: 55 a 60 caracteres, com a palavra-chave
 META DESCRIPTION: ate 155 caracteres
@@ -321,8 +347,46 @@ def _perguntas(bloco: str) -> list[tuple[str, str]]:
     return pares[:SUGERIDAS]
 
 
+# Linha que vira titulo quando o corpo chega sem Markdown: curta, sem ponto
+# no fim e seguida de um paragrafo.
+PALAVRAS_DO_TITULO = 14
+_FIM_DE_FRASE = (".", ",", ";", ":")
+
+
+def _parece_titulo(linha: str, seguinte: str) -> bool:
+    return (
+        bool(linha)
+        and len(linha.split()) <= PALAVRAS_DO_TITULO
+        and not linha.endswith(_FIM_DE_FRASE)
+        and "[[" not in linha
+        and linha[0].isupper()
+        and len(seguinte) > len(linha)
+        and "[[CHAMADA]]" not in seguinte
+    )
+
+
+def recuperar_formatacao(corpo: str) -> str:
+    """O texto copiado da tela do chat (selecionado, e nao pelo botao de
+    copiar) chega sem os ## e sem as linhas em branco: os titulos virariam
+    paragrafos e o artigo, um paragrafo so. Sem nenhum titulo marcado, a linha
+    curta sem ponto final seguida de paragrafo volta a ser titulo de secao, e
+    cada linha vira um paragrafo."""
+    if re.search(r"^\s*#{1,6}\s", corpo or "", flags=re.MULTILINE):
+        return corpo
+    linhas = [linha.strip() for linha in (corpo or "").splitlines() if linha.strip()]
+    saida = []
+    for i, linha in enumerate(linhas):
+        seguinte = linhas[i + 1] if i + 1 < len(linhas) else ""
+        if i > 0 and _parece_titulo(linha, seguinte):
+            saida.append(f"## {linha}")
+        else:
+            saida.append(linha)
+    return "\n\n".join(saida)
+
+
 def ler(resposta: str) -> dict:
     corpo, resto = _corpo(resposta)
+    corpo = recuperar_formatacao(corpo)
     blocos = ler_blocos(resto, ROTULOS)
     return {
         "titulo": " ".join(blocos.get("TITULO SUGERIDO", "").split()).strip('"')[:300],

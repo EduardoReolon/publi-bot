@@ -241,3 +241,51 @@ def test_refazer_com_outra_ia_usa_as_mesmas_fontes_e_arquiva_o_rascunho(tenant_c
     antigo.refresh_from_db()
     assert antigo.status == Article.Status.REJECTED
     assert antigo.thesis_json["substituido_por"] == str(novo.pk)
+
+
+def test_texto_copiado_da_tela_sem_markdown_recupera_titulos_e_paragrafos():
+    """Selecionado na tela do chat (e nao pelo botao de copiar), o texto chega
+    sem ## e sem linhas em branco: os titulos voltam a ser secoes e cada linha
+    um paragrafo; frase comum, a marca da chamada e fonte nunca viram titulo."""
+    colado = (
+        f"CORPO DO ARTIGO:\nAbertura que comeca pela dor de quem le. {PARAGRAFO}\n"
+        f"Segundo paragrafo da abertura, sem titulo. {PARAGRAFO}\n"
+        "Por que o esforco manual consome o lucro\n"
+        f"Texto da secao com fonte [[FONTE_1]]. {PARAGRAFO}\n"
+        "[[CHAMADA]]\n"
+        "Onde aplicar no seu negocio\n"
+        f"Mais texto. {PARAGRAFO}\n"
+        "Uma frase curta que termina com ponto.\n"
+        f"Fecho do artigo. {PARAGRAFO}\n"
+        "FIM DO ARTIGO"
+    )
+    corpo = outra_ia.ler(colado)["corpo"]
+    abertura, secoes = outra_ia._secoes(corpo)
+    assert [t for _n, t, _x in secoes] == [
+        "Por que o esforco manual consome o lucro",
+        "Onde aplicar no seu negocio",
+    ]
+    assert "\n\n" in abertura and "[[CHAMADA]]" in secoes[0][2]
+    assert "## Uma frase curta" not in corpo
+
+    # Com Markdown, nada muda.
+    com = "## Titulo\n\nTexto curto.\nLinha seguinte"
+    assert outra_ia.recuperar_formatacao(com) == com
+    assert "BLOCO DE CODIGO" in outra_ia.PEDIDO_EM_BLOCO
+
+
+@pytest.mark.django_db
+def test_colar_de_novo_no_artigo_que_veio_da_outra_ia(artigo):
+    """A primeira colagem perdeu os titulos: a mesma resposta, colada de novo no
+    mesmo artigo (mesmas fontes), refaz as secoes."""
+    sem_markdown = RESPOSTA.replace("## ", "").replace("# Metabolismo\n\n", "")
+    outra_ia.aplicar(artigo, sem_markdown)
+    artigo.refresh_from_db()
+    assert artigo.sections.count() == 3  # recuperados ja na primeira
+
+    pauta = artigo.topic
+    assert outra_ia.para_colar_de_novo(pauta, str(artigo.pk)) == artigo
+    assert outra_ia.para_colar_de_novo(pauta, "nao-e-uuid") is None
+    outra_ia.aplicar(artigo, RESPOSTA)
+    artigo.refresh_from_db()
+    assert artigo.sections.order_by("order").first().heading == "O que o estudo mostrou"

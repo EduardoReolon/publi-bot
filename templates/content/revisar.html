@@ -139,6 +139,10 @@
     <div class="pre-visualizacao" style="margin-bottom:.6rem">
       {% translate "Nao gostou deste texto? Refazer com as mesmas fontes:" %}
       {% include "content/_refazer.html" %}
+      {% if artigo.thesis_json.origem == 'outra_ia' %}
+        <div>{% translate "Veio da outra IA e os titulos ou a chamada ficaram errados?" %}
+          <a href="{% url 'content:artigo_por_outra_ia' artigo.topic_id %}?de_novo={{ artigo.pk }}{% if artigo.fluxo %}&fluxo=pesquisa{% endif %}">{% translate "Colar a resposta de novo" %}</a></div>
+      {% endif %}
     </div>
   {% endif %}
   {% if artigo.status == 'published' or artigo.status == 'superseded' %}

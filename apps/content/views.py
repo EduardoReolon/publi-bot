@@ -369,6 +369,13 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
         "pesquisa" if (request.POST.get("fluxo") or request.GET.get("fluxo")) == "pesquisa" else ""
     )
     artigo = outra_ia.artigo_em_espera(pauta, fluxo)
+    # Colar de novo a resposta num artigo que ja veio da outra IA (mesmas
+    # fontes, mesmos numeros): conserta o que a primeira colagem perdeu.
+    de_novo = outra_ia.para_colar_de_novo(
+        pauta, request.POST.get("de_novo") or request.GET.get("de_novo")
+    )
+    if de_novo is not None:
+        artigo = de_novo
     # Refazer um artigo que ja existe, com as mesmas fontes (do botao no artigo).
     refaz = _artigo_a_refazer(pauta, request.POST.get("refaz") or request.GET.get("refaz"))
     pronto = artigo_do_fluxo(pauta, fluxo)
@@ -424,6 +431,7 @@ def artigo_por_outra_ia(request: HttpRequest, pk) -> HttpResponse:
             "colado": colado,
             "fluxo": fluxo,
             "refaz": refaz,
+            "de_novo": de_novo,
         },
         status=400 if colado else 200,
     )
