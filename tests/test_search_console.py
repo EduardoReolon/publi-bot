@@ -234,3 +234,92 @@ def test_tela_mostra_o_email_e_coleta(ambiente, conta, monkeypatch):  # noqa: F8
         "como calcular bdi"
         in client.get(reverse("radar:radar", urlconf="core.urls_tenants")).content.decode()
     )
+
+
+def test_artigos_pauta_e_artigo_mostram_como_aparecem_no_google(ambiente):  # noqa: F811
+    """A lista ganha cliques, impressoes e posicao (e ordena por eles); o artigo
+    e a pauta mostram as buscas que levam a pagina, com o 'quase la'. A URL do
+    Search Console com barra final e a mesma pagina."""
+    from apps.content.models import Article, Topic
+
+    _, _, client = ambiente
+    pauta = Topic.objects.create(title="Caixa da clinica")
+    hoje = timezone.now().date()
+    url = "https://site.exemplo.com/blog/caixa"
+    publicado = Article.objects.create(
+        title="Quanto caixa a clinica precisa",
+        slug="caixa",
+        topic=pauta,
+        status=Article.Status.PUBLISHED,
+        published_url=url,
+        published_at=timezone.now(),
+        body_markdown="corpo",
+    )
+    outro = Article.objects.create(
+        title="Outro publicado",
+        slug="outro",
+        status=Article.Status.PUBLISHED,
+        published_url="https://site.exemplo.com/blog/outro",
+        published_at=timezone.now(),
+        body_markdown="corpo",
+    )
+    antiga = ColetaDoConsole.objects.create(
+        propriedade="sc-domain:exemplo.com", inicio=hoje, fim=hoje
+    )
+    LinhaDoConsole.objects.create(
+        coleta=antiga, consulta="capital de giro clinica", pagina=url + "/", impressoes=50, posicao=18
+    )
+    atual = ColetaDoConsole.objects.create(
+        propriedade="sc-domain:exemplo.com",
+        inicio=hoje - datetime.timedelta(days=28),
+        fim=hoje,
+        coletada_em=timezone.now() + datetime.timedelta(minutes=1),
+    )
+    LinhaDoConsole.objects.create(
+        coleta=atual,
+        consulta="capital de giro clinica",
+        pagina=url + "/",
+        cliques=3,
+        impressoes=120,
+        ctr=0.025,
+        posicao=12,
+    )
+    LinhaDoConsole.objects.create(
+        coleta=atual, consulta="caixa minimo", pagina=url, cliques=7, impressoes=80, posicao=4
+    )
+    LinhaDoConsole.objects.create(
+        coleta=atual,
+        consulta="outro",
+        pagina="https://site.exemplo.com/blog/outro",
+        cliques=20,
+        impressoes=30,
+        posicao=2,
+    )
+
+    dados = search_console.no_google([url])[url]
+    assert dados["cliques"] == 10 and dados["impressoes"] == 200
+    assert dados["posicao"] == round((12 * 120 + 4 * 80) / 200, 1)
+    assert dados["posicao_anterior"] == 18
+    consultas = search_console.consultas_da_pagina(url)
+    assert [c["consulta"] for c in consultas] == ["capital de giro clinica", "caixa minimo"]
+    assert consultas[0]["quase_la"] and not consultas[1]["quase_la"]
+    assert consultas[0]["posicao_anterior"] == 18
+
+    lista = reverse("content:artigos", urlconf="core.urls_tenants")
+    html = client.get(lista).content.decode()
+    assert "Impressoes" in html and "como-aparece-no-google" in html
+    por_cliques = client.get(f"{lista}?ordem=cliques").content.decode()
+    assert por_cliques.index(outro.title) < por_cliques.index(publicado.title)
+    por_posicao = client.get(f"{lista}?ordem=posicao&q=caixa").content.decode()
+    assert publicado.title in por_posicao and outro.title not in por_posicao
+
+    artigo = client.get(
+        reverse("content:revisar", args=[publicado.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Como aparece no Google" in artigo and "capital de giro clinica" in artigo
+    assert "quase la" in artigo
+
+    pagina_da_pauta = client.get(
+        reverse("content:pauta", args=[pauta.pk], urlconf="core.urls_tenants")
+    ).content.decode()
+    assert "Como aparece no Google" in pagina_da_pauta and "caixa minimo" in pagina_da_pauta

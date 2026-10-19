@@ -1,0 +1,30 @@
+{% load i18n %}{# Como a pagina publicada aparece no Google (Search Console). Recebe `google`. #}
+{% with r=google.resumo %}
+  <p>
+    <strong>{{ r.cliques }}</strong> {% translate "cliques" %} ·
+    <strong>{{ r.impressoes }}</strong> {% translate "impressoes" %} ·
+    {% translate "posicao media" %} <strong>{{ r.posicao|default:"—" }}</strong>
+    {% if r.posicao and r.posicao_anterior %}
+      {% if r.posicao < r.posicao_anterior %}<span class="selo ok">▲ {% translate "subiu" %} ({{ r.posicao_anterior }})</span>
+      {% elif r.posicao > r.posicao_anterior %}<span class="selo ruim">▼ {% translate "caiu" %} ({{ r.posicao_anterior }})</span>{% endif %}
+    {% endif %}
+    <span class="ajuda">· {{ r.periodo.0|date:"d/m" }} {% translate "a" %} {{ r.periodo.1|date:"d/m/Y" }}</span>
+  </p>
+{% endwith %}
+{% if google.consultas %}
+  <p class="ajuda">{% translate "As buscas que levam a esta pagina. Marcadas: perto da primeira pagina (posicao 8 a 20, com impressoes) — e onde atualizar o artigo rende mais." %}</p>
+  <div class="rolagem"><table>
+    <thead><tr><th>{% translate "Busca" %}</th><th class="numero">{% translate "Impressoes" %}</th><th class="numero">{% translate "Cliques" %}</th><th class="numero">{% translate "CTR" %}</th><th class="numero">{% translate "Posicao" %}</th></tr></thead>
+    <tbody>
+      {% for c in google.consultas %}
+        <tr>
+          <td>{{ c.consulta }}{% if c.quase_la %} <span class="selo alerta">{% translate "quase la" %}</span>{% endif %}</td>
+          <td class="numero">{{ c.impressoes }}</td>
+          <td class="numero">{{ c.cliques }}</td>
+          <td class="numero">{% widthratio c.ctr 1 100 %}%</td>
+          <td class="numero">{{ c.posicao }}{% if c.posicao_anterior %} <span class="ajuda">({{ c.posicao_anterior|floatformat:1 }})</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+{% endif %}
