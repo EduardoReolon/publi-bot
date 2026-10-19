@@ -716,15 +716,15 @@ def pautas_do_candidato(candidato) -> list:
 
 
 def em_pesquisa(candidato) -> bool:
-    """O artigo e fonte de alguma pesquisa (fluxo B), pelo resumo."""
+    """O artigo e fonte de alguma pesquisa (fluxo B). Sem o resumo guardado (o
+    candidato recriado pelo realinhamento nao o tem) continua sendo: o que pesa
+    e o documento atual nao ser ja o texto completo."""
     from apps.knowledge.models import Document
 
     documento = candidato.documento
     return (
-        documento is not None
-        and documento.extraction_method == Document.ExtractionMethod.RESUMO
-        and bool(pautas_do_candidato(candidato))
-    )
+        documento is None or documento.extraction_method == Document.ExtractionMethod.RESUMO
+    ) and bool(pautas_do_candidato(candidato))
 
 
 def _pedidos_do_candidato(candidato) -> list[tuple]:
