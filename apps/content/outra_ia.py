@@ -29,6 +29,8 @@ ROTULOS = [
     "RESUMO CURTO",
     "PERGUNTAS FREQUENTES",
     "PEDIDOS",
+    "CHAMADA DO MEIO",
+    "CHAMADA DO FIM",
 ]
 
 # No fluxo da pesquisa, as fontes sao resumos de artigos cientificos.
@@ -44,6 +46,23 @@ PEDIDOS:
 - fonte N: o que precisaria ler no texto completo, e para que parte do artigo
 (no maximo 3; escreva "nenhum" se os resumos bastaram)
 """
+# O texto das chamadas, escrito pela outra IA junto com o artigo (no caminho
+# daqui, o modelo local o escreve depois). Mesmos limites e regras.
+BLOCO_DA_CHAMADA = """\
+CHAMADA DO MEIO: (so se o corpo tiver [[CHAMADA]]; senao escreva "nenhuma")
+title: ...
+text: ...
+button: ...
+CHAMADA DO FIM:
+title: ...
+text: ...
+button: ...
+"""
+_CAMPO_DA_CHAMADA = re.compile(
+    r"^\s*(?:[-*]\s*)?\**\s*(title|text|button|titulo|texto|botao)\s*\**\s*:\**\s*(.*)$",
+    re.IGNORECASE,
+)
+_CAMPOS = {"titulo": "title", "texto": "text", "botao": "button"}
 ROTULO_DO_CORPO = "CORPO DO ARTIGO"
 FIM_DO_CORPO = "FIM DO ARTIGO"
 
@@ -217,6 +236,7 @@ def pedido(artigo) -> str:
         AVISO_DE_DELIMITADOR,
         REGRA_DO_EMBASAMENTO,
         REGRA_DOS_LINKS,
+        REGRAS_DA_CHAMADA,
     )
     from apps.editorial.services import perfil_atual, texto_do_guia
 
@@ -234,8 +254,12 @@ def pedido(artigo) -> str:
             "Chamada para a oferta do site: se UMA secao do meio tratar do problema "
             "que a oferta resolve, escreva [[CHAMADA]] sozinho numa linha logo "
             "depois dela (uma vez so, nunca na primeira secao). Se nenhuma tratar, "
-            "nao escreva a marca: a chamada vai ao fim sozinha. Nao escreva o "
-            f"texto da chamada; o site poe o dele. Oferta: {texto_da_oferta()}"
+            "nao escreva a marca: a chamada vai ao fim sozinha. No corpo, so a "
+            "marca: o texto da chamada vai nos blocos CHAMADA DO MEIO e CHAMADA DO "
+            "FIM (o site o mostra num bloco com o botao para a oferta). A do meio "
+            "parte do problema da secao logo acima da marca; a do fim fecha o "
+            "artigo inteiro. Chamada generica parece anuncio: ela continua a "
+            f"conversa do texto.\n{REGRAS_DA_CHAMADA}\nOferta: {texto_da_oferta()}"
         )
     else:
         chamada = "Este tema esta longe da oferta do site: nao convide para ela."
@@ -250,7 +274,9 @@ def pedido(artigo) -> str:
 
     debate = bloco_do_debate(pauta)
     debate = f"\n{debate}\n" if debate else ""
-    bloco_de_pedidos = BLOCO_DE_PEDIDOS if da_pesquisa else ""
+    bloco_de_pedidos = (BLOCO_DE_PEDIDOS if da_pesquisa else "") + (
+        BLOCO_DA_CHAMADA if com_chamada else ""
+    )
     return f"""\
 Voce vai escrever um artigo de blog completo, SO com as fontes abaixo.
 
@@ -391,8 +417,37 @@ def ler(resposta: str) -> dict:
         "resumo": " ".join(blocos.get("RESUMO CURTO", "").split()),
         "perguntas": _perguntas(blocos.get("PERGUNTAS FREQUENTES", "")),
         "pedidos": _pedidos(blocos.get("PEDIDOS", "")),
+        "chamada": {
+            "inline": _chamada(blocos.get("CHAMADA DO MEIO", "")),
+            "end": _chamada(blocos.get("CHAMADA DO FIM", "")),
+        },
         "corpo": corpo,
     }
+
+
+def _chamada(bloco: str) -> dict:
+    """{"title", "text", "button"} de um bloco de chamada (vazio: "nenhuma")."""
+    campos = {}
+    for linha in (bloco or "").splitlines():
+        if achado := _CAMPO_DA_CHAMADA.match(linha):
+            nome = achado.group(1).lower()
+            campos[_CAMPOS.get(nome, nome)] = achado.group(2).strip().strip("*").strip()
+    return campos
+
+
+def _guardar_a_chamada(artigo, escrita: dict) -> bool:
+    """O texto das chamadas escrito pela outra IA, so o que o modo usa (o meio
+    so com a marca no texto), pelos mesmos limites do caminho daqui. Devolve se
+    falta alguma parte (para o modelo daqui escrever)."""
+    from apps.content.chamada import _limpar_texto, texto_da_oferta
+
+    if artigo.call_to_action == "none" or not texto_da_oferta():
+        artigo.call_to_action_copy = {}
+        return False
+    usadas = ["inline", "end"] if artigo.call_to_action == "inline" else ["end"]
+    texto = {onde: _limpar_texto(escrita.get(onde)) for onde in usadas}
+    artigo.call_to_action_copy = {onde: partes for onde, partes in texto.items() if partes}
+    return len(artigo.call_to_action_copy) < len(usadas)
 
 
 def _pedidos(bloco: str) -> list[str]:
@@ -475,7 +530,14 @@ def aplicar(artigo, resposta: str):
     artigo.thesis_json = tese
     artigo.meta_description = dados["meta"]
     artigo.excerpt = dados["resumo"]
+    falta_chamada = _guardar_a_chamada(artigo, dados["chamada"])
     artigo.save()
+    if falta_chamada:
+        # A outra IA nao escreveu (ou passou do limite): o modelo daqui escreve.
+        from apps.content.tasks import escrever_chamada
+
+        pk = str(artigo.pk)
+        transaction.on_commit(lambda: escrever_chamada.delay(pk))
 
     if not artigo.faq.exists():
         for posicao, (pergunta, texto) in enumerate(dados["perguntas"], start=1):

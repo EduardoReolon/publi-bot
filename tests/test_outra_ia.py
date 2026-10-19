@@ -295,3 +295,44 @@ def test_colar_de_novo_no_artigo_que_veio_da_outra_ia(artigo):
     outra_ia.aplicar(artigo, RESPOSTA)
     artigo.refresh_from_db()
     assert artigo.sections.order_by("order").first().heading == "O que o estudo mostrou"
+
+
+@pytest.mark.django_db
+def test_outra_ia_escreve_o_texto_das_chamadas_junto(artigo, monkeypatch):
+    """Com oferta, o pedido traz os blocos CHAMADA DO MEIO e CHAMADA DO FIM, com
+    as mesmas regras do modelo daqui; o texto colado vira call_to_action_copy
+    (o meio so com a marca), pelos mesmos limites. Faltou uma parte: o modelo
+    daqui escreve."""
+    from apps.content import tasks
+    from apps.editorial.models import PerfilDoNegocio
+
+    negocio = PerfilDoNegocio.carregar()
+    negocio.oferta = "Conversa pelo WhatsApp para mapear o caixa da clinica."
+    negocio.save()
+    artigo.call_to_action = "end"
+    artigo.save(update_fields=["call_to_action"])
+    pedido = outra_ia.pedido(artigo)
+    assert "CHAMADA DO MEIO:" in pedido and "CHAMADA DO FIM:" in pedido
+    assert "ate 70 caracteres" in pedido and "So prometa o que esta na oferta" in pedido
+
+    blocos = (
+        "CHAMADA DO MEIO:\n**title:** O caixa some no fim do mes?\n"
+        "text: A gente mapeia para onde ele vai, com os seus numeros.\nbutton: Quero entender\n"
+        "CHAMADA DO FIM:\ntitle: Crescer sem apertar o caixa\n"
+        "text: Uma conversa curta mostra por onde comecar.\nbutton: Conversar agora\n"
+    )
+    pedidas = []
+    monkeypatch.setattr(tasks.escrever_chamada, "delay", pedidas.append)
+    outra_ia.aplicar(artigo, RESPOSTA.replace("CORPO DO ARTIGO:", blocos + "CORPO DO ARTIGO:"))
+    artigo.refresh_from_db()
+    assert artigo.call_to_action == "inline"  # a marca [[CHAMADA]] esta no texto
+    assert artigo.call_to_action_copy["inline"]["title"] == "O caixa some no fim do mes?"
+    assert artigo.call_to_action_copy["end"]["button"] == "Conversar agora"
+    assert pedidas == []
+
+    # Sem os blocos: o modelo daqui escreve depois.
+    from django.db import transaction
+
+    monkeypatch.setattr(transaction, "on_commit", lambda f: f())
+    outra_ia.aplicar(artigo, RESPOSTA)
+    assert pedidas == [str(artigo.pk)]
