@@ -78,6 +78,22 @@ REGRAS_DE_ATENCAO = (
 )
 
 
+# Os limites e as regras do texto da chamada: valem para o modelo daqui e para
+# o pedido feito a outra IA (outra_ia.py).
+REGRAS_DA_CHAMADA = (
+    "title: ate 70 caracteres (mire em 55), falando do problema ou do resultado "
+    "de quem le (nao do nome da empresa). text: 1 ou 2 frases curtas, ate 200 "
+    "caracteres (mire em 150). button: ate 30 caracteres (mire em 20), "
+    "um verbo do que acontece ao clicar "
+    "(ex.: 'Quero conversar', 'Ver como funciona').\n\n"
+    "Regras:\n"
+    "- So prometa o que esta na oferta. Nenhum numero, prazo ou resultado que "
+    "ela nao diga.\n"
+    "- Sem urgencia falsa, sem 'clique aqui', sem exclamacao em excesso.\n"
+    "- Em saude: sem promessa de cura ou de resultado de tratamento.\n"
+    "- No idioma pedido, no tom do artigo, falando com o publico dele."
+)
+
 PROMPTS_INICIAIS: dict[str, dict] = {
     "consensus_filter": {
         "descricao": "Le as fontes recuperadas e constroi uma tese unica, marcando divergencias.",
@@ -693,18 +709,7 @@ PROMPTS_INICIAIS: dict[str, dict] = {
             '  "meio": {"title", "text", "button"} — liga o trecho do meio a oferta;\n'
             '  "fim": {"title", "text", "button"} — fecha o artigo inteiro.\n'
             "Os limites sao do campo no site e NAO podem passar: o que passar e "
-            "descartado. Mire abaixo deles.\n"
-            "title: ate 70 caracteres (mire em 55), falando do problema ou do resultado "
-            "de quem le (nao do nome da empresa). text: 1 ou 2 frases curtas, ate 200 "
-            "caracteres (mire em 150). button: ate 30 caracteres (mire em 20), "
-            "um verbo do que acontece ao clicar "
-            "(ex.: 'Quero conversar', 'Ver como funciona').\n\n"
-            "Regras:\n"
-            "- So prometa o que esta na oferta. Nenhum numero, prazo ou resultado que "
-            "ela nao diga.\n"
-            "- Sem urgencia falsa, sem 'clique aqui', sem exclamacao em excesso.\n"
-            "- Em saude: sem promessa de cura ou de resultado de tratamento.\n"
-            "- No idioma pedido, no tom do artigo, falando com o publico dele."
+            "descartado. Mire abaixo deles.\n" + REGRAS_DA_CHAMADA
         ),
         "usuario": (
             "Idioma: {idioma}\nArtigo: {titulo}\nPublico: {publico}\n\n"

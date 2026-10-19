@@ -241,3 +241,98 @@ def test_refazer_com_outra_ia_usa_as_mesmas_fontes_e_arquiva_o_rascunho(tenant_c
     antigo.refresh_from_db()
     assert antigo.status == Article.Status.REJECTED
     assert antigo.thesis_json["substituido_por"] == str(novo.pk)
+
+
+def test_titulos_por_rotulo_de_texto_e_um_paragrafo_por_linha():
+    """SECAO:/SUBSECAO: sobrevivem a qualquer copia (o ## some quando se
+    seleciona o texto na tela do chat); cada linha vira um paragrafo e a lista
+    fica junta. Nada e adivinhado: frase curta continua frase."""
+    colado = (
+        f"CORPO DO ARTIGO:\nAbertura que comeca pela dor de quem le. {PARAGRAFO}\n"
+        f"Segundo paragrafo da abertura. {PARAGRAFO}\n"
+        "**SECAO:** Por que o esforco manual consome o lucro\n"
+        f"Texto da secao com fonte [[FONTE_1]]. {PARAGRAFO}\n"
+        "[[CHAMADA]]\n"
+        "SUBSECAO: Um detalhe\n"
+        "- item um\n- item dois\n"
+        "SECAO: Onde aplicar no seu negocio\n"
+        "Uma frase curta\n"
+        f"Fecho do artigo. {PARAGRAFO}\n"
+        "FIM DO ARTIGO"
+    )
+    corpo = outra_ia.ler(colado)["corpo"]
+    abertura, secoes = outra_ia._secoes(corpo)
+    assert [t for _n, t, _x in secoes] == [
+        "Por que o esforco manual consome o lucro",
+        "Onde aplicar no seu negocio",
+    ]
+    assert "\n\n" in abertura and "[[CHAMADA]]" in secoes[0][2]
+    assert "### Um detalhe" in secoes[0][2] and "- item um\n- item dois" in secoes[0][2]
+    assert "## Uma frase curta" not in corpo
+    assert "BLOCO DE CODIGO" in outra_ia.PEDIDO_EM_BLOCO
+
+
+@pytest.mark.django_db
+def test_resposta_sem_titulo_nenhum_e_recusada_com_o_que_fazer(artigo):
+    sem_titulos = RESPOSTA.replace("## ", "").replace("# Metabolismo\n\n", "")
+    with pytest.raises(ValueError, match="sem os titulos"):
+        outra_ia.aplicar(artigo, sem_titulos)
+    assert artigo.sections.count() == 0
+
+
+@pytest.mark.django_db
+def test_colar_de_novo_no_artigo_que_veio_da_outra_ia(artigo):
+    """A mesma resposta, colada de novo no mesmo artigo (mesmas fontes), refaz
+    o texto e as secoes."""
+    por_rotulo = RESPOSTA.replace("## ", "SECAO: ").replace("# Metabolismo\n\n", "")
+    outra_ia.aplicar(artigo, por_rotulo)
+    artigo.refresh_from_db()
+    assert artigo.sections.count() == 3
+
+    pauta = artigo.topic
+    assert outra_ia.para_colar_de_novo(pauta, str(artigo.pk)) == artigo
+    assert outra_ia.para_colar_de_novo(pauta, "nao-e-uuid") is None
+    outra_ia.aplicar(artigo, RESPOSTA)
+    artigo.refresh_from_db()
+    assert artigo.sections.order_by("order").first().heading == "O que o estudo mostrou"
+
+
+@pytest.mark.django_db
+def test_outra_ia_escreve_o_texto_das_chamadas_junto(artigo, monkeypatch):
+    """Com oferta, o pedido traz os blocos CHAMADA DO MEIO e CHAMADA DO FIM, com
+    as mesmas regras do modelo daqui; o texto colado vira call_to_action_copy
+    (o meio so com a marca), pelos mesmos limites. Faltou uma parte: o modelo
+    daqui escreve."""
+    from apps.content import tasks
+    from apps.editorial.models import PerfilDoNegocio
+
+    negocio = PerfilDoNegocio.carregar()
+    negocio.oferta = "Conversa pelo WhatsApp para mapear o caixa da clinica."
+    negocio.save()
+    artigo.call_to_action = "end"
+    artigo.save(update_fields=["call_to_action"])
+    pedido = outra_ia.pedido(artigo)
+    assert "CHAMADA DO MEIO:" in pedido and "CHAMADA DO FIM:" in pedido
+    assert "ate 70 caracteres" in pedido and "So prometa o que esta na oferta" in pedido
+
+    blocos = (
+        "CHAMADA DO MEIO:\n**title:** O caixa some no fim do mes?\n"
+        "text: A gente mapeia para onde ele vai, com os seus numeros.\nbutton: Quero entender\n"
+        "CHAMADA DO FIM:\ntitle: Crescer sem apertar o caixa\n"
+        "text: Uma conversa curta mostra por onde comecar.\nbutton: Conversar agora\n"
+    )
+    pedidas = []
+    monkeypatch.setattr(tasks.escrever_chamada, "delay", pedidas.append)
+    outra_ia.aplicar(artigo, RESPOSTA.replace("CORPO DO ARTIGO:", blocos + "CORPO DO ARTIGO:"))
+    artigo.refresh_from_db()
+    assert artigo.call_to_action == "inline"  # a marca [[CHAMADA]] esta no texto
+    assert artigo.call_to_action_copy["inline"]["title"] == "O caixa some no fim do mes?"
+    assert artigo.call_to_action_copy["end"]["button"] == "Conversar agora"
+    assert pedidas == []
+
+    # Sem os blocos: o modelo daqui escreve depois.
+    from django.db import transaction
+
+    monkeypatch.setattr(transaction, "on_commit", lambda f: f())
+    outra_ia.aplicar(artigo, RESPOSTA)
+    assert pedidas == [str(artigo.pk)]

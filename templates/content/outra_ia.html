@@ -57,13 +57,18 @@
     <h2>{% translate "2. Cole a resposta inteira" %}</h2>
     <form method="post">
       {% csrf_token %}<input type="hidden" name="acao" value="colar"><input type="hidden" name="fluxo" value="{{ fluxo }}">
+      {% if de_novo %}<input type="hidden" name="de_novo" value="{{ de_novo.pk }}">
+        <p class="aviso espera">{% translate "Colando de novo neste artigo: as fontes sao as mesmas, entao os numeros [[FONTE_N]] da resposta continuam valendo. O texto, as secoes e a chamada sao refeitos." %}</p>{% endif %}
+      <p class="ajuda">{% translate "Copie pelo botao de copiar da IA (ou de dentro do bloco de codigo): selecionar o texto na tela perde os ## dos titulos." %}</p>
       <textarea name="resposta" rows="16" style="width:100%" aria-label="{% translate 'Resposta do modelo' %}">{{ colado }}</textarea>
       <div class="acoes"><button type="submit">{% translate "Gravar e ir para a revisao" %}</button></div>
     </form>
+    {% if not de_novo %}
     <form method="post" class="acoes">
       {% csrf_token %}<input type="hidden" name="acao" value="desistir"><input type="hidden" name="fluxo" value="{{ fluxo }}">
       <button type="submit" class="botao discreto">{% translate "Desistir (a pauta volta para a lista)" %}</button>
     </form>
+    {% endif %}
   </section>
 {% endif %}
 {% endblock %}
