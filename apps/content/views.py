@@ -1225,20 +1225,9 @@ def _capas_em_curso(artigo):
     entao quem revisa pode continuar trabalhando enquanto o lote sai. Juntar os
     dois faria o botao "refazer" sumir porque uma imagem esta sendo desenhada.
     """
+    from apps.content.capas import capas_em_curso
 
-    return (
-        GenerationJob.objects.filter(
-            kind=GenerationJob.Kind.ARTICLE_COVER,
-            target_object_id=str(artigo.pk),
-            status__in=[
-                GenerationJob.Status.PENDING,
-                GenerationJob.Status.RUNNING,
-                GenerationJob.Status.WAITING_CAPACITY,
-            ],
-        )
-        .order_by("-created_at")
-        .first()
-    )
+    return capas_em_curso(artigo)
 
 
 def _trabalho_em_curso(artigo):
@@ -1795,9 +1784,7 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
     a tela diz que esta em curso. O passo executado e o MESMO do fluxo do
     artigo (`passo_gerar_capas`), entao as duas portas nao podem divergir.
     """
-    from apps.content.capas import MAXIMO_DE_LOTES, ha_conexao_de_imagem
-    from apps.ops.orchestrator import criar_job
-    from apps.ops.tasks import advance_generation_job
+    from apps.content.capas import MAXIMO_DE_LOTES, ha_conexao_de_imagem, pedir_capas
 
     artigo = get_object_or_404(Article, pk=pk)
 
@@ -1829,8 +1816,7 @@ def gerar_capas(request: HttpRequest, pk) -> HttpResponse:
         )
         return _ao_artigo(artigo, "capa")
 
-    job = criar_job(kind=GenerationJob.Kind.ARTICLE_COVER, target_object_id=str(artigo.pk))
-    transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
+    pedir_capas(artigo)
 
     messages.success(
         request,

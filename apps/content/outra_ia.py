@@ -472,6 +472,17 @@ def _secoes(corpo: str) -> tuple[str, list[tuple[int, str, str]]]:
 
 
 @transaction.atomic
+def _pedir_capas_se_faltam(artigo) -> None:
+    """Como no fluxo local, o texto pronto ja pede as opcoes de capa (depois do
+    resumo e da meta description, em que a descricao da capa se apoia). So se
+    o artigo ainda nao tem imagem nem lote andando, e se ha gerador cadastrado."""
+    from apps.content.capas import capas_em_curso, ha_conexao_de_imagem, pedir_capas
+
+    if artigo.images.exists() or capas_em_curso(artigo) or not ha_conexao_de_imagem():
+        return
+    pedir_capas(artigo)
+
+
 def aplicar(artigo, resposta: str):
     """Grava o texto colado. Levanta ValueError (ou LinkAlucinado) se nao serve."""
     from apps.content.chamada import reconciliar_com_o_texto, tirar_marcas
@@ -549,6 +560,7 @@ def aplicar(artigo, resposta: str):
                 is_selected=posicao <= MARCADAS,
             )
     resultado = aplicar_rascunho(artigo, corpo)
+    _pedir_capas_se_faltam(artigo)
     from apps.content.flows import arquivar_substituido
 
     # Refeito por aqui: o rascunho antigo sai de cena agora que o texto chegou.
