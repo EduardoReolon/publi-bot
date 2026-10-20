@@ -93,6 +93,10 @@
       <form method="post" action="{% url 'content:buscar_fontes' pauta.pk %}" style="display:inline" data-em-segundo-plano="{% translate 'Buscando...' %}">{% csrf_token %}
         <button type="submit" class="botao discreto pequeno" title="{% translate 'So busca as fontes na web, sem gerar o artigo' %}">{% translate "Buscar fontes (A)" %}</button>
       </form>
+      {% with b=pauta.busca_de_fontes.paginas %}
+        {% if b.erro %}<span class="selo ruim" title="{{ b.erro }}">{% translate "a ultima busca falhou" %}</span>
+        {% elif b.em %}<span class="ajuda">{% blocktranslate trimmed with n=b.novos|default:0 %}ja buscada: {{ n }} nova(s){% endblocktranslate %}</span>{% endif %}
+      {% endwith %}
       <a class="botao discreto pequeno" href="{% url 'content:artigo_por_outra_ia' pauta.pk %}">{% translate "Outra IA (A)" %}</a>
     {% else %}
       {% if not f.pesquisa.rodando or f.pesquisa.parada %}

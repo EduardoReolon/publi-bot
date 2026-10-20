@@ -122,12 +122,19 @@ def parece_portugues(texto: str) -> bool:
     return len(palavras & _PISTAS_DE_PORTUGUES) >= 2
 
 
-def descrever_capa(article: Article, *, site=None, job=None) -> tuple[str, object]:
-    """Pede ao modelo de texto uma descricao concreta para a imagem.
+# Os tipos de cena do lote, um por opcao: a mesma descricao tres vezes dava a
+# mesma foto com outra semente.
+CENAS = ("objeto", "lugar", "textura")
+
+
+def descrever_capa(article: Article, *, site=None, job=None) -> tuple[list[str], object]:
+    """Pede ao modelo de texto as descricoes concretas das imagens, uma por
+    tipo de cena (`CENAS`).
 
     Duas etapas — descrever, depois gerar — e nao uma so: modelos de imagem
     leem mal um artigo inteiro, e mandar o titulo cru produz sempre a mesma
-    foto generica de banco de imagens.
+    foto generica de banco de imagens. Uma versao do prompt que devolva texto
+    corrido (ajustada pela tela) ainda serve: vira uma descricao so.
     """
     from apps.content.inference import executar_prompt
 
@@ -139,30 +146,54 @@ def descrever_capa(article: Article, *, site=None, job=None) -> tuple[str, objec
         },
         site=site,
         job=job,
+        json_schema={
+            "type": "object",
+            "properties": {cena: {"type": "string"} for cena in CENAS},
+            "required": list(CENAS),
+        },
     )
-    descricao = resultado.texto.strip()
+    descricoes = _descricoes(resultado.texto)
 
-    if parece_portugues(descricao):
-        logger.warning(
-            "Artigo %s: a descricao da capa parece estar em portugues, e o SDXL "
-            "so entende ingles — a imagem vai sair generica. Revise o prompt "
-            "'image_prompt' em Configuracao > Prompts. Descricao: %r",
-            article.pk,
-            descricao[:200],
-        )
+    for descricao in descricoes:
+        if parece_portugues(descricao):
+            logger.warning(
+                "Artigo %s: a descricao da capa parece estar em portugues, e o SDXL "
+                "so entende ingles — a imagem vai sair generica. Revise o prompt "
+                "'image_prompt' em Configuracao > Prompts. Descricao: %r",
+                article.pk,
+                descricao[:200],
+            )
 
-    return descricao, resultado.prompt_run
+    return descricoes, resultado.prompt_run
+
+
+def _descricoes(texto: str) -> list[str]:
+    """As descricoes por cena do JSON; sem JSON, o texto inteiro e uma so."""
+    import json
+
+    bruto = texto.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
+    try:
+        dados = json.loads(bruto)
+    except ValueError:
+        dados = None
+    if isinstance(dados, dict):
+        cenas = [str(dados.get(c) or "").strip() for c in CENAS]
+        if any(cenas):
+            return [c for c in cenas if c]
+    return [texto.strip()]
 
 
 def gerar_opcoes(
     article: Article, *, quantidade: int = OPCOES_POR_LOTE, site=None, job=None
 ) -> list[ArticleImage]:
-    """Gera um lote novo de opcoes, sem tocar nos lotes anteriores.
+    """Gera um lote novo de opcoes, sem tocar nos lotes anteriores: cada opcao
+    com a descricao de um tipo de cena.
 
     Uma falha do provedor e registrada (disjuntor e `InferenceLog` com o
     `job`) antes de subir. O log com o trabalho e o que permite ao passo contar
     quantas vezes a imagem ja falhou e parar de tentar
-    (`falhas_de_imagem_do_job`).
+    (`falhas_de_imagem_do_job`). Se alguma opcao ja saiu, a falha das
+    seguintes nao perde as prontas: o lote fica com as que sairam.
     """
     lote = _proximo_lote(article)
     if lote > MAXIMO_DE_LOTES:
@@ -172,9 +203,27 @@ def gerar_opcoes(
         )
 
     _conexao_de_imagem()  # sem gerador, falha antes de gastar o modelo de texto
-    descricao, prompt_run = descrever_capa(article, site=site, job=job)
-    geradas = gerar_imagens(descricao, quantidade=quantidade, job=job)
-    criadas = _gravar(article, geradas, lote=lote, descricao=descricao, prompt_run=prompt_run)
+    descricoes, prompt_run = descrever_capa(article, site=site, job=job)
+    if len(descricoes) == 1:
+        # Uma descricao so: um pedido, as opcoes variam pela semente.
+        pedidos = [(descricoes[0], quantidade)]
+    else:
+        pedidos = [(descricoes[i % len(descricoes)], 1) for i in range(quantidade)]
+
+    geradas, usadas = [], []
+    for descricao, quantas in pedidos:
+        try:
+            novas = gerar_imagens(descricao, quantidade=quantas, job=job)
+        except Exception:
+            if not geradas:
+                raise
+            logger.warning(
+                "Artigo %s: lote %s parou em %s opcao(oes).", article.pk, lote, len(geradas)
+            )
+            break
+        geradas += novas
+        usadas += [descricao] * len(novas)
+    criadas = _gravar(article, geradas, lote=lote, descricoes=usadas, prompt_run=prompt_run)
 
     logger.info("Artigo %s: lote %s com %s opcao(oes) de capa.", article.pk, lote, len(criadas))
     return criadas
@@ -354,11 +403,13 @@ def _proximo_lote(article: Article) -> int:
 
 
 @transaction.atomic
-def _gravar(article, geradas, *, lote: int, descricao: str, prompt_run) -> list[ArticleImage]:
+def _gravar(
+    article, geradas, *, lote: int, descricoes: list[str], prompt_run
+) -> list[ArticleImage]:
     from django.core.files.base import ContentFile
 
     criadas = []
-    for posicao, gerada in enumerate(geradas, start=1):
+    for posicao, (gerada, descricao) in enumerate(zip(geradas, descricoes, strict=True), start=1):
         try:
             arquivo = converter_para_webp(_memoria(gerada.conteudo), nome=f"capa-{lote}-{posicao}")
         except ImagemInvalida:

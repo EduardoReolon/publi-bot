@@ -72,7 +72,7 @@ def geracao_falsa(monkeypatch):
     monkeypatch.setattr("apps.content.capas._registrar_uso", lambda *a, **k: None)
     monkeypatch.setattr(
         "apps.content.capas.descrever_capa",
-        lambda article, site=None, job=None: ("a monitor on a wooden table", None),
+        lambda article, site=None, job=None: (["a monitor on a wooden table"], None),
     )
     monkeypatch.setattr("apps.inference.providers.base.get_image_provider", lambda *a, **k: gerador)
 
@@ -174,7 +174,8 @@ def test_provedor_que_so_devolve_uma_por_vez_ainda_entrega_tres(artigo, monkeypa
     )
     monkeypatch.setattr("apps.content.capas._registrar_uso", lambda *a, **k: None)
     monkeypatch.setattr(
-        "apps.content.capas.descrever_capa", lambda article, site=None, job=None: ("uma cena", None)
+        "apps.content.capas.descrever_capa",
+        lambda article, site=None, job=None: (["uma cena"], None),
     )
     monkeypatch.setattr("apps.inference.providers.base.get_image_provider", lambda *a, **k: gerador)
     monkeypatch.setattr("apps.inference.leases.reserva", lambda *a, **k: contextlib.nullcontext())
@@ -428,3 +429,60 @@ def test_capa_enviada_gira_corta_converte_e_e_escolhida(ambiente):  # noqa: F811
         reverse("content:revisar", args=[artigo.pk], urlconf="core.urls_tenants")
     ).content.decode()
     assert "Enviadas por voce" in tela and "Enviar uma imagem sua" in tela
+
+
+@pytest.mark.django_db
+def test_cada_opcao_do_lote_tem_a_descricao_de_um_tipo_de_cena(artigo, geracao_falsa, monkeypatch):
+    """A mesma descricao tres vezes dava a mesma foto com outra semente: as
+    opcoes ficavam parecidas demais para escolher."""
+    cenas = ["a ceramic cup close-up", "a quiet clinic corridor", "linen and morning light"]
+    monkeypatch.setattr(
+        "apps.content.capas.descrever_capa", lambda article, site=None, job=None: (cenas, None)
+    )
+
+    criadas = gerar_opcoes(artigo)
+
+    assert [c["prompt"] for c in geracao_falsa.chamadas] == cenas
+    assert all(c["quantidade"] == 1 for c in geracao_falsa.chamadas)
+    assert [i.order for i in criadas] == [1, 2, 3]
+    assert [i.prompt.split(" #")[0] for i in criadas] == cenas
+
+
+@pytest.mark.django_db
+def test_falha_depois_da_primeira_opcao_guarda_a_que_saiu(artigo, geracao_falsa, monkeypatch):
+    from apps.inference.providers.base import ProviderTransientError
+
+    monkeypatch.setattr(
+        "apps.content.capas.descrever_capa",
+        lambda article, site=None, job=None: (["um", "dois", "tres"], None),
+    )
+    original = geracao_falsa.generate
+
+    def falha_na_segunda(**k):
+        if geracao_falsa.chamadas:
+            raise ProviderTransientError("caiu")
+        return original(**k)
+
+    monkeypatch.setattr(geracao_falsa, "generate", falha_na_segunda)
+    monkeypatch.setattr("apps.content.capas._registrar_falha_de_imagem", lambda *a, **k: None)
+    monkeypatch.setattr("apps.inference.leases.registrar_falha", lambda *a, **k: None)
+
+    criadas = gerar_opcoes(artigo)
+    assert len(criadas) == 1
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        (
+            '{"objeto": "a cup", "lugar": "a room", "textura": "linen"}',
+            ["a cup", "a room", "linen"],
+        ),
+        ('```json\n{"objeto": "a cup", "lugar": "", "textura": "linen"}\n```', ["a cup", "linen"]),
+        ("a cup on a table, soft light", ["a cup on a table, soft light"]),
+    ],
+)
+def test_le_as_descricoes_por_cena_ou_o_texto_inteiro(texto, esperado):
+    from apps.content.capas import _descricoes
+
+    assert _descricoes(texto) == esperado

@@ -254,6 +254,11 @@ def no_acervo(pauta) -> dict:
     contagem["curadas"] = len({_chunk(t).document_id for t in so_os_curados(usados)})
     contagem["minimo_de_curadas"] = MINIMO_DE_DOCUMENTOS_CURADOS
     contagem["na_fila"] = na_fila(pauta)
+    usadas = {}
+    for trecho in so_os_curados(usados):
+        documento = _chunk(trecho).document
+        usadas.setdefault(str(documento.pk), (documento.title or documento.nome_do_arquivo)[:200])
+    contagem["usadas"] = [{"id": pk, "titulo": titulo} for pk, titulo in usadas.items()]
     contagem["por_curar"] = [
         {"id": str(d.pk), "titulo": (d.title or d.nome_do_arquivo)[:200]}
         for d in a_curar(usados, pauta, por_escolha=escolha)
@@ -463,6 +468,7 @@ def painel(pauta) -> dict:
         "artigos": artigos,
         "videos": busca.get("videos") or {},
         "aguardando": aguardando(pauta),
+        "tem_sugeridas": pauta.candidatos_de_fonte.exists(),
         "fora": _titulos(fora_da_pauta(pauta)),
         "falta_artigos": (
             ConfiguracaoDoRadar.carregar().artigos_cientificos

@@ -40,7 +40,7 @@ def test_a_instrucao_esta_em_ingles():
 def test_o_pedido_termina_lembrando_o_idioma():
     """O titulo e o resumo chegam em portugues. O ultimo token antes da
     resposta e onde o lembrete pesa mais."""
-    assert SEMENTE["usuario"].rstrip().endswith("Write the English image prompt:")
+    assert SEMENTE["usuario"].rstrip().endswith("Write the three English image prompts (JSON):")
 
 
 @pytest.mark.parametrize(

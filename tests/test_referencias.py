@@ -532,6 +532,8 @@ def test_curadas_bastam_e_as_nao_curadas_ficam_de_fora(ambiente, monkeypatch):  
     assert acervo["so_curadas"] and acervo["por_curar"] == []
     usados = {t.chunk.document_id for t in fontes_da_pauta(pauta)}
     assert usados == {d.pk for d in docs[:3]}
+    # A tela lista exatamente as que o artigo usa.
+    assert {d["id"] for d in acervo["usadas"]} == {str(d.pk) for d in docs[:3]}
 
 
 def test_por_curar_tem_limite_e_some_quando_excluido(ambiente, monkeypatch):  # noqa: F811
@@ -609,3 +611,23 @@ def test_so_pede_as_desta_pauta_quando_ha_curada(ambiente, monkeypatch):  # noqa
     docs[2].status = S.EMBEDDED
     assert referencias.conferir(pauta)["por_curar"] == []
     assert {t.chunk.document_id for t in fontes_da_pauta(pauta)} == {docs[0].pk, docs[2].pk}
+
+
+def test_busca_de_paginas_que_falha_fica_registrada_com_o_motivo(tenant, monkeypatch, sem_rede):
+    """Antes a tela seguia dizendo "ainda nao feita", como se o clique nao
+    tivesse acontecido."""
+    from apps.radar.custos import TetoAtingido
+
+    def sem_saldo(*a, **k):
+        raise TetoAtingido("teto do mes atingido")
+
+    monkeypatch.setattr("apps.knowledge.fontes_web._buscar_paginas", sem_saldo)
+    pauta = Topic.objects.create(title="Retencao de clientes", target_keyword="retencao")
+    _acervo(monkeypatch, artigos=4)
+
+    with pytest.raises(TetoAtingido):
+        buscar_fontes(pauta)
+    pauta.refresh_from_db()
+    paginas = pauta.busca_de_fontes["paginas"]
+    assert "teto" in paginas["erro"] and "em" not in paginas
+    assert referencias.painel(pauta)["paginas"]["erro"]
