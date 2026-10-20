@@ -234,6 +234,7 @@ def pedido(artigo) -> str:
     from apps.content.flows import _publico_padrao, dores_do_artigo
     from apps.content.prompts_iniciais import (
         AVISO_DE_DELIMITADOR,
+        REGRA_DO_DESTAQUE,
         REGRA_DO_EMBASAMENTO,
         REGRA_DOS_LINKS,
         REGRAS_DA_CHAMADA,
@@ -309,6 +310,7 @@ Forma:
   "SECAO: Onde a automacao paga a conta"). Subtitulo so se a secao tiver duas
   partes, com "SUBSECAO: ". Nada de #, nem titulo para o artigo inteiro.
 - Cada paragrafo numa linha so, com uma linha em branco entre eles.
+{REGRA_DO_DESTAQUE}
 - Frases curtas. Sem "vale ressaltar", "no cenario atual", "jornada".
 - Um fecho curto, sem titulo "Conclusao".
 - Nao inclua perguntas frequentes nem referencias dentro do corpo: elas tem

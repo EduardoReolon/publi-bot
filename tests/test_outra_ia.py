@@ -377,3 +377,18 @@ def test_sem_gerador_de_imagem_o_texto_colado_nao_pede_capa(artigo):
 
     outra_ia.aplicar(artigo, RESPOSTA)
     assert not GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_COVER).exists()
+
+
+@pytest.mark.django_db
+def test_destaque_da_outra_ia_vira_a_frase_em_letra_maior(artigo):
+    """O pedido leva a mesma regra do modelo daqui: a linha '>> frase' vira o
+    destaque no HTML do site."""
+    assert "'>> '" in outra_ia.pedido(artigo)
+
+    frase = "O efeito aparece cedo e some quando o habito para."
+    outra_ia.aplicar(
+        artigo, RESPOSTA.replace("## O que fazer agora", f">> {frase}\n\n## O que fazer agora")
+    )
+    artigo.refresh_from_db()
+
+    assert f'<aside data-publibot="destaque"><p><strong>{frase}</strong>' in artigo.body_html
