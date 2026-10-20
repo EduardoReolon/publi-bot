@@ -336,3 +336,44 @@ def test_outra_ia_escreve_o_texto_das_chamadas_junto(artigo, monkeypatch):
     monkeypatch.setattr(transaction, "on_commit", lambda f: f())
     outra_ia.aplicar(artigo, RESPOSTA)
     assert pedidas == [str(artigo.pk)]
+
+
+@pytest.mark.django_db
+def test_texto_colado_ja_pede_as_capas_como_no_fluxo_local(
+    artigo, django_capture_on_commit_callbacks
+):
+    """Sem isso o artigo da outra IA chegava a revisao sem nenhuma opcao de
+    imagem, e alguem tinha de lembrar de clicar em "gerar capas"."""
+    from unittest import mock
+
+    from apps.inference.models import InferenceConnection
+    from apps.ops.models import GenerationJob
+
+    InferenceConnection.objects.create(
+        name="Geracao de imagem",
+        kind=InferenceConnection.Kind.IMAGE,
+        base_url="http://127.0.0.1:8101",
+        workloads=[InferenceConnection.Workload.IMAGE],
+        default_model="sdxl",
+        is_active=True,
+    )
+    capas = GenerationJob.objects.filter(
+        kind=GenerationJob.Kind.ARTICLE_COVER, target_object_id=str(artigo.pk)
+    )
+
+    with mock.patch("apps.ops.tasks.advance_generation_job.delay") as disparo:
+        with django_capture_on_commit_callbacks(execute=True):
+            outra_ia.aplicar(artigo, RESPOSTA)
+        assert capas.count() == 1
+        assert disparo.call_args.args == (str(capas.get().pk),)
+
+        outra_ia.aplicar(artigo, RESPOSTA)  # colar de novo nao pede outro lote
+    assert capas.count() == 1
+
+
+@pytest.mark.django_db
+def test_sem_gerador_de_imagem_o_texto_colado_nao_pede_capa(artigo):
+    from apps.ops.models import GenerationJob
+
+    outra_ia.aplicar(artigo, RESPOSTA)
+    assert not GenerationJob.objects.filter(kind=GenerationJob.Kind.ARTICLE_COVER).exists()

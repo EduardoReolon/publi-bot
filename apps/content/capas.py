@@ -270,6 +270,37 @@ def ha_conexao_de_imagem() -> bool:
     )
 
 
+def capas_em_curso(article: Article):
+    """Um lote de capas ainda rodando para este artigo (o trabalho, ou None)."""
+    from apps.ops.models import GenerationJob
+
+    return (
+        GenerationJob.objects.filter(
+            kind=GenerationJob.Kind.ARTICLE_COVER,
+            target_object_id=str(article.pk),
+            status__in=[
+                GenerationJob.Status.PENDING,
+                GenerationJob.Status.RUNNING,
+                GenerationJob.Status.WAITING_CAPACITY,
+            ],
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def pedir_capas(article: Article):
+    """Enfileira um lote de capas para o artigo (o mesmo passo do fluxo local),
+    disparado depois do commit. Devolve o trabalho criado."""
+    from apps.ops.models import GenerationJob
+    from apps.ops.orchestrator import criar_job
+    from apps.ops.tasks import advance_generation_job
+
+    job = criar_job(kind=GenerationJob.Kind.ARTICLE_COVER, target_object_id=str(article.pk))
+    transaction.on_commit(lambda: advance_generation_job.delay(str(job.pk)))
+    return job
+
+
 def _registrar_uso(conexao, modelo: str, quantas: int) -> None:
     from apps.inference.leases import registrar_sucesso
     from apps.inference.models import InferenceConnection
