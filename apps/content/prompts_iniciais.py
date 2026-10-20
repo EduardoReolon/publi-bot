@@ -56,6 +56,14 @@ REGRA_DO_EMBASAMENTO = (
     "escreva a mais geral."
 )
 
+# O destaque (`apps/content/destaque.py`): o mesmo pedido no modelo daqui e na outra IA.
+REGRA_DO_DESTAQUE = (
+    "- DESTAQUE: se a secao tiver uma frase que resume a ideia mais "
+    "importante dela (a que o leitor deveria lembrar), repita-a, curta "
+    "(8 a 20 palavras), numa linha propria comecando com '>> ', sem "
+    "marcador de fonte. No maximo uma por secao, e so quando valer."
+)
+
 # Prender o leitor (que decide em segundos se fica) sem perder o rigor: vale
 # para quem escreve o corpo do artigo (de uma vez ou secao por secao).
 REGRAS_DE_ATENCAO = (
@@ -66,10 +74,7 @@ REGRAS_DE_ATENCAO = (
     "- Fale da rotina do leitor: troque abstracao por situacao concreta "
     "(um exemplo ilustrativo do dia a dia, sem numero nem resultado "
     "inventado).\n"
-    "- DESTAQUE: se a secao tiver uma frase que resume a ideia mais "
-    "importante dela (a que o leitor deveria lembrar), repita-a, curta "
-    "(8 a 20 palavras), numa linha propria comecando com '>> ', sem "
-    "marcador de fonte. No maximo uma por secao, e so quando valer.\n"
+    f"{REGRA_DO_DESTAQUE}\n"
     "- Persuasao honesta (Cialdini): autoridade (diga de onde vem o "
     "dado; o marcador ja leva a fonte), prova social (quantas pessoas "
     "vivem isso, se a fonte disser), reciprocidade (algo pratico que o "
