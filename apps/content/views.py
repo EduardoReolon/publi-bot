@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -49,36 +48,15 @@ def _site():
 
 
 def _proximo_horario():
-    """Primeiro horario livre da cadencia, ou agora se nao houver cadencia.
+    from apps.integrations.scheduling import proximo_horario
 
-    Sem cadencia configurada o conteudo aprovado ficaria parado para sempre
-    esperando um horario que ninguem gera. Publicar no proximo tick e um
-    default previsivel; a cadencia continua sendo o caminho recomendado.
-    """
-    livre = _horario_livre()
-    if livre is None:
-        # Cadencia sem horarios gerados ainda (recem-salva): gera agora.
-        from apps.integrations.tasks import gerar_horarios_do_tenant
-
-        gerar_horarios_do_tenant()
-        livre = _horario_livre()
-    return livre.slot_at if livre else timezone.now()
+    return proximo_horario()
 
 
 def _horario_livre():
-    """O primeiro horario futuro da cadencia sem artigo agendado nele (o artigo
-    que voltou para revisao ou foi rejeitado libera o horario)."""
-    from apps.integrations.models import PublicationSlot
+    from apps.integrations.scheduling import horarios_livres
 
-    ocupado = Q(
-        article__status__in=[Article.Status.APPROVED_SCHEDULED, Article.Status.PUBLISHED]
-    ) | Q(answer__isnull=False)
-    return (
-        PublicationSlot.objects.filter(slot_at__gte=timezone.now())
-        .exclude(ocupado)
-        .order_by("slot_at")
-        .first()
-    )
+    return horarios_livres().first()
 
 
 # ---------------------------------------------------------------------------
@@ -1399,19 +1377,10 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
             livre.article = artigo
             livre.save(update_fields=["article"])
     quando = timezone.localtime(artigo.scheduled_for)
-    if artigo.scheduled_for <= timezone.now() + timedelta(minutes=2):
-        messages.success(
-            request,
-            _(
-                "Artigo aprovado. Nao ha horario livre na cadencia (Site e cadencia), entao "
-                "ele sai no proximo minuto."
-            ),
-        )
-    else:
-        messages.success(
-            request,
-            _("Artigo aprovado e agendado para %(q)s.") % {"q": quando.strftime("%d/%m %H:%M")},
-        )
+    messages.success(
+        request,
+        _("Artigo aprovado e agendado para %(q)s.") % {"q": quando.strftime("%d/%m %H:%M")},
+    )
     return redirect("content:artigos")
 
 

@@ -362,11 +362,11 @@ def generate_publication_slots() -> int:
 def gerar_horarios_do_tenant() -> int:
     """Os horarios futuros das cadencias ativas do tenant atual."""
     from apps.integrations.models import PublicationSchedule
-    from apps.integrations.scheduling import gerar_horarios
+    from apps.integrations.scheduling import garantir_horarios_livres
 
     total = 0
     for schedule in PublicationSchedule.objects.filter(is_active=True).select_related("site"):
-        total += len(gerar_horarios(schedule))
+        total += len(garantir_horarios_livres(schedule))
     return total
 
 

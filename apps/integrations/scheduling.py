@@ -72,6 +72,76 @@ def gerar_horarios(
     return criados
 
 
+# Quantos horarios livres a cadencia mantem a frente, e ate onde ela gera para
+# isso: com todos os horarios dos proximos 30 dias ocupados, gerar "ate daqui a
+# 30 dias" nao cria nada, e o artigo aprovado nao tinha onde entrar.
+HORARIOS_LIVRES_MINIMOS = 5
+GERAR_ATE_DIAS = 365
+
+
+def horarios_livres():
+    """Os horarios futuros sem conteudo agendado nem publicado neles (o artigo
+    que voltou para revisao ou foi rejeitado libera o horario)."""
+    from django.db.models import Q
+
+    ocupado = Q(
+        article__status__in=[Article.Status.APPROVED_SCHEDULED, Article.Status.PUBLISHED]
+    ) | Q(answer__isnull=False)
+    return (
+        PublicationSlot.objects.filter(slot_at__gte=timezone.now())
+        .exclude(ocupado)
+        .order_by("slot_at")
+    )
+
+
+def garantir_horarios_livres(schedule: PublicationSchedule) -> list[PublicationSlot]:
+    """Gera os horarios da cadencia, indo alem dos 30 dias quando preciso, ate
+    haver HORARIOS_LIVRES_MINIMOS livres (ou um ano a frente)."""
+    criados: list[PublicationSlot] = []
+    dias = 30
+    while True:
+        criados += gerar_horarios(schedule, ate=timezone.now() + timedelta(days=dias))
+        livres = horarios_livres().filter(site=schedule.site).count()
+        if livres >= HORARIOS_LIVRES_MINIMOS or dias >= GERAR_ATE_DIAS:
+            return criados
+        dias += 30
+
+
+def proximo_horario() -> datetime:
+    """Quando sai o proximo conteudo aprovado sem data escolhida: o primeiro
+    horario livre da cadencia (gerando mais, se faltar). Sem cadencia ativa,
+    o dia seguinte ao ultimo agendado, na hora padrao do site. Nunca "agora":
+    publicar na hora e o botao "Publicar ja"."""
+    livre = horarios_livres().first()
+    if livre is None:
+        for schedule in PublicationSchedule.objects.filter(is_active=True).select_related("site"):
+            garantir_horarios_livres(schedule)
+        livre = horarios_livres().first()
+    if livre is not None:
+        return livre.slot_at
+
+    site = Site.objects.first()
+    fuso = _fuso_do_site(site) if site else zoneinfo.ZoneInfo("UTC")
+    schedule = getattr(site, "schedule", None) if site else None
+    hora, minuto = 10, 0
+    if schedule is not None and schedule.times_of_day:
+        try:
+            hora, minuto = (int(p) for p in schedule.times_of_day[0].split(":"))
+        except (ValueError, AttributeError):
+            pass
+    ultimo = (
+        Article.objects.filter(
+            status=Article.Status.APPROVED_SCHEDULED, scheduled_for__isnull=False
+        )
+        .order_by("-scheduled_for")
+        .values_list("scheduled_for", flat=True)
+        .first()
+    )
+    base = max(timezone.now(), ultimo) if ultimo else timezone.now()
+    dia = base.astimezone(fuso).date() + timedelta(days=1)
+    return datetime.combine(dia, time(hora, minuto), tzinfo=fuso)
+
+
 def _horarios_semanais(schedule, agora_local, fuso, limite) -> list[datetime]:
     dias = set(schedule.weekdays or [])
     horas = schedule.times_of_day or []
