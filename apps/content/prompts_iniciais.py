@@ -523,9 +523,17 @@ PROMPTS_INICIAIS: dict[str, dict] = {
         "sistema": (
             "You write prompts for an image model (Stable Diffusion XL) that "
             "illustrate a science article. Answer in ENGLISH only.\n\n"
-            "Answer with the prompt and nothing else: no quotes, no preamble, "
-            "no explanation, no translation.\n\n"
-            "Format: comma-separated visual phrases, not a sentence. "
+            "Write THREE prompts, one per kind of scene, so the three cover "
+            "options really differ (not the same picture three times):\n"
+            '  "objeto": one concrete object from the subject, close-up, on a surface;\n'
+            '  "lugar": the place where the subject happens, a wide or medium shot;\n'
+            '  "textura": materials, light and shapes from that world, an abstract '
+            "composition with no single object as the hero.\n"
+            "Each one with a different main subject, setting and light.\n\n"
+            "Answer ONLY with a JSON object with the keys objeto, lugar and "
+            "textura, each a prompt string: no preamble, no explanation, no "
+            "translation.\n\n"
+            "Format of each prompt: comma-separated visual phrases, not a sentence. "
             "Subject first, then setting, then light, then framing, then "
             "photographic style. 25 to 45 words.\n\n"
             "Example: `a ceramic cup of black coffee on a worn oak table, "
@@ -578,7 +586,9 @@ PROMPTS_INICIAIS: dict[str, dict] = {
         # modelo de texto entende, e traduzir antes acrescentaria uma
         # inferencia para perder nuance. O que nao pode e a RESPOSTA sair em
         # portugues — por isso o lembrete no fim, onde ele pesa mais.
-        "usuario": ("Titulo: {titulo}\nResumo: {resumo}\n\nWrite the English image prompt:"),
+        "usuario": (
+            "Titulo: {titulo}\nResumo: {resumo}\n\nWrite the three English image prompts (JSON):"
+        ),
     },
     "source_queries": {
         "descricao": "Outras palavras para buscar fontes quando a primeira busca nao achou.",

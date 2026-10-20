@@ -247,7 +247,16 @@ def buscar_fontes(pauta, *, limite: int | None = None, variar: bool = False) -> 
         ]
         + [termo]
     )
-    novos = _buscar_paginas(pauta, consultas, limite)
+    from apps.radar.custos import TetoAtingido
+    from apps.radar.provedores import ProvedorIndisponivel
+
+    try:
+        novos = _buscar_paginas(pauta, consultas, limite)
+    except (ProvedorIndisponivel, TetoAtingido) as exc:
+        # Registrada, para a tela dizer por que nao buscou (antes ficava
+        # "ainda nao feita", como se o clique nao tivesse acontecido).
+        referencias.registrar(pauta, "paginas", tentou_em=agora, erro=str(exc)[:300])
+        raise
     referencias.registrar(
         pauta,
         "paginas",
@@ -255,6 +264,7 @@ def buscar_fontes(pauta, *, limite: int | None = None, variar: bool = False) -> 
         consultas=referencias.acumular_consultas(pauta, "paginas", consultas),
         novos=len(novos),
         variada=variar,
+        erro="",
     )
     logger.info(
         "Pauta %s: %s candidato(s) a fonte, %s artigo(s) cientifico(s).",

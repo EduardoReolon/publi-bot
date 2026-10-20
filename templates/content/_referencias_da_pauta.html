@@ -13,8 +13,16 @@
       {{ r.acervo.artigo }} {% translate "artigos cientificos" %} ·
       {{ r.acervo.documento }} {% translate "documentos enviados" %}
       {% if r.acervo.suficiente %}<span class="selo ok">{% translate "sustenta a pauta" %}</span>{% else %}<span class="selo ruim">{% translate "ainda nao sustenta" %}</span>{% endif %}
-      {% if r.acervo.nao_curados %}<span class="ajuda">({% blocktranslate trimmed count n=r.acervo.nao_curados %}{{ n }} ainda nao curado{% plural %}{{ n }} ainda nao curados{% endblocktranslate %})</span>{% endif %}
     </div>
+    {% if r.acervo.usadas %}
+      <details class="ajuda" style="margin:.3rem 0">
+        <summary>{% blocktranslate trimmed count n=r.acervo.usadas|length %}O artigo usa {{ n }} fonte ja curada{% plural %}O artigo usa {{ n }} fontes ja curadas{% endblocktranslate %}</summary>
+        <ul>{% for d in r.acervo.usadas %}<li><a href="{% url 'knowledge:curar' d.id %}">{{ d.titulo }}</a></li>{% endfor %}</ul>
+      </details>
+    {% endif %}
+    {% if r.acervo.nao_curados and not r.acervo.por_curar %}
+      <div class="ajuda">{% blocktranslate trimmed count n=r.acervo.nao_curados %}{{ n }} documento perto do tema ainda nao foi curado (veio da busca de outra pauta ou do acervo): fica de fora deste artigo, que sai so com as curadas.{% plural %}{{ n }} documentos perto do tema ainda nao foram curados (vieram da busca de outras pautas ou do acervo): ficam de fora deste artigo, que sai so com as curadas.{% endblocktranslate %}</div>
+    {% endif %}
     {% if r.acervo.so_curadas %}
       <div class="ajuda" style="margin:.3rem 0"><span class="selo ok">{% translate "gera so com as curadas" %}</span>
         {% if r.acervo.por_escolha %}{% translate "Voce encerrou a curadoria desta pauta: as nao curadas que a busca trouxer ficam de fora." %}
@@ -58,7 +66,9 @@
 
   <div>
     {% translate "Busca de paginas" %}:
-    {% if r.paginas.em %}
+    {% if r.paginas.erro %}
+      <span class="selo ruim">{% translate "nao completou" %}</span> {{ r.paginas.erro }}{% if r.paginas.em %} ({% translate "a anterior, feita, trouxe" %} {{ r.paginas.novos|default:0 }}){% endif %}.
+    {% elif r.paginas.em %}
       {% translate "feita" %}{% if r.paginas.variada %} {% translate "com outras palavras" %}{% endif %} —
       {% if r.paginas.novos %}{{ r.paginas.novos }} {% translate "nova(s)" %}{% else %}{% translate "nada novo encontrado" %}{% endif %}.
     {% elif pauta.debate.frentes %}{% translate "a busca geral nao foi feita; as paginas vieram da investigacao (frentes)" %}.
@@ -121,8 +131,8 @@
       {% if a.pagina.curadoria or a.artigo.curadoria or a.video.curadoria %}
         <a class="botao" href="{% url 'knowledge:documentos' %}?pauta={{ pauta.pk }}">{% translate "Curar os documentos aprovados" %}</a>
       {% endif %}
-      {% if not a.pagina.conferencia and not a.artigo.conferencia and not a.video.conferencia and not a.pagina.curadoria and not a.artigo.curadoria and not a.video.curadoria %}
-        <a class="botao discreto" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Ver as fontes desta pauta" %}</a>
+      {% if r.tem_sugeridas and not a.pagina.conferencia and not a.artigo.conferencia and not a.video.conferencia and not a.pagina.curadoria and not a.artigo.curadoria and not a.video.curadoria %}
+        <a class="botao discreto" title="{% translate 'O que as buscas desta pauta trouxeram e o que voce decidiu' %}" href="{% url 'knowledge:fontes_sugeridas' %}?pauta={{ pauta.pk }}">{% translate "Ver as fontes desta pauta" %}</a>
       {% endif %}
     {% endwith %}
   </div>
