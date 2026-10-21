@@ -34,7 +34,7 @@ from apps.content.services import (
 )
 from apps.content.tasks import responder_pergunta
 from apps.knowledge.referencias import painel as painel_de_referencias
-from apps.ops.extensoes import blocos_da_pauta, blocos_do_artigo
+from apps.ops.extensoes import acoes_do_artigo, blocos_da_pauta, blocos_do_artigo
 from apps.ops.models import GenerationJob
 from apps.radar.links_quebrados import cobertura_do_artigo
 
@@ -116,6 +116,7 @@ def pautas(request: HttpRequest) -> HttpResponse:
             "ver": ver,
             "contagem": contagem,
             "form": PautaForm(),
+            "acoes_do_artigo": acoes_do_artigo(),
         },
     )
 
@@ -203,6 +204,7 @@ def pauta(request: HttpRequest, pk) -> HttpResponse:
         "dados_escolhidos": medir("dados_escolhidos", escolhidos, alvo, na_tela=True),
         "dados_sugeridos": medir("dados_sugeridos", sugestoes, alvo),
         "blocos_da_pauta": blocos_da_pauta(),
+        "acoes_do_artigo": acoes_do_artigo(),
         "no_google": medir("no_google", _no_google_da_pauta, alvo),
     }
     if sum(tempos.values()) > 2:
@@ -783,6 +785,7 @@ def artigos(request: HttpRequest) -> HttpResponse:
         {
             "aba": "artigos",
             "artigos": artigos,
+            "acoes_do_artigo": acoes_do_artigo(),
             "com_google": bool(google),
             "ordens": [
                 ("cliques", _("cliques")),

@@ -12,6 +12,7 @@ le essas declaracoes daqui:
         prompts_com_guia = {"meu_prompt"}                 # recebem o guia editorial
         blocos_do_artigo = ["meu/_no_artigo.html"]        # incluidos na tela do artigo
         blocos_da_pauta = ["meu/_na_pauta.html"]          # incluidos na tela da pauta
+        acoes_do_artigo = ["meu/_botao.html"]             # junto de cada artigo nas listas
         pendencias = "apps.meu.painel.pendencias"         # () -> {"chave": numero}
         alertas = "apps.meu.painel.alertas"               # () -> ["texto", ...] no painel
         exclusao_de_dados = "apps.meu.privacidade.excluir"  # (rede, usuario, apagar) -> n
@@ -75,6 +76,12 @@ def blocos_do_artigo() -> list[str]:
 
 def blocos_da_pauta() -> list[str]:
     return [bloco for lista in _declaracoes("blocos_da_pauta") for bloco in lista]
+
+
+def acoes_do_artigo() -> list[str]:
+    """Botoes junto de cada artigo nas listas de pautas e de artigos e na pauta
+    (o template recebe `artigo`)."""
+    return [bloco for lista in _declaracoes("acoes_do_artigo") for bloco in lista]
 
 
 def pendencias() -> dict:

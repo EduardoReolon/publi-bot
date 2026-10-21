@@ -12,6 +12,7 @@
         <span class="selo {% if artigo.status == 'published' %}ok{% elif artigo.status == 'rejected' %}ruim{% endif %}">{% if artigo.status == 'published' %}{% translate "no ar" %}{% else %}{{ artigo.get_status_display }}{% endif %}</span>
         {% if artigo.previous_version_id %}<span class="selo" title="{% translate 'Versao nova do artigo que esta no ar: aprovada, substitui a pagina' %}">{% blocktranslate with n=artigo.version_number %}versao {{ n }}{% endblocktranslate %}</span>{% endif %}
         {% if artigo.thesis_json.arquivado_por %}<span class="ajuda">{% translate "(o outro foi o escolhido)" %}</span>{% endif %}
+        {% for bloco in acoes_do_artigo %}{% include bloco %}{% endfor %}
       {% endif %}
     </div>
   {% endfor %}

@@ -189,10 +189,15 @@ def publicar_posts() -> int:
     from apps.accounts.varredura import para_cada_tenant
     from apps.social import iscas
     from apps.social.comentarios import responder_aprovadas
+    from apps.social.escolha import atender_pedidos
     from apps.social.publicacao import publicar_vencidos
 
     return para_cada_tenant(
-        lambda: publicar_vencidos() + responder_aprovadas() + iscas.responder() + retomar_escrita(),
+        lambda: publicar_vencidos()
+        + responder_aprovadas()
+        + iscas.responder()
+        + retomar_escrita()
+        + atender_pedidos(),
         "publicar_posts",
     )
 

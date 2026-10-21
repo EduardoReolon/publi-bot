@@ -1,0 +1,28 @@
+{% load i18n redes %}
+{% comment %}
+  O botao "Levar as redes" de um `artigo`, nas listas e telas do nucleo
+  (apps/ops/extensoes.py: acoes_do_artigo). No ar: os posts saem agora. Antes de
+  publicar: fica o pedido, e os posts saem quando ele for ao ar.
+{% endcomment %}
+{% if artigo.status != 'rejected' and artigo.status != 'superseded' %}
+  {% situacao_nas_redes artigo as s %}
+  <span class="acoes-redes" style="display:inline-flex; gap:.3rem; align-items:center">
+    {% with g=s.sugestao %}{% if g.motivos or g.redes %}
+      <span class="selo ok" title="{% for rotulo, detalhe in g.motivos %}{{ detalhe }}. {% endfor %}{% for nome, motivos in g.redes %}{{ nome }}: {{ motivos|join:', ' }}. {% endfor %}{% if g.sozinho %}{% translate 'A escolha do dia (Redes) ja considera este artigo.' %}{% endif %}">{% translate "bom para as redes" %}{% if g.motivos %}: {{ g.motivos.0.0|lower }}{% endif %}{% if g.redes %} · {% for nome, ms in g.redes %}{{ nome }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}</span>
+    {% endif %}{% endwith %}
+    {% if s.posts %}<a class="selo" href="{% url 'social:inicio' %}" title="{% translate 'Posts deste artigo nas redes' %}">{% blocktranslate trimmed count n=s.posts %}{{ n }} post{% plural %}{{ n }} posts{% endblocktranslate %}</a>{% endif %}
+    {% if artigo.status == 'published' and artigo.published_url %}
+      <form method="post" action="{% url 'social:levar_as_redes' artigo.pk %}" style="display:inline;margin:0">{% csrf_token %}
+        <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+        <button type="submit" class="botao discreto pequeno" title="{% translate 'Um post deste artigo em cada conta ligada, com o jeito de cada rede, para voce revisar.' %}">{% translate "Levar as redes" %}</button>
+      </form>
+    {% elif s.pedido %}
+      <span class="selo espera" title="{% translate 'Os posts saem quando o artigo for publicado.' %}">{% translate "vai as redes ao publicar" %}</span>
+    {% else %}
+      <form method="post" action="{% url 'social:levar_as_redes' artigo.pk %}" style="display:inline;margin:0">{% csrf_token %}
+        <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+        <button type="submit" class="botao discreto pequeno" title="{% translate 'O post precisa do link do artigo: os posts saem quando ele for publicado.' %}">{% translate "Levar as redes ao publicar" %}</button>
+      </form>
+    {% endif %}
+  </span>
+{% endif %}

@@ -1091,3 +1091,18 @@ class Entrada(models.Model):
         if primeira:
             return primeira[:120]
         return str(self.get_tipo_display())
+
+
+class PedidoAoPublicar(models.Model):
+    """ "Levar as redes" num artigo que ainda nao esta no ar: os posts saem
+    quando ele for publicado (`escolha.atender_pedidos`, de 5 em 5 minutos)."""
+
+    artigo_id = models.UUIDField(db_index=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+    atendido_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["criado_em"]
+
+    def __str__(self) -> str:
+        return str(self.artigo_id)

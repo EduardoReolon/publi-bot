@@ -114,24 +114,65 @@ def nota(artigo: fontes.ArtigoParaRedes, destino: Destino, negocio: dict) -> tup
     except Exception as exc:
         logger.info("Nota sem vetores: %s", exc)
         base = 0.5
-    bonus = 0.0
+    bonus, da_rede = bonus_da_rede(artigo, destino.rede, negocio)
+    return base + bonus, motivos + da_rede
+
+
+def bonus_da_rede(artigo: fontes.ArtigoParaRedes, nome: str, negocio: dict) -> tuple[float, list]:
+    """(bonus, motivos) do jeito do artigo para a rede, so por regra (sem vetor)."""
+    bonus, motivos = 0.0, []
     texto = artigo.texto.lower()
-    if destino.rede == "gmn":
+    if nome == "gmn":
         locais = [r_ for r_ in negocio.get("regioes", []) if r_.lower() in texto]
         if locais:
             bonus += 0.15
             motivos.append(f"fala de {', '.join(locais[:2])} (busca local)")
-    if destino.rede == "instagram":
+    if nome == "instagram":
         em_lista = sum(1 for titulo, _t in artigo.secoes if _LISTA.search(titulo))
         if len(artigo.secoes) >= 4 or em_lista:
             bonus += 0.1
             motivos.append("vira carrossel facil (secoes curtas, em lista)")
-    if destino.rede == "linkedin":
+    if nome == "linkedin":
         com_numero = sum(1 for f in artigo.frases if re.search(r"\d", f))
         if com_numero >= 2:
             bonus += 0.1
             motivos.append(f"tem {com_numero} frases com dado (o LinkedIn gosta)")
-    return base + bonus, motivos
+    return bonus, motivos
+
+
+def sinais_para_redes(artigo: fontes.ArtigoParaRedes, sinais: dict, agora=None) -> list:
+    """[(Motivo, detalhe)] que fazem o artigo valer as redes, do mais forte ao
+    mais fraco (a mesma regra da escolha do dia, sem olhar o que ja foi)."""
+    agora = agora or timezone.now()
+    saida = []
+    if sinais["conversoes"]:
+        saida.append((Post.Motivo.CONVERTE, f"{sinais['conversoes']} conversao(oes) em 90 dias"))
+    if sinais["quase_la"]:
+        saida.append((Post.Motivo.SUBINDO, "quase na primeira pagina do Google"))
+    if artigo.publicado_em and artigo.publicado_em >= agora - JANELA_DE_NOVOS:
+        saida.append((Post.Motivo.NOVO, "artigo novo"))
+    return saida
+
+
+def sugestao_do_artigo(artigo_id) -> dict | None:
+    """O que a tela mostra junto do botao de um artigo no ar: por que ele vale
+    as redes e para qual rede combina mais (so regras: barato para listas).
+    {"motivos": [(rotulo, detalhe)], "redes": [(nome, [motivos])], "sozinho": bool}"""
+    artigo = fontes.artigo(str(artigo_id))
+    if artigo is None or not artigo.url:
+        return None
+    negocio = fontes.negocio()
+    ligadas = set(Destino.objects.filter(ligado=True).values_list("rede", flat=True))
+    redes = []
+    for nome in sorted(ligadas or {"linkedin", "instagram", "gmn"}):
+        bonus, motivos = bonus_da_rede(artigo, nome, negocio)
+        if bonus:
+            redes.append((rede(nome).nome, motivos))
+    motivos = [
+        (Post.Motivo(m).label, detalhe)
+        for m, detalhe in sinais_para_redes(artigo, fontes.sinais(artigo))
+    ]
+    return {"motivos": motivos, "redes": redes, "sozinho": ConfiguracaoSocial.carregar().ligado}
 
 
 # -- Candidatos e sugestao ----------------------------------------------------------------
@@ -158,19 +199,16 @@ def candidatos(destino: Destino, config: ConfiguracaoSocial, limite: int = 60) -
             days=config.espacamento_dias
         ):
             continue
-        sinais = fontes.sinais(artigo)
-        novo = artigo.publicado_em and artigo.publicado_em >= agora - JANELA_DE_NOVOS
-        if ultimo is None and novo:
-            saida.append((artigo, Post.Motivo.NOVO, "artigo novo"))
-        elif sinais["conversoes"] and (
-            ultimo is None
-            or ultimo.criado_em <= agora - timedelta(days=30 * config.reciclar_apos_meses)
-        ):
-            saida.append(
-                (artigo, Post.Motivo.CONVERTE, f"{sinais['conversoes']} conversao(oes) em 90 dias")
-            )
-        elif sinais["quase_la"]:
-            saida.append((artigo, Post.Motivo.SUBINDO, "quase na primeira pagina do Google"))
+        achados = dict(sinais_para_redes(artigo, fontes.sinais(artigo), agora))
+        reciclar = ultimo is None or ultimo.criado_em <= agora - timedelta(
+            days=30 * config.reciclar_apos_meses
+        )
+        if ultimo is None and Post.Motivo.NOVO in achados:
+            saida.append((artigo, Post.Motivo.NOVO, achados[Post.Motivo.NOVO]))
+        elif Post.Motivo.CONVERTE in achados and reciclar:
+            saida.append((artigo, Post.Motivo.CONVERTE, achados[Post.Motivo.CONVERTE]))
+        elif Post.Motivo.SUBINDO in achados:
+            saida.append((artigo, Post.Motivo.SUBINDO, achados[Post.Motivo.SUBINDO]))
     return saida
 
 
@@ -347,6 +385,48 @@ def rodada() -> int:
         if not pontuados and destino.fotos_por_cento > 0:
             # Sem artigo para levar hoje: o banco de fotos cobre a vaga.
             criados += len(proprio.sugerir_do_banco(destino))
+    return criados
+
+
+# Pedido que nunca foi atendido (artigo rejeitado, nunca publicado) some depois disto.
+PEDIDO_VALE_DIAS = 90
+
+
+def pedir_ao_publicar(artigo_id: str) -> bool:
+    """O artigo ainda nao esta no ar: guarda o pedido, atendido na publicacao.
+    Devolve False se ja havia um pedido esperando."""
+    from apps.social.models import PedidoAoPublicar
+
+    _pedido, criado = PedidoAoPublicar.objects.get_or_create(
+        artigo_id=artigo_id, atendido_em__isnull=True
+    )
+    return criado
+
+
+def esperando_publicar(artigo_id) -> bool:
+    from apps.social.models import PedidoAoPublicar
+
+    return PedidoAoPublicar.objects.filter(artigo_id=artigo_id, atendido_em__isnull=True).exists()
+
+
+def atender_pedidos() -> int:
+    """Os artigos pedidos antes de publicar que ja estao no ar vao as redes."""
+    from apps.social.models import PedidoAoPublicar
+
+    PedidoAoPublicar.objects.filter(
+        atendido_em__isnull=True, criado_em__lt=timezone.now() - timedelta(days=PEDIDO_VALE_DIAS)
+    ).delete()
+    criados = 0
+    for pedido in PedidoAoPublicar.objects.filter(atendido_em__isnull=True)[:20]:
+        artigo = fontes.artigo(str(pedido.artigo_id))
+        if artigo is None:
+            pedido.delete()
+            continue
+        if not artigo.url:
+            continue
+        criados += len(levar_as_redes(str(pedido.artigo_id)))
+        pedido.atendido_em = timezone.now()
+        pedido.save(update_fields=["atendido_em"])
     return criados
 
 
