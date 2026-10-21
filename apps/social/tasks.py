@@ -109,6 +109,30 @@ def gerar_video(self, post_id: str, trabalho: str | None = None) -> str:
 
 
 @shared_task(bind=True, max_retries=12)
+def gerar_video_ia(self, post_id: str, trabalho: str | None = None) -> str:
+    """O video por IA pelo gerador daqui (so pelo botao: video_ia.gerar_aqui).
+    Placa ocupada: tenta de novo em 10 minutos; erro de verdade vira aviso."""
+    from apps.inference.providers.base import ProviderPermanentError
+    from apps.social import fontes, video_ia
+    from apps.social.models import Post
+
+    with fontes.acompanhar(trabalho) as andamento:
+        post = Post.objects.select_related("destino").filter(pk=post_id).first()
+        if post is None:
+            return "sem post"
+        try:
+            video_ia.gerar_aqui(post)
+        except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
+            raise self.retry(exc=exc, countdown=600) from exc
+        except (ProviderPermanentError, ValueError) as exc:
+            post.avisos = [*(post.avisos or []), f"video por IA nao gerado: {exc}"]
+            post.save(update_fields=["avisos", "atualizado_em"])
+            andamento.falhou(f"video nao gerado: {exc}")
+            return "erro"
+        return "ok"
+
+
+@shared_task(bind=True, max_retries=12)
 def animar_laminas(
     self, post_id: str, apenas: int | None = None, trabalho: str | None = None
 ) -> int:

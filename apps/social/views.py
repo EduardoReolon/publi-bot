@@ -443,6 +443,36 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         else:
             fontes.na_fila(gerar_video, str(post.pk), rotulo="Video do post", alvo=post.pk)
             messages.info(request, _("Gerando o video (narracao e montagem). Recarregue depois."))
+    elif acao == "enviar_video_ia":
+        from apps.social import video_ia
+
+        arquivo = request.FILES.get("video")
+        try:
+            if arquivo is None:
+                raise video_ia.VideoInvalido("escolha o arquivo do video.")
+            video_ia.enviar(post, arquivo)
+            messages.success(request, _("Video recebido: o post vai como video (Reels)."))
+        except video_ia.VideoInvalido as exc:
+            messages.error(request, str(exc))
+    elif acao == "gerar_video_aqui":
+        from apps.social.tasks import gerar_video_ia
+
+        if not (fontes.tem_animacao() and fontes.ha_modelo_de_imagem()):
+            messages.error(
+                request,
+                _(
+                    "Falta o gerador de imagem ou a conexao de animacao (worker). Use o pedido "
+                    "numa IA de video de fora e envie o video."
+                ),
+            )
+        else:
+            fontes.na_fila(gerar_video_ia, str(post.pk), rotulo="Video por IA", alvo=post.pk)
+            messages.info(request, _("Gerando o video aqui. Pode levar muito tempo."))
+    elif acao == "tirar_video_ia":
+        from apps.social import video_ia
+
+        video_ia.tirar(post)
+        messages.success(request, _("Video tirado: o post volta ao carrossel."))
     elif acao == "voltar_ao_carrossel":
         from apps.social import video
 
@@ -1295,13 +1325,13 @@ def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
             str(post.pk),
             apenas=n,
             opcoes=opcoes,
-            rotulo=f"Imagem da lamina {n}" + (f" ({opcoes} opcoes)" if opcoes > 1 else ""),
+            rotulo=(f"Imagem da lamina {n}" if n else "Foto do post")
+            + (f" ({opcoes} opcoes)" if opcoes > 1 else ""),
             alvo=post.pk,
         )
         messages.info(
             request,
-            _("Gerando %(q)s imagem(ns) da lamina %(n)s. Recarregue em alguns minutos.")
-            % {"q": opcoes, "n": n},
+            _("Gerando %(q)s imagem(ns). Recarregue em alguns minutos.") % {"q": opcoes},
         )
     elif acao == "escolher_opcao":
         try:
@@ -1310,7 +1340,7 @@ def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
             i = -1
         if identidade.escolher_opcao(post, n, i):
             laminas.refazer_imagens(post)
-            messages.success(request, _("Imagem escolhida para a lamina %(n)s.") % {"n": n})
+            messages.success(request, _("Imagem escolhida."))
     elif acao == "preparar_prompts":
         try:
             for x in identidade.situacao_das_laminas(post):
@@ -1782,9 +1812,29 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
         return redirect("social:identidade", trocou)
     request.session[CONTA_NA_SESSAO] = str(destino.pk)
     form = IdentidadeForm(instance=destino)
+    com_ia: dict = {}
     if request.method == "POST":
+        from apps.social import identidade_ia
+
         acao = request.POST.get("acao") or "fundo"
-        if acao == "visual":
+        if acao == "pedido_ia":
+            ideia = request.POST.get("ideia", "").strip()[:1000]
+            com_ia = {"ideia": ideia, "pedido": identidade_ia.pedido(destino, ideia)}
+        elif acao in ("ler_ia", "aplicar_ia"):
+            resposta = request.POST.get("resposta", "")
+            dados = identidade_ia.ler(resposta)
+            if acao == "aplicar_ia":
+                n = identidade_ia.aplicar(destino, dados)
+                messages.success(request, _("Identidade aplicada: %(n)s mudanca(s).") % {"n": n})
+                return redirect("social:identidade", destino.pk)
+            com_ia = {
+                "resposta": resposta,
+                "previa": identidade_ia.previa(destino, dados),
+                "comentarios": dados.get("comentarios", ""),
+            }
+            if not com_ia["previa"]:
+                messages.info(request, _("Nada novo na resposta (ou os rotulos nao vieram)."))
+        elif acao == "visual":
             form = IdentidadeForm(request.POST, instance=destino)
             if form.is_valid():
                 form.save()
@@ -1850,6 +1900,7 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
             "elementos": destino.elementos.all(),
             "folha_modelo": prompts_de_folha(),
             "tipos": ElementoVisual.Tipo.choices,
+            "com_ia": com_ia,
         },
     )
 

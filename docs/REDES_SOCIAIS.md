@@ -351,7 +351,41 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
     vira um prompt em ingles (`social_cena`) e uma imagem 4:5 sem texto.
     Gerador ocupado: tenta de novo em 10 minutos.
 
-### 5b. Video (Reels) com voz de IA — `video.py`, `providers/voz.py`, `providers/animacao.py`
+### 5a. Video por IA (Reels) — `video_ia.py`
+
+O video do post e um clipe feito por uma IA de video, com **roteiro proprio**
+(pode contar a ideia de um jeito bem diferente das laminas):
+
+1. Quem escreve o post sugere o formato (carrossel ou video, e por que) e,
+   quando sugere video (ou a conta quer "todo post com roteiro"), devolve o
+   roteiro em `extras["video_ia"]`: o **gancho** dos 2 primeiros segundos
+   (obrigatorio), as **cenas** (o que se ve, o que se ouve, a frase na tela se a
+   conta usa, segundos) e a **chamada** do fim (padrao em Identidade visual >
+   "como o video termina"; vazio, a chamada da ultima lamina). Na outra IA o
+   bloco e `VIDEO:` com `abertura:`, uma linha por cena e `final:` (nao
+   "gancho"/"chamada", que abririam outros rotulos da resposta).
+2. "Copiar o pedido do video": o texto para Sora, Veo, Kling, Runway ou o
+   ChatGPT/Gemini que gera video, com a identidade inteira (estilo, orientacoes
+   gerais e de video, personagens fixos, cores, regras do negocio, texto no
+   video: nenhum, legendas ou frases). Sem roteiro (a IA nao sugeriu video), o
+   pedido leva o assunto e pede o roteiro com as mesmas regras.
+3. "Enviar o video": o MP4 vira o video do post, que passa a ir como Reels.
+4. "Gerar aqui (lento)": so pelo botao, nunca sozinho — a imagem do gancho pelo
+   gerador daqui e o movimento pelo worker (`tarefa gerar_video_ia`).
+
+A foto das redes sem laminas (LinkedIn, Google) tem o mesmo caminho: "Copiar o
+pedido da foto" ou "Gerar 3 opcoes aqui" (a "lamina 0" de `identidade.py`),
+sempre com a identidade da conta e as regras do negocio.
+
+A identidade visual pode ser escrita com a outra IA (`identidade_ia.py`): a
+ideia em poucas palavras, o pedido com o negocio e a conta, a resposta em
+rotulos, a previa campo a campo e "Aplicar" (personagens viram elementos fixos).
+
+### 5b. Video narrado das laminas (fora da tela) — `video.py`, `providers/voz.py`, `providers/animacao.py`
+
+> Fora da tela desde o video por IA: o codigo continua (`video.montar`, a
+> tarefa `gerar_video`, os clipes por lamina em `_lamina_clipes.html` e o bloco
+> `_video_narrado.html`), sem botao. Para voltar, inclua os dois templates.
 
 As **mesmas laminas** viram um video vertical (1080x1920), e sai como **Reels**
 (o publicador do Instagram ja manda Reels quando a midia e video).

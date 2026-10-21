@@ -1,0 +1,20 @@
+{% load i18n %}
+{% comment %}O clipe e os quadros de uma lamina (o fundo animado do video narrado, video.py). Fora da tela desde o video por IA; para voltar, inclua dentro de _lamina_do_post.html.{% endcomment %}
+  <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin:.2rem 0">
+    {% csrf_token %}<input type="hidden" name="n" value="{{ l.n }}">
+    <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+    <span class="ajuda">{% translate "Clipe (video):" %}</span>
+    {% if l.clipe %}<a class="ajuda" href="{% url 'social:midia_da_lamina' post.pk l.n 'clipe' %}" target="_blank">{% translate "ver" %}</a>{% endif %}
+    <input type="file" name="clipe" accept="video/mp4,video/quicktime,video/webm" style="width:auto">
+    <button type="submit" name="acao" value="clipe_da_lamina" class="botao discreto pequeno">{% if l.clipe %}{% translate "Trocar o clipe" %}{% else %}{% translate "Enviar clipe" %}{% endif %}</button>
+    <button type="submit" name="acao" value="animar" class="botao discreto pequeno" title="{% translate 'Anima a imagem desta lamina (worker ou Sora)' %}">{% translate "Animar" %}</button>
+    {% if l.clipe %}<button type="submit" name="acao" value="tirar_clipe" class="botao discreto pequeno">{% translate "Tirar clipe" %}</button>{% endif %}
+    {% if l.fundo or l.n == 1 %}<a class="ajuda" href="{% url 'social:midia_da_lamina' post.pk l.n 'fundo' %}" download>{% translate "baixar a imagem (para animar fora)" %}</a>{% endif %}
+  </form>
+  <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin:.2rem 0">
+    {% csrf_token %}<input type="hidden" name="n" value="{{ l.n }}">
+    <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+    <span class="ajuda" title="{% translate 'A mesma cena em 2 a 4 momentos (o comeco, o meio e o fim de um gesto): o PubliBot troca uma pela outra com zoom lento e fade. Sem IA de video.' %}">{% translate "Quadros (2 a 4 imagens da mesma cena):" %}</span>
+    <input type="file" name="quadros" accept="image/jpeg,image/png,image/webp" multiple style="width:auto">
+    <button type="submit" name="acao" value="quadros_da_lamina" class="botao discreto pequeno">{% translate "Montar com quadros" %}</button>
+  </form>

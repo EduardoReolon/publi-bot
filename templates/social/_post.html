@@ -178,6 +178,8 @@
         {% for l in post.laminas_e_fundos %}{% include "social/_lamina_do_post.html" %}{% endfor %}
       </details>
       {% include "social/_video_do_post.html" %}
+    {% elif post.destino.rede != 'instagram' and not post.entrada_id %}
+      {% include "social/_foto_por_ia.html" %}
     {% endif %}
   {% endif %}
 

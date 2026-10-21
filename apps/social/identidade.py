@@ -384,11 +384,17 @@ def _cena(item: dict) -> str:
 
 
 def _pedido_da_cena(post, item: dict) -> dict:
+    from apps.social.models import ConfiguracaoSocial
+
     destino = post.destino
     cores = {**laminas.CORES, **{k: v for k, v in (destino.cores or {}).items() if v}}
-    estilo = estilo_do_post(post)
+    estilo = descricao_do_estilo(destino, estilo_do_post(post))
+    regras = ConfiguracaoSocial.carregar().regras.strip()
+    if regras:
+        # As regras do negocio valem tambem para a imagem feita aqui.
+        estilo = f"{estilo}. Regras do negocio: {regras}" if estilo else f"Regras: {regras}"
     return {
-        "estilo": descricao_do_estilo(destino, estilo) or "clean modern editorial illustration",
+        "estilo": estilo or "clean modern editorial illustration",
         "cena": expandir(_cena(item), elementos(destino)),
         "cores": f"background {cores['fundo']}, accent {cores['destaque']}",
         "movimento": item.get("movimento", ""),
@@ -399,17 +405,24 @@ def _pedido_da_cena(post, item: dict) -> dict:
 def prompts_da_lamina(post, n: int, *, refazer: bool = False) -> dict:
     """{"imagem", "movimento"} da lamina n, em ingles. Guardados no post; o
     modelo so e chamado quando a cena, o estilo ou o movimento mudaram."""
+    itens = _laminas(post)
+    if not 1 <= n <= len(itens):
+        raise ValueError(f"o post nao tem a lamina {n}")
+    return prompts_da_cena(post, itens[n - 1], chave=str(n), refazer=refazer)
+
+
+def prompts_da_cena(post, item: dict, *, chave: str, refazer: bool = False) -> dict:
+    """{"imagem", "movimento"} em ingles de uma cena (`item`: visual e
+    movimento) do post: a lamina `chave`, o "video" ou a "foto". Guardados no
+    post; o modelo so e chamado quando a cena, o estilo ou o movimento mudaram."""
     import json
     import re
 
     from apps.social import fontes
 
-    itens = _laminas(post)
-    if not 1 <= n <= len(itens):
-        raise ValueError(f"o post nao tem a lamina {n}")
-    pedido = _pedido_da_cena(post, itens[n - 1])
+    pedido = _pedido_da_cena(post, item)
     assinatura = json.dumps(pedido, sort_keys=True)
-    guardados = ((post.extras or {}).get("prompts") or {}).get(str(n)) or {}
+    guardados = ((post.extras or {}).get("prompts") or {}).get(chave) or {}
     if guardados.get("de") == assinatura and not refazer:
         return guardados
     bruto = fontes.executar("social_cena", pedido, json_schema=ESQUEMA_DA_CENA)
@@ -420,21 +433,22 @@ def prompts_da_lamina(post, n: int, *, refazer: bool = False) -> dict:
         "de": assinatura,
     }
     extras = dict(post.extras or {})
-    extras["prompts"] = {**(extras.get("prompts") or {}), str(n): novos}
+    extras["prompts"] = {**(extras.get("prompts") or {}), chave: novos}
     post.extras = extras
     post.save(update_fields=["extras", "atualizado_em"])
     return novos
 
 
 def usar_imagem(post, n: int, conteudo: bytes) -> str:
-    """Grava a imagem como fundo da lamina n (a 1a vira a foto da capa)."""
+    """Grava a imagem como fundo da lamina n (a 1a vira a foto da capa; a 0 e a
+    foto do post nas redes sem laminas)."""
     import io
 
     caminho = laminas.guardar_imagem_propria(
-        post, io.BytesIO(conteudo), "propria" if n == 1 else f"fundo-{n}"
+        post, io.BytesIO(conteudo), "propria" if n <= 1 else f"fundo-{n}"
     )
     extras = dict(post.extras or {})
-    if n == 1:
+    if n <= 1:
         extras["imagem_propria"] = caminho
         extras.pop("ajuste_da_capa", None)
     else:
@@ -462,6 +476,8 @@ def gerar_imagens(post, *, apenas: int | None = None, opcoes: int = 1) -> int:
 
     from apps.social import fontes
 
+    if apenas == FOTO:
+        return gerar_opcoes_da_foto(post, opcoes=opcoes)
     feitas = 0
     for x in situacao_das_laminas(post):
         if apenas is not None and x["n"] != apenas:
@@ -484,6 +500,78 @@ def gerar_imagens(post, *, apenas: int | None = None, opcoes: int = 1) -> int:
             post.save(update_fields=["extras", "atualizado_em"])
         feitas += 1
     return feitas
+
+
+# -- A foto do post (LinkedIn, Google: uma imagem, sem laminas) ---------------------------
+# Tratada como a "lamina 0": as mesmas opcoes, a mesma escolha e o mesmo
+# prompt da cena (com a identidade da conta e as regras do negocio).
+FOTO = 0
+FORMATO_DA_FOTO = {
+    "linkedin": ("quadrado 1:1 (1080 x 1080 px)", "1024x1024"),
+    "gmn": ("horizontal 4:3 (1200 x 900 px)", "1152x896"),
+}
+
+
+def cena_da_foto(post) -> str:
+    sobre = post.gancho or post.artigo_titulo or (post.texto or "")[:200]
+    return (post.extras or {}).get("visual_da_foto") or f"uma cena concreta que mostre: {sobre}"
+
+
+def gerar_opcoes_da_foto(post, *, opcoes: int = OPCOES_POR_LAMINA) -> int:
+    """Gera as opcoes da foto do post pelo gerador daqui, para escolher."""
+    from django.core.files.base import ContentFile
+    from django.core.files.storage import default_storage
+
+    from apps.social import fontes
+
+    prompt = prompts_da_cena(post, {"visual": cena_da_foto(post)}, chave="foto")["imagem"]
+    _rotulo, tamanho = FORMATO_DA_FOTO.get(post.destino.rede, ("", "1024x1024"))
+    caminhos = []
+    geradas = fontes.gerar_imagens(prompt, quantidade=max(opcoes, 1), tamanho=tamanho)
+    for i, conteudo in enumerate(geradas):
+        nome = f"social/{post.pk}/opcao-foto-{i}.png"
+        if default_storage.exists(nome):
+            default_storage.delete(nome)
+        caminhos.append(default_storage.save(nome, ContentFile(conteudo)))
+    extras = dict(post.extras or {})
+    extras["opcoes"] = {**(extras.get("opcoes") or {}), str(FOTO): caminhos}
+    post.extras = extras
+    post.save(update_fields=["extras", "atualizado_em"])
+    return 1
+
+
+PEDIDO_DE_FOTO = """\
+Gere {quantas} opcoes de UMA imagem para um post do {rede}, no formato {formato}.
+
+Regras:
+- NAO escreva nenhum texto, letra, numero ou logotipo na imagem.
+- Estilo: {estilo}.
+- Cores da marca: fundo {fundo}, destaque {destaque}.
+- Nada de pessoas reais reconheciveis, marcas de terceiros ou imagem chocante.
+{regras}{elementos}
+A cena: {cena}
+"""
+
+
+def pedido_de_foto(post, quantas: int = OPCOES_POR_LAMINA) -> str:
+    """O texto para colar numa IA de imagem: a foto do post (redes sem laminas)."""
+    from apps.social.models import ConfiguracaoSocial
+    from apps.social.redes import rede
+
+    destino = post.destino
+    cores = {**laminas.CORES, **{k: v for k, v in (destino.cores or {}).items() if v}}
+    regras = ConfiguracaoSocial.carregar().regras.strip()
+    return PEDIDO_DE_FOTO.format(
+        quantas=quantas,
+        rede=rede(destino.rede).nome,
+        formato=FORMATO_DA_FOTO.get(destino.rede, ("quadrado 1:1", ""))[0],
+        estilo=descricao_do_estilo(destino, estilo_do_post(post)) or "sobrio, editorial",
+        fundo=cores["fundo"],
+        destaque=cores["destaque"],
+        regras=f"- Regras do negocio: {regras}\n" if regras else "",
+        elementos=_ficha_do_pedido(destino),
+        cena=expandir(cena_da_foto(post), elementos(destino)),
+    )
 
 
 def opcoes_da_lamina(post, n: int) -> list[str]:

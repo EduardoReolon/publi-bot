@@ -1,46 +1,34 @@
 {% load i18n %}
+{% comment %}O video por IA do post (apps/social/video_ia.py): o roteiro, o pedido para uma IA de video, o envio do MP4 e a geracao aqui.{% endcomment %}
 <details style="margin:.3rem 0"{% if post.extras.formato_sugerido == 'video' and post.extras.formato != 'video' %} open{% endif %}>
-  <summary class="ajuda">{% translate "Video (Reels)" %}
+  <summary class="ajuda">{% translate "Video por IA (Reels)" %}
     {% if post.extras.formato == 'video' %}<span class="selo ok">{% translate "vai como video" %}</span>
     {% elif post.extras.formato_sugerido == 'video' %}<span class="selo alerta">{% translate "a IA sugere video" %}</span>{% endif %}
   </summary>
   {% if post.extras.por_que_formato %}<p class="ajuda">{% translate "Por que" %}: {{ post.extras.por_que_formato }}</p>{% endif %}
+  {% if post.extras.video_ia %}
+    <p class="ajuda" style="margin-bottom:.2rem">{% translate "Roteiro (o video pode contar diferente das laminas):" %}</p>
+    <div class="pre-visualizacao" style="white-space:pre-wrap">{{ post.roteiro_do_video_ia }}</div>
+  {% else %}
+    <p class="ajuda">{% translate "A IA nao sugeriu video neste post, mas da para fazer: o pedido abaixo leva o assunto e pede para a IA de video montar o roteiro com as regras da conta." %}</p>
+  {% endif %}
   <p class="ajuda">{% blocktranslate trimmed %}
-    As mesmas laminas viram um video vertical: cada lamina na tela enquanto a voz diz a fala
-    dela. Sai como Reels. A fala de cada lamina vem da IA; ajuste abaixo (uma por linha, na
-    ordem; linha vazia usa o titulo e o texto da lamina).
+    Cole o pedido numa IA de video (Sora, Veo, Kling, Runway, ou o ChatGPT/Gemini que gera video). Ele leva
+    a identidade visual da conta (estilo, orientacoes, personagens, cores, texto na tela, como termina) e o
+    gancho nos 2 primeiros segundos. Anexe a imagem de referencia dos personagens, se a IA aceitar. Depois
+    envie o video aqui: o post vai como video.
   {% endblocktranslate %}</p>
-  <form method="post" action="{% url 'social:acao_no_post' post.pk %}">
+  <div class="acoes"><button type="button" class="botao pequeno" data-copiar="pedido-video-{{ post.pk }}">{% translate "Copiar o pedido do video" %}</button></div>
+  <textarea id="pedido-video-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.pedido_de_video }}</textarea>
+  <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="gap:.4rem; margin-top:.3rem">
     {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
-    <textarea name="falas" rows="5" style="width:100%">{{ post.falas_do_video }}</textarea>
-    <div class="acoes">
-      <button type="submit" name="acao" value="falas" class="botao discreto pequeno">{% translate "Salvar as falas" %}</button>
-      <button type="submit" name="acao" value="gerar_video" class="botao secundario pequeno" title="{% translate 'Narra com a voz da conta (API de voz) e monta o video com as laminas' %}">{% if post.extras.formato == 'video' %}{% translate "Gerar o video de novo" %}{% else %}{% translate "Gerar o video" %}{% endif %}</button>
-      {% if post.extras.formato == 'video' %}<button type="submit" name="acao" value="voltar_ao_carrossel" class="botao discreto pequeno">{% translate "Voltar ao carrossel" %}</button>{% endif %}
-      <button type="button" class="botao discreto pequeno" data-copiar="roteiro-{{ post.pk }}">{% translate "Copiar o roteiro" %}</button>
-    </div>
+    <input type="file" name="video" accept="video/mp4,video/quicktime,video/webm,.m4v" style="width:auto">
+    <button type="submit" name="acao" value="enviar_video_ia" class="botao secundario pequeno">{% translate "Enviar o video" %}</button>
+    <button type="submit" name="acao" value="gerar_video_aqui" class="botao discreto pequeno" title="{% translate 'A imagem do gancho pelo gerador daqui e o movimento pelo worker. Numa placa pequena leva muito tempo por poucos segundos.' %}">{% translate "Gerar aqui (lento)" %}</button>
+    {% if post.extras.video_de == 'ia' %}
+      <button type="submit" name="acao" value="tirar_video_ia" class="botao discreto pequeno">{% translate "Tirar o video (volta ao carrossel)" %}</button>
+    {% elif post.extras.formato == 'video' %}
+      <button type="submit" name="acao" value="voltar_ao_carrossel" class="botao discreto pequeno">{% translate "Voltar ao carrossel" %}</button>
+    {% endif %}
   </form>
-  <textarea id="roteiro-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.roteiro_do_video }}</textarea>
-  <p class="ajuda">{% translate "Roteiro para gravar com a propria voz ou num editor (CapCut, HeyGen) e enviar o video." %}</p>
-  <h4 style="margin:.6rem 0 .2rem">{% translate "Quadros: o fundo que muda, sem IA de video (opcional)" %}</h4>
-  <p class="ajuda">{% blocktranslate trimmed %}
-    O meio-termo barato: peca a uma IA de imagem 3 quadros da mesma cena (o comeco, o meio e o fim
-    de um gesto) e envie os 3 na lamina, em "Montar com quadros". O PubliBot troca um pelo outro com
-    zoom lento e fade — fica com cara de gibi animado, sem tentar parecer filmagem.
-  {% endblocktranslate %}</p>
-  <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="quadros-{{ post.pk }}">{% translate "Copiar o pedido de quadros" %}</button></div>
-  <textarea id="quadros-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_de_quadros }}</textarea>
-  <h4 style="margin:.6rem 0 .2rem">{% translate "Laminas animadas (opcional)" %}</h4>
-  <p class="ajuda">{% blocktranslate trimmed %}
-    Sem clipe, o fundo de cada lamina aproxima devagar e o texto entra por cima. Com clipe, o fundo
-    se mexe. Anime aqui (worker ou Sora) ou numa IA de video de fora, com o pedido abaixo e a imagem de
-    cada lamina, e envie o clipe na lamina dela (em "Imagens das laminas"). O texto continua sendo
-    escrito pelo PubliBot, por cima, sempre com as letras certas.
-  {% endblocktranslate %}</p>
-  <div class="acoes">
-    <button type="button" class="botao discreto pequeno" data-copiar="animacao-{{ post.pk }}">{% translate "Copiar o pedido de animacao" %}</button>
-    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="display:inline">{% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
-      <button type="submit" name="acao" value="animar_todas" class="botao discreto pequeno" title="{% translate 'Anima todas as laminas que tem imagem e ainda nao tem clipe' %}">{% translate "Animar todas aqui" %}</button></form>
-  </div>
-  <textarea id="animacao-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_de_animacao }}</textarea>
 </details>

@@ -30,6 +30,7 @@ ROTULOS = [
     "LEGENDA",
     "HASHTAGS",
     "LAMINAS",
+    "VIDEO",
     "ENQUETE",
     "PRIMEIRO COMENTARIO",
     "COMENTARIOS",
@@ -100,10 +101,16 @@ Idioma: {idioma}
 
 LAMINAS = (
     "LAMINAS:\n- titulo (ate 8 palavras) | texto (ate 20 palavras) | visual (a cena da imagem,"
-    " sem texto) | movimento (o que se mexe na cena, se virar animacao) | fala (o que a voz "
-    "diz nesta lamina, se virar video)\n  (de {min} a {max} linhas; a primeira e a capa)\n"
+    " sem texto)\n  (de {min} a {max} linhas; a primeira e a capa)\n"
     "ESTILO: a chave do estilo das imagens que voce escolheu | por que, em uma frase\n"
+)
+FORMATO_E_VIDEO = (
     "FORMATO: carrossel ou video | por que, em uma frase\n"
+    "VIDEO: (so quando o formato for video, ou o pedido disser que vai tambem como video)\n"
+    "abertura: o que se ve e se ouve nos 2 primeiros segundos (o gancho do video)\n"
+    "- o que se ve | o que se ouve | texto na tela (ou vazio) | segundos\n"
+    "  (uma linha por cena)\n"
+    "final: como o video termina (a chamada)\n"
 )
 ENQUETE = "ENQUETE: pergunta | opcao 1 | opcao 2 (de 2 a 4 opcoes, ate 30 caracteres cada)\n"
 COMENTARIO = "PRIMEIRO COMENTARIO: a frase que chama para o artigo (o link vai depois dela)\n"
@@ -164,7 +171,12 @@ def pedido(post: Post, *, na_tela: bool = False) -> str:
         imagens=_estilo_visual(post.destino) if laminas else "uma imagem (a capa do artigo)",
         dobra=f.dobra or 200,
         hashtags=f.max_hashtags,
-        laminas=LAMINAS.format(min=f.min_laminas, max=f.max_laminas) if laminas else "",
+        laminas=(
+            LAMINAS.format(min=f.min_laminas, max=f.max_laminas)
+            + (FORMATO_E_VIDEO if post.destino.video != post.destino.Video.NUNCA else "")
+            if laminas
+            else ""
+        ),
         enquete=ENQUETE if redacao.e_enquete(post) else "",
         comentario=COMENTARIO if f.link == "comentario" else "",
         imagens_depois=IMAGENS_DEPOIS if laminas else "",
@@ -223,6 +235,27 @@ def ler(resposta: str) -> tuple[dict, str]:
     if estilo and estilo[0]:
         dados["estilo"] = estilo[0].lower()
         dados["por_que_estilo"] = " | ".join(estilo[1:])
+    # "abertura" e "final", e nao "gancho" e "chamada": esses abririam outros
+    # rotulos da resposta (GANCHO e o do post).
+    video = {"gancho": "", "cenas": [], "chamada": ""}
+    for linha in blocos.get("VIDEO", "").splitlines():
+        rotulo, _, resto = linha.strip().lstrip("-* ").partition(":")
+        campo = {"abertura": "gancho", "final": "chamada"}.get(rotulo.strip().lower())
+        if campo and resto.strip():
+            video[campo] = resto.strip()
+            continue
+        partes = _partes(linha.strip().lstrip("-* "))
+        if len(partes) >= 2 and partes[0]:
+            video["cenas"].append(
+                {
+                    "mostra": partes[0],
+                    "fala": partes[1],
+                    "texto": partes[2] if len(partes) > 2 else "",
+                    "segundos": partes[3] if len(partes) > 3 else "",
+                }
+            )
+    if video["gancho"] or video["cenas"]:
+        dados["video"] = video
     enquete = _partes(" ".join(blocos.get("ENQUETE", "").split()))
     if len(enquete) >= 3:
         dados["enquete"] = {"pergunta": enquete[0], "opcoes": enquete[1:]}
