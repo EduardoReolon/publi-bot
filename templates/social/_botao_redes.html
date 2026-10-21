@@ -7,6 +7,9 @@
 {% if artigo.status != 'rejected' and artigo.status != 'superseded' %}
   {% situacao_nas_redes artigo as s %}
   <span class="acoes-redes" style="display:inline-flex; gap:.3rem; align-items:center">
+    {% with g=s.sugestao %}{% if g.motivos or g.redes %}
+      <span class="selo ok" title="{% for rotulo, detalhe in g.motivos %}{{ detalhe }}. {% endfor %}{% for nome, motivos in g.redes %}{{ nome }}: {{ motivos|join:', ' }}. {% endfor %}{% if g.sozinho %}{% translate 'A escolha do dia (Redes) ja considera este artigo.' %}{% endif %}">{% translate "bom para as redes" %}{% if g.motivos %}: {{ g.motivos.0.0|lower }}{% endif %}{% if g.redes %} · {% for nome, ms in g.redes %}{{ nome }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}</span>
+    {% endif %}{% endwith %}
     {% if s.posts %}<a class="selo" href="{% url 'social:inicio' %}" title="{% translate 'Posts deste artigo nas redes' %}">{% blocktranslate trimmed count n=s.posts %}{{ n }} post{% plural %}{{ n }} posts{% endblocktranslate %}</a>{% endif %}
     {% if artigo.status == 'published' and artigo.published_url %}
       <form method="post" action="{% url 'social:levar_as_redes' artigo.pk %}" style="display:inline;margin:0">{% csrf_token %}

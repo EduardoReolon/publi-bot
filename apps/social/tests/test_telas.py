@@ -275,3 +275,21 @@ def test_botao_das_redes_nas_listas_e_na_pauta_e_pedido_ao_publicar(
     assert PedidoAoPublicar.objects.get().atendido_em is not None
     pagina = client.get(telas[2]).content.decode()
     assert "1 post" in pagina and "Levar as redes</button>" in pagina
+
+
+@pytest.mark.django_db
+def test_selo_diz_por_que_o_artigo_vale_as_redes(ambiente):
+    """A escolha do dia ja usa estes sinais; o selo os mostra junto do botao,
+    para quem esquece que ela roda sozinha."""
+    from django.core.cache import cache
+
+    from apps.social.escolha import sugestao_do_artigo
+
+    _, _, client = ambiente
+    cache.clear()
+    artigo = _artigo_publicado()  # publicado ontem: novo
+    sugestao = sugestao_do_artigo(artigo.pk)
+    assert [m for m, _d in sugestao["motivos"]] == ["Artigo novo"]
+
+    pagina = client.get(reverse("content:artigos", urlconf=U)).content.decode()
+    assert "bom para as redes: artigo novo" in pagina
