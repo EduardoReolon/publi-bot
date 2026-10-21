@@ -8,6 +8,9 @@ Cada cena, no post (`extras["video_ia"]["cenas"][i]`), alem do roteiro:
   "enviado" ou "lugar" (a foto de um lugar real, usada como esta);
   `quadro_do_texto`: a descricao com que foi gerada (a tela avisa quando a
   descricao mudou e a imagem nao);
+- `animando`: o trabalho pedido ao worker ({id, seed, desde}), conferido de
+  minuto em minuto sem prender ninguem esperando: desligar o worker no meio
+  perde so a cena em curso (pedida de novo, com a mesma seed, quando ele volta);
 - `clipe`: a animacao do quadro, `seed` (a mesma imagem + o mesmo movimento +
   a mesma seed repetem o clipe; refazer a animacao troca a seed) e
   `clipe_do_movimento`;
@@ -40,8 +43,10 @@ import random
 import tempfile
 from pathlib import Path
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.utils import timezone
 
 from apps.social import fontes, identidade, laminas, video, video_ia
 
@@ -101,6 +106,7 @@ def para_a_tela(post) -> list[dict]:
                 "n": n,
                 "tem_quadro": _existe(quadro),
                 "tem_clipe": _existe(clipe),
+                "animando": bool(cena.get("animando")),
                 "imagem_mudou": _existe(quadro)
                 and cena.get("quadro_de") == "gerado"
                 and cena.get("quadro_do_texto", cena.get("imagem")) != cena.get("imagem"),
@@ -248,6 +254,7 @@ def gerar_quadro(post, n: int) -> str:
         aviso=aviso,
     )
     cena.pop("clipe", None)  # imagem nova, animacao nova
+    cena.pop("animando", None)
     _gravar(post, lista)
     return cena["quadro"]
 
@@ -273,14 +280,30 @@ def enviar_quadro(post, n: int, arquivo) -> str:
 
 
 # -- A animacao -----------------------------------------------------------------------------
+# O que o worker gera e caro (na placa de 8 GB, ~9,5 min por trecho de ~1,1 s
+# do FramePack): pede-se o MENOR clipe que, desacelerado ate 25% e com o
+# ultimo quadro parado ate meio segundo, cobre o tempo da cena. Uma cena de 3 s
+# pede 2 trechos, e nao 3.
+TRECHO = 1.1  # segundos por trecho do FramePack; o worker arredonda os trechos para baixo
+SEGURA_ATE = 0.5  # o ultimo quadro parado no fim do gesto
+# A resolucao da animacao: a do "balde" 9:16 do FramePack (nada e redimensionado
+# no worker, e o tempo cresce com os pixels). A montagem amplia para 1080x1920.
+TAMANHO_DA_ANIMACAO = settings.ANIMACAO_TAMANHO
+# Animacao pedida e nao conferida ha mais que isto: desiste da cena (aviso).
+ESPERA_MAXIMA_HORAS = 6
+
+
 def segundos_pedidos(cena: dict) -> int:
-    """Quantos segundos pedir ao worker: o tempo da cena, arredondado para cima
-    (ele arredonda os trechos para baixo; a montagem acerta o resto)."""
-    return max(2, min(math.ceil(duracao_estimada(cena)), 6))
+    """Os segundos a pedir: o clipe minimo (veja acima) em trechos inteiros, com
+    os segundos ja multiplos do trecho (o worker os arredonda para baixo)."""
+    clipe = max((duracao_estimada(cena) - SEGURA_ATE) / DESACELERA_ATE, TRECHO)
+    trechos = math.ceil(clipe / TRECHO - 1e-6)
+    return min(math.ceil(trechos * TRECHO), 6)
 
 
-def animar(post, n: int, *, nova_seed: bool = False) -> str:
-    """O clipe da cena n a partir do quadro. `nova_seed`: outra variacao do
+def pedir_animacao(post, n: int, *, nova_seed: bool = False) -> str:
+    """Pede a animacao da cena n ao worker e guarda o trabalho na cena, sem
+    esperar (`conferir_animacao` busca depois). `nova_seed`: outra variacao do
     mesmo movimento (refazer a animacao)."""
     lista, cena = _cena(post, n)
     if not _existe(cena.get("quadro", "")):
@@ -296,26 +319,73 @@ def animar(post, n: int, *, nova_seed: bool = False) -> str:
     )
     with default_storage.open(cena["quadro"], "rb") as arquivo:
         quadro = arquivo.read()
-    clipe = fontes.animar(
+    identificador = fontes.pedir_animacao(
         quadro,
         prompts["movimento"] or prompts["imagem"],
         segundos=segundos_pedidos(cena),
-        tamanho=f"{QUADRO[0]}x{QUADRO[1]}",
+        tamanho=TAMANHO_DA_ANIMACAO,
         seed=seed,
     )
     post.refresh_from_db()
     lista, cena = _cena(post, n)
-    cena.update(
-        clipe=_guardar(post, f"cena-{n}-clipe.mp4", clipe),
-        seed=seed,
-        clipe_do_movimento=cena.get("movimento", ""),
-    )
+    cena["animando"] = {
+        "id": identificador,
+        "seed": seed,
+        "movimento": cena.get("movimento", ""),
+        "desde": timezone.now().isoformat(),
+    }
     _gravar(post, lista)
-    return cena["clipe"]
+    return identificador
+
+
+def conferir_animacao(post, n: int) -> str:
+    """Como esta a animacao pedida da cena n: "pronta" (o clipe foi gravado),
+    "esperando" (na fila, gerando, ou o worker fora do ar agora: confere-se
+    depois), "perdida" (o worker reiniciou e esqueceu: pede-se de novo, com a
+    mesma seed) ou "nenhuma". Falha de verdade levanta `VideoIndisponivel`."""
+    from datetime import datetime, timedelta
+
+    from apps.inference.providers.base import ProviderTransientError
+
+    lista, cena = _cena(post, n)
+    animando = cena.get("animando") or {}
+    if not animando:
+        return "nenhuma"
+    desde = datetime.fromisoformat(animando["desde"])
+    try:
+        situacao = fontes.situacao_da_animacao(animando["id"])
+    except ProviderTransientError:
+        situacao = {"status": "fora_do_ar"}
+    estado = situacao.get("status")
+    if estado == "completed":
+        clipe = fontes.baixar_animacao(animando["id"])
+        post.refresh_from_db()
+        lista, cena = _cena(post, n)
+        cena.update(
+            clipe=_guardar(post, f"cena-{n}-clipe.mp4", clipe),
+            seed=animando["seed"],
+            clipe_do_movimento=animando.get("movimento", ""),
+            aviso="",
+        )
+        cena.pop("animando", None)
+        _gravar(post, lista)
+        return "pronta"
+    if estado in ("failed", "sumiu") or timezone.now() - desde > timedelta(
+        hours=ESPERA_MAXIMA_HORAS
+    ):
+        cena.pop("animando", None)
+        if estado == "sumiu":
+            cena["seed"] = animando["seed"]  # pede de novo a mesma variacao
+            _gravar(post, lista)
+            return "perdida"
+        _gravar(post, lista)
+        motivo = (situacao.get("error") or {}).get("message") or "o worker nao terminou a tempo"
+        raise video.VideoIndisponivel(f"a animacao da cena {n} falhou: {motivo}")
+    return "esperando"
 
 
 def faltam(post) -> list[int]:
-    """As cenas sem clipe."""
+    """As cenas sem clipe (as que estao animando inclusive)."""
     return [n for n, c in enumerate(cenas(post), start=1) if not _existe(c.get("clipe", ""))]
 
 
@@ -339,7 +409,7 @@ def _segmento(pasta: Path, n: int, cena: dict, post, cores: dict, ffmpeg: str, f
         fator = min(max(duracao / tem, 1.0), DESACELERA_ATE)
         entradas = ["-i", str(clipe)]
         fundo = (
-            f"[0:v]scale={largura}:{altura}:force_original_aspect_ratio=increase,"
+            f"[0:v]scale={largura}:{altura}:force_original_aspect_ratio=increase:flags=lanczos,"
             f"crop={largura}:{altura},fps=30,setpts={fator:.4f}*PTS,"
             f"tpad=stop_mode=clone:stop_duration={duracao:.2f},"
             f"trim=duration={duracao:.2f},setsar=1[bg]"

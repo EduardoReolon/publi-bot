@@ -22,6 +22,7 @@
     {% for c in cenas %}
       <div style="border-top:1px solid var(--borda); padding:.4rem 0">
         <strong>{% translate "Cena" %} {{ c.n }}</strong> <span class="ajuda">~{{ c.duracao }} s</span>
+        {% if c.animando %}<span class="selo espera">{% translate "animando no worker" %}</span>{% endif %}
         {% if c.tem_clipe %}<span class="selo ok">{% translate "animada" %}</span>{% elif c.tem_quadro %}<span class="selo espera">{% translate "so a imagem" %}</span>{% else %}<span class="selo">{% translate "sem imagem" %}</span>{% endif %}
         {% if c.quadro_de == 'lugar' %}<span class="selo">{% translate "foto do lugar" %}</span>{% elif c.quadro_de == 'enviado' %}<span class="selo">{% translate "imagem enviada" %}</span>{% endif %}
         {% if c.aviso %}<div class="ajuda">{{ c.aviso }}</div>{% endif %}

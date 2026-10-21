@@ -732,6 +732,10 @@ IMAGEM_SEGREDO = env.get("IMAGEM_SEGREDO", "")
 # relogio, porque o custo dominante e mover pesos entre RAM e VRAM. Nao ha
 # economia em pedir pequeno — so perda de qualidade.
 IMAGEM_TAMANHO = env.get("IMAGEM_TAMANHO", "1344x704")
+# A resolucao da animacao das cenas do video (apps/social/cenas.py): o "balde"
+# 9:16 do FramePack. Menor = mais rapido (o tempo cresce com os pixels); a
+# montagem amplia para 1080x1920.
+ANIMACAO_TAMANHO = env.get("ANIMACAO_TAMANHO", "448x800")
 
 # Quanto o cliente espera por um lote, em segundos.
 #

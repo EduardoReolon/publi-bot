@@ -75,7 +75,11 @@ def gerar_imagens_das_laminas(
         return feitas
 
 
-@shared_task(bind=True, max_retries=12)
+CONFERIR_ANIMACAO_A_CADA = 60  # segundos
+PLACA_OCUPADA_ESPERA = 600
+
+
+@shared_task(bind=True, max_retries=None)
 def gerar_cenas(
     self,
     post_id: str,
@@ -85,45 +89,68 @@ def gerar_cenas(
     so_quadros: bool = False,
     trabalho: str | None = None,
 ) -> int:
-    """As cenas do video (cenas.py): a imagem inicial que falta (ou a da cena
-    `n`, refeita) e a animacao. No fim, com tudo animado, monta o video. Placa
-    ocupada: tenta de novo em 10 minutos, e o que ja saiu fica."""
+    """As cenas do video (cenas.py), uma por vez: a imagem inicial que falta (ou
+    a da cena `n`, refeita), o pedido da animacao ao worker e a conferencia dela
+    de minuto em minuto. A tarefa nunca fica presa esperando a placa: a cada
+    passagem faz uma coisa e volta. O que ficou pronto esta gravado na cena, entao
+    um worker desligado (ou um deploy) no meio custa so a cena em curso. Com tudo
+    animado, monta o video."""
     from apps.inference.providers.base import ProviderPermanentError
     from apps.social import cenas, fontes, video
     from apps.social.models import Post
+
+    def voltar(segundos: int, **mudou):
+        raise self.retry(
+            countdown=segundos,
+            kwargs={
+                "n": n,
+                "refazer_quadro": refazer_quadro,
+                "nova_seed": nova_seed,
+                "so_quadros": so_quadros,
+                "trabalho": trabalho,
+                **mudou,
+            },
+        )
 
     with fontes.acompanhar(trabalho) as andamento:
         post = Post.objects.select_related("destino").filter(pk=post_id).first()
         if post is None:
             return 0
-        feitas = 0
-        alvo = [n] if n else range(1, len(cenas.cenas(post)) + 1)
+        lista = cenas.cenas(post)
+        alvo = [n] if n else range(1, len(lista) + 1)
         for numero in alvo:
-            post.refresh_from_db()
-            cena = cenas.cenas(post)[numero - 1]
+            if numero > len(lista):
+                break
+            cena = lista[numero - 1]
             try:
-                novo_quadro = refazer_quadro and n is not None
-                if novo_quadro or not cenas._existe(cena.get("quadro", "")):
+                if cena.get("animando"):
+                    estado = cenas.conferir_animacao(post, numero)
+                    if estado == "esperando":
+                        voltar(CONFERIR_ANIMACAO_A_CADA)
+                    post.refresh_from_db()
+                    lista = cenas.cenas(post)
+                    cena = lista[numero - 1]
+                    if estado == "pronta":
+                        continue
+                if (refazer_quadro and n) or not cenas._existe(cena.get("quadro", "")):
                     cenas.gerar_quadro(post, numero)
-                    feitas += 1
+                    voltar(1, refazer_quadro=False)  # a proxima passagem anima
                 if so_quadros:
                     continue
-                post.refresh_from_db()
-                cena = cenas.cenas(post)[numero - 1]
-                if (nova_seed and n is not None) or not cenas._existe(cena.get("clipe", "")):
-                    cenas.animar(post, numero, nova_seed=nova_seed)
-                    feitas += 1
+                if (nova_seed and n) or not cenas._existe(cena.get("clipe", "")):
+                    cenas.pedir_animacao(post, numero, nova_seed=bool(nova_seed and n))
+                    voltar(CONFERIR_ANIMACAO_A_CADA, nova_seed=False)
             except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
-                raise self.retry(exc=exc, countdown=600) from exc
+                raise self.retry(exc=exc, countdown=PLACA_OCUPADA_ESPERA) from exc
             except (video.VideoIndisponivel, ProviderPermanentError, ValueError) as exc:
                 post.avisos = [*(post.avisos or []), f"cena {numero}: {exc}"]
                 post.save(update_fields=["avisos", "atualizado_em"])
                 andamento.falhou(f"cena {numero}: {exc}")
-                return feitas
+                return 0
         post.refresh_from_db()
         if not so_quadros and not cenas.faltam(post):
             fontes.na_fila(montar_cenas, str(post.pk), rotulo="Montar o video", alvo=post.pk)
-        return feitas
+        return 1
 
 
 @shared_task(bind=True, max_retries=3)

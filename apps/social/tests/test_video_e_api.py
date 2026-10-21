@@ -148,11 +148,20 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
         ),
     )
 
-    def animar(imagem, prompt, *, segundos, tamanho, seed):
+    def pedir(imagem, prompt, *, segundos, tamanho, seed):
         animados.append((segundos, tamanho, seed, prompt))
-        return _mp4(0.8)  # o worker devolveu menos que o pedido
+        return f"video_{len(animados)}"
 
-    monkeypatch.setattr(fontes, "animar", animar)
+    monkeypatch.setattr(fontes, "pedir_animacao", pedir)
+    monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "completed"})
+    monkeypatch.setattr(fontes, "baixar_animacao", lambda i: _mp4(0.8))  # menos que o pedido
+
+    def animar(n, **k):
+        cenas.pedir_animacao(post, n, **k)
+        post.refresh_from_db()
+        assert cenas.conferir_animacao(post, n) == "pronta"
+        post.refresh_from_db()
+
     destino = _destino("instagram", voz=f"v-{uuid.uuid4().hex[:8]}")
     destino.texto_no_video = "legendas"
     destino.save()
@@ -183,13 +192,12 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     post.refresh_from_db()
     assert post.cenas_do_video[0]["tem_quadro"] and post.cenas_do_video[0]["quadro_de"] == "enviado"
 
-    cenas.animar(post, 1)
-    post.refresh_from_db()
+    animar(1)
     primeira_seed = post.extras["video_ia"]["cenas"][0]["seed"]
-    assert animados[0][:2] == (3, "720x1280") and animados[0][3] == "slow blink"
-    cenas.animar(post, 1)  # de novo, sem pedir variacao: a mesma seed
-    cenas.animar(post, 1, nova_seed=True)
-    post.refresh_from_db()
+    # 3 s de cena: 2 trechos (2,2 s esticados ate 25% e o fim parado), nao 3
+    assert animados[0][:2] == (3, cenas.TAMANHO_DA_ANIMACAO) and animados[0][3] == "slow blink"
+    animar(1)  # de novo, sem pedir variacao: a mesma seed
+    animar(1, nova_seed=True)
     assert animados[1][2] == primeira_seed and animados[2][2] != primeira_seed
 
     # a cena 2 so tem a imagem: entra parada, aproximando devagar
@@ -363,3 +371,76 @@ def test_conta_com_ia_grande_manda_o_post_para_ela(ambiente, modulo, monkeypatch
     outra_ia_por_api.responder(registro)
     post.refresh_from_db()
     assert post.situacao == Post.Situacao.FALHOU and "IA grande" in post.erro
+
+
+def test_segundos_pedidos_sao_o_minimo_em_trechos_inteiros():
+    """O worker arredonda os trechos (~1,1 s) para baixo: pede-se em multiplos
+    deles, o menor clipe que esticado ate 25% (e meio segundo parado) cobre a cena."""
+    from apps.social import cenas
+
+    # 3 s de cena: 2 trechos (2,2 s, esticados ate 2,75 s, + 0,5 s parado), nao 3
+    assert cenas.segundos_pedidos({"segundos": 3}) == 3
+    assert cenas.segundos_pedidos({"segundos": 2}) == 3  # 1 trecho nao chega a 2 s
+    assert cenas.segundos_pedidos({"segundos": 4}) == 4  # 3 trechos
+    fala = {"fala": " ".join(["palavra"] * 13)}  # ~5,3 s de fala: 4 trechos
+    assert cenas.segundos_pedidos(fala) == 5
+
+
+@pytest.mark.django_db
+def test_worker_desligado_ou_reiniciado_no_meio_so_atrasa_a_cena(
+    ambiente, modulo, settings, tmp_path, monkeypatch
+):
+    """Animacao pedida e o worker cai: a cena espera (as prontas ficam). Ele
+    volta sem lembrar do trabalho: a cena e pedida de novo, com a mesma seed."""
+    import json
+
+    from django.core.files.base import ContentFile
+
+    from apps.inference.providers.base import ProviderTransientError
+    from apps.social import cenas
+
+    settings.MEDIA_ROOT = tmp_path
+    monkeypatch.setattr(
+        fontes,
+        "executar",
+        lambda chave, variaveis, **k: json.dumps({"prompt": "frame", "movimento": "blink"}),
+    )
+    pedidos = []
+    monkeypatch.setattr(
+        fontes, "pedir_animacao", lambda *a, seed, **k: pedidos.append(seed) or "video_x"
+    )
+    post = _post(
+        _destino("instagram"),
+        extras={"video_ia": {"cenas": [{"imagem": "a", "clipe": ""}, {"imagem": "b"}]}},
+    )
+    lista = cenas.cenas(post)
+    for n, cena in enumerate(lista, start=1):
+        cena["quadro"] = default_storage.save(f"social/{post.pk}/q{n}.png", ContentFile(b"PNG"))
+    lista[0]["clipe"] = default_storage.save(f"social/{post.pk}/c1.mp4", ContentFile(b"MP4"))
+    cenas._gravar(post, lista)
+
+    cenas.pedir_animacao(post, 2)
+    post.refresh_from_db()
+
+    def fora(identificador):
+        raise ProviderTransientError("conexao recusada")
+
+    monkeypatch.setattr(fontes, "situacao_da_animacao", fora)
+    assert cenas.conferir_animacao(post, 2) == "esperando"
+    monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "in_progress"})
+    assert cenas.conferir_animacao(post, 2) == "esperando"
+    monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "sumiu"})
+    assert cenas.conferir_animacao(post, 2) == "perdida"
+    post.refresh_from_db()
+    assert cenas.faltam(post) == [2]  # a cena 1 continua pronta
+    cenas.pedir_animacao(post, 2)
+    assert pedidos[0] == pedidos[1]  # a mesma variacao
+
+    post.refresh_from_db()
+    monkeypatch.setattr(
+        fontes,
+        "situacao_da_animacao",
+        lambda i: {"status": "failed", "error": {"message": "sem_vram"}},
+    )
+    with pytest.raises(video.VideoIndisponivel, match="sem_vram"):
+        cenas.conferir_animacao(post, 2)

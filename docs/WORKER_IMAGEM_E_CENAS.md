@@ -77,25 +77,33 @@ Iguais aos do `/generations` (503 ocupada, 500 com `error.code` quando quebra).
 
 ---
 
-## 2. Animação: seed e duração nunca menor que a pedida
+## 2. Animação: seed, tamanho e o trabalho que sobrevive
 
-Duas mudanças pequenas no `POST /v1/videos` (seção 2 de
-`WORKER_VOZ_E_ANIMACAO.md`):
+Mudanças pequenas no `POST /v1/videos` (seção 2 de `WORKER_VOZ_E_ANIMACAO.md`):
 
 1. **`seed`** (inteiro, opcional, no multipart). A mesma imagem, o mesmo
    `prompt` e a mesma `seed` devolvem o mesmo clipe. O publi-bot guarda a seed
-   de cada cena: "Refazer a animação" manda outra, "Gerar a cena" de novo
-   repete a aprovada. Sem `seed`, o worker sorteia (como hoje). O publi-bot só
-   manda `seed` quando a conexão não é a Sora (que recusa campo desconhecido).
+   de cada cena: "Refazer a animação" manda outra; um trabalho perdido (o
+   worker reiniciou) é pedido de novo com a mesma. Sem `seed`, o worker sorteia
+   (como hoje). O publi-bot só manda `seed` quando a conexão não é a Sora (que
+   recusa campo desconhecido).
 
-2. **`seconds` arredondado para cima.** O FramePack gera em trechos de ~1,1 s
-   (`latent_window_size` 9 → 33 quadros a 30 fps). Hoje, pedir 3 s dá 2 trechos
-   (~2,4 s). O certo é `trechos = ceil(seconds * 30 / 33)`: nunca menos que o
-   pedido. O objeto do trabalho deve trazer em `seconds` a duração real.
+2. **`size` respeitado.** O publi-bot pede `448x800` (o "balde" 9:16 do
+   FramePack, `ANIMACAO_TAMANHO` no `.env` daqui) e amplia para 1080x1920 na
+   montagem. O tempo cresce com os pixels: o worker deve gerar no tamanho
+   pedido (ou no balde mais próximo), sem subir para um maior.
 
-O publi-bot já pede `ceil(duração da fala)` e, na montagem, desacelera o clipe
-até 25% e segura o último quadro se ainda faltar, e corta o que sobra. Com o
-arredondamento certo, quase nunca precisa.
+3. **Duração: nada a mudar.** O FramePack gera em trechos de ~1,1 s e o worker
+   arredonda os trechos para baixo. O publi-bot já pede os segundos em
+   múltiplos do trecho (3 s = 2 trechos, 4 s = 3 trechos) e pede o **menor**
+   clipe que, desacelerado até 25% e com o último quadro parado até meio
+   segundo, cobre a fala da cena: uma cena de 3 s custa 2 trechos, e não 3.
+
+**O trabalho que sobrevive:** o publi-bot pede (`POST`), guarda o `id` na cena
+e confere (`GET /v1/videos/{id}`) de minuto em minuto, sem prender ninguém
+esperando. Worker desligado: a cena espera e as prontas ficam. Worker de volta
+sem lembrar do trabalho (`404`): a cena é pedida de novo. Até 6 h sem resposta:
+a cena desiste, com aviso.
 
 ---
 

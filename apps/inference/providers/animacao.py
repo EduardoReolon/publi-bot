@@ -108,6 +108,19 @@ class OpenAIVideoClient:
                 )
             dormir(INTERVALO)
 
+    def situacao(self, identificador: str) -> dict:
+        """O trabalho como o servidor o ve agora, sem esperar. `{"status":
+        "sumiu"}` quando ele nao o conhece mais (reiniciou): pede-se de novo. Sem
+        conexao (worker desligado): `ProviderTransientError`, confere-se depois."""
+        url = f"{self.raiz}/videos/{identificador}"
+        try:
+            resposta = httpx.request("GET", url, headers=self._cabecalhos(), timeout=self.timeout)
+        except httpx.HTTPError as exc:
+            raise ProviderTransientError(f"nao foi possivel falar com {url}: {exc}") from exc
+        if resposta.status_code == 404:
+            return {"status": "sumiu"}
+        return self._conferir(resposta, f"/videos/{identificador}").json()
+
     def baixar(self, identificador: str) -> bytes:
         return self._chamar("GET", f"/videos/{identificador}/content").content
 
