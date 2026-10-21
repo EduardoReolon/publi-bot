@@ -223,3 +223,55 @@ def test_conectar_e_voltar_da_rede(ambiente, monkeypatch, settings):
     )
     pagina = client.get(retorno, {"state": estado, "code": "x"}).content.decode()
     assert "Qual conta?" in pagina and "a atual" in pagina
+
+
+@pytest.mark.django_db
+def test_botao_das_redes_nas_listas_e_na_pauta_e_pedido_ao_publicar(
+    ambiente, monkeypatch, django_capture_on_commit_callbacks
+):
+    """O botao fica junto de cada artigo nas listas de pautas e de artigos, na
+    pauta e no artigo. Antes de publicar, o pedido espera: os posts precisam
+    do link, e saem quando o artigo vai ao ar."""
+    from apps.content.models import Article, Topic
+    from apps.social import tasks
+    from apps.social.escolha import atender_pedidos
+    from apps.social.models import PedidoAoPublicar
+
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
+    Destino.objects.create(rede="linkedin", nome="Perfil", ligado=True)
+    pauta = Topic.objects.create(title="Cansaco", status=Topic.Status.USED)
+    artigo = _artigo_publicado()
+    Article.objects.filter(pk=artigo.pk).update(
+        topic=pauta,
+        status=Article.Status.APPROVED_SCHEDULED,
+        published_url="",
+        published_at=None,
+    )
+
+    telas = [
+        reverse("content:pautas", urlconf=U) + "?ver=todas",
+        reverse("content:pauta", args=[pauta.pk], urlconf=U),
+        reverse("content:artigos", urlconf=U),
+        reverse("content:revisar", args=[artigo.pk], urlconf=U),
+    ]
+    for tela in telas:
+        assert "Levar as redes ao publicar" in client.get(tela).content.decode(), tela
+
+    resposta = client.post(
+        reverse("social:levar_as_redes", args=[artigo.pk], urlconf=U), {"voltar": telas[2]}
+    )
+    assert resposta["Location"] == telas[2]
+    assert Post.objects.count() == 0 and PedidoAoPublicar.objects.count() == 1
+    assert "vai as redes ao publicar" in client.get(telas[2]).content.decode()
+
+    assert atender_pedidos() == 0  # ainda nao esta no ar
+    Article.objects.filter(pk=artigo.pk).update(
+        status=Article.Status.PUBLISHED, published_url="https://site.exemplo.org/cansaco/"
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        assert atender_pedidos() == 1
+    assert Post.objects.filter(motivo=Post.Motivo.PEDIDO).count() == 1
+    assert PedidoAoPublicar.objects.get().atendido_em is not None
+    pagina = client.get(telas[2]).content.decode()
+    assert "1 post" in pagina and "Levar as redes</button>" in pagina

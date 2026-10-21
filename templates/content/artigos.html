@@ -66,6 +66,7 @@
                   {% elif artigo.status == 'pending_review' %}espera{% endif %}">
                   {{ artigo.get_status_display }}
                 </span>
+                {% for bloco in acoes_do_artigo %}{% include bloco %}{% endfor %}
                 {% if artigo.last_publish_error %}
                   <div class="pre-visualizacao">{{ artigo.last_publish_error|truncatechars:100 }}</div>
                 {% endif %}

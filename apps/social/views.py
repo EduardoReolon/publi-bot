@@ -664,6 +664,21 @@ def levar_as_redes(request: HttpRequest, artigo_id) -> HttpResponse:
     if not Destino.objects.filter(ligado=True).exists():
         messages.info(request, _("Cadastre uma conta em Redes > Configurar primeiro."))
         return redirect(f"{reverse('social:inicio')}?aba=configurar")
+    from apps.social.escolha import pedir_ao_publicar
+
+    voltar = request.POST.get("voltar") or ""
+    voltar = voltar if voltar.startswith("/") and not voltar.startswith("//") else ""
+    artigo = fontes.artigo(str(artigo_id))
+    if artigo is None:
+        raise Http404
+    if not artigo.url:
+        # Ainda nao esta no ar: o post precisa do link. Vai quando publicar.
+        pedir_ao_publicar(str(artigo_id))
+        messages.success(
+            request,
+            _("Combinado: os posts deste artigo saem para as redes quando ele for publicado."),
+        )
+        return redirect(voltar or reverse("social:inicio"))
     garantir_abordagens()
     criados = levar(str(artigo_id))
     if criados:
@@ -673,7 +688,7 @@ def levar_as_redes(request: HttpRequest, artigo_id) -> HttpResponse:
         )
     else:
         messages.info(request, _("Este artigo ja foi para todas as contas nos ultimos dias."))
-    return redirect(request.POST.get("voltar") or reverse("social:inicio"))
+    return redirect(voltar or reverse("social:inicio"))
 
 
 # -- Configuracao ------------------------------------------------------------------

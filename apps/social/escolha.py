@@ -350,6 +350,48 @@ def rodada() -> int:
     return criados
 
 
+# Pedido que nunca foi atendido (artigo rejeitado, nunca publicado) some depois disto.
+PEDIDO_VALE_DIAS = 90
+
+
+def pedir_ao_publicar(artigo_id: str) -> bool:
+    """O artigo ainda nao esta no ar: guarda o pedido, atendido na publicacao.
+    Devolve False se ja havia um pedido esperando."""
+    from apps.social.models import PedidoAoPublicar
+
+    _pedido, criado = PedidoAoPublicar.objects.get_or_create(
+        artigo_id=artigo_id, atendido_em__isnull=True
+    )
+    return criado
+
+
+def esperando_publicar(artigo_id) -> bool:
+    from apps.social.models import PedidoAoPublicar
+
+    return PedidoAoPublicar.objects.filter(artigo_id=artigo_id, atendido_em__isnull=True).exists()
+
+
+def atender_pedidos() -> int:
+    """Os artigos pedidos antes de publicar que ja estao no ar vao as redes."""
+    from apps.social.models import PedidoAoPublicar
+
+    PedidoAoPublicar.objects.filter(
+        atendido_em__isnull=True, criado_em__lt=timezone.now() - timedelta(days=PEDIDO_VALE_DIAS)
+    ).delete()
+    criados = 0
+    for pedido in PedidoAoPublicar.objects.filter(atendido_em__isnull=True)[:20]:
+        artigo = fontes.artigo(str(pedido.artigo_id))
+        if artigo is None:
+            pedido.delete()
+            continue
+        if not artigo.url:
+            continue
+        criados += len(levar_as_redes(str(pedido.artigo_id)))
+        pedido.atendido_em = timezone.now()
+        pedido.save(update_fields=["atendido_em"])
+    return criados
+
+
 def levar_as_redes(artigo_id: str, destinos=None) -> list[Post]:
     """Pedido da pessoa (botao no artigo): um post em cada conta ligada, sem
     esperar a rodada, respeitando so o espacamento do mesmo artigo."""
