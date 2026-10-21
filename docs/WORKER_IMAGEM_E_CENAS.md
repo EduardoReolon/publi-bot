@@ -14,6 +14,21 @@ Sem as mudanças no worker, o publi-bot continua funcionando: a cena sai só pel
 descrição (sem o personagem de referência e sem a foto do lugar), com um aviso
 na cena, e a duração curta é compensada na montagem.
 
+> **Implementado no worker (contrato 2.12).** Diferenças em relação ao que está
+> abaixo, já tratadas aqui:
+> - o `/v1/images/edits` pode devolver `avisos` (lista de textos) quando ignorou
+>   algo pedido (hoje: referências com o modelo de referência desligado). Eles
+>   aparecem na cena;
+> - `image` sem `mask` volta `422` (o publi-bot sempre manda os dois juntos), e a
+>   máscara precisa de canal alfa e do tamanho da base (é RGBA, 720x1280);
+> - o trabalho do `/v1/videos` devolve `seed` (a usada, inclusive a sorteada), e o
+>   publi-bot guarda essa;
+> - os trechos do FramePack são de ~1,2 s, com `round(seconds / 1,2)` trechos
+>   (mínimo 1): o publi-bot pede `round(trechos × 1,2)` segundos;
+> - com e sem referência são **modelos de imagem diferentes**, e só um fica
+>   carregado por vez: o publi-bot gera todas as imagens iniciais antes de
+>   animar, as com personagem juntas, para não recarregar.
+
 ---
 
 ## 1. Imagem com referência e foto na cena: `POST /v1/images/edits`
@@ -93,11 +108,11 @@ Mudanças pequenas no `POST /v1/videos` (seção 2 de `WORKER_VOZ_E_ANIMACAO.md`
    montagem. O tempo cresce com os pixels: o worker deve gerar no tamanho
    pedido (ou no balde mais próximo), sem subir para um maior.
 
-3. **Duração: nada a mudar.** O FramePack gera em trechos de ~1,1 s e o worker
-   arredonda os trechos para baixo. O publi-bot já pede os segundos em
-   múltiplos do trecho (3 s = 2 trechos, 4 s = 3 trechos) e pede o **menor**
+3. **Duração.** O FramePack gera em trechos de ~1,2 s; o worker faz
+   `round(seconds / 1,2)` trechos (contrato 2.12). O publi-bot pede o **menor**
    clipe que, desacelerado até 25% e com o último quadro parado até meio
-   segundo, cobre a fala da cena: uma cena de 3 s custa 2 trechos, e não 3.
+   segundo, cobre a fala da cena, em segundos que caem exatamente nos trechos
+   (2 trechos = 2 s, 3 = 4 s, 4 = 5 s): uma cena de 3 s custa 2 trechos, e não 3.
 
 **O trabalho que sobrevive:** o publi-bot pede (`POST`), guarda o `id` na cena
 e confere (`GET /v1/videos/{id}`) de minuto em minuto, sem prender ninguém

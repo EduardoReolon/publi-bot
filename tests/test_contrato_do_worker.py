@@ -23,7 +23,7 @@ import httpx
 import pytest
 
 CONTRATO = Path(__file__).resolve().parent / "contrato_do_worker"
-VERSAO_ESPERADA = "2.11"
+VERSAO_ESPERADA = "2.12"
 
 
 def _exemplo(nome: str) -> dict:
@@ -696,3 +696,39 @@ def test_a_animacao_manda_a_seed_so_quando_pedida(monkeypatch):
         imagem=b"PNG", prompt="p", modelo="framepack", segundos=3, tamanho="720x1280", seed=7
     )
     assert "seed" not in enviados[0] and enviados[1]["seed"] == "7"
+
+
+def test_imagem_editada_le_o_exemplo_do_worker_com_os_avisos(monkeypatch):
+    """`/v1/images/edits` (contrato 2.12): a imagem e os `avisos` (o que o worker
+    ignorou do pedido), que vao para a cena."""
+    import base64
+
+    from apps.inference.providers.openai_compatible import OpenAICompatibleImageClient
+
+    exemplo = _exemplo("imagem-edicao-resposta.json")
+    exemplo["data"] = [{"b64_json": base64.b64encode(b"PNG").decode()}]
+    _cliente_falso(monkeypatch, exemplo)
+    imagem = OpenAICompatibleImageClient(base_url="http://gpu:8090", api_key="s").editar(
+        model="sdxl", prompt="frame", tamanho="720x1280", referencias=[b"CARLOS"]
+    )
+    assert imagem.conteudo == b"PNG"
+    assert imagem.avisos and "reference_image ignorado" in imagem.avisos[0]
+
+
+def test_o_trabalho_de_video_devolve_a_seed_usada(monkeypatch):
+    import httpx
+
+    from apps.inference.providers.animacao import OpenAIVideoClient
+
+    exemplo = _exemplo("video-resposta.json")
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        lambda metodo, url, **k: httpx.Response(
+            200, json=exemplo, request=httpx.Request(metodo, url)
+        ),
+    )
+    trabalho = OpenAIVideoClient(base_url="http://gpu:8090", api_key="s").criar_trabalho(
+        imagem=b"PNG", prompt="p", modelo="framepack", segundos=2, tamanho="448x800"
+    )
+    assert trabalho["seed"] == exemplo["seed"] and trabalho["id"] == exemplo["id"]

@@ -402,10 +402,11 @@ def _animacao():
 
 def pedir_animacao(
     imagem: bytes, prompt: str, *, segundos: int, tamanho: str, seed: int | None = None
-) -> str:
-    """Pede a animacao da imagem e devolve o id do trabalho, sem esperar: quem
-    pediu volta para conferir (`situacao_da_animacao`). Assim nada fica preso
-    esperando a placa, e desligar o worker no meio perde so este trabalho."""
+) -> dict:
+    """Pede a animacao da imagem e devolve o trabalho ({"id", "seed"}: a seed
+    usada, quando o servidor diz), sem esperar: quem pediu volta para conferir
+    (`situacao_da_animacao`). Assim nada fica preso esperando a placa, e
+    desligar o worker no meio perde so este trabalho."""
     from apps.inference.leases import gerar_owner_key, registrar_falha, reserva
     from apps.inference.providers.animacao import get_animation_provider
     from apps.inference.providers.base import ProviderTransientError
@@ -414,7 +415,7 @@ def pedir_animacao(
     sora = "sora" in (conexao.default_model or "").lower()
     try:
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
-            return get_animation_provider(conexao).criar(
+            return get_animation_provider(conexao).criar_trabalho(
                 imagem=imagem,
                 prompt=prompt,
                 modelo=conexao.default_model,
@@ -506,12 +507,10 @@ def gerar_quadro(
 
     if referencias or base is not None:
         try:
-            return (
-                editar_imagem(
-                    prompt, tamanho=tamanho, base=base, mascara=mascara, referencias=referencias
-                ),
-                "",
+            imagem, avisos = editar_imagem(
+                prompt, tamanho=tamanho, base=base, mascara=mascara, referencias=referencias
             )
+            return imagem, "; ".join(avisos)
         except RotaInexistente:
             aviso = (
                 "o gerador de imagem ainda nao aceita referencia nem foto na cena (worker "

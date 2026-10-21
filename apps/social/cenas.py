@@ -203,6 +203,15 @@ def _referencias(post, cena: dict) -> list[bytes]:
     return saida
 
 
+def usa_referencia(post, cena: dict) -> bool:
+    """A imagem inicial da cena leva referencia de personagem (no worker, outro
+    modelo de imagem: as cenas com e sem referencia sao geradas em grupos)."""
+    return any(
+        e.tipo != e.Tipo.LUGAR and e.imagem
+        for e in identidade.citados(cena.get("imagem") or "", identidade.elementos(post.destino))
+    )
+
+
 def _guardar(post, nome: str, conteudo: bytes) -> str:
     caminho = f"social/{post.pk}/{nome}"
     if default_storage.exists(caminho):
@@ -280,11 +289,11 @@ def enviar_quadro(post, n: int, arquivo) -> str:
 
 
 # -- A animacao -----------------------------------------------------------------------------
-# O que o worker gera e caro (na placa de 8 GB, ~9,5 min por trecho de ~1,1 s
-# do FramePack): pede-se o MENOR clipe que, desacelerado ate 25% e com o
-# ultimo quadro parado ate meio segundo, cobre o tempo da cena. Uma cena de 3 s
-# pede 2 trechos, e nao 3.
-TRECHO = 1.1  # segundos por trecho do FramePack; o worker arredonda os trechos para baixo
+# O que o worker gera e caro (na placa de 8 GB, ~9,5 min por trecho do
+# FramePack): pede-se o MENOR clipe que, desacelerado ate 25% e com o ultimo
+# quadro parado ate meio segundo, cobre o tempo da cena. Uma cena de 3 s pede 2
+# trechos, e nao 3.
+TRECHO = 1.2  # segundos por trecho; o worker faz round(seconds / 1,2) trechos (contrato 2.12)
 SEGURA_ATE = 0.5  # o ultimo quadro parado no fim do gesto
 # A resolucao da animacao: a do "balde" 9:16 do FramePack (nada e redimensionado
 # no worker, e o tempo cresce com os pixels). A montagem amplia para 1080x1920.
@@ -294,11 +303,12 @@ ESPERA_MAXIMA_HORAS = 6
 
 
 def segundos_pedidos(cena: dict) -> int:
-    """Os segundos a pedir: o clipe minimo (veja acima) em trechos inteiros, com
-    os segundos ja multiplos do trecho (o worker os arredonda para baixo)."""
+    """Os segundos a pedir: o clipe minimo (veja acima) em trechos inteiros. O
+    worker faz `round(seconds / TRECHO)` trechos; `round(trechos * TRECHO)`
+    segundos voltam exatamente nesses trechos (2 -> 2 s, 3 -> 4 s, 4 -> 5 s)."""
     clipe = max((duracao_estimada(cena) - SEGURA_ATE) / DESACELERA_ATE, TRECHO)
-    trechos = math.ceil(clipe / TRECHO - 1e-6)
-    return min(math.ceil(trechos * TRECHO), 6)
+    trechos = min(math.ceil(clipe / TRECHO - 1e-6), 5)
+    return max(1, round(trechos * TRECHO))
 
 
 def pedir_animacao(post, n: int, *, nova_seed: bool = False) -> str:
@@ -319,18 +329,20 @@ def pedir_animacao(post, n: int, *, nova_seed: bool = False) -> str:
     )
     with default_storage.open(cena["quadro"], "rb") as arquivo:
         quadro = arquivo.read()
-    identificador = fontes.pedir_animacao(
+    trabalho = fontes.pedir_animacao(
         quadro,
         prompts["movimento"] or prompts["imagem"],
         segundos=segundos_pedidos(cena),
         tamanho=TAMANHO_DA_ANIMACAO,
         seed=seed,
     )
+    identificador = trabalho["id"]
     post.refresh_from_db()
     lista, cena = _cena(post, n)
     cena["animando"] = {
         "id": identificador,
-        "seed": seed,
+        # A usada, que o worker devolve (a mesma que pedimos, ou a sorteada).
+        "seed": trabalho.get("seed") or seed,
         "movimento": cena.get("movimento", ""),
         "desde": timezone.now().isoformat(),
     }
