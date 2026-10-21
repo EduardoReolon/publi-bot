@@ -12,15 +12,13 @@ import json
 import shutil
 
 import pytest
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from PIL import Image
 
-from apps.social import criacao, fontes, identidade, redacao, video
+from apps.social import criacao, fontes, identidade, redacao, video, video_ia
 from apps.social.forms import IdentidadeForm
 from apps.social.models import Destino, ElementoVisual, Post
 from apps.social.tests.test_escrita import ARTIGO, _destino, modulo  # noqa: F401
-from apps.social.tests.test_video_e_api import _mp3
 
 U = "core.urls_tenants"
 FFMPEG = shutil.which("ffmpeg") and shutil.which("ffprobe")
@@ -92,10 +90,9 @@ def test_estilos_permitidos_e_o_estilo_que_a_ia_escolhe(ambiente, modulo):
     assert "movimentos lentos" in identidade.descricao_do_estilo(destino, "", para="video")
 
     destino.video = Destino.Video.SEMPRE
-    instrucao = video.instrucao(post)
-    assert "'movimento'" in instrucao and "movimentos lentos" in instrucao
+    instrucao = video_ia.instrucao(post)
+    assert "'cenas'" in instrucao and "movimentos lentos" in instrucao
     assert "formato_sugerido" not in instrucao  # sempre video: nada a sugerir
-    assert video.sai_sozinho(post)
 
 
 def test_outra_ia_devolve_estilo_e_movimento():
@@ -120,9 +117,7 @@ def test_outra_ia_devolve_estilo_e_movimento():
 
 
 @pytest.mark.django_db
-def test_prompts_por_lamina_opcoes_e_pedido_de_animacao(
-    ambiente, modulo, settings, tmp_path, monkeypatch
-):
+def test_prompts_por_lamina_e_opcoes(ambiente, modulo, settings, tmp_path, monkeypatch):
     settings.MEDIA_ROOT = tmp_path
     _, _, client = ambiente
     chamadas = []
@@ -172,11 +167,6 @@ def test_prompts_por_lamina_opcoes_e_pedido_de_animacao(
     post.refresh_from_db()
     assert list(post.extras["fundos"]) == ["2"]
 
-    texto = identidade.pedido_de_animacao(post)
-    assert "Lamina 1 (envio a imagem 1): Gugu boceja e esfrega os olhos" in texto
-    assert "camera parada" in texto and "macaco marrom de bone azul" in texto
-    assert "NAO acrescente texto" in texto
-
 
 @pytest.mark.django_db
 def test_form_da_identidade_salva_os_estilos(ambiente):
@@ -185,7 +175,6 @@ def test_form_da_identidade_salva_os_estilos(ambiente):
         {
             "estilos_permitidos": ["quadrinhos", "foto"],
             "orientacao_videos": "lento",
-            "legendas": "on",
             "video": "",
             "chamada_final": "",
         },
@@ -207,88 +196,6 @@ def test_legendas_em_trechos_curtos_no_tempo_da_fala():
     tempos = video.tempos_da_legenda(trechos, 6.0)
     assert tempos[0][0] == 0 and tempos[-1][1] == pytest.approx(6.0, abs=0.02)
     assert all(a < b for a, b in tempos)
-
-
-@pytest.mark.django_db
-@pytest.mark.skipif(not FFMPEG, reason="sem ffmpeg nesta maquina")
-def test_clipe_enviado_animado_e_tirado(ambiente, modulo, settings, tmp_path, monkeypatch):
-    import subprocess
-
-    settings.MEDIA_ROOT = tmp_path
-    _, _, client = ambiente
-    monkeypatch.setattr(fontes, "falar", lambda texto, voz="": _mp3())
-    monkeypatch.setattr(
-        fontes,
-        "executar",
-        lambda chave, variaveis, json_schema=None: json.dumps(
-            {"prompt": "img", "movimento": "slow blink"}
-        ),
-    )
-    clipe = subprocess.run(  # noqa: S603
-        [shutil.which("ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
-         "testsrc=s=720x1280:d=1:r=24", "-pix_fmt", "yuv420p", "-f", "mp4",
-         "-movflags", "frag_keyframe+empty_moov", "-"],
-        capture_output=True, check=True,
-    ).stdout  # fmt: skip
-    animados = []
-
-    def animar(imagem, prompt, segundos=3, tamanho="720x1280"):
-        animados.append((Image.open(io.BytesIO(imagem)).size, prompt, tamanho))
-        return clipe
-
-    monkeypatch.setattr(fontes, "animar", animar)
-    monkeypatch.setattr(fontes, "tem_animacao", lambda: True)
-    post = _post(_destino("instagram", legendas=True))
-    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
-
-    client.post(
-        acao,
-        {
-            "acao": "clipe_da_lamina",
-            "n": "2",
-            "clipe": SimpleUploadedFile("cena.mp4", clipe, content_type="video/mp4"),
-        },
-    )
-    post.refresh_from_db()
-    assert post.extras["clipes"]["2"].endswith(".mp4")
-    client.post(
-        acao,
-        {"acao": "clipe_da_lamina", "n": "2", "clipe": SimpleUploadedFile("x.exe", b"MZ")},
-    )
-    post.refresh_from_db()
-    assert post.extras["clipes"]["2"].endswith(".mp4")  # o formato errado nao entrou
-
-    # animar a capa: a imagem da capa vai inteira no meio do quadro 9:16
-    with pytest.raises(video.VideoIndisponivel):
-        video.animar_lamina(post, 3)  # a chamada final so tem a cor: nada para animar
-    from apps.social import laminas
-
-    capa = laminas.guardar_imagem_propria(post, io.BytesIO(_png("green")), "propria")
-    post.extras = {**post.extras, "imagem_propria": capa}
-    post.save()
-    # pelo worker (FramePack): a imagem como ela e, no formato dela
-    monkeypatch.setattr(fontes, "animacao_e_da_sora", lambda: False)
-    video.animar_lamina(post, 1)
-    # pela Sora: no meio do quadro 9:16, que e o unico que ela aceita
-    monkeypatch.setattr(fontes, "animacao_e_da_sora", lambda: True)
-    video.animar_lamina(post, 1)
-    largura, altura = animados[0][0]
-    assert animados[0][2] == "544x704" and altura > largura and (largura, altura) != (720, 1280)
-    assert animados[1] == ((720, 1280), "slow blink", "720x1280")
-
-    from django.core.files.storage import default_storage
-
-    copia = tmp_path / "copia.mp4"
-    with default_storage.open(video.montar(post), "rb") as arquivo:
-        copia.write_bytes(arquivo.read())
-    assert video._duracao(shutil.which("ffprobe"), copia) > 2
-    pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
-    # O video narrado (e o clipe de cada lamina) saiu da tela; o codigo continua.
-    assert "Trocar o clipe" not in pagina and "Copiar o pedido do video" in pagina
-
-    client.post(acao, {"acao": "tirar_clipe", "n": "2"})
-    post.refresh_from_db()
-    assert "2" not in post.extras["clipes"] and "1" in post.extras["clipes"]
 
 
 @pytest.mark.django_db
@@ -321,32 +228,3 @@ def test_onde_atende_sem_regiao_e_o_pais(ambiente):
     radar.regioes = []
     radar.save()
     assert fontes.negocio()["regioes"] == ["Brasil"]
-
-
-@pytest.mark.django_db
-@pytest.mark.skipif(not FFMPEG, reason="sem ffmpeg nesta maquina")
-def test_quadros_viram_o_clipe_da_lamina(ambiente, modulo, settings, tmp_path):
-    settings.MEDIA_ROOT = tmp_path
-    _, _, client = ambiente
-    post = _post(_destino("instagram"))
-    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
-    quadros = [
-        SimpleUploadedFile(f"q{i}.png", _png(cor), content_type="image/png")
-        for i, cor in enumerate(["red", "green", "blue"])
-    ]
-    client.post(acao, {"acao": "quadros_da_lamina", "n": "1", "quadros": quadros})
-    post.refresh_from_db()
-    assert post.extras["clipes"]["1"].endswith(".mp4")
-    from django.core.files.storage import default_storage
-
-    copia = tmp_path / "q.mp4"
-    with default_storage.open(post.extras["clipes"]["1"], "rb") as arquivo:
-        copia.write_bytes(arquivo.read())
-    # 3 quadros de 2,4 s com 0,5 s de troca entre eles
-    assert video._duracao(shutil.which("ffprobe"), copia) == pytest.approx(6.2, abs=0.15)
-
-    texto = identidade.pedido_de_quadros(post)
-    assert "3 QUADROS da mesma cena" in texto
-    assert "Lamina 1: o macaco Gugu bocejando na cama. O gesto: Gugu boceja" in texto
-    pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
-    assert "Montar com quadros" not in pagina  # fora da tela, junto com o video narrado

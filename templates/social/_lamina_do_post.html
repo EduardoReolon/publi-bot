@@ -28,5 +28,4 @@
       {% if l.prompt_movimento or l.movimento %}<p><strong>{% translate "Movimento" %}:</strong> <span id="pm-{{ post.pk }}-{{ l.n }}">{{ l.prompt_movimento|default:l.movimento }}</span> <button type="button" class="botao discreto pequeno" data-copiar="pm-{{ post.pk }}-{{ l.n }}">{% translate "copiar" %}</button></p>{% endif %}
     </details>
   {% endif %}
-  {# Clipe e quadros da lamina: so servem ao video narrado, fora da tela (_lamina_clipes.html). #}
 </div>

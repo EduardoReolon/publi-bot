@@ -52,23 +52,23 @@ ESQUEMA = {
                 "opcoes": {"type": "array", "items": {"type": "string"}},
             },
         },
+        "foto": {"type": "string"},
         "video": {
             "type": "object",
             "properties": {
-                "gancho": {"type": "string"},
                 "cenas": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "mostra": {"type": "string"},
-                            "fala": {"type": "string"},
-                            "texto": {"type": "string"},
                             "segundos": {"type": "number"},
+                            "fala": {"type": "string"},
+                            "imagem": {"type": "string"},
+                            "movimento": {"type": "string"},
+                            "texto": {"type": "string"},
                         },
                     },
                 },
-                "chamada": {"type": "string"},
             },
         },
         "laminas": {
@@ -282,6 +282,8 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     roteiro = video_ia.ler_roteiro(dados.get("video"))
     if f.max_laminas and roteiro and post.destino.video != post.destino.Video.NUNCA:
         extras["video_ia"] = roteiro
+    if not f.max_laminas and str(dados.get("foto") or "").strip():
+        extras["visual_da_foto"] = str(dados["foto"]).strip()[:600]
     from apps.social.identidade import estilos_da_conta
 
     estilo = pedidos.get("estilo_pedido") or str(dados.get("estilo") or "").strip().lower()
@@ -482,7 +484,7 @@ def instrucoes(post: Post, artigo, mat: dict | None = None) -> str:
 
     return (
         clareza.instrucao(post, laminas=com_laminas(post))
-        + (video_ia.instrucao(post) if com_laminas(post) else "")
+        + ("" if com_fotos(post) else video_ia.instrucao(post))
         + persuasao.instrucao(post, mat)
         + base
     )

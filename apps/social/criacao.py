@@ -30,7 +30,8 @@ ROTULOS = [
     "LEGENDA",
     "HASHTAGS",
     "LAMINAS",
-    "VIDEO",
+    "CENAS",
+    "FOTO",
     "ENQUETE",
     "PRIMEIRO COMENTARIO",
     "COMENTARIOS",
@@ -60,9 +61,12 @@ REGRAS:
   hashtag, uma do lugar. Se a capa e a segunda nao citarem, o sistema poe um selo
   com o lugar no alto da capa.
 
-Converse antes, se algo nao estiver claro. Quando eu pedir ("pode gerar"),
-responda SO nos blocos abaixo e termine com FIM (a resposta volta para o
-sistema, que a le sozinho):
+Responda JA com o post pronto, nos blocos abaixo, terminando com FIM: escolha
+o formato que melhor serve a ideia e mande o material completo dele. Depois do
+FIM, em duas ou tres linhas, diga por que escolheu e ofereca mudar (outro
+formato, outra abordagem, outras cenas). Vamos conversar ate ficar bom: a CADA
+resposta, mande de novo o post INTEIRO nos blocos — eu copio a ultima e colo no
+sistema, que a le sozinho.
 
 IDEIA: a ideia do post em uma frase simples
 PRINCIPIOS: as chaves dos principios de persuasao que voce usou, separadas por virgula
@@ -104,13 +108,16 @@ LAMINAS = (
     " sem texto)\n  (de {min} a {max} linhas; a primeira e a capa)\n"
     "ESTILO: a chave do estilo das imagens que voce escolheu | por que, em uma frase\n"
 )
-FORMATO_E_VIDEO = (
-    "FORMATO: carrossel ou video | por que, em uma frase\n"
-    "VIDEO: (so quando o formato for video, ou o pedido disser que vai tambem como video)\n"
-    "abertura: o que se ve e se ouve nos 2 primeiros segundos (o gancho do video)\n"
-    "- o que se ve | o que se ouve | texto na tela (ou vazio) | segundos\n"
-    "  (uma linha por cena)\n"
-    "final: como o video termina (a chamada)\n"
+FORMATO_E_CENAS = (
+    "FORMATO: carrossel ou video | por que, em uma frase (as LAMINAS vao sempre: o "
+    "carrossel e o plano B)\n"
+    "CENAS: (quando o formato for video, ou o pedido disser que vai tambem como video; uma "
+    "linha por cena)\n"
+    "- segundos | fala (voz em off) | imagem inicial (o primeiro quadro) | movimento (o "
+    "gesto e a camera) | frase na tela (ou vazio)\n"
+)
+FOTO = (
+    "FOTO: a cena da imagem do post (concreta, sem texto; personagens e lugares fixos pelo nome)\n"
 )
 ENQUETE = "ENQUETE: pergunta | opcao 1 | opcao 2 (de 2 a 4 opcoes, ate 30 caracteres cada)\n"
 COMENTARIO = "PRIMEIRO COMENTARIO: a frase que chama para o artigo (o link vai depois dela)\n"
@@ -171,12 +178,7 @@ def pedido(post: Post, *, na_tela: bool = False) -> str:
         imagens=_estilo_visual(post.destino) if laminas else "uma imagem (a capa do artigo)",
         dobra=f.dobra or 200,
         hashtags=f.max_hashtags,
-        laminas=(
-            LAMINAS.format(min=f.min_laminas, max=f.max_laminas)
-            + (FORMATO_E_VIDEO if post.destino.video != post.destino.Video.NUNCA else "")
-            if laminas
-            else ""
-        ),
+        laminas=_formatos(post, f) if laminas else ("" if redacao.com_fotos(post) else FOTO),
         enquete=ENQUETE if redacao.e_enquete(post) else "",
         comentario=COMENTARIO if f.link == "comentario" else "",
         imagens_depois=IMAGENS_DEPOIS if laminas else "",
@@ -195,6 +197,16 @@ def pedido(post: Post, *, na_tela: bool = False) -> str:
         oferta=v["oferta"],
         regiao=v["regiao"],
     )
+
+
+def _formatos(post: Post, f) -> str:
+    """O bloco das laminas e, se a conta faz video, o das cenas com as regras."""
+    from apps.social import video_ia
+
+    texto = LAMINAS.format(min=f.min_laminas, max=f.max_laminas)
+    if post.destino.video == post.destino.Video.NUNCA:
+        return texto
+    return texto + FORMATO_E_CENAS + video_ia.regras_das_cenas(post.destino)
 
 
 def _partes(linha: str) -> list[str]:
@@ -235,27 +247,23 @@ def ler(resposta: str) -> tuple[dict, str]:
     if estilo and estilo[0]:
         dados["estilo"] = estilo[0].lower()
         dados["por_que_estilo"] = " | ".join(estilo[1:])
-    # "abertura" e "final", e nao "gancho" e "chamada": esses abririam outros
-    # rotulos da resposta (GANCHO e o do post).
-    video = {"gancho": "", "cenas": [], "chamada": ""}
-    for linha in blocos.get("VIDEO", "").splitlines():
-        rotulo, _, resto = linha.strip().lstrip("-* ").partition(":")
-        campo = {"abertura": "gancho", "final": "chamada"}.get(rotulo.strip().lower())
-        if campo and resto.strip():
-            video[campo] = resto.strip()
-            continue
-        partes = _partes(linha.strip().lstrip("-* "))
-        if len(partes) >= 2 and partes[0]:
-            video["cenas"].append(
+    cenas = []
+    for linha in itens(blocos.get("CENAS", "")):
+        partes = _partes(linha)
+        if len(partes) >= 3 and partes[2]:
+            cenas.append(
                 {
-                    "mostra": partes[0],
+                    "segundos": partes[0],
                     "fala": partes[1],
-                    "texto": partes[2] if len(partes) > 2 else "",
-                    "segundos": partes[3] if len(partes) > 3 else "",
+                    "imagem": partes[2],
+                    "movimento": partes[3] if len(partes) > 3 else "",
+                    "texto": partes[4] if len(partes) > 4 else "",
                 }
             )
-    if video["gancho"] or video["cenas"]:
-        dados["video"] = video
+    if cenas:
+        dados["video"] = {"cenas": cenas}
+    if blocos.get("FOTO", "").strip():
+        dados["foto"] = " ".join(blocos["FOTO"].split())
     enquete = _partes(" ".join(blocos.get("ENQUETE", "").split()))
     if len(enquete) >= 3:
         dados["enquete"] = {"pergunta": enquete[0], "opcoes": enquete[1:]}

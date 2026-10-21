@@ -176,7 +176,7 @@ FIM
 
 @pytest.mark.django_db
 def test_proposta_em_video_com_estilo(ambiente, monkeypatch):
-    from apps.social import redacao, tasks, video
+    from apps.social import redacao, tasks, video_ia
 
     monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
     artigo = _artigo_publicado()
@@ -201,7 +201,7 @@ def test_proposta_em_video_com_estilo(ambiente, monkeypatch):
     post = Post.objects.get()
     assert post.extras["formato_pedido"] == "video"
     assert post.extras["estilo_pedido"] == "apresentacao"
-    assert "vai como VIDEO" in video.instrucao(post)
+    assert "vai TAMBEM como video" in video_ia.instrucao(post)
     # quem escreve segue o pedido, mesmo sugerindo outra coisa
     _, extras = redacao.montar(
         post,

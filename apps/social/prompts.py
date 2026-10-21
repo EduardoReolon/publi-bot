@@ -6,7 +6,7 @@ dela (`apps/social/redes/<rede>.py`)."""
 from __future__ import annotations
 
 from apps.social.clareza import PROMPT_DO_REVISOR
-from apps.social.identidade import PROMPT_DA_CENA
+from apps.social.identidade import PROMPT_DA_CENA, PROMPT_DO_QUADRO
 from apps.social.redes import REDES
 
 _CAMPOS = {
@@ -124,6 +124,8 @@ PROMPTS = {rede.prompt: _semente(rede) for rede in REDES.values()}
 PROMPTS["social_revisor"] = PROMPT_DO_REVISOR
 # A cena da lamina para o gerador de imagem (ver identidade.gerar_imagens).
 PROMPTS["social_cena"] = PROMPT_DA_CENA
+# O primeiro quadro de uma cena do video (ver cenas.gerar_quadro).
+PROMPTS["social_quadro"] = PROMPT_DO_QUADRO
 
 # Descrever uma foto do banco (modelo que enxerga imagem; opcional, ver
 # ConfiguracaoSocial.descrever_fotos). A descricao entra no material do post.

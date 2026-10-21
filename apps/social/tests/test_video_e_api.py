@@ -1,8 +1,8 @@
 # ruff: noqa: F811 - as fixtures importadas (modulo) entram como parametro
-"""Video (Reels) das laminas com voz de IA e a outra IA por API.
+"""Video (Reels) por cenas e a outra IA por API.
 
-* a outra IA devolve a fala de cada lamina e sugere carrossel ou video;
-* o video e montado com ffmpeg (as mesmas laminas, a narracao de cada uma);
+* a outra IA sugere o formato e, no video, devolve as cenas;
+* cada cena: imagem inicial, animacao com seed, e a montagem com voz e legenda;
 * a outra IA por API recebe o MESMO pedido de copiar e colar e a resposta passa
   pelos mesmos leitores."""
 
@@ -61,117 +61,236 @@ def test_outra_ia_devolve_fala_e_formato():
     assert dados["por_que_formato"].startswith("a pergunta falada")
 
 
-@pytest.mark.django_db
-def test_roteiro_e_aviso_de_narracao_longa(ambiente, modulo):
-    post = _post(
-        _destino("instagram", chamada_final="Link na bio"),
-        extras={
-            "laminas": [
-                {"titulo": "Acorda cansado?", "texto": "Mesmo dormindo bem", "fala": "Oi!"},
-                {"titulo": "Peca o exame", "texto": "e simples", "visual": "tubo de ensaio"},
-            ]
-        },
-    )
-    assert video.falas(post) == ["Oi!", "Peca o exame. e simples", "Link na bio"]
-    texto = video.roteiro(post)
-    assert "1. TELA: Acorda cansado? — Mesmo dormindo bem\n   FALA: Oi!" in texto
-    assert "IMAGEM: tubo de ensaio" in texto
-    longa = {"formato_sugerido": "video", "laminas": [{"fala": "palavra " * 300}]}
-    assert video.avisos(longa) and not video.avisos({"laminas": longa["laminas"]})
-
-
-@pytest.mark.django_db
-@pytest.mark.skipif(not FFMPEG, reason="sem ffmpeg nesta maquina")
-def test_video_montado_com_a_voz_vira_reels(ambiente, modulo, settings, tmp_path, monkeypatch):
-    settings.MEDIA_ROOT = tmp_path
-    _, _, client = ambiente
-    falas = []
-    monkeypatch.setattr(fontes, "falar", lambda texto, voz="": falas.append(texto) or _mp3())
-    monkeypatch.setattr(fontes, "tem_voz", lambda: True)
-    post = _post(
-        # voz unica por rodada: a narracao fica guardada por voz + texto
-        _destino("instagram", voz=f"nova-{uuid.uuid4().hex[:8]}"),
-        extras={
-            "laminas": [
-                {"titulo": "Acorda cansado?", "texto": "Mesmo dormindo bem", "fala": "Oi!"},
-                {"titulo": "Peca o exame", "texto": "e simples", "fala": ""},
-            ]
-        },
-    )
-    from apps.social.tasks import gerar_video
-
-    gerar_video.apply(args=[str(post.pk)])
-    post.refresh_from_db()
-    assert post.extras["formato"] == "video" and default_storage.exists(post.extras["video"])
-    assert post.imagens[0]["tipo"] == "video" and len(post.imagens) == 1
-    assert falas[0] == "Oi!" and len(falas) == 3  # a chamada final tambem fala
-    copia = tmp_path / "copia.mp4"
-    with default_storage.open(post.extras["video"], "rb") as arquivo:
-        copia.write_bytes(arquivo.read())
-    duracao = video._duracao(shutil.which("ffprobe"), copia)
-    assert 1.5 < duracao < 4
-
-    # a mesma fala nao e paga duas vezes (audio guardado por voz + texto)
-    video.montar(post)
-    assert len(falas) == 3
-
-    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
-    pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
-    assert "Video por IA (Reels)" in pagina and "Voltar ao carrossel" in pagina
-    client.post(acao, {"acao": "falas", "falas": "Ola de novo\nPeca o exame hoje"})
-    post.refresh_from_db()
-    assert [x["fala"] for x in post.extras["laminas"]] == ["Ola de novo", "Peca o exame hoje"]
-    client.post(acao, {"acao": "voltar_ao_carrossel"})
-    post.refresh_from_db()
-    assert post.extras.get("formato") != "video" and post.imagens[0].get("tipo") != "video"
-
-
-RESPOSTA_COM_ROTEIRO = RESPOSTA_COM_VIDEO.replace(
+RESPOSTA_COM_CENAS = RESPOSTA_COM_VIDEO.replace(
     "COMENTARIOS:",
-    "VIDEO:\n"
-    "abertura: despertador toca e a mulher abre os olhos, exausta\n"
-    "- close no rosto cansado | Voce dorme oito horas e acorda assim? | Cansada de novo | 4 s\n"
-    "- medica mostra o exame | O cansaco pode ter causa | | 6\n"
-    "final: Leia o artigo no link da bio\n"
+    "CENAS:\n"
+    "- 3 s | Voce dorme oito horas e acorda assim? | close no rosto cansado da mulher, "
+    "despertador ao lado | ela abre os olhos devagar; camera aproxima | Cansada de novo\n"
+    "- 4 | O cansaco pode ter causa. | medica mostrando o exame | ela vira a folha |\n"
     "COMENTARIOS:",
 )
 
 
 @pytest.mark.django_db
-def test_ia_sugere_video_com_roteiro_e_nada_sai_sozinho(
+def test_ia_sugere_video_com_cenas_e_nada_sai_sozinho(
     ambiente, modulo, settings, tmp_path, monkeypatch
 ):
-    """O video por IA tem roteiro proprio (pode contar diferente das laminas) e
-    nunca sai sozinho: nem a conta antiga marcada "automatico" gera o narrado."""
+    """O roteiro vem picado em cenas (o que o worker anima) e nada sai sozinho:
+    nem a conta antiga marcada "automatico"."""
     settings.MEDIA_ROOT = tmp_path
     from apps.social import tasks, video_ia
 
     pedidos = []
-    monkeypatch.setattr(tasks.gerar_video, "delay", lambda pk, **_kw: pedidos.append(pk))
-    monkeypatch.setattr(fontes, "tem_voz", lambda: True)
+    monkeypatch.setattr(tasks.gerar_cenas, "delay", lambda pk, **_kw: pedidos.append(pk))
     destino = _destino("instagram", video="automatico")
     destino.texto_no_video = "frases"
     destino.chamada_do_video = "Agende pelo link da bio"
     destino.save()
     post = _post(destino)
-    criacao.aplicar(post, RESPOSTA_COM_ROTEIRO)
+    criacao.aplicar(post, RESPOSTA_COM_CENAS)
     post.refresh_from_db()
     assert pedidos == []
     assert post.extras["formato_sugerido"] == "video"
-    roteiro = post.extras["video_ia"]
-    assert roteiro["gancho"].startswith("despertador toca")
-    assert [c["segundos"] for c in roteiro["cenas"]] == [4, 6]
-    assert roteiro["cenas"][0]["texto"] == "Cansada de novo"
+    cenas = post.extras["video_ia"]["cenas"]
+    assert [c["segundos"] for c in cenas] == [3, 4]
+    assert cenas[0]["fala"] == "Voce dorme oito horas e acorda assim?"
+    assert cenas[0]["movimento"].startswith("ela abre os olhos") and cenas[0]["texto"]
+    assert cenas[1]["texto"] == ""
+
+    pedido_do_post = criacao.pedido(post)
+    assert "CENAS:" in pedido_do_post and "Responda JA com o post pronto" in pedido_do_post
+    assert "a CADA" in pedido_do_post and "Agende pelo link da bio" in pedido_do_post
+    assert "de 2 a 4 s" in pedido_do_post and "ninguem fala em cena" in pedido_do_post
 
     texto = video_ia.pedido(post)
-    assert "9:16" in texto and "2 PRIMEIROS segundos" in texto
-    assert "FRASES CURTAS" in texto and "Leia o artigo no link da bio" in texto
-    assert "0-2 s (GANCHO): despertador toca" in texto
-    assert "'video'" in criacao.pedido(post) and "VIDEO:" in criacao.pedido(post)
-
-    # Sem roteiro (a IA nao sugeriu), o pedido leva o assunto e pede o roteiro.
+    assert "9:16" in texto and "FRASES CURTAS" in texto
+    assert "Cena 1 (3 s)" in texto and "Imagem inicial: close no rosto" in texto
     sem = _post(Destino.objects.create(rede="instagram", nome="Outra"))
     assert "Monte voce o roteiro" in video_ia.pedido(sem)
+
+
+def _mp4(segundos: float = 1.0) -> bytes:
+    return subprocess.run(  # noqa: S603 - ffmpeg do sistema, so no teste
+        [
+            shutil.which("ffmpeg"), "-v", "error", "-f", "lavfi",
+            "-i", f"testsrc=size=360x640:rate=30:duration={segundos}",
+            "-pix_fmt", "yuv420p", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "-",
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout  # fmt: skip
+
+
+@pytest.mark.django_db
+@pytest.mark.skipif(not FFMPEG, reason="sem ffmpeg nesta maquina")
+def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path, monkeypatch):
+    """Cada cena: a imagem inicial, a animacao (com seed; refazer troca a seed),
+    e a montagem no tempo da fala, com a voz e a legenda. Mudar a fala so pede
+    montar de novo; o clipe curto e esticado/segurado ate o fim da fala."""
+    import io
+    import json
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+
+    from apps.social import cenas
+
+    settings.MEDIA_ROOT = tmp_path
+    _, _, client = ambiente
+    falas, animados = [], []
+    monkeypatch.setattr(fontes, "falar", lambda texto, voz="": falas.append(texto) or _mp3(1.0))
+    monkeypatch.setattr(fontes, "tem_voz", lambda: True)
+    monkeypatch.setattr(
+        fontes,
+        "executar",
+        lambda chave, variaveis, **k: json.dumps(
+            {"prompt": f"first frame: {variaveis['cena']}", "movimento": "slow blink"}
+        ),
+    )
+
+    def pedir(imagem, prompt, *, segundos, tamanho, seed):
+        animados.append((segundos, tamanho, seed, prompt))
+        return f"video_{len(animados)}"
+
+    monkeypatch.setattr(fontes, "pedir_animacao", pedir)
+    monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "completed"})
+    monkeypatch.setattr(fontes, "baixar_animacao", lambda i: _mp4(0.8))  # menos que o pedido
+
+    def animar(n, **k):
+        cenas.pedir_animacao(post, n, **k)
+        post.refresh_from_db()
+        assert cenas.conferir_animacao(post, n) == "pronta"
+        post.refresh_from_db()
+
+    destino = _destino("instagram", voz=f"v-{uuid.uuid4().hex[:8]}")
+    destino.texto_no_video = "legendas"
+    destino.save()
+    roteiro = {
+        "cenas": [
+            {
+                "segundos": 3,
+                "fala": "Oi, tudo bem?",
+                "imagem": "mulher cansada",
+                "movimento": "pisca",
+            },
+            {"segundos": 2, "fala": "", "imagem": "a mesa", "movimento": ""},
+        ]
+    }
+    post = _post(destino, extras={"video_ia": roteiro})
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (300, 400), "red").save(buffer, format="PNG")
+    client.post(
+        acao,
+        {
+            "acao": "cena_enviar_imagem",
+            "n": "1",
+            "imagem": SimpleUploadedFile("q.png", buffer.getvalue(), "image/png"),
+        },
+    )
+    post.refresh_from_db()
+    assert post.cenas_do_video[0]["tem_quadro"] and post.cenas_do_video[0]["quadro_de"] == "enviado"
+
+    animar(1)
+    primeira_seed = post.extras["video_ia"]["cenas"][0]["seed"]
+    # 3 s de cena: 2 trechos (2,2 s esticados ate 25% e o fim parado), nao 3
+    assert animados[0][:2] == (3, cenas.TAMANHO_DA_ANIMACAO) and animados[0][3] == "slow blink"
+    animar(1)  # de novo, sem pedir variacao: a mesma seed
+    animar(1, nova_seed=True)
+    assert animados[1][2] == primeira_seed and animados[2][2] != primeira_seed
+
+    # a cena 2 so tem a imagem: entra parada, aproximando devagar
+    monkeypatch.setattr(fontes, "gerar_quadro", lambda *a, **k: (buffer.getvalue(), ""))
+    cenas.gerar_quadro(post, 2)
+    post.refresh_from_db()
+    caminho = cenas.montar(post)
+    post.refresh_from_db()
+    assert post.extras["formato"] == "video" and post.extras["video_de"] == "cenas"
+    assert post.imagens[0]["tipo"] == "video"
+    copia = tmp_path / "v.mp4"
+    with default_storage.open(caminho, "rb") as arquivo:
+        copia.write_bytes(arquivo.read())
+    # cena 1: a fala (1 s) + respiro, ou os 3 s do roteiro; cena 2: 2 s; menos a fusao
+    assert 4.2 < video._duracao(shutil.which("ffprobe"), copia) < 5.2
+    assert falas == ["Oi, tudo bem?"]
+
+    client.post(acao, {"acao": "cena_salvar", "n": "1", "fala": "Mudou a fala.", "imagem": "outra"})
+    post.refresh_from_db()
+    tela = post.cenas_do_video[0]
+    assert tela["fala"] == "Mudou a fala." and tela["tem_clipe"]  # a animacao fica
+    cenas.montar(post)
+    assert falas == ["Oi, tudo bem?", "Mudou a fala."]  # so a fala nova e paga
+
+    pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
+    assert "Refazer a animacao" in pagina and "Montar o video" in pagina
+    clipe = client.get(reverse("social:midia_da_cena", args=[post.pk, 1, "clipe"], urlconf=U))
+    assert clipe.status_code == 200
+
+
+@pytest.mark.django_db
+def test_lugar_real_na_janela_e_worker_sem_a_rota(
+    ambiente, modulo, settings, tmp_path, monkeypatch
+):
+    """O lugar real vai na janela (base + mascara); o personagem citado vai como
+    referencia. Worker sem /images/edits: a cena sai so pelo texto, com aviso."""
+    import io
+    import json
+
+    from django.core.files.base import ContentFile
+    from PIL import Image
+
+    from apps.inference.providers.base import RotaInexistente
+    from apps.social import cenas
+    from apps.social.models import ElementoVisual
+
+    settings.MEDIA_ROOT = tmp_path
+
+    def png(cor, tamanho=(200, 120)):
+        buffer = io.BytesIO()
+        Image.new("RGB", tamanho, cor).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    destino = _destino("instagram")
+    museu = ElementoVisual(destino=destino, nome="Museu do Olho", tipo="lugar", descricao="museu")
+    museu.imagem.save("museu.png", ContentFile(png("blue")), save=True)
+    carlos = ElementoVisual(destino=destino, nome="Carlos", tipo="personagem", descricao="55 anos")
+    carlos.imagem.save("carlos.png", ContentFile(png("green")), save=True)
+    roteiro = {
+        "cenas": [
+            {"imagem": "Carlos cansado na mesa; janela a direita com o Museu do Olho"},
+            {"imagem": "Museu do Olho de fundo ao entardecer"},
+        ]
+    }
+    post = _post(destino, extras={"video_ia": roteiro})
+    monkeypatch.setattr(
+        fontes,
+        "executar",
+        lambda chave, variaveis, **k: json.dumps({"prompt": "frame", "movimento": "blink"}),
+    )
+    pedidos = []
+
+    def editar(prompt, *, tamanho, base=None, mascara=None, referencias=()):
+        pedidos.append((base, mascara, referencias))
+        raise RotaInexistente("sem rota")
+
+    monkeypatch.setattr("apps.content.capas.editar_imagem", editar)
+    monkeypatch.setattr(fontes, "gerar_imagem", lambda prompt, tamanho="": png("white", (72, 128)))
+    cenas.gerar_quadro(post, 1)
+    base, mascara, referencias = pedidos[0]
+    assert len(referencias) == 1  # o Carlos (o lugar nao e referencia)
+    largura, _altura = cenas.QUADRO
+    janela = Image.open(io.BytesIO(mascara))
+    assert janela.getpixel((largura - 60, 120))[3] == 255  # a foto fica (a direita, no alto)
+    assert janela.getpixel((60, 1200))[3] == 0  # o resto e pintado
+    assert Image.open(io.BytesIO(base)).getpixel((largura - 60, 120))[:3] == (0, 0, 255)
+    post.refresh_from_db()
+    assert "ainda nao aceita referencia" in post.extras["video_ia"]["cenas"][0]["aviso"]
+
+    cenas.gerar_quadro(post, 2)  # lugar de fundo, sem personagem: a propria foto
+    post.refresh_from_db()
+    assert post.extras["video_ia"]["cenas"][1]["quadro_de"] == "lugar" and len(pedidos) == 1
+    assert "Museu do Olho" in cenas.pedido_das_imagens(post)
 
 
 @pytest.mark.django_db
@@ -252,3 +371,76 @@ def test_conta_com_ia_grande_manda_o_post_para_ela(ambiente, modulo, monkeypatch
     outra_ia_por_api.responder(registro)
     post.refresh_from_db()
     assert post.situacao == Post.Situacao.FALHOU and "IA grande" in post.erro
+
+
+def test_segundos_pedidos_sao_o_minimo_em_trechos_inteiros():
+    """O worker arredonda os trechos (~1,1 s) para baixo: pede-se em multiplos
+    deles, o menor clipe que esticado ate 25% (e meio segundo parado) cobre a cena."""
+    from apps.social import cenas
+
+    # 3 s de cena: 2 trechos (2,2 s, esticados ate 2,75 s, + 0,5 s parado), nao 3
+    assert cenas.segundos_pedidos({"segundos": 3}) == 3
+    assert cenas.segundos_pedidos({"segundos": 2}) == 3  # 1 trecho nao chega a 2 s
+    assert cenas.segundos_pedidos({"segundos": 4}) == 4  # 3 trechos
+    fala = {"fala": " ".join(["palavra"] * 13)}  # ~5,3 s de fala: 4 trechos
+    assert cenas.segundos_pedidos(fala) == 5
+
+
+@pytest.mark.django_db
+def test_worker_desligado_ou_reiniciado_no_meio_so_atrasa_a_cena(
+    ambiente, modulo, settings, tmp_path, monkeypatch
+):
+    """Animacao pedida e o worker cai: a cena espera (as prontas ficam). Ele
+    volta sem lembrar do trabalho: a cena e pedida de novo, com a mesma seed."""
+    import json
+
+    from django.core.files.base import ContentFile
+
+    from apps.inference.providers.base import ProviderTransientError
+    from apps.social import cenas
+
+    settings.MEDIA_ROOT = tmp_path
+    monkeypatch.setattr(
+        fontes,
+        "executar",
+        lambda chave, variaveis, **k: json.dumps({"prompt": "frame", "movimento": "blink"}),
+    )
+    pedidos = []
+    monkeypatch.setattr(
+        fontes, "pedir_animacao", lambda *a, seed, **k: pedidos.append(seed) or "video_x"
+    )
+    post = _post(
+        _destino("instagram"),
+        extras={"video_ia": {"cenas": [{"imagem": "a", "clipe": ""}, {"imagem": "b"}]}},
+    )
+    lista = cenas.cenas(post)
+    for n, cena in enumerate(lista, start=1):
+        cena["quadro"] = default_storage.save(f"social/{post.pk}/q{n}.png", ContentFile(b"PNG"))
+    lista[0]["clipe"] = default_storage.save(f"social/{post.pk}/c1.mp4", ContentFile(b"MP4"))
+    cenas._gravar(post, lista)
+
+    cenas.pedir_animacao(post, 2)
+    post.refresh_from_db()
+
+    def fora(identificador):
+        raise ProviderTransientError("conexao recusada")
+
+    monkeypatch.setattr(fontes, "situacao_da_animacao", fora)
+    assert cenas.conferir_animacao(post, 2) == "esperando"
+    monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "in_progress"})
+    assert cenas.conferir_animacao(post, 2) == "esperando"
+    monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "sumiu"})
+    assert cenas.conferir_animacao(post, 2) == "perdida"
+    post.refresh_from_db()
+    assert cenas.faltam(post) == [2]  # a cena 1 continua pronta
+    cenas.pedir_animacao(post, 2)
+    assert pedidos[0] == pedidos[1]  # a mesma variacao
+
+    post.refresh_from_db()
+    monkeypatch.setattr(
+        fontes,
+        "situacao_da_animacao",
+        lambda i: {"status": "failed", "error": {"message": "sem_vram"}},
+    )
+    with pytest.raises(video.VideoIndisponivel, match="sem_vram"):
+        cenas.conferir_animacao(post, 2)

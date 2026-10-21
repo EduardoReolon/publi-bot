@@ -1,14 +1,14 @@
 """Tarefas avulsas (fora do orquestrador) na tela de Operacao.
 
 O orquestrador cuida dos trabalhos de varios passos (artigo, capa, PDF). As
-tarefas das redes — escrever o post, gerar imagens, montar o video, animar,
+tarefas das redes — escrever o post, gerar imagens, animar as cenas, montar o video,
 perguntar a outra IA — sao tarefas Celery simples, e ate aqui nao apareciam em
 lugar nenhum: a pessoa clicava e nao sabia se estava na fila, rodando ou
 esperando a placa.
 
 Agora cada uma vira um `GenerationJob` do tipo TAREFA, desde o clique:
 
-    na_fila(gerar_video, post_id, rotulo="Video do post", alvo=post.pk)
+    na_fila(gerar_cenas, post_id, rotulo="Cenas do video", alvo=post.pk)
 
 cria o registro (Aguardando) e despacha a tarefa com `trabalho=<id>`; dentro
 dela, `acompanhar(trabalho)` marca Executando, Aguardando capacidade (quando a

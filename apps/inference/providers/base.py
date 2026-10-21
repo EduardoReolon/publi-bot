@@ -45,6 +45,11 @@ class ProviderPermanentError(ProviderError):
         self.code = code
 
 
+class RotaInexistente(ProviderPermanentError):
+    """O servidor nao tem a rota (404/405): um worker de versao anterior. Quem
+    chama decide se cai para o caminho antigo."""
+
+
 @dataclass
 class LLMResponse:
     text: str

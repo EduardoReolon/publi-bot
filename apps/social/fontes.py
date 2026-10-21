@@ -387,13 +387,9 @@ def animacao_e_da_sora() -> bool:
     return bool(conexao and "sora" in (conexao.default_model or "").lower())
 
 
-def animar(imagem: bytes, prompt: str, *, segundos: int = 3, tamanho: str = "720x1280") -> bytes:
-    """O clipe (MP4) da imagem animada, pela conexao de animacao (o worker ou a
-    Sora). Leva minutos: chamar de tarefa, nunca da tela."""
-    from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
+def _animacao():
     from apps.inference.models import InferenceConnection
-    from apps.inference.providers.animacao import get_animation_provider
-    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+    from apps.inference.providers.base import ProviderPermanentError
 
     conexao = _conexao_externa(InferenceConnection.Workload.ANIMACAO)
     if conexao is None:
@@ -401,20 +397,51 @@ def animar(imagem: bytes, prompt: str, *, segundos: int = 3, tamanho: str = "720
             "nenhuma animacao cadastrada (manage.py configurar_api worker_animacao, ou "
             "openai_video --chave ...)."
         )
+    return conexao
+
+
+def pedir_animacao(
+    imagem: bytes, prompt: str, *, segundos: int, tamanho: str, seed: int | None = None
+) -> str:
+    """Pede a animacao da imagem e devolve o id do trabalho, sem esperar: quem
+    pediu volta para conferir (`situacao_da_animacao`). Assim nada fica preso
+    esperando a placa, e desligar o worker no meio perde so este trabalho."""
+    from apps.inference.leases import gerar_owner_key, registrar_falha, reserva
+    from apps.inference.providers.animacao import get_animation_provider
+    from apps.inference.providers.base import ProviderTransientError
+
+    conexao = _animacao()
+    sora = "sora" in (conexao.default_model or "").lower()
     try:
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
-            clipe = get_animation_provider(conexao).animar(
+            return get_animation_provider(conexao).criar(
                 imagem=imagem,
                 prompt=prompt,
                 modelo=conexao.default_model,
                 segundos=segundos,
                 tamanho=tamanho,
+                seed=None if sora else seed,
             )
     except ProviderTransientError:
         raise  # placa ocupada nao e falha da conexao (contrato do worker)
     except Exception:
         registrar_falha(conexao)
         raise
+
+
+def situacao_da_animacao(identificador: str) -> dict:
+    """{"status": queued | in_progress | completed | failed | sumiu, ...}."""
+    from apps.inference.providers.animacao import get_animation_provider
+
+    return get_animation_provider(_animacao()).situacao(identificador)
+
+
+def baixar_animacao(identificador: str) -> bytes:
+    from apps.inference.leases import registrar_sucesso
+    from apps.inference.providers.animacao import get_animation_provider
+
+    conexao = _animacao()
+    clipe = get_animation_provider(conexao).baixar(identificador)
     registrar_sucesso(conexao)
     return clipe
 
@@ -460,6 +487,38 @@ def imagem_indisponivel() -> tuple[type[Exception], ...]:
 def gerar_imagem(prompt: str, *, tamanho: str = "896x1152") -> bytes:
     """Uma imagem do gerador do PubliBot (o mesmo das capas), sem texto."""
     return gerar_imagens(prompt, quantidade=1, tamanho=tamanho)[0]
+
+
+def gerar_quadro(
+    prompt: str,
+    *,
+    tamanho: str,
+    referencias: list[bytes] | tuple = (),
+    base: bytes | None = None,
+    mascara: bytes | None = None,
+) -> tuple[bytes, str]:
+    """(imagem, aviso) da imagem inicial de uma cena: com as referencias dos
+    personagens e a foto real mantida pela mascara, quando o gerador tem a rota
+    de edicao; sem ela (worker de versao anterior), so pelo texto, e o aviso
+    diz o que ficou de fora."""
+    from apps.content.capas import editar_imagem
+    from apps.inference.providers.base import RotaInexistente
+
+    if referencias or base is not None:
+        try:
+            return (
+                editar_imagem(
+                    prompt, tamanho=tamanho, base=base, mascara=mascara, referencias=referencias
+                ),
+                "",
+            )
+        except RotaInexistente:
+            aviso = (
+                "o gerador de imagem ainda nao aceita referencia nem foto na cena (worker "
+                "sem /images/edits): a imagem saiu so pela descricao"
+            )
+            return gerar_imagem(prompt, tamanho=tamanho), aviso
+    return gerar_imagem(prompt, tamanho=tamanho), ""
 
 
 def gerar_imagens(prompt: str, *, quantidade: int, tamanho: str = "896x1152") -> list[bytes]:

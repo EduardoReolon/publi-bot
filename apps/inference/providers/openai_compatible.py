@@ -303,6 +303,72 @@ class OpenAICompatibleImageClient(ImageClient):
             )
         return geradas
 
+    def editar(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        tamanho: str,
+        base: bytes | None = None,
+        mascara: bytes | None = None,
+        referencias: list[bytes] | tuple = (),
+        forca_da_referencia: float = 0.6,
+        negativo: str = "",
+    ) -> ImagemGerada:
+        """Uma imagem por `POST /v1/images/edits` (docs/WORKER_IMAGEM_E_CENAS.md):
+        `base` + `mascara` (pintar so a parte transparente da mascara, mantendo o
+        resto: a foto real na janela) e/ou `referencias` (os personagens, para
+        sair parecido). Sem a rota no servidor: `RotaInexistente`."""
+        import base64
+
+        from apps.inference.providers.base import RotaInexistente
+
+        dados = {
+            "model": model,
+            "prompt": prompt,
+            "n": "1",
+            "size": tamanho,
+            "response_format": "b64_json",
+        }
+        if referencias:
+            dados["reference_strength"] = f"{forca_da_referencia:.2f}"
+        if negativo:
+            dados["negative_prompt"] = negativo
+        arquivos = []
+        if base is not None:
+            arquivos.append(("image", ("base.png", base, "image/png")))
+        if mascara is not None:
+            arquivos.append(("mask", ("mascara.png", mascara, "image/png")))
+        for i, referencia in enumerate(referencias):
+            arquivos.append(("reference_image", (f"ref-{i}.png", referencia, "image/png")))
+        cabecalhos = {k: v for k, v in self._headers().items() if k != "Content-Type"}
+        try:
+            with httpx.Client(timeout=self.timeout, verify=True) as cliente:
+                resposta = cliente.post(
+                    f"{raiz_da_api(self.base_url)}/images/edits",
+                    data=dados,
+                    files=arquivos,
+                    headers=cabecalhos,
+                )
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+            raise ProviderTransientError(
+                f"nao foi possivel conectar a {self.base_url}: {exc}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderPermanentError(
+                f"a conexao com {self.base_url} caiu no meio da edicao: {exc}"
+            ) from exc
+        if resposta.status_code in (404, 405):
+            raise RotaInexistente(
+                f"{self.base_url} nao tem /images/edits (worker sem imagem com referencia)."
+            )
+        self._levantar_se_erro(resposta)
+        try:
+            item = (resposta.json().get("data") or [{}])[0]
+            return ImagemGerada(conteudo=base64.b64decode(item["b64_json"]))
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ProviderPermanentError(f"{self.base_url} nao devolveu a imagem editada.") from exc
+
     @staticmethod
     def _levantar_se_erro(resposta: httpx.Response) -> None:
         # 500 COM `error.code` e o worker dizendo que quebrou (hoje,
