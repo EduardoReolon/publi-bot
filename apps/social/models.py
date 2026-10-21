@@ -160,16 +160,41 @@ class Destino(models.Model):
     cores = models.JSONField(_("cores das laminas"), default=dict, blank=True)
     chamada_final = models.CharField(_("ultima lamina / chamada"), max_length=160, blank=True)
 
-    # Video (Reels/Shorts): a IA sugere carrossel ou video por post; aqui se
-    # decide o que fazer com a sugestao, e com que voz narrar.
+    # Video por IA (Reels): a IA sugere carrossel ou video por post e, quando
+    # sugere video, escreve o roteiro (apps/social/video_ia.py). O video e feito
+    # numa IA de video (fora, ou aqui pelo botao): nunca sai sozinho.
     class Video(models.TextChoices):
-        SUGERIR = "sugerir", _("A IA sugere; eu gero o video quando quiser")
-        AUTOMATICO = "automatico", _("Gerar o video sozinho quando a IA sugerir")
-        SEMPRE = "sempre", _("Sempre video (todo post com laminas vira video)")
+        SUGERIR = "sugerir", _("A IA sugere video quando vale, com o roteiro")
+        # Valor antigo (o video narrado saia sozinho): vale como "sugerir".
+        AUTOMATICO = "automatico", _("A IA sugere video quando vale, com o roteiro")
+        SEMPRE = "sempre", _("Todo post com laminas vem tambem com o roteiro de video")
         NUNCA = "nunca", _("So carrossel (sem video)")
 
     video = models.CharField(
         _("video"), max_length=12, choices=Video.choices, default=Video.SUGERIR
+    )
+
+    class TextoNoVideo(models.TextChoices):
+        NENHUM = "", _("Sem texto no video")
+        LEGENDAS = "legendas", _("Legendas da fala")
+        FRASES = "frases", _("Frases curtas na tela, nos momentos do roteiro")
+
+    texto_no_video = models.CharField(
+        _("texto no video"),
+        max_length=10,
+        choices=TextoNoVideo.choices,
+        default=TextoNoVideo.NENHUM,
+        blank=True,
+        help_text=_("O que o pedido do video diz sobre letras na tela."),
+    )
+    chamada_do_video = models.CharField(
+        _("como o video termina (chamada)"),
+        max_length=200,
+        blank=True,
+        help_text=_(
+            "O padrao do fim do video. Ex.: 'convida a comentar a duvida' ou 'Agende pelo "
+            "link da bio'. Vazio: a chamada da ultima lamina."
+        ),
     )
 
     class Local(models.TextChoices):
@@ -618,6 +643,30 @@ class Post(models.Model):
         from apps.social import identidade
 
         return identidade.pedido_de_animacao(self)
+
+    @property
+    def pedido_de_foto(self) -> str:
+        from apps.social import identidade
+
+        return identidade.pedido_de_foto(self)
+
+    @property
+    def opcoes_da_foto(self) -> list[int]:
+        from apps.social import identidade
+
+        return [str(i) for i in range(len(identidade.opcoes_da_lamina(self, identidade.FOTO)))]
+
+    @property
+    def pedido_de_video(self) -> str:
+        from apps.social import video_ia
+
+        return video_ia.pedido(self)
+
+    @property
+    def roteiro_do_video_ia(self) -> str:
+        from apps.social import video_ia
+
+        return video_ia.roteiro_em_texto(video_ia.roteiro(self))
 
     @property
     def roteiro_do_video(self) -> str:

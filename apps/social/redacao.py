@@ -52,6 +52,25 @@ ESQUEMA = {
                 "opcoes": {"type": "array", "items": {"type": "string"}},
             },
         },
+        "video": {
+            "type": "object",
+            "properties": {
+                "gancho": {"type": "string"},
+                "cenas": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "mostra": {"type": "string"},
+                            "fala": {"type": "string"},
+                            "texto": {"type": "string"},
+                            "segundos": {"type": "number"},
+                        },
+                    },
+                },
+                "chamada": {"type": "string"},
+            },
+        },
         "laminas": {
             "type": "array",
             "items": {
@@ -258,6 +277,11 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     if f.max_laminas and formato in ("carrossel", "video"):
         extras["formato_sugerido"] = formato
         extras["por_que_formato"] = str(dados.get("por_que_formato") or "").strip()[:300]
+    from apps.social import video_ia
+
+    roteiro = video_ia.ler_roteiro(dados.get("video"))
+    if f.max_laminas and roteiro and post.destino.video != post.destino.Video.NUNCA:
+        extras["video_ia"] = roteiro
     from apps.social.identidade import estilos_da_conta
 
     estilo = pedidos.get("estilo_pedido") or str(dados.get("estilo") or "").strip().lower()
@@ -454,11 +478,11 @@ def instrucoes(post: Post, artigo, mat: dict | None = None) -> str:
         + "\nHashtags com cada palavra iniciando em maiuscula (#SaudeMental, nao "
         "#saudemental): o leitor de tela le palavra por palavra.\n" + base
     )
-    from apps.social import video
+    from apps.social import video_ia
 
     return (
         clareza.instrucao(post, laminas=com_laminas(post))
-        + (video.instrucao(post) if com_laminas(post) else "")
+        + (video_ia.instrucao(post) if com_laminas(post) else "")
         + persuasao.instrucao(post, mat)
         + base
     )
@@ -484,10 +508,9 @@ def montar_e_conferir(post: Post, dados: dict, artigo) -> tuple[str, dict, list[
             f"pode identificar alguem: {a}"
             for a in proprio.identificacao(" ".join([texto, *_textos_das_laminas(extras)]))
         ]
-    from apps.social import video
-
     avisos += clareza.avisos(extras, artigo.texto, laminas=com_laminas(post))
-    avisos += video.avisos(extras)
+    if extras.get("formato_sugerido") == "video" and not extras.get("video_ia"):
+        avisos.append("a IA sugeriu video mas nao mandou o roteiro (copie o pedido do video)")
     return texto, extras, avisos
 
 
@@ -524,15 +547,9 @@ def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat
             logger.exception("Imagens do post %s nao montadas.", post.pk)
             post.avisos = [*post.avisos, f"imagens nao montadas: {exc}"]
             post.save(update_fields=["avisos", "atualizado_em"])
-    from apps.social import video
-
     destino = post.destino
-    if texto and video.sai_sozinho(post) and fontes.tem_voz():
-        # O video sai em segundo plano; a aprovacao automatica vem depois dele.
-        from apps.social.tasks import gerar_video
-
-        fontes.na_fila(gerar_video, str(post.pk), rotulo="Video do post", alvo=post.pk)
-        return post
+    # O video por IA nunca sai sozinho (video_ia.py): o post segue como carrossel
+    # ate o video chegar, pela pessoa.
     if texto and not avisos and destino.aprovacao == destino.Aprovacao.AUTOMATICO:
         from apps.social.publicacao import aprovar
 

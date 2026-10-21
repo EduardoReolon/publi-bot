@@ -283,7 +283,8 @@ def test_clipe_enviado_animado_e_tirado(ambiente, modulo, settings, tmp_path, mo
         copia.write_bytes(arquivo.read())
     assert video._duracao(shutil.which("ffprobe"), copia) > 2
     pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
-    assert "Trocar o clipe" in pagina and "Copiar o pedido de animacao" in pagina
+    # O video narrado (e o clipe de cada lamina) saiu da tela; o codigo continua.
+    assert "Trocar o clipe" not in pagina and "Copiar o pedido do video" in pagina
 
     client.post(acao, {"acao": "tirar_clipe", "n": "2"})
     post.refresh_from_db()
@@ -348,4 +349,4 @@ def test_quadros_viram_o_clipe_da_lamina(ambiente, modulo, settings, tmp_path):
     assert "3 QUADROS da mesma cena" in texto
     assert "Lamina 1: o macaco Gugu bocejando na cama. O gesto: Gugu boceja" in texto
     pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
-    assert "Montar com quadros" in pagina and "Copiar o pedido de quadros" in pagina
+    assert "Montar com quadros" not in pagina  # fora da tela, junto com o video narrado

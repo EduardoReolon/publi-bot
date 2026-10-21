@@ -18,6 +18,36 @@
   </p>
 
   <section class="secao">
+    <h3>{% translate "Montar com outra IA" %}</h3>
+    <p class="ajuda">{% blocktranslate trimmed %}
+      Diga a ideia em poucas palavras (ex.: "mascote gorila de terno, tons de azul, leve e bem-humorado").
+      O pedido leva o que o PubliBot ja sabe do negocio e da conta; cole no Claude, ChatGPT ou Gemini,
+      traga a resposta, confira a previa e aplique. O que nao vier na resposta fica como esta.
+    {% endblocktranslate %}</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="acao" value="pedido_ia">
+      <input type="text" name="ideia" value="{{ com_ia.ideia }}" maxlength="1000" style="width:100%" placeholder="{% translate 'a ideia em poucas palavras (opcional)' %}">
+      <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Preparar o pedido" %}</button></div>
+    </form>
+    {% if com_ia.pedido %}
+      <div class="acoes"><button type="button" class="botao pequeno" data-copiar="pedido-identidade">{% translate "Copiar o pedido" %}</button></div>
+      <textarea id="pedido-identidade" readonly rows="8" style="width:100%">{{ com_ia.pedido }}</textarea>
+    {% endif %}
+    <form method="post" style="margin-top:.5rem">{% csrf_token %}
+      <label>{% translate "A resposta da outra IA" %}
+        <textarea name="resposta" rows="{% if com_ia.resposta %}6{% else %}3{% endif %}" style="width:100%">{{ com_ia.resposta }}</textarea></label>
+      <div class="acoes">
+        <button type="submit" name="acao" value="ler_ia" class="botao secundario pequeno">{% translate "Ver a previa" %}</button>
+        {% if com_ia.previa %}<button type="submit" name="acao" value="aplicar_ia" class="botao pequeno">{% translate "Aplicar" %}</button>{% endif %}
+      </div>
+    </form>
+    {% if com_ia.previa %}
+      <table class="tabela"><thead><tr><th>{% translate "Campo" %}</th><th>{% translate "Como esta" %}</th><th>{% translate "Como fica" %}</th></tr></thead>
+        <tbody>{% for rotulo, antes, depois in com_ia.previa %}<tr><td>{{ rotulo }}</td><td class="ajuda">{{ antes }}</td><td>{{ depois }}</td></tr>{% endfor %}</tbody></table>
+      {% if com_ia.comentarios %}<p class="ajuda">{% translate "Comentarios da IA" %}: {{ com_ia.comentarios }}</p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section class="secao">
     <h3>{% translate "Cores, estilos, orientacoes e video" %}</h3>
     <p class="ajuda">{% blocktranslate trimmed %}
       A IA escolhe, post a post, o estilo (entre os marcados) e se vale carrossel ou video — e diz por

@@ -1,0 +1,30 @@
+{% load i18n %}
+{% comment %}A foto do post nas redes sem laminas (LinkedIn, Google): pela IA de fora ou pelo gerador daqui, no estilo da conta (identidade.pedido_de_foto, a "lamina 0").{% endcomment %}
+<details style="margin:.3rem 0">
+  <summary class="ajuda">{% translate "Foto por IA" %}</summary>
+  <p class="ajuda">{% blocktranslate trimmed %}
+    Copie o pedido e cole numa IA de imagem (ChatGPT, Gemini, Ideogram, Midjourney...): ele leva a
+    identidade visual da conta e o formato desta rede. Envie a imagem escolhida em "Trocar a foto", acima.
+    Ou gere 3 opcoes aqui e escolha uma.
+  {% endblocktranslate %}</p>
+  <div class="acoes">
+    <button type="button" class="botao pequeno" data-copiar="pedido-foto-{{ post.pk }}">{% translate "Copiar o pedido da foto" %}</button>
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="display:inline">{% csrf_token %}
+      <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}"><input type="hidden" name="n" value="0">
+      <button type="submit" name="acao" value="opcoes_de_imagem" class="botao discreto pequeno">{% translate "Gerar 3 opcoes aqui" %}</button>
+    </form>
+  </div>
+  <textarea id="pedido-foto-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.pedido_de_foto }}</textarea>
+  {% if post.opcoes_da_foto %}
+    <div class="acoes" style="gap:.4rem">
+      {% for i in post.opcoes_da_foto %}
+        <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="display:inline-flex; flex-direction:column; align-items:center">
+          {% csrf_token %}<input type="hidden" name="n" value="0"><input type="hidden" name="i" value="{{ i }}">
+          <input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+          <img src="{% url 'social:midia_da_lamina' post.pk 0 'opcao-'|add:i %}" alt="{% translate 'opcao' %} {{ i }}" style="width:140px; border-radius:.3rem; border:1px solid var(--borda)">
+          <button type="submit" name="acao" value="escolher_opcao" class="botao pequeno">{% translate "Usar esta" %}</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+</details>

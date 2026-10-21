@@ -17,7 +17,7 @@ from django.core.files.storage import default_storage
 from django.urls import reverse
 
 from apps.social import criacao, fontes, outra_ia_por_api, video
-from apps.social.models import Isca, Post, RespostaDaOutraIA
+from apps.social.models import Destino, Isca, Post, RespostaDaOutraIA
 from apps.social.tests.test_clareza import RESPOSTA_DO_POST
 from apps.social.tests.test_escrita import ARTIGO, _destino, modulo  # noqa: F401
 
@@ -117,7 +117,7 @@ def test_video_montado_com_a_voz_vira_reels(ambiente, modulo, settings, tmp_path
 
     acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
     pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
-    assert "Video (Reels)" in pagina and "Voltar ao carrossel" in pagina
+    assert "Video por IA (Reels)" in pagina and "Voltar ao carrossel" in pagina
     client.post(acao, {"acao": "falas", "falas": "Ola de novo\nPeca o exame hoje"})
     post.refresh_from_db()
     assert [x["fala"] for x in post.extras["laminas"]] == ["Ola de novo", "Peca o exame hoje"]
@@ -126,25 +126,52 @@ def test_video_montado_com_a_voz_vira_reels(ambiente, modulo, settings, tmp_path
     assert post.extras.get("formato") != "video" and post.imagens[0].get("tipo") != "video"
 
 
+RESPOSTA_COM_ROTEIRO = RESPOSTA_COM_VIDEO.replace(
+    "COMENTARIOS:",
+    "VIDEO:\n"
+    "abertura: despertador toca e a mulher abre os olhos, exausta\n"
+    "- close no rosto cansado | Voce dorme oito horas e acorda assim? | Cansada de novo | 4 s\n"
+    "- medica mostra o exame | O cansaco pode ter causa | | 6\n"
+    "final: Leia o artigo no link da bio\n"
+    "COMENTARIOS:",
+)
+
+
 @pytest.mark.django_db
-def test_conta_automatica_gera_o_video_quando_a_ia_sugere(
+def test_ia_sugere_video_com_roteiro_e_nada_sai_sozinho(
     ambiente, modulo, settings, tmp_path, monkeypatch
 ):
+    """O video por IA tem roteiro proprio (pode contar diferente das laminas) e
+    nunca sai sozinho: nem a conta antiga marcada "automatico" gera o narrado."""
     settings.MEDIA_ROOT = tmp_path
-    from apps.social import tasks
+    from apps.social import tasks, video_ia
 
     pedidos = []
     monkeypatch.setattr(tasks.gerar_video, "delay", lambda pk, **_kw: pedidos.append(pk))
     monkeypatch.setattr(fontes, "tem_voz", lambda: True)
-    post = _post(_destino("instagram", video="automatico"))
-    criacao.aplicar(post, RESPOSTA_COM_VIDEO)
+    destino = _destino("instagram", video="automatico")
+    destino.texto_no_video = "frases"
+    destino.chamada_do_video = "Agende pelo link da bio"
+    destino.save()
+    post = _post(destino)
+    criacao.aplicar(post, RESPOSTA_COM_ROTEIRO)
     post.refresh_from_db()
-    assert pedidos == [str(post.pk)]
+    assert pedidos == []
     assert post.extras["formato_sugerido"] == "video"
+    roteiro = post.extras["video_ia"]
+    assert roteiro["gancho"].startswith("despertador toca")
+    assert [c["segundos"] for c in roteiro["cenas"]] == [4, 6]
+    assert roteiro["cenas"][0]["texto"] == "Cansada de novo"
 
-    manual = _post(_destino("instagram"))  # padrao: so sugere
-    criacao.aplicar(manual, RESPOSTA_COM_VIDEO)
-    assert pedidos == [str(post.pk)]
+    texto = video_ia.pedido(post)
+    assert "9:16" in texto and "2 PRIMEIROS segundos" in texto
+    assert "FRASES CURTAS" in texto and "Leia o artigo no link da bio" in texto
+    assert "0-2 s (GANCHO): despertador toca" in texto
+    assert "'video'" in criacao.pedido(post) and "VIDEO:" in criacao.pedido(post)
+
+    # Sem roteiro (a IA nao sugeriu), o pedido leva o assunto e pede o roteiro.
+    sem = _post(Destino.objects.create(rede="instagram", nome="Outra"))
+    assert "Monte voce o roteiro" in video_ia.pedido(sem)
 
 
 @pytest.mark.django_db
