@@ -244,11 +244,6 @@ class Destino(models.Model):
         ),
     )
     # Identidade visual: o estilo das imagens das laminas (para a IA de imagem).
-    legendas = models.BooleanField(
-        _("legendas no video"),
-        default=True,
-        help_text=_("A fala escrita embaixo da lamina, um trecho por vez (quem ve sem som le)."),
-    )
     # Os estilos que a conta aceita; a IA escolhe, post a post, o que serve
     # melhor ao assunto (e diz por que). Vazio: todos.
     estilos_permitidos = models.JSONField(_("estilos permitidos"), default=list, blank=True)
@@ -633,25 +628,13 @@ class Post(models.Model):
         return identidade.pedido(self)
 
     @property
-    def pedido_de_quadros(self) -> str:
-        from apps.social import identidade
-
-        return identidade.pedido_de_quadros(self)
-
-    @property
-    def pedido_de_animacao(self) -> str:
-        from apps.social import identidade
-
-        return identidade.pedido_de_animacao(self)
-
-    @property
     def pedido_de_foto(self) -> str:
         from apps.social import identidade
 
         return identidade.pedido_de_foto(self)
 
     @property
-    def opcoes_da_foto(self) -> list[int]:
+    def opcoes_da_foto(self) -> list[str]:
         from apps.social import identidade
 
         return [str(i) for i in range(len(identidade.opcoes_da_lamina(self, identidade.FOTO)))]
@@ -669,18 +652,18 @@ class Post(models.Model):
         return video_ia.roteiro_em_texto(video_ia.roteiro(self))
 
     @property
-    def roteiro_do_video(self) -> str:
-        from apps.social import video
+    def cenas_do_video(self) -> list[dict]:
+        """As cenas do video, com o que ja tem (imagem inicial, clipe) e o que
+        mudou desde a ultima geracao (para a tela)."""
+        from apps.social import cenas
 
-        return video.roteiro(self)
+        return cenas.para_a_tela(self)
 
     @property
-    def falas_do_video(self) -> str:
-        """Uma fala por linha, das laminas escritas (sem a chamada final)."""
-        return "\n".join(
-            (x.get("fala") or "").replace("\n", " ")
-            for x in (self.extras or {}).get("laminas") or []
-        )
+    def pedido_das_imagens_iniciais(self) -> str:
+        from apps.social import cenas
+
+        return cenas.pedido_das_imagens(self)
 
     @property
     def no_foco(self) -> dict:
@@ -990,6 +973,9 @@ class ElementoVisual(models.Model):
         PERSONAGEM = "personagem", _("Personagem")
         CENARIO = "cenario", _("Cenario")
         OBJETO = "objeto", _("Objeto")
+        # Uma foto de verdade (um ponto da cidade, a fachada): entra na cena como
+        # esta, na janela ou de fundo, sem ser redesenhada (cenas.py).
+        LUGAR = "lugar", _("Lugar real (foto)")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     destino = models.ForeignKey(Destino, on_delete=models.CASCADE, related_name="elementos")

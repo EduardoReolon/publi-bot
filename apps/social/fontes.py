@@ -387,7 +387,14 @@ def animacao_e_da_sora() -> bool:
     return bool(conexao and "sora" in (conexao.default_model or "").lower())
 
 
-def animar(imagem: bytes, prompt: str, *, segundos: int = 3, tamanho: str = "720x1280") -> bytes:
+def animar(
+    imagem: bytes,
+    prompt: str,
+    *,
+    segundos: int = 3,
+    tamanho: str = "720x1280",
+    seed: int | None = None,
+) -> bytes:
     """O clipe (MP4) da imagem animada, pela conexao de animacao (o worker ou a
     Sora). Leva minutos: chamar de tarefa, nunca da tela."""
     from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
@@ -409,6 +416,7 @@ def animar(imagem: bytes, prompt: str, *, segundos: int = 3, tamanho: str = "720
                 modelo=conexao.default_model,
                 segundos=segundos,
                 tamanho=tamanho,
+                seed=None if "sora" in (conexao.default_model or "").lower() else seed,
             )
     except ProviderTransientError:
         raise  # placa ocupada nao e falha da conexao (contrato do worker)
@@ -460,6 +468,38 @@ def imagem_indisponivel() -> tuple[type[Exception], ...]:
 def gerar_imagem(prompt: str, *, tamanho: str = "896x1152") -> bytes:
     """Uma imagem do gerador do PubliBot (o mesmo das capas), sem texto."""
     return gerar_imagens(prompt, quantidade=1, tamanho=tamanho)[0]
+
+
+def gerar_quadro(
+    prompt: str,
+    *,
+    tamanho: str,
+    referencias: list[bytes] | tuple = (),
+    base: bytes | None = None,
+    mascara: bytes | None = None,
+) -> tuple[bytes, str]:
+    """(imagem, aviso) da imagem inicial de uma cena: com as referencias dos
+    personagens e a foto real mantida pela mascara, quando o gerador tem a rota
+    de edicao; sem ela (worker de versao anterior), so pelo texto, e o aviso
+    diz o que ficou de fora."""
+    from apps.content.capas import editar_imagem
+    from apps.inference.providers.base import RotaInexistente
+
+    if referencias or base is not None:
+        try:
+            return (
+                editar_imagem(
+                    prompt, tamanho=tamanho, base=base, mascara=mascara, referencias=referencias
+                ),
+                "",
+            )
+        except RotaInexistente:
+            aviso = (
+                "o gerador de imagem ainda nao aceita referencia nem foto na cena (worker "
+                "sem /images/edits): a imagem saiu so pela descricao"
+            )
+            return gerar_imagem(prompt, tamanho=tamanho), aviso
+    return gerar_imagem(prompt, tamanho=tamanho), ""
 
 
 def gerar_imagens(prompt: str, *, quantidade: int, tamanho: str = "896x1152") -> list[bytes]:

@@ -16,6 +16,7 @@ urlpatterns = [
         views.midia_da_lamina,
         name="midia_da_lamina",
     ),
+    path("posts/<uuid:pk>/cena/<int:n>/<str:tipo>/", views.midia_da_cena, name="midia_da_cena"),
     path("outra-ia/api/<uuid:pk>/", views.ver_resposta_da_api, name="ver_resposta_da_api"),
     path("diagnostico/", views.diagnostico, name="diagnostico"),
     path("publicos/", views.publicos, name="publicos"),

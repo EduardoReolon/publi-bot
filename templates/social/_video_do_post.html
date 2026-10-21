@@ -1,34 +1,80 @@
 {% load i18n %}
-{% comment %}O video por IA do post (apps/social/video_ia.py): o roteiro, o pedido para uma IA de video, o envio do MP4 e a geracao aqui.{% endcomment %}
-<details style="margin:.3rem 0"{% if post.extras.formato_sugerido == 'video' and post.extras.formato != 'video' %} open{% endif %}>
-  <summary class="ajuda">{% translate "Video por IA (Reels)" %}
+{% comment %}O video do post, por cenas (apps/social/cenas.py): cada cena com a imagem inicial, a animacao do worker e a fala; montar junta tudo com a voz e as legendas. E, a parte, o video feito numa IA de video de fora.{% endcomment %}
+<details style="margin:.3rem 0" id="video-{{ post.pk }}"{% if post.extras.formato_sugerido == 'video' or post.extras.video_ia %} open{% endif %}>
+  <summary class="ajuda">{% translate "Video (Reels)" %}
     {% if post.extras.formato == 'video' %}<span class="selo ok">{% translate "vai como video" %}</span>
     {% elif post.extras.formato_sugerido == 'video' %}<span class="selo alerta">{% translate "a IA sugere video" %}</span>{% endif %}
   </summary>
   {% if post.extras.por_que_formato %}<p class="ajuda">{% translate "Por que" %}: {{ post.extras.por_que_formato }}</p>{% endif %}
-  {% if post.extras.video_ia %}
-    <p class="ajuda" style="margin-bottom:.2rem">{% translate "Roteiro (o video pode contar diferente das laminas):" %}</p>
-    <div class="pre-visualizacao" style="white-space:pre-wrap">{{ post.roteiro_do_video_ia }}</div>
+  {% with cenas=post.cenas_do_video %}
+  {% if cenas %}
+    <p class="ajuda">{% blocktranslate trimmed %}
+      Cada cena: a imagem inicial, a animacao (worker) e a fala, que vira voz e legenda na montagem.
+      Mudou a fala? So monte de novo. Mudou a descricao da imagem? Refaca a imagem (ela anima de novo).
+      Nao gostou do movimento? Refaca a animacao: outra variacao, com a mesma imagem.
+    {% endblocktranslate %}</p>
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
+      {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+      <button type="submit" name="acao" value="cenas_imagens" class="botao discreto pequeno" title="{% translate 'So as imagens iniciais que faltam (minutos): para conferir antes de animar' %}">{% translate "Gerar as imagens iniciais" %}</button>
+      <button type="submit" name="acao" value="cenas_todas" class="botao secundario pequeno" title="{% translate 'As imagens e as animacoes que faltam, uma cena por vez (cada uma leva dezenas de minutos na placa); no fim, monta o video' %}">{% translate "Gerar tudo o que falta" %}</button>
+      <button type="submit" name="acao" value="cenas_montar" class="botao pequeno" title="{% translate 'Junta as cenas com a voz e as legendas. Cena ainda sem animacao entra com a imagem parada, aproximando devagar' %}">{% translate "Montar o video" %}</button>
+    </form>
+    {% for c in cenas %}
+      <div style="border-top:1px solid var(--borda); padding:.4rem 0">
+        <strong>{% translate "Cena" %} {{ c.n }}</strong> <span class="ajuda">~{{ c.duracao }} s</span>
+        {% if c.tem_clipe %}<span class="selo ok">{% translate "animada" %}</span>{% elif c.tem_quadro %}<span class="selo espera">{% translate "so a imagem" %}</span>{% else %}<span class="selo">{% translate "sem imagem" %}</span>{% endif %}
+        {% if c.quadro_de == 'lugar' %}<span class="selo">{% translate "foto do lugar" %}</span>{% elif c.quadro_de == 'enviado' %}<span class="selo">{% translate "imagem enviada" %}</span>{% endif %}
+        {% if c.aviso %}<div class="ajuda">{{ c.aviso }}</div>{% endif %}
+        <div class="acoes" style="gap:.5rem; align-items:flex-start">
+          {% if c.tem_quadro %}<a href="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}" data-ampliar><img src="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}?v={{ post.atualizado_em|date:'U' }}" alt="{% translate 'imagem inicial' %}" style="width:90px; border-radius:.3rem; border:1px solid var(--borda)"></a>{% endif %}
+          {% if c.tem_clipe %}<video src="{% url 'social:midia_da_cena' post.pk c.n 'clipe' %}?v={{ post.atualizado_em|date:'U' }}" controls preload="metadata" style="width:110px; border-radius:.3rem"></video>{% endif %}
+          <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="flex:1; min-width:16rem">
+            {% csrf_token %}<input type="hidden" name="n" value="{{ c.n }}"><input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+            <label class="ajuda">{% translate "Fala (voz em off)" %} <textarea name="fala" rows="2" style="width:100%">{{ c.fala }}</textarea></label>
+            <label class="ajuda">{% translate "Imagem inicial (o primeiro quadro)" %} <textarea name="imagem" rows="2" style="width:100%">{{ c.imagem }}</textarea></label>
+            {% if c.imagem_mudou %}<div class="ajuda"><span class="selo alerta">{% translate "a descricao mudou: refaca a imagem" %}</span></div>{% endif %}
+            <label class="ajuda">{% translate "Movimento (um gesto e a camera)" %} <input type="text" name="movimento" value="{{ c.movimento }}" style="width:100%"></label>
+            {% if c.movimento_mudou %}<div class="ajuda"><span class="selo alerta">{% translate "o movimento mudou: refaca a animacao" %}</span></div>{% endif %}
+            {% if post.destino.texto_no_video == 'frases' %}<label class="ajuda">{% translate "Frase na tela (opcional)" %} <input type="text" name="texto" value="{{ c.texto }}" maxlength="80" style="width:100%"></label>{% else %}<input type="hidden" name="texto" value="{{ c.texto }}">{% endif %}
+            <input type="hidden" name="segundos" value="{{ c.segundos }}">
+            <div class="acoes">
+              <button type="submit" name="acao" value="cena_salvar" class="botao discreto pequeno">{% translate "Salvar" %}</button>
+              {% if not c.tem_clipe %}<button type="submit" name="acao" value="cena_gerar" class="botao secundario pequeno">{% translate "Gerar a cena" %}</button>{% endif %}
+              {% if c.tem_quadro %}
+                <button type="submit" name="acao" value="cena_refazer_imagem" class="botao discreto pequeno">{% translate "Refazer a imagem" %}</button>
+                <button type="submit" name="acao" value="cena_refazer_animacao" class="botao discreto pequeno" title="{% translate 'A mesma imagem, outra variacao do movimento' %}">{% translate "Refazer a animacao" %}</button>
+              {% endif %}
+            </div>
+          </form>
+        </div>
+        <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin:.2rem 0">
+          {% csrf_token %}<input type="hidden" name="n" value="{{ c.n }}"><input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+          <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp" style="width:auto">
+          <button type="submit" name="acao" value="cena_enviar_imagem" class="botao discreto pequeno" title="{% translate 'A imagem inicial feita fora (ou uma foto): a cena anima a partir dela' %}">{% translate "Enviar a imagem inicial" %}</button>
+        </form>
+      </div>
+    {% endfor %}
+    <details class="ajuda" style="margin:.3rem 0"><summary>{% translate "Imagens iniciais numa IA de imagem de fora" %}</summary>
+      <p>{% translate "Anexe as imagens dos personagens e dos lugares, cole o pedido e envie cada imagem na cena dela." %}</p>
+      <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-quadros-{{ post.pk }}">{% translate "Copiar o pedido das imagens iniciais" %}</button></div>
+      <textarea id="pedido-quadros-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_das_imagens_iniciais }}</textarea>
+    </details>
   {% else %}
-    <p class="ajuda">{% translate "A IA nao sugeriu video neste post, mas da para fazer: o pedido abaixo leva o assunto e pede para a IA de video montar o roteiro com as regras da conta." %}</p>
+    <p class="ajuda">{% translate "Este post ainda nao tem roteiro de video. Em 'Escrever com outra IA', converse ate o video ficar bom e cole a ultima resposta (com as CENAS): cada cena aparece aqui para gerar." %}</p>
   {% endif %}
-  <p class="ajuda">{% blocktranslate trimmed %}
-    Cole o pedido numa IA de video (Sora, Veo, Kling, Runway, ou o ChatGPT/Gemini que gera video). Ele leva
-    a identidade visual da conta (estilo, orientacoes, personagens, cores, texto na tela, como termina) e o
-    gancho nos 2 primeiros segundos. Anexe a imagem de referencia dos personagens, se a IA aceitar. Depois
-    envie o video aqui: o post vai como video.
-  {% endblocktranslate %}</p>
-  <div class="acoes"><button type="button" class="botao pequeno" data-copiar="pedido-video-{{ post.pk }}">{% translate "Copiar o pedido do video" %}</button></div>
-  <textarea id="pedido-video-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.pedido_de_video }}</textarea>
-  <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="gap:.4rem; margin-top:.3rem">
-    {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
-    <input type="file" name="video" accept="video/mp4,video/quicktime,video/webm,.m4v" style="width:auto">
-    <button type="submit" name="acao" value="enviar_video_ia" class="botao secundario pequeno">{% translate "Enviar o video" %}</button>
-    <button type="submit" name="acao" value="gerar_video_aqui" class="botao discreto pequeno" title="{% translate 'A imagem do gancho pelo gerador daqui e o movimento pelo worker. Numa placa pequena leva muito tempo por poucos segundos.' %}">{% translate "Gerar aqui (lento)" %}</button>
-    {% if post.extras.video_de == 'ia' %}
-      <button type="submit" name="acao" value="tirar_video_ia" class="botao discreto pequeno">{% translate "Tirar o video (volta ao carrossel)" %}</button>
-    {% elif post.extras.formato == 'video' %}
-      <button type="submit" name="acao" value="voltar_ao_carrossel" class="botao discreto pequeno">{% translate "Voltar ao carrossel" %}</button>
-    {% endif %}
-  </form>
+  {% endwith %}
+  <details class="ajuda" style="margin:.3rem 0"><summary>{% translate "Ou o video inteiro numa IA de video de fora" %}</summary>
+    <p>{% translate "Sora, Veo, Kling, Runway, ou o ChatGPT/Gemini que gera video. O pedido leva a identidade da conta e o roteiro (ou pede que ela o monte). Depois envie o video aqui." %}</p>
+    <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-video-{{ post.pk }}">{% translate "Copiar o pedido do video" %}</button></div>
+    <textarea id="pedido-video-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_de_video }}</textarea>
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="gap:.4rem; margin-top:.3rem">
+      {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+      <input type="file" name="video" accept="video/mp4,video/quicktime,video/webm,.m4v" style="width:auto">
+      <button type="submit" name="acao" value="enviar_video_ia" class="botao discreto pequeno">{% translate "Enviar o video" %}</button>
+    </form>
+  </details>
+  {% if post.extras.formato == 'video' %}
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">{% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#post-{{ post.pk }}">
+      <button type="submit" name="acao" value="voltar_ao_carrossel" class="botao discreto pequeno">{% translate "Tirar o video (volta ao carrossel)" %}</button></form>
+  {% endif %}
 </details>

@@ -428,21 +428,6 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             post.save(update_fields=["extras", "atualizado_em"])
             _refazer_imagens(post)
             messages.success(request, _("Foto trocada e imagens refeitas."))
-    elif acao == "gerar_video":
-        from apps.social.tasks import gerar_video
-
-        if not fontes.tem_voz():
-            messages.error(
-                request,
-                _(
-                    "Nenhuma voz cadastrada. No servidor: manage.py configurar_api elevenlabs "
-                    "(ou openai_voz, google_voz) --chave ... Enquanto isso, use o roteiro para "
-                    "gravar fora."
-                ),
-            )
-        else:
-            fontes.na_fila(gerar_video, str(post.pk), rotulo="Video do post", alvo=post.pk)
-            messages.info(request, _("Gerando o video (narracao e montagem). Recarregue depois."))
     elif acao == "enviar_video_ia":
         from apps.social import video_ia
 
@@ -454,40 +439,18 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             messages.success(request, _("Video recebido: o post vai como video (Reels)."))
         except video_ia.VideoInvalido as exc:
             messages.error(request, str(exc))
-    elif acao == "gerar_video_aqui":
-        from apps.social.tasks import gerar_video_ia
-
-        if not (fontes.tem_animacao() and fontes.ha_modelo_de_imagem()):
-            messages.error(
-                request,
-                _(
-                    "Falta o gerador de imagem ou a conexao de animacao (worker). Use o pedido "
-                    "numa IA de video de fora e envie o video."
-                ),
-            )
-        else:
-            fontes.na_fila(gerar_video_ia, str(post.pk), rotulo="Video por IA", alvo=post.pk)
-            messages.info(request, _("Gerando o video aqui. Pode levar muito tempo."))
+    elif acao.startswith("cena_") or acao.startswith("cenas_"):
+        _acao_nas_cenas(request, post, acao)
     elif acao == "tirar_video_ia":
         from apps.social import video_ia
 
         video_ia.tirar(post)
         messages.success(request, _("Video tirado: o post volta ao carrossel."))
     elif acao == "voltar_ao_carrossel":
-        from apps.social import video
+        from apps.social import video_ia
 
-        video.voltar_ao_carrossel(post)
+        video_ia.tirar(post)
         messages.success(request, _("De volta ao carrossel."))
-    elif acao == "falas":
-        extras = dict(post.extras or {})
-        lista = [dict(x) for x in extras.get("laminas") or []]
-        falas = [linha.strip() for linha in request.POST.get("falas", "").splitlines()]
-        for lamina, fala in zip(lista, falas, strict=False):
-            lamina["fala"] = fala[:400]
-        extras["laminas"] = lista
-        post.extras = extras
-        post.save(update_fields=["extras", "atualizado_em"])
-        messages.success(request, _("Falas salvas. Gere o video de novo para usar."))
     elif acao == "gerar_imagens_aqui":
         from apps.social.tasks import gerar_imagens_das_laminas
 
@@ -518,11 +481,6 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         "opcoes_de_imagem",
         "escolher_opcao",
         "preparar_prompts",
-        "animar",
-        "animar_todas",
-        "clipe_da_lamina",
-        "quadros_da_lamina",
-        "tirar_clipe",
     ):
         _acao_na_lamina(request, post, acao)
     elif acao in ("fundo_da_lamina", "tirar_fundo_da_lamina"):
@@ -1306,10 +1264,10 @@ def revisar_resposta_ia(request: HttpRequest) -> HttpResponse:
 
 
 def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
-    """Uma lamina so: refazer a imagem, gerar opcoes e escolher, os prompts para
-    copiar, animar (o worker ou a Sora) e o clipe enviado de fora."""
-    from apps.social import identidade, laminas, video
-    from apps.social.tasks import animar_laminas, gerar_imagens_das_laminas
+    """Uma lamina so (ou a foto, a "lamina 0"): refazer a imagem, gerar opcoes e
+    escolher, e os prompts para copiar."""
+    from apps.social import identidade, laminas
+    from apps.social.tasks import gerar_imagens_das_laminas
 
     try:
         n = int(request.POST.get("n") or 0)
@@ -1348,71 +1306,108 @@ def _acao_na_lamina(request: HttpRequest, post: Post, acao: str) -> None:
             messages.success(request, _("Prompts prontos em cada lamina, para copiar."))
         except fontes.modelo_indisponivel() as exc:
             messages.error(request, _("Modelo indisponivel agora: %(e)s") % {"e": exc})
-    elif acao in ("animar", "animar_todas"):
-        if not fontes.tem_animacao():
-            messages.error(
-                request,
-                _(
-                    "Nenhuma animacao cadastrada (manage.py configurar_api worker_animacao, "
-                    "ou openai_video). Use o pedido de animacao numa IA de video e envie o clipe."
-                ),
-            )
-            return
-        fontes.na_fila(
-            animar_laminas,
-            str(post.pk),
-            apenas=n if acao == "animar" else None,
-            rotulo=f"Animar a lamina {n}" if acao == "animar" else "Animar as laminas",
-            alvo=post.pk,
+
+
+def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
+    """O video por cenas: editar uma cena, gerar a imagem inicial e a animacao
+    (uma cena ou todas), enviar a imagem feita fora e montar."""
+    from apps.social import cenas, video
+    from apps.social.tasks import gerar_cenas, montar_cenas
+
+    try:
+        n = int(request.POST.get("n") or 0)
+    except ValueError:
+        n = 0
+    gera = acao in ("cena_gerar", "cena_refazer_imagem", "cena_refazer_animacao", "cenas_todas")
+    if (gera or acao == "cenas_imagens") and not fontes.ha_modelo_de_imagem():
+        messages.error(
+            request, _("Nao ha gerador de imagem cadastrado (Configuracao > Inferencia).")
         )
-        messages.info(request, _("Animando (leva minutos por lamina). Recarregue depois."))
-    elif acao == "clipe_da_lamina":
-        arquivo = request.FILES.get("clipe")
-        if n < 1 or arquivo is None:
-            messages.error(request, _("Escolha o clipe (MP4, MOV ou WebM)."))
-            return
-        try:
-            video.enviar_clipe(post, n, arquivo)
-            messages.success(
-                request,
-                _("Clipe na lamina %(n)s. Gere o video de novo para usar.") % {"n": n},
+        return
+    if gera and not fontes.tem_animacao():
+        messages.error(
+            request,
+            _(
+                "Nenhuma animacao cadastrada (manage.py configurar_api worker_animacao). Da "
+                "para gerar as imagens iniciais e montar o video com elas paradas."
+            ),
+        )
+        return
+    try:
+        if acao == "cena_salvar":
+            cenas.editar(
+                post,
+                n,
+                **{
+                    c: request.POST.get(c, "")
+                    for c in ("fala", "imagem", "movimento", "texto", "segundos")
+                },
             )
-        except video.VideoIndisponivel as exc:
-            messages.error(request, str(exc))
-    elif acao == "quadros_da_lamina":
-        arquivos = request.FILES.getlist("quadros")
-        if n < 1 or not arquivos:
-            messages.error(request, _("Escolha de 2 a 4 imagens da mesma cena."))
-            return
-        try:
-            video.usar_quadros(post, n, arquivos)
-            messages.success(
-                request,
-                _("Quadros montados na lamina %(n)s. Gere o video de novo para usar.") % {"n": n},
+            messages.success(request, _("Cena %(n)s salva.") % {"n": n})
+        elif acao == "cena_enviar_imagem":
+            arquivo = request.FILES.get("imagem")
+            if arquivo is None:
+                messages.error(request, _("Escolha a imagem."))
+                return
+            cenas.enviar_quadro(post, n, arquivo)
+            messages.success(request, _("Imagem inicial da cena %(n)s trocada.") % {"n": n})
+        elif acao in ("cena_gerar", "cena_refazer_imagem", "cena_refazer_animacao"):
+            fontes.na_fila(
+                gerar_cenas,
+                str(post.pk),
+                n=n,
+                refazer_quadro=acao == "cena_refazer_imagem",
+                nova_seed=acao == "cena_refazer_animacao",
+                rotulo=f"Cena {n} do video",
+                alvo=post.pk,
             )
-        except video.VideoIndisponivel as exc:
-            messages.error(request, str(exc))
-    elif acao == "tirar_clipe":
-        video.tirar_clipe(post, n)
-        messages.success(request, _("Clipe tirado: a lamina volta a imagem parada."))
+            messages.info(
+                request, _("Gerando a cena %(n)s (minutos). Recarregue depois.") % {"n": n}
+            )
+        elif acao in ("cenas_todas", "cenas_imagens"):
+            fontes.na_fila(
+                gerar_cenas,
+                str(post.pk),
+                so_quadros=acao == "cenas_imagens",
+                rotulo="Imagens das cenas" if acao == "cenas_imagens" else "Cenas do video",
+                alvo=post.pk,
+            )
+            messages.info(request, _("Gerando, uma cena por vez. Recarregue depois."))
+        elif acao == "cenas_montar":
+            fontes.na_fila(montar_cenas, str(post.pk), rotulo="Montar o video", alvo=post.pk)
+            messages.info(request, _("Montando o video (voz, legendas, transicoes)."))
+    except video.VideoIndisponivel as exc:
+        messages.error(request, str(exc))
+
+
+@login_required
+def midia_da_cena(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
+    """A imagem inicial ou a animacao de uma cena do video (com login)."""
+    from django.core.files.storage import default_storage
+    from django.http import FileResponse
+
+    from apps.social import cenas
+
+    post = get_object_or_404(Post, pk=pk)
+    lista = cenas.cenas(post)
+    campo = {"quadro": "quadro", "clipe": "clipe"}.get(tipo)
+    caminho = lista[n - 1].get(campo, "") if campo and 1 <= n <= len(lista) else ""
+    if not caminho or not default_storage.exists(caminho):
+        raise Http404
+    return FileResponse(default_storage.open(caminho, "rb"), filename=caminho.rsplit("/", 1)[-1])
 
 
 @login_required
 def midia_da_lamina(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
-    """A imagem de fundo, uma opcao ou o clipe de uma lamina (para ver, baixar
-    e levar a uma IA de video), so para quem esta logado."""
+    """Uma opcao de imagem de uma lamina (ou da foto, a "lamina 0"), so para
+    quem esta logado."""
     from django.core.files.storage import default_storage
     from django.http import FileResponse
 
-    from apps.social import identidade, video
-    from apps.social import laminas as modulo
+    from apps.social import identidade
 
     post = get_object_or_404(Post, pk=pk)
-    if tipo == "fundo":
-        caminho = video.imagem_da_lamina(post, n)
-    elif tipo == "clipe":
-        caminho = modulo.clipes_das_laminas(post).get(n, "")
-    elif tipo.startswith("opcao-") and tipo[6:].isdigit():
+    if tipo.startswith("opcao-") and tipo[6:].isdigit():
         lista = identidade.opcoes_da_lamina(post, n)
         i = int(tipo[6:])
         caminho = lista[i] if i < len(lista) else ""
@@ -1845,8 +1840,17 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
             nome = request.POST.get("nome", "").strip()[:60]
             tipo = request.POST.get("tipo")
             descricao = request.POST.get("descricao", "").strip()
+            sem_foto = (
+                tipo == ElementoVisual.Tipo.LUGAR
+                and not request.FILES.get("imagem")
+                and not ElementoVisual.objects.filter(destino=destino, nome=nome)
+                .exclude(imagem="")
+                .exists()
+            )
             if not nome or not descricao or tipo not in ElementoVisual.Tipo.values:
                 messages.error(request, _("Diga o nome, o tipo e como ele e."))
+            elif sem_foto:
+                messages.error(request, _("Lugar real precisa da foto: envie a imagem."))
             else:
                 elemento, _criado = ElementoVisual.objects.update_or_create(
                     destino=destino,

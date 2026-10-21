@@ -66,12 +66,26 @@ class OpenAIVideoClient:
             raise ProviderTransientError(f"nao foi possivel falar com {url}: {exc}") from exc
         return self._conferir(resposta, caminho)
 
-    def criar(self, *, imagem: bytes, prompt: str, modelo: str, segundos: int, tamanho: str) -> str:
+    def criar(
+        self,
+        *,
+        imagem: bytes,
+        prompt: str,
+        modelo: str,
+        segundos: int,
+        tamanho: str,
+        seed: int | None = None,
+    ) -> str:
+        dados = {"prompt": prompt, "model": modelo, "seconds": str(segundos), "size": tamanho}
+        if seed is not None:
+            # So o worker aceita (a Sora recusa campo que nao conhece): a mesma
+            # imagem, o mesmo movimento e a mesma seed repetem o clipe.
+            dados["seed"] = str(seed)
         resposta = self._chamar(
             "POST",
             "/videos",
-            data={"prompt": prompt, "model": modelo, "seconds": str(segundos), "size": tamanho},
-            files={"input_reference": ("lamina.png", imagem, "image/png")},
+            data=dados,
+            files={"input_reference": ("quadro.png", imagem, "image/png")},
         )
         identificador = resposta.json().get("id")
         if not identificador:
@@ -105,12 +119,18 @@ class OpenAIVideoClient:
         modelo: str,
         segundos: int = 4,
         tamanho: str = "720x1280",
+        seed: int | None = None,
         limite: float = 5400.0,
         dormir=time.sleep,
     ) -> bytes:
         """O MP4 da imagem animada (criar, esperar, baixar)."""
         identificador = self.criar(
-            imagem=imagem, prompt=prompt, modelo=modelo, segundos=segundos, tamanho=tamanho
+            imagem=imagem,
+            prompt=prompt,
+            modelo=modelo,
+            segundos=segundos,
+            tamanho=tamanho,
+            seed=seed,
         )
         self.esperar(identificador, limite=limite, dormir=dormir)
         return self.baixar(identificador)

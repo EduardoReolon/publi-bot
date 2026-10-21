@@ -75,104 +75,78 @@ def gerar_imagens_das_laminas(
         return feitas
 
 
-@shared_task(bind=True, max_retries=6)
-def gerar_video(self, post_id: str, trabalho: str | None = None) -> str:
-    """O video do post (narracao + laminas). Voz ou servidor ocupados: tenta
-    de novo em 10 minutos; erro de verdade vira aviso no post."""
-    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
-    from apps.social import fontes, video
-    from apps.social.models import Post
-
-    with fontes.acompanhar(trabalho) as andamento:
-        post = Post.objects.select_related("destino").filter(pk=post_id).first()
-        if post is None:
-            return "sem post"
-        try:
-            video.montar(post)
-        except ProviderTransientError as exc:
-            raise self.retry(exc=exc, countdown=600) from exc
-        except (video.VideoIndisponivel, ProviderPermanentError) as exc:
-            post.avisos = [*(post.avisos or []), f"video nao gerado: {exc}"]
-            post.save(update_fields=["avisos", "atualizado_em"])
-            andamento.falhou(f"video nao gerado: {exc}")
-            return "erro"
-        destino = post.destino
-        if (
-            post.situacao == Post.Situacao.RASCUNHO
-            and not post.avisos
-            and destino.aprovacao == destino.Aprovacao.AUTOMATICO
-        ):
-            from apps.social.publicacao import aprovar
-
-            aprovar(post, por=None)
-        return "ok"
-
-
 @shared_task(bind=True, max_retries=12)
-def gerar_video_ia(self, post_id: str, trabalho: str | None = None) -> str:
-    """O video por IA pelo gerador daqui (so pelo botao: video_ia.gerar_aqui).
-    Placa ocupada: tenta de novo em 10 minutos; erro de verdade vira aviso."""
-    from apps.inference.providers.base import ProviderPermanentError
-    from apps.social import fontes, video_ia
-    from apps.social.models import Post
-
-    with fontes.acompanhar(trabalho) as andamento:
-        post = Post.objects.select_related("destino").filter(pk=post_id).first()
-        if post is None:
-            return "sem post"
-        try:
-            video_ia.gerar_aqui(post)
-        except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
-            raise self.retry(exc=exc, countdown=600) from exc
-        except (ProviderPermanentError, ValueError) as exc:
-            post.avisos = [*(post.avisos or []), f"video por IA nao gerado: {exc}"]
-            post.save(update_fields=["avisos", "atualizado_em"])
-            andamento.falhou(f"video nao gerado: {exc}")
-            return "erro"
-        return "ok"
-
-
-@shared_task(bind=True, max_retries=12)
-def animar_laminas(
-    self, post_id: str, apenas: int | None = None, trabalho: str | None = None
+def gerar_cenas(
+    self,
+    post_id: str,
+    n: int | None = None,
+    refazer_quadro: bool = False,
+    nova_seed: bool = False,
+    so_quadros: bool = False,
+    trabalho: str | None = None,
 ) -> int:
-    """Anima as laminas que tem imagem e ainda nao tem clipe (ou so a `apenas`).
-    Placa ocupada: tenta de novo em 10 minutos (o que ja saiu fica). No fim,
-    se o post ja e video, monta de novo com os clipes."""
-    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
-    from apps.social import fontes, laminas, video
+    """As cenas do video (cenas.py): a imagem inicial que falta (ou a da cena
+    `n`, refeita) e a animacao. No fim, com tudo animado, monta o video. Placa
+    ocupada: tenta de novo em 10 minutos, e o que ja saiu fica."""
+    from apps.inference.providers.base import ProviderPermanentError
+    from apps.social import cenas, fontes, video
     from apps.social.models import Post
 
     with fontes.acompanhar(trabalho) as andamento:
         post = Post.objects.select_related("destino").filter(pk=post_id).first()
         if post is None:
             return 0
-        total = len(
-            laminas.com_a_chamada(
-                (post.extras or {}).get("laminas") or [],
-                post.destino.chamada_final or laminas.CHAMADA,
-            )
-        )
-        com_clipe = laminas.clipes_das_laminas(post)
-        feitas, falhas = 0, []
-        for n in [apenas] if apenas else range(1, total + 1):
-            if apenas is None and (n in com_clipe or not video.imagem_da_lamina(post, n)):
-                continue
+        feitas = 0
+        alvo = [n] if n else range(1, len(cenas.cenas(post)) + 1)
+        for numero in alvo:
+            post.refresh_from_db()
+            cena = cenas.cenas(post)[numero - 1]
             try:
-                video.animar_lamina(post, n)
-            except ProviderTransientError as exc:
+                novo_quadro = refazer_quadro and n is not None
+                if novo_quadro or not cenas._existe(cena.get("quadro", "")):
+                    cenas.gerar_quadro(post, numero)
+                    feitas += 1
+                if so_quadros:
+                    continue
+                post.refresh_from_db()
+                cena = cenas.cenas(post)[numero - 1]
+                if (nova_seed and n is not None) or not cenas._existe(cena.get("clipe", "")):
+                    cenas.animar(post, numero, nova_seed=nova_seed)
+                    feitas += 1
+            except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
                 raise self.retry(exc=exc, countdown=600) from exc
-            except (video.VideoIndisponivel, ProviderPermanentError) as exc:
-                post.avisos = [*(post.avisos or []), f"lamina {n} nao animada: {exc}"]
+            except (video.VideoIndisponivel, ProviderPermanentError, ValueError) as exc:
+                post.avisos = [*(post.avisos or []), f"cena {numero}: {exc}"]
                 post.save(update_fields=["avisos", "atualizado_em"])
-                falhas.append(f"lamina {n}: {exc}")
-                continue
-            feitas += 1
-        if falhas and not feitas:
-            andamento.falhou("; ".join(falhas))
-        if feitas and (post.extras or {}).get("formato") == "video":
-            fontes.na_fila(gerar_video, str(post.pk), rotulo="Video do post", alvo=post.pk)
+                andamento.falhou(f"cena {numero}: {exc}")
+                return feitas
+        post.refresh_from_db()
+        if not so_quadros and not cenas.faltam(post):
+            fontes.na_fila(montar_cenas, str(post.pk), rotulo="Montar o video", alvo=post.pk)
         return feitas
+
+
+@shared_task(bind=True, max_retries=3)
+def montar_cenas(self, post_id: str, trabalho: str | None = None) -> str:
+    """O video das cenas (voz, legenda, transicoes). Voz ocupada: de novo em 10 min."""
+    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+    from apps.social import cenas, fontes, video
+    from apps.social.models import Post
+
+    with fontes.acompanhar(trabalho) as andamento:
+        post = Post.objects.select_related("destino").filter(pk=post_id).first()
+        if post is None:
+            return "sem post"
+        try:
+            cenas.montar(post)
+        except ProviderTransientError as exc:
+            raise self.retry(exc=exc, countdown=600) from exc
+        except (video.VideoIndisponivel, ProviderPermanentError) as exc:
+            post.avisos = [*(post.avisos or []), f"video nao montado: {exc}"]
+            post.save(update_fields=["avisos", "atualizado_em"])
+            andamento.falhou(f"video nao montado: {exc}")
+            return "erro"
+        return "ok"
 
 
 @shared_task(bind=True, max_retries=3)

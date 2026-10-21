@@ -225,21 +225,25 @@ def elementos(destino) -> list:
 
 
 def ficha(destino) -> str:
-    """Os personagens, cenarios e objetos fixos da conta, um por linha."""
+    """Os personagens, cenarios, objetos e lugares reais da conta, um por linha."""
     return "\n".join(
         f"- {e.nome} ({e.get_tipo_display().lower()}): {e.descricao.strip()}"
         for e in elementos(destino)
     )
 
 
-def expandir(cena: str, lista: list) -> str:
-    """A cena com a descricao inteira de cada elemento fixo chamado pelo nome
-    (para o gerador de imagem, que nao sabe quem e o "Gugu")."""
+def citados(cena: str, lista: list) -> list:
+    """Os elementos fixos chamados pelo nome na cena."""
     from apps.social.iscas import normalizar
 
     alvo = f" {normalizar(cena)} "
-    citados = [e for e in lista if f" {normalizar(e.nome)} " in alvo]
-    return cena + "".join(f"; {e.nome}: {e.descricao.strip()}" for e in citados)
+    return [e for e in lista if f" {normalizar(e.nome)} " in alvo]
+
+
+def expandir(cena: str, lista: list) -> str:
+    """A cena com a descricao inteira de cada elemento fixo chamado pelo nome
+    (para o gerador de imagem, que nao sabe quem e o "Gugu")."""
+    return cena + "".join(f"; {e.nome}: {e.descricao.strip()}" for e in citados(cena, lista))
 
 
 def _laminas(post) -> list[dict]:
@@ -275,7 +279,6 @@ def situacao_das_laminas(post) -> list[dict]:
                 "prompt_imagem": prompts.get("imagem", ""),
                 "prompt_movimento": prompts.get("movimento", ""),
                 "opcoes": len((extras.get("opcoes") or {}).get(str(n)) or []),
-                "clipe": str(n) in (extras.get("clipes") or {}),
             }
         )
     return saida
@@ -378,6 +381,39 @@ PROMPT_DA_CENA = {
 }
 
 
+# O primeiro quadro de uma cena do video (cenas.py): o gerador de imagem faz o
+# quadro e o worker o anima. Diferente da lamina, nao ha texto por cima nem
+# espaco para ele, e o quadro e o COMECO do gesto (o movimento parte dele).
+PROMPT_DO_QUADRO = {
+    "descricao": "Transforma a cena do video no prompt do primeiro quadro e no do movimento.",
+    "variaveis": ["estilo", "cena", "cores", "movimento", "estilo_video"],
+    "temperatura": 0.3,
+    "sistema": (
+        "You write prompts for an image generator and for an image-to-video model that "
+        "animates the image. Given a video scene described in Portuguese and the visual "
+        "style of a brand, write:\n"
+        "- 'prompt': ONE English image prompt, 30 to 60 words, for the FIRST FRAME of the "
+        "scene: vertical 9:16 full frame, who is there, where, the pose and expression at "
+        "the START of the gesture, composition with the main subject large and centered, "
+        "lighting, style and palette. When a fixed character or place is described, repeat "
+        "its full visual description every time, word for word. If the scene has a window "
+        "showing a real place, describe just a plain window (the photo is inserted there).\n"
+        "- 'movimento': ONE English prompt for the animation, 15 to 35 words: the single "
+        "slow gesture of the scene, the camera (static or a slow push-in), no cuts, no new "
+        "characters, the characters keep exactly the same look, mouths closed (the voice "
+        "is a narrator, nobody talks on screen).\n"
+        "Concrete nouns, no abstract ideas. NEVER ask for text, letters, numbers, logos or "
+        "recognizable real people.\n\n"
+        'Answer ONLY with JSON: {"prompt": "...", "movimento": "..."}'
+    ),
+    "usuario": (
+        "Style: {estilo}\nBrand colors: {cores}\nScene (Portuguese): {cena}\n"
+        "Motion wanted (Portuguese): {movimento}\n"
+        "Video guidelines (Portuguese, may be empty): {estilo_video}"
+    ),
+}
+
+
 def _cena(item: dict) -> str:
     sobre = " — ".join(p for p in (item.get("titulo", ""), item.get("texto", "")) if p)
     return item.get("visual") or f"uma cena concreta que mostre: {sobre}"
@@ -411,21 +447,24 @@ def prompts_da_lamina(post, n: int, *, refazer: bool = False) -> dict:
     return prompts_da_cena(post, itens[n - 1], chave=str(n), refazer=refazer)
 
 
-def prompts_da_cena(post, item: dict, *, chave: str, refazer: bool = False) -> dict:
+def prompts_da_cena(
+    post, item: dict, *, chave: str, refazer: bool = False, prompt: str = "social_cena"
+) -> dict:
     """{"imagem", "movimento"} em ingles de uma cena (`item`: visual e
-    movimento) do post: a lamina `chave`, o "video" ou a "foto". Guardados no
-    post; o modelo so e chamado quando a cena, o estilo ou o movimento mudaram."""
+    movimento) do post: a lamina `chave`, a "foto" ou uma cena do video
+    (`prompt` "social_quadro"). Guardados no post; o modelo so e chamado quando
+    a cena, o estilo ou o movimento mudaram."""
     import json
     import re
 
     from apps.social import fontes
 
     pedido = _pedido_da_cena(post, item)
-    assinatura = json.dumps(pedido, sort_keys=True)
+    assinatura = json.dumps({**pedido, "_prompt": prompt}, sort_keys=True)
     guardados = ((post.extras or {}).get("prompts") or {}).get(chave) or {}
     if guardados.get("de") == assinatura and not refazer:
         return guardados
-    bruto = fontes.executar("social_cena", pedido, json_schema=ESQUEMA_DA_CENA)
+    bruto = fontes.executar(prompt, pedido, json_schema=ESQUEMA_DA_CENA)
     dados = json.loads(re.sub(r"^```\w*\n|```$", "", bruto.strip()).strip())
     novos = {
         "imagem": str(dados.get("prompt") or "").strip(),
@@ -593,75 +632,3 @@ def escolher_opcao(post, n: int, i: int) -> bool:
     for caminho in lista:
         default_storage.delete(caminho)
     return True
-
-
-# -- Animacao (o fundo da lamina em movimento, para o video) --------------------------------
-PEDIDO_DE_ANIMACAO = """Anime cada imagem abaixo (uma por lamina, na ordem) para um video curto do
-Instagram (Reels). Eu envio a imagem de cada lamina; voce devolve um clipe de
-cada uma.
-
-Regras para TODOS os clipes:
-- {segundos} segundos, vertical 4:5 ou 9:16, sem cortes, comecando exatamente
-  na imagem enviada.
-- Movimento lento e sutil; camera parada ou aproximando devagar.
-- NAO acrescente texto, letras, legendas ou logotipo: o texto entra depois, por cima.
-- Os personagens continuam IGUAIS a imagem (rosto, roupa, cores) do comeco ao fim.
-{orientacoes}{elementos}
-"""
-
-
-PEDIDO_DE_QUADROS = """\
-Para cada lamina abaixo, gere {quantos} QUADROS da mesma cena, como num gibi
-animado: o comeco, o meio e o fim de um gesto pequeno. Os quadros vao virar um
-video curto trocando um pelo outro, entao:
-
-- MESMO enquadramento, MESMO fundo, MESMA luz e MESMO personagem nos {quantos}
-  (roupa, cores, rosto e proporcoes iguais); muda so a expressao, a posicao das
-  maos ou da cabeca, ou um objeto que aparece.
-- Vertical 4:5. Sem texto, letras, legendas ou logotipo (o texto entra depois).
-- Estilo: {estilo}.
-{elementos}Gere os quadros de uma lamina por vez, na ordem, e me diga de qual lamina
-e cada um.
-"""
-
-
-def pedido_de_quadros(post, quantos: int = 3) -> str:
-    """O texto para a IA de imagem fazer os quadros de cada lamina (o meio-termo
-    entre imagem parada e animacao)."""
-    destino = post.destino
-    texto = PEDIDO_DE_QUADROS.format(
-        quantos=quantos,
-        estilo=descricao_do_estilo(destino, estilo_do_post(post)) or "o mesmo das imagens da conta",
-        elementos=(
-            "- Personagens e cenarios fixos (exatamente assim):\n" + ficha(destino) + "\n"
-            if elementos(destino)
-            else ""
-        ),
-    )
-    for n, item in enumerate(_laminas(post), start=1):
-        movimento = item.get("movimento") or "um gesto pequeno que combine com a lamina"
-        texto += f"\nLamina {n}: {_cena(item)}. O gesto: {movimento}."
-    return texto + "\n"
-
-
-def pedido_de_animacao(post) -> str:
-    """O texto para colar numa IA de video (Sora, Runway, Kling, Veo, Pika...)
-    junto com a imagem de cada lamina."""
-    destino = post.destino
-    orientacoes = descricao_do_estilo(destino, "", para="video")
-    texto = PEDIDO_DE_ANIMACAO.format(
-        segundos=5,
-        orientacoes=f"- Orientacoes da conta: {orientacoes}\n" if orientacoes else "",
-        elementos=(
-            "- Personagens e cenarios fixos (mantenha exatamente assim):\n" + ficha(destino) + "\n"
-            if elementos(destino)
-            else ""
-        ),
-    )
-    for n, item in enumerate(_laminas(post), start=1):
-        guardado = (((post.extras or {}).get("prompts") or {}).get(str(n)) or {}).get("movimento")
-        movimento = item.get("movimento") or guardado or "movimento sutil da cena, camera parada"
-        texto += f"\nLamina {n} (envio a imagem {n}): {movimento}"
-        if guardado and guardado != movimento:
-            texto += f"\n   (em ingles, se preferir: {guardado})"
-    return texto + "\n"

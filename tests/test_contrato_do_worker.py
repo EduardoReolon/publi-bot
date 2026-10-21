@@ -624,3 +624,75 @@ def test_a_animacao_le_o_trabalho_publicado_pelo_worker(monkeypatch):
     clipe = cliente.animar(imagem=b"PNG", prompt="p", modelo="framepack", dormir=lambda s: None)
     assert clipe == b"MP4"
     assert pedidos[-1] == ("GET", f"http://gpu:8090/v1/videos/{exemplo['id']}/content")
+
+
+def test_imagem_com_referencia_e_mascara_vai_no_multipart_do_contrato(monkeypatch):
+    """`/v1/images/edits` (docs/WORKER_IMAGEM_E_CENAS.md): base, mascara e as
+    referencias como arquivos; a resposta e a mesma do /generations. Sem a rota
+    no worker (404), `RotaInexistente`: quem chama cai para o caminho antigo."""
+    import base64
+
+    import httpx
+
+    from apps.inference.providers.base import RotaInexistente
+    from apps.inference.providers.openai_compatible import OpenAICompatibleImageClient
+
+    pedidos = []
+
+    class ClienteFalso:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, **kwargs):
+            pedidos.append((url, kwargs))
+            corpo = {"data": [{"b64_json": base64.b64encode(b"PNG").decode()}]}
+            return httpx.Response(self.status, json=corpo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: ClienteFalso())
+    cliente = OpenAICompatibleImageClient(base_url="http://gpu:8090", api_key="s")
+    imagem = cliente.editar(
+        model="sdxl",
+        prompt="frame",
+        tamanho="720x1280",
+        base=b"BASE",
+        mascara=b"MASCARA",
+        referencias=[b"CARLOS", b"BIA"],
+    )
+    assert imagem.conteudo == b"PNG"
+    url, kwargs = pedidos[0]
+    assert url == "http://gpu:8090/v1/images/edits"
+    assert kwargs["data"]["size"] == "720x1280" and kwargs["data"]["reference_strength"] == "0.60"
+    campos = [nome for nome, _arquivo in kwargs["files"]]
+    assert campos == ["image", "mask", "reference_image", "reference_image"]
+    assert "Content-Type" not in kwargs["headers"]  # o multipart poe o proprio
+
+    ClienteFalso.status = 404
+    with pytest.raises(RotaInexistente):
+        cliente.editar(model="sdxl", prompt="frame", tamanho="720x1280", referencias=[b"X"])
+
+
+def test_a_animacao_manda_a_seed_so_quando_pedida(monkeypatch):
+    import httpx
+
+    from apps.inference.providers.animacao import OpenAIVideoClient
+
+    exemplo = _exemplo("video-resposta.json")
+    enviados = []
+
+    def request(metodo, url, **kwargs):
+        if metodo == "POST":
+            enviados.append(kwargs["data"])
+        return httpx.Response(200, json=exemplo, request=httpx.Request(metodo, url))
+
+    monkeypatch.setattr(httpx, "request", request)
+    cliente = OpenAIVideoClient(base_url="http://gpu:8090", api_key="s")
+    cliente.criar(imagem=b"PNG", prompt="p", modelo="framepack", segundos=3, tamanho="720x1280")
+    cliente.criar(
+        imagem=b"PNG", prompt="p", modelo="framepack", segundos=3, tamanho="720x1280", seed=7
+    )
+    assert "seed" not in enviados[0] and enviados[1]["seed"] == "7"

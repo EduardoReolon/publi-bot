@@ -177,8 +177,10 @@
         <textarea id="pedido-imagens-{{ post.pk }}" readonly rows="6" style="width:100%">{{ post.pedido_de_imagens }}</textarea>
         {% for l in post.laminas_e_fundos %}{% include "social/_lamina_do_post.html" %}{% endfor %}
       </details>
+    {% endif %}
+    {% if post.destino.rede == 'instagram' and not post.entrada_id %}
       {% include "social/_video_do_post.html" %}
-    {% elif post.destino.rede != 'instagram' and not post.entrada_id %}
+    {% elif not post.entrada_id %}
       {% include "social/_foto_por_ia.html" %}
     {% endif %}
   {% endif %}

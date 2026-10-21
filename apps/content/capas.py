@@ -234,10 +234,55 @@ def gerar_imagens(
 ):
     """Chama o gerador de imagem (reserva da placa, disjuntor, registro de uso).
     Usado pela capa do artigo e pelas laminas das redes."""
+    return _no_gerador(
+        lambda cliente, modelo: cliente.generate(
+            model=modelo,
+            prompt=prompt,
+            quantidade=quantidade,
+            tamanho=tamanho or _tamanho(),
+            negativo=", ".join(x for x in (_negativo(), negativo) if x),
+        ),
+        job=job,
+    )
+
+
+def editar_imagem(
+    prompt: str,
+    *,
+    tamanho: str,
+    base: bytes | None = None,
+    mascara: bytes | None = None,
+    referencias: list[bytes] | tuple = (),
+    job=None,
+) -> bytes:
+    """Uma imagem com referencias (personagens) e/ou base + mascara (a foto real
+    mantida no lugar), pelo `/images/edits` do gerador. Sem a rota no gerador:
+    `RotaInexistente` (quem chama cai para `gerar_imagens`)."""
+    geradas = _no_gerador(
+        lambda cliente, modelo: [
+            cliente.editar(
+                model=modelo,
+                prompt=prompt,
+                tamanho=tamanho,
+                base=base,
+                mascara=mascara,
+                referencias=referencias,
+                negativo=_negativo(),
+            )
+        ],
+        job=job,
+    )
+    return geradas[0].conteudo
+
+
+def _no_gerador(chamar, *, job=None):
+    """`chamar(cliente, modelo)` com a placa reservada, o disjuntor e o registro
+    de uso e de falha."""
     from apps.inference.leases import gerar_owner_key, registrar_falha, reserva
     from apps.inference.providers.base import (
         ProviderPermanentError,
         ProviderTransientError,
+        RotaInexistente,
         get_image_provider,
     )
 
@@ -249,13 +294,9 @@ def gerar_imagens(
     cliente = get_image_provider(conexao)
     try:
         with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
-            geradas = cliente.generate(
-                model=modelo,
-                prompt=prompt,
-                quantidade=quantidade,
-                tamanho=tamanho or _tamanho(),
-                negativo=", ".join(x for x in (_negativo(), negativo) if x),
-            )
+            geradas = chamar(cliente, modelo)
+    except RotaInexistente:
+        raise  # worker de versao anterior: nao e falha da conexao
     except (ProviderTransientError, ProviderPermanentError) as exc:
         _registrar_falha_de_imagem(conexao, modelo, exc, job=job)
         # Um 503 com `error.code` e o worker respondendo "nao e a hora" — ele

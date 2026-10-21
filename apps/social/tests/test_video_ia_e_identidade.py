@@ -142,12 +142,18 @@ def test_foto_por_ia_no_linkedin(ambiente, modulo, settings, tmp_path, monkeypat
     assert Post.objects.get(pk=post.pk).imagens[0]["caminho"] == post.extras["imagem_propria"]
 
 
-def test_roteiro_lido_com_segundos_soltos():
+def test_roteiro_lido_com_segundos_soltos_e_o_formato_antigo():
     roteiro = video_ia.ler_roteiro(
         {
-            "gancho": "x",
-            "cenas": [{"mostra": "a", "segundos": "4 s"}, {"mostra": ""}, {"mostra": "b"}],
+            "cenas": [
+                {"imagem": "a", "segundos": "4 s", "fala": "Oi  de novo"},
+                {"imagem": ""},
+                {"mostra": "b"},
+            ],
         }
     )
     assert [c["segundos"] for c in roteiro["cenas"]] == [4, 0]
+    assert roteiro["cenas"][0]["fala"] == "Oi de novo" and roteiro["cenas"][1]["imagem"] == "b"
+    antigo = video_ia.ler_roteiro({"gancho": "o despertador", "cenas": [{"mostra": "x"}]})
+    assert [c["imagem"] for c in antigo["cenas"]] == ["o despertador", "x"]
     assert video_ia.ler_roteiro({"cenas": []}) == {}

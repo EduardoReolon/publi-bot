@@ -351,136 +351,50 @@ da conta, a chamada final. Editaveis na revisao ("titulo | texto", uma por linha
     vira um prompt em ingles (`social_cena`) e uma imagem 4:5 sem texto.
     Gerador ocupado: tenta de novo em 10 minutos.
 
-### 5a. Video por IA (Reels) — `video_ia.py`
+### 5a. Video por cenas (Reels) — `video_ia.py`, `cenas.py`, `video.py`
 
-O video do post e um clipe feito por uma IA de video, com **roteiro proprio**
-(pode contar a ideia de um jeito bem diferente das laminas):
+O video e feito aqui, **cena a cena**, com o worker (FramePack): cada cena e
+uma animacao curta (2 a 4 s) a partir de uma **imagem inicial**, com a fala em
+voz off e a legenda por codigo. Cada cena pode ser refeita sozinha.
 
-1. Quem escreve o post sugere o formato (carrossel ou video, e por que) e,
-   quando sugere video (ou a conta quer "todo post com roteiro"), devolve o
-   roteiro em `extras["video_ia"]`: o **gancho** dos 2 primeiros segundos
-   (obrigatorio), as **cenas** (o que se ve, o que se ouve, a frase na tela se a
-   conta usa, segundos) e a **chamada** do fim (padrao em Identidade visual >
-   "como o video termina"; vazio, a chamada da ultima lamina). Na outra IA o
-   bloco e `VIDEO:` com `abertura:`, uma linha por cena e `final:` (nao
-   "gancho"/"chamada", que abririam outros rotulos da resposta).
-2. "Copiar o pedido do video": o texto para Sora, Veo, Kling, Runway ou o
-   ChatGPT/Gemini que gera video, com a identidade inteira (estilo, orientacoes
-   gerais e de video, personagens fixos, cores, regras do negocio, texto no
-   video: nenhum, legendas ou frases). Sem roteiro (a IA nao sugeriu video), o
-   pedido leva o assunto e pede o roteiro com as mesmas regras.
-3. "Enviar o video": o MP4 vira o video do post, que passa a ir como Reels.
-4. "Gerar aqui (lento)": so pelo botao, nunca sozinho — a imagem do gancho pelo
-   gerador daqui e o movimento pelo worker (`tarefa gerar_video_ia`).
+1. **O roteiro.** Quem escreve o post (a nossa IA ou a outra) sugere o formato
+   e, quando e video, devolve as **cenas** (`extras["video_ia"]["cenas"]`):
+   `segundos`, `fala` (voz off, ate ~10 palavras), `imagem` (o primeiro quadro,
+   com personagens e lugares pelo nome), `movimento` (um gesto lento e a camera)
+   e `texto` (a frase na tela, so na conta que usa). A 1a cena e o gancho, a
+   ultima a chamada. As regras sao as mesmas para as duas IAs
+   (`video_ia.regras_das_cenas`). Na outra IA, o bloco e `CENAS:` com uma linha
+   por cena (`segundos | fala | imagem | movimento | frase`).
+2. **A conversa com a outra IA.** O pedido do post ja pede o post PRONTO no
+   formato que ela escolher, oferece mudar e manda reenviar tudo nos blocos a
+   cada resposta: a pessoa conversa la ate ficar bom e cola a ultima.
+3. **A imagem inicial** (`cenas.gerar_quadro`): o prompt `social_quadro` (o
+   primeiro quadro, 9:16, a pose do comeco do gesto) e o gerador daqui, com as
+   imagens dos personagens como referencia e a foto do **lugar real** na janela
+   ou de fundo (Identidade visual > "Lugar real (foto)"). Isso pede a rota
+   `/v1/images/edits` do worker (`docs/WORKER_IMAGEM_E_CENAS.md`); sem ela, a
+   cena sai so pela descricao, com aviso. Lugar "de fundo" sem personagem: a
+   propria foto e o quadro. Ou a imagem feita fora ("Enviar a imagem inicial",
+   com o pedido das imagens iniciais).
+4. **A animacao** (`cenas.animar`): o worker anima o quadro com o movimento,
+   com uma `seed` guardada. "Refazer a animacao" troca a seed (outra variacao,
+   mesma imagem); "Refazer a imagem" gera outro quadro e anima de novo.
+5. **A montagem** (`cenas.montar`, tarefa `montar_cenas`): cada cena no tempo
+   da fala (voz em cache por texto: mudar uma fala so paga ela), o clipe curto
+   desacelerado ate 25% e depois o ultimo quadro parado, o longo cortado; as
+   legendas (conta com "legendas") ou a frase (conta com "frases") por cima; a
+   fusao de 0,3 s entre as cenas. Cena sem animacao entra com a imagem parada,
+   aproximando devagar. Mudar a fala custa so montar de novo.
 
-A foto das redes sem laminas (LinkedIn, Google) tem o mesmo caminho: "Copiar o
-pedido da foto" ou "Gerar 3 opcoes aqui" (a "lamina 0" de `identidade.py`),
-sempre com a identidade da conta e as regras do negocio.
+Tambem: o video inteiro numa IA de video de fora (pedido + "Enviar o video").
+
+A foto das redes sem laminas (LinkedIn, Google): "Copiar o pedido da foto" ou
+"Gerar 3 opcoes aqui" (a "lamina 0" de `identidade.py`); a cena vem de `foto`,
+que quem escreve devolve nessas redes.
 
 A identidade visual pode ser escrita com a outra IA (`identidade_ia.py`): a
 ideia em poucas palavras, o pedido com o negocio e a conta, a resposta em
 rotulos, a previa campo a campo e "Aplicar" (personagens viram elementos fixos).
-
-### 5b. Video narrado das laminas (fora da tela) — `video.py`, `providers/voz.py`, `providers/animacao.py`
-
-> Fora da tela desde o video por IA: o codigo continua (`video.montar`, a
-> tarefa `gerar_video`, os clipes por lamina em `_lamina_clipes.html` e o bloco
-> `_video_narrado.html`), sem botao. Para voltar, inclua os dois templates.
-
-As **mesmas laminas** viram um video vertical (1080x1920), e sai como **Reels**
-(o publicador do Instagram ja manda Reels quando a midia e video).
-
-**Quem decide o que, post a post.** A conta diz o que aceita; a IA escolhe e
-explica:
-
-- **Estilo** (Identidade visual): a conta marca os estilos permitidos (foto,
-  ilustracao, quadrinhos, apresentacao — nenhum marcado: todos) e um
-  preferido. Quem escreve escolhe o estilo do post (`extras["estilo"]`, com
-  `por_que_estilo`); fora dos permitidos e ignorado.
-- **Formato**: a IA devolve `formato_sugerido` (carrossel ou video) com o
-  porque.
-  - Sugere video quando a ideia ganha com voz: pergunta direta, caso,
-    historia, mito x verdade, passo a passo curto.
-  - Sugere carrossel quando e para salvar: lista, tabela, numeros.
-  - A conta escolhe o que fazer com a sugestao (`Destino.video`): so sugerir
-    (padrao), gerar sozinho quando sugerir, sempre video, ou nunca.
-- **Por lamina**, a IA devolve:
-  - `visual`: a cena;
-  - `movimento`: o que se mexe se virar animacao;
-  - `fala`: o que a voz diz (ate ~160 palavras no total, ~60 s).
-- **Orientacoes** (Identidade visual), cada uma no prompt certo:
-  - as **gerais** vao em tudo;
-  - as **so das imagens**, nas imagens;
-  - as **so dos videos**, na animacao e na instrucao do movimento.
-- **Personagens fixos** entram com a descricao inteira em todo prompt, para
-  IAs diferentes (o gerador daqui, Midjourney, Sora, Kling) desenharem igual.
-
-**Prompts prontos** (`identidade.prompts_da_lamina`, prompt `social_cena`):
-
-- A cena de cada lamina vira dois prompts em ingles, guardados no post e
-  mostrados para copiar:
-  - o da **imagem** (qualquer gerador);
-  - o do **movimento** (qualquer IA de video).
-- So sao refeitos quando a cena, o estilo ou o movimento mudam.
-- Ha tambem o **pedido de animacao** para colar numa IA de video junto com a
-  imagem de cada lamina, alem do pedido de imagens que ja existia.
-
-**Por lamina, na tela do post** ("Imagens das laminas"):
-
-- enviar, trocar ou tirar a imagem;
-- **refazer so esta**;
-- **3 opcoes** para escolher (bom para a capa); as opcoes ficam em
-  `extras["opcoes"]`, e a escolhida vira o fundo;
-- ver os prompts;
-- **enviar, trocar ou tirar o clipe** (MP4, MOV ou WebM, ate 80 MB);
-- **animar aqui** (tarefa `animar_laminas`, pelo worker ou pela Sora: a
-  imagem 4:5 vai inteira no meio do quadro 9:16 e o video recorta o meio de
-  volta);
-- baixar a imagem para animar fora.
-
-**Quadros, o meio-termo sem IA de video** (`video.clipe_de_quadros`, "Montar com
-quadros" na lamina): 2 a 4 imagens da mesma cena (o comeco, o meio e o fim de
-um gesto, feitas numa IA de imagem com o "pedido de quadros" do post) viram o
-clipe da lamina — cada uma 2,4 s com zoom lento alternando, e fade de 0,5 s
-entre elas. Fica com cara de gibi animado, sem tentar parecer filmagem, e
-custa so a geracao das imagens.
-
-**Montagem em camadas** (`video.montar`, tarefa `gerar_video`; ffmpeg,
-instalado pelo deploy). Cada lamina e:
-
-1. **o fundo**:
-   - a imagem, aproximando devagar (Ken Burns);
-   - ou o clipe da lamina em loop, recortado para 4:5 e escurecido como a
-     imagem (`laminas.desenhar(camada="fundo")`);
-2. **o texto** da lamina por cima, nitido, entrando em fade
-   (`camada="texto"`). E o mesmo texto do carrossel, escrito pelo PubliBot:
-   nenhuma IA de imagem ou video escreve letra;
-3. **a legenda** da fala, logo abaixo da lamina, um trecho curto por vez
-   (`trechos_da_legenda`), no tempo proporcional ao tamanho de cada trecho.
-   Pode ser desligada (`Destino.legendas`);
-4. **a narracao**, com uma pausa curta no fim; lamina sem fala fica 2,5 s.
-
-A lamina fica a 90% e mais para cima, fora das faixas que o Instagram cobre.
-A narracao fica guardada por voz + texto (`social/audios/`): mudar uma fala so
-paga essa fala.
-
-**Voz** (`providers/voz.py`): um adaptador por API, e a ideia e a mesma em
-todos (texto + voz -> MP3). Cadastro com
-`manage.py configurar_api <servico> --chave ... --testar`:
-
-| Servico | Atalho do `configurar_api` |
-|---|---|
-| ElevenLabs | `elevenlabs` |
-| OpenAI | `openai_voz` |
-| Google | `google_voz` |
-| A placa propria (Kokoro) | `worker_voz`, sem chave: endereco e segredo do `.env` |
-
-A especificacao da rota no worker esta em
-[WORKER_VOZ_E_ANIMACAO.md](WORKER_VOZ_E_ANIMACAO.md).
-
-**Animacao** (`providers/animacao.py`): o dialeto de video da OpenAI
-(`/v1/videos`, assincrono), que serve a Sora (`openai_video --chave`) e o
-worker (`worker_animacao`, especificado no mesmo arquivo).
 
 ### 6. Medicao — `medicao.py`, `views.clique`
 

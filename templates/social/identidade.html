@@ -63,7 +63,7 @@
   </section>
 
   <section class="secao">
-    <h3>{% translate "Personagens e cenarios fixos" %}</h3>
+    <h3>{% translate "Personagens, cenarios e lugares fixos" %}</h3>
     <p class="pre-visualizacao">
       {% blocktranslate trimmed %}
         Como os perfis que tem um mascote: um personagem (ou cenario, ou objeto) com nome e uma
@@ -101,7 +101,8 @@
       </details>
     {% endfor %}
     <details class="secao" {% if not elementos %}open{% endif %}>
-      <summary><strong>{% translate "Novo personagem, cenario ou objeto" %}</strong></summary>
+      <summary><strong>{% translate "Novo personagem, cenario, objeto ou lugar real" %}</strong></summary>
+      <p class="ajuda">{% translate "Lugar real (foto): um ponto que o publico reconhece (o Museu do Olho, a araucaria da praca, a fachada). A foto entra no video como esta, na janela de uma cena ou de fundo; o roteiro o chama pelo nome. Confira o direito de uso da foto." %}</p>
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}<input type="hidden" name="acao" value="elemento">
         <label>{% translate "Nome (como o texto vai chama-lo)" %} <input type="text" name="nome" maxlength="60" required placeholder="Gugu"></label>

@@ -1,0 +1,109 @@
+# Imagem com referência, foto na cena e duração exata no worker-gpu
+
+O que o publi-bot espera do worker para fazer o **vídeo por cenas** das redes
+(`apps/social/cenas.py`). Cada cena é uma animação curta (2 a 4 s) a partir de
+uma imagem inicial; a voz e a legenda entram na montagem, do lado daqui.
+
+O cliente já está pronto e testado contra esta especificação:
+
+- imagem com referência e máscara: `OpenAICompatibleImageClient.editar`
+  (`apps/inference/providers/openai_compatible.py`);
+- seed na animação: `OpenAIVideoClient.criar` (`apps/inference/providers/animacao.py`).
+
+Sem as mudanças no worker, o publi-bot continua funcionando: a cena sai só pela
+descrição (sem o personagem de referência e sem a foto do lugar), com um aviso
+na cena, e a duração curta é compensada na montagem.
+
+---
+
+## 1. Imagem com referência e foto na cena: `POST /v1/images/edits`
+
+O dialeto de edição de imagem da OpenAI, com dois campos a mais.
+
+```http
+POST /v1/images/edits
+Authorization: Bearer <WORKER_SHARED_SECRET>
+Content-Type: multipart/form-data
+
+model=<o modelo de imagem>
+prompt=<o primeiro quadro, em inglês>
+size=720x1280
+n=1
+response_format=b64_json
+negative_prompt=<opcional>
+image=<PNG base, opcional>
+mask=<PNG máscara, opcional, do tamanho da base>
+reference_image=<PNG>          (repetível, até 3: os personagens)
+reference_strength=0.60        (0 a 1, só com reference_image)
+```
+
+**`200`:** igual ao `/v1/images/generations`: `{"data": [{"b64_json": "..."}]}`.
+
+Os três jeitos de chamar:
+
+| Campos | O que o worker faz | Para quê |
+|---|---|---|
+| `reference_image` (sem `image`) | gera do zero pelo `prompt`, puxando a aparência das referências | o Carlos e a Bia saírem parecidos em toda cena |
+| `image` + `mask` (+ referências) | **pinta só a parte transparente da máscara** e mantém o resto exatamente como está | a foto real na janela (ou no alto do fundo) |
+| `image` sem `mask` | não usado pelo publi-bot hoje | — |
+
+**A máscara:** transparente (alfa 0) = pintar; opaco (alfa 255) = manter, como
+na OpenAI. O publi-bot manda:
+
+- **foto na janela:** a base é a cor de fundo da conta com a foto num retângulo
+  no alto (à esquerda ou à direita). A máscara deixa opaco só esse retângulo. O
+  `prompt` descreve a cena com "a window" ali, e o modelo pinta o resto da cena
+  em volta da foto, que sai intacta;
+- **lugar de fundo com personagem:** a base é a foto inteira. A máscara mantém
+  a metade de cima (o céu, o prédio) e pinta a de baixo com o personagem.
+
+### Sugestão de implementação (SDXL, placa de 8 GB)
+
+- referência: **IP-Adapter** para SDXL (`h94/IP-Adapter`, `ip-adapter-plus_sdxl_vit-h`),
+  com `set_ip_adapter_scale(reference_strength)`. Várias referências: uma lista
+  de imagens (o diffusers aceita) ou a média dos embeddings;
+- máscara: o mesmo SDXL num pipeline de pintura
+  (`AutoPipelineForInpainting.from_pipe(...)`, sem carregar outro modelo), com a
+  máscara invertida para a convenção do diffusers (branco = pintar);
+- memória: `enable_model_cpu_offload()`, como já é feito no `/generations`.
+
+### Erros
+
+Iguais aos do `/generations` (503 ocupada, 500 com `error.code` quando quebra).
+**404 ou 405 na rota** = worker sem a rota: o publi-bot cai para o
+`/generations` só com o texto e avisa na cena.
+
+`/health/` deve publicar `rotas.imagem_edicao: true`.
+
+---
+
+## 2. Animação: seed e duração nunca menor que a pedida
+
+Duas mudanças pequenas no `POST /v1/videos` (seção 2 de
+`WORKER_VOZ_E_ANIMACAO.md`):
+
+1. **`seed`** (inteiro, opcional, no multipart). A mesma imagem, o mesmo
+   `prompt` e a mesma `seed` devolvem o mesmo clipe. O publi-bot guarda a seed
+   de cada cena: "Refazer a animação" manda outra, "Gerar a cena" de novo
+   repete a aprovada. Sem `seed`, o worker sorteia (como hoje). O publi-bot só
+   manda `seed` quando a conexão não é a Sora (que recusa campo desconhecido).
+
+2. **`seconds` arredondado para cima.** O FramePack gera em trechos de ~1,1 s
+   (`latent_window_size` 9 → 33 quadros a 30 fps). Hoje, pedir 3 s dá 2 trechos
+   (~2,4 s). O certo é `trechos = ceil(seconds * 30 / 33)`: nunca menos que o
+   pedido. O objeto do trabalho deve trazer em `seconds` a duração real.
+
+O publi-bot já pede `ceil(duração da fala)` e, na montagem, desacelera o clipe
+até 25% e segura o último quadro se ainda faltar, e corta o que sobra. Com o
+arredondamento certo, quase nunca precisa.
+
+---
+
+## Contrato
+
+Versão menor sobe (rotas e campos novos não quebram ninguém):
+
+- `imagem-edicao-resposta.json`: `_rota`, `_nota` e o `data` com `b64_json`;
+- `video-resposta.json`: a `_nota` cita `seed` e o arredondamento de `seconds`.
+
+Depois, copie os dois para `tests/contrato_do_worker/` daqui.
