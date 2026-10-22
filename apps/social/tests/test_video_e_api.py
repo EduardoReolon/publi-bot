@@ -273,7 +273,7 @@ def test_lugar_real_na_janela_e_worker_sem_a_rota(
     )
     pedidos = []
 
-    def editar(prompt, *, tamanho, base=None, mascara=None, referencias=()):
+    def editar(prompt, *, tamanho, base=None, mascara=None, referencias=(), **extras):
         pedidos.append((base, mascara, referencias))
         if len(pedidos) > 1:  # o worker 2.12 tem a rota, mas sem o modelo de referencia
             return png("white", cenas.QUADRO), ("reference_image ignorado: modelo desligado",)
@@ -461,3 +461,26 @@ def test_worker_desligado_ou_reiniciado_no_meio_so_atrasa_a_cena(
     )
     with pytest.raises(video.VideoIndisponivel, match="sem_vram"):
         cenas.conferir_animacao(post, 2)
+
+
+def test_da_folha_de_personagem_vai_so_a_primeira_figura():
+    """A folha (fundo branco, a mesma figura 4 vezes e os rostos embaixo) virava
+    cena branca com o personagem repetido: vai so a 1a figura, num quadrado."""
+    from PIL import Image, ImageDraw
+
+    from apps.social import cenas
+
+    folha = Image.new("RGB", (1600, 900), "white")
+    desenho = ImageDraw.Draw(folha)
+    for i in range(4):  # as 4 vistas, lado a lado
+        desenho.rectangle((60 + i * 400, 40, 260 + i * 400, 560), fill=(30, 60, 160))
+    for i in range(3):  # os rostos, embaixo
+        desenho.ellipse((300 + i * 350, 650, 450 + i * 350, 820), fill=(200, 150, 120))
+    figura = cenas.primeira_figura(folha)
+    assert figura.size[0] == figura.size[1]
+    assert 520 <= figura.size[0] <= 640  # so a 1a vista (520 de altura + margem)
+    cores = {c for _n, c in figura.getcolors(1_000_000)}
+    assert (200, 150, 120) not in cores  # sem os rostos de baixo
+
+    foto = Image.effect_noise((300, 200), 80).convert("RGB")  # foto comum: inteira
+    assert cenas.primeira_figura(foto).size == (300, 300)

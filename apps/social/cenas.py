@@ -189,15 +189,73 @@ def _fundo(lugar, com_gente: bool) -> tuple[bytes, bytes | None]:
     return _png(base), _png(mascara)
 
 
+# A referencia vai para o IP-Adapter, que copia a imagem INTEIRA: o fundo, a
+# composicao e quantas vezes a figura aparece. A folha de personagem (fundo
+# branco, a mesma pessoa de 4 lados) virava cena branca com o Carlos repetido.
+# Por isso vai so a 1a figura da folha, e com forca menor; o cenario, que nao
+# tem uma figura para recortar, vai so pela descricao (no prompt).
+FORCA_DA_REFERENCIA = 0.45
+NEGATIVO_DA_REFERENCIA = (
+    "character sheet, multiple views, turnaround, duplicate person, collage, split screen, "
+    "white background, blank background"
+)
+
+
+def primeira_figura(imagem):
+    """A 1a figura (a da esquerda, no alto) de uma folha de referencia, num
+    quadrado: a folha tem a mesma figura varias vezes lado a lado sobre um fundo
+    liso. Foto comum (sem fundo liso ou com uma figura so) volta inteira, no
+    quadrado. Algoritmo: a cor do fundo vem dos cantos; colunas com algo
+    diferente dela sao figura, e um vao de fundo separa uma figura da outra."""
+    from PIL import Image, ImageChops, ImageOps
+
+    imagem = imagem.convert("RGB")
+    largura, altura = imagem.size
+    cantos = [imagem.getpixel(p) for p in [(0, 0), (largura - 1, 0), (0, altura - 1)]]
+    fundo = tuple(sorted(c[i] for c in cantos)[1] for i in range(3))
+    diferenca = ImageChops.difference(imagem, Image.new("RGB", imagem.size, fundo)).convert("L")
+    figura = diferenca.point(lambda v: 255 if v > 30 else 0)
+    if figura.getbbox() is None or sum(figura.histogram()[255:]) > 0.6 * largura * altura:
+        return ImageOps.pad(imagem, (max(imagem.size),) * 2, color=fundo)  # foto: inteira
+    # A fileira de cima (a folha de personagem traz as expressoes embaixo).
+    linhas = [figura.crop((0, y, largura, y + 1)).getbbox() is not None for y in range(altura)]
+    topo = linhas.index(True)
+    fim = topo
+    while fim < altura and (linhas[fim] or any(linhas[fim : fim + altura // 25])):
+        fim += 1
+    fileira = figura.crop((0, topo, largura, fim))
+    colunas = [
+        fileira.crop((x, 0, x + 1, fim - topo)).getbbox() is not None for x in range(largura)
+    ]
+    vao = max(4, largura // 50)
+    inicio = colunas.index(True)
+    x = inicio
+    while x < largura and (colunas[x] or any(colunas[x : x + vao])):
+        x += 1
+    caixa = figura.crop((inicio, topo, x, fim)).getbbox()
+    margem = max(8, (x - inicio) // 10)
+    recorte = imagem.crop(
+        (
+            max(0, inicio + caixa[0] - margem),
+            max(0, topo + caixa[1] - margem),
+            min(largura, inicio + caixa[2] + margem),
+            min(altura, topo + caixa[3] + margem),
+        )
+    )
+    return ImageOps.pad(recorte, (max(recorte.size),) * 2, color=fundo)
+
+
 def _referencias(post, cena: dict) -> list[bytes]:
-    """As imagens dos personagens (e objetos e cenarios) citados, ate 3."""
+    """As figuras dos personagens e objetos citados (a 1a da folha), ate 3."""
     saida = []
     for elemento in identidade.citados(
         cena.get("imagem") or "", identidade.elementos(post.destino)
     ):
-        if elemento.tipo == elemento.Tipo.LUGAR or not elemento.imagem:
+        if elemento.tipo not in (elemento.Tipo.PERSONAGEM, elemento.Tipo.OBJETO):
             continue
-        saida.append(_png(_abrir(elemento.imagem)))
+        if not elemento.imagem:
+            continue
+        saida.append(_png(primeira_figura(_abrir(elemento.imagem))))
         if len(saida) == 3:
             break
     return saida
@@ -207,7 +265,7 @@ def usa_referencia(post, cena: dict) -> bool:
     """A imagem inicial da cena leva referencia de personagem (no worker, outro
     modelo de imagem: as cenas com e sem referencia sao geradas em grupos)."""
     return any(
-        e.tipo != e.Tipo.LUGAR and e.imagem
+        e.tipo in (e.Tipo.PERSONAGEM, e.Tipo.OBJETO) and e.imagem
         for e in identidade.citados(cena.get("imagem") or "", identidade.elementos(post.destino))
     )
 
@@ -252,6 +310,8 @@ def gerar_quadro(post, n: int) -> str:
             referencias=_referencias(post, cena),
             base=base,
             mascara=mascara,
+            forca=FORCA_DA_REFERENCIA,
+            negativo=NEGATIVO_DA_REFERENCIA,
         )
         de = "gerado"
     post.refresh_from_db()
