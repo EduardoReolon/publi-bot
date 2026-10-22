@@ -423,28 +423,41 @@ def _animacao():
 
 
 def pedir_animacao(
-    imagem: bytes, prompt: str, *, segundos: int, tamanho: str, seed: int | None = None
+    imagem: bytes,
+    prompt: str,
+    *,
+    segundos: int,
+    tamanho: str,
+    seed: int | None = None,
+    maior: bool = False,
 ) -> dict:
-    """Pede a animacao da imagem e devolve o trabalho ({"id", "seed"}: a seed
-    usada, quando o servidor diz), sem esperar: quem pediu volta para conferir
-    (`situacao_da_animacao`). Assim nada fica preso esperando a placa, e
-    desligar o worker no meio perde so este trabalho."""
+    """Pede a animacao da imagem e devolve o trabalho ({"id", "seed", "model"}:
+    a seed e o modelo usados, quando o servidor diz), sem esperar: quem pediu
+    volta para conferir (`situacao_da_animacao`). Assim nada fica preso esperando
+    a placa, e desligar o worker no meio perde so este trabalho. No worker, o
+    modelo e o ANIMACAO_MODELO_MENOR (ou o MAIOR, com `maior`)."""
+    from django.conf import settings
+
     from apps.inference.leases import gerar_owner_key, registrar_falha, reserva
     from apps.inference.providers.animacao import get_animation_provider
     from apps.inference.providers.base import ProviderTransientError
 
     conexao = _animacao()
     sora = "sora" in (conexao.default_model or "").lower()
+    modelo = conexao.default_model
+    if not sora:
+        modelo = settings.ANIMACAO_MODELO_MAIOR if maior else settings.ANIMACAO_MODELO_MENOR
     try:
-        with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
-            return get_animation_provider(conexao).criar_trabalho(
+        with reserva(conexao, owner_key=gerar_owner_key(), model_name=modelo):
+            trabalho = get_animation_provider(conexao).criar_trabalho(
                 imagem=imagem,
                 prompt=prompt,
-                modelo=conexao.default_model,
+                modelo=modelo,
                 segundos=segundos,
                 tamanho=tamanho,
                 seed=None if sora else seed,
             )
+            return {**trabalho, "model": trabalho.get("model") or modelo}
     except ProviderTransientError:
         raise  # placa ocupada nao e falha da conexao (contrato do worker)
     except Exception:
@@ -823,6 +836,16 @@ def destinos_do_link(limite: int = 50) -> list[tuple[str, str]]:
 
 
 # -- A tela de Operacao ---------------------------------------------------------------------
+def __getattr__(nome: str):
+    # `Conferindo` (apps.ops): o retry que so volta para conferir um trabalho
+    # em curso fica "Executando" na Operacao, com o motivo.
+    if nome == "Conferindo":
+        from apps.ops.acompanhamento import Conferindo
+
+        return Conferindo
+    raise AttributeError(nome)
+
+
 def na_fila(tarefa, *args, rotulo: str, alvo=None, **kwargs) -> str:
     """Despacha a tarefa e a mostra na tela de Operacao desde ja (Aguardando,
     Executando, Aguardando capacidade, Concluido, Falhou)."""

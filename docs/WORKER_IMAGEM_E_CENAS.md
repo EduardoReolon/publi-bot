@@ -28,6 +28,17 @@ na cena, e a duração curta é compensada na montagem.
 > - com e sem referência são **modelos de imagem diferentes**, e só um fica
 >   carregado por vez: o publi-bot gera todas as imagens iniciais antes de
 >   animar, as com personagem juntas, para não recarregar.
+>
+> **Contrato 2.13:** o `/v1/videos` lê o `model` (catálogo em
+> `animacao.modelos` do `/health/`: `framepack`, bf16, e `framepack-fp8`). O
+> publi-bot anima no `ANIMACAO_MODELO_MENOR` (padrão `framepack-fp8`) e guarda,
+> em cada cena, o `model` e a `seed` que voltaram; "Refazer em qualidade
+> máxima" pede de novo no `ANIMACAO_MODELO_MAIOR` (padrão `framepack`) com a
+> MESMA seed. Os dois nomes ficam no `.env`. Como toda cena automática usa o
+> menor, a fila já sai agrupada por modelo.
+>
+> **Referência:** vai só UMA por cena (a do 1º personagem citado no texto, a 1ª
+> figura da folha): o IP-Adapter mistura as referências numa aparência só.
 
 ---
 

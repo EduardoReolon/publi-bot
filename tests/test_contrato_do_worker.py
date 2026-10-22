@@ -23,7 +23,7 @@ import httpx
 import pytest
 
 CONTRATO = Path(__file__).resolve().parent / "contrato_do_worker"
-VERSAO_ESPERADA = "2.12"
+VERSAO_ESPERADA = "2.13"
 
 
 def _exemplo(nome: str) -> dict:
@@ -732,3 +732,4 @@ def test_o_trabalho_de_video_devolve_a_seed_usada(monkeypatch):
         imagem=b"PNG", prompt="p", modelo="framepack", segundos=2, tamanho="448x800"
     )
     assert trabalho["seed"] == exemplo["seed"] and trabalho["id"] == exemplo["id"]
+    assert trabalho["model"] == exemplo["model"]  # o modelo usado volta (contrato 2.13)

@@ -53,6 +53,12 @@ def test_acompanhar_marca_cada_desfecho(tenant_factory):
         job = GenerationJob.objects.get(pk=espera)
         assert job.status == "waiting_capacity" and job.next_attempt_at is not None
 
+        conferindo = novo()  # so volta para conferir um trabalho em curso: "Executando"
+        with pytest.raises(Retry), acompanhamento.acompanhar(conferindo):
+            raise Retry(exc=acompanhamento.Conferindo("cena 2: animando no worker"), when=60)
+        job = GenerationJob.objects.get(pk=conferindo)
+        assert job.status == "running" and job.last_error == "cena 2: animando no worker"
+
         quebrou = novo()
         with pytest.raises(ValueError), acompanhamento.acompanhar(quebrou):
             raise ValueError("chave errada")

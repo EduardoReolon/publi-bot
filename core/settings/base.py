@@ -736,6 +736,12 @@ IMAGEM_TAMANHO = env.get("IMAGEM_TAMANHO", "1344x704")
 # 9:16 do FramePack. Menor = mais rapido (o tempo cresce com os pixels); a
 # montagem amplia para 1080x1920.
 ANIMACAO_TAMANHO = env.get("ANIMACAO_TAMANHO", "448x800")
+# Os modelos de animacao do worker (o catalogo esta no /health/ dele,
+# `animacao.modelos`): as cenas animam no MENOR (mais rapido); "Refazer em
+# qualidade maxima" pede de novo no MAIOR, com a mesma seed. Um nome que o worker
+# nao conhece vira o padrao dele. A conexao Sora usa o modelo da conexao.
+ANIMACAO_MODELO_MENOR = env.get("ANIMACAO_MODELO_MENOR", "framepack-fp8")
+ANIMACAO_MODELO_MAIOR = env.get("ANIMACAO_MODELO_MAIOR", "framepack")
 
 # Quanto o cliente espera por um lote, em segundos.
 #

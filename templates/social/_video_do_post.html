@@ -22,7 +22,8 @@
     {% for c in cenas %}
       <div style="border-top:1px solid var(--borda); padding:.4rem 0">
         <strong>{% translate "Cena" %} {{ c.n }}</strong> <span class="ajuda">~{{ c.duracao }} s</span>
-        {% if c.animando %}<span class="selo espera">{% translate "animando no worker" %}</span>{% endif %}
+        {% if c.animando %}<span class="selo espera">{% translate "animando no worker" %}{% if c.animando_desde %} {% translate "desde" %} {{ c.animando_desde }}{% endif %}{% if c.animando_no %} ({{ c.animando_no }}){% endif %}</span>{% endif %}
+        {% if c.tem_clipe and c.modelo %}<span class="selo">{{ c.modelo }}</span>{% endif %}
         {% if c.tem_clipe %}<span class="selo ok">{% translate "animada" %}</span>{% elif c.tem_quadro %}<span class="selo espera">{% translate "so a imagem" %}</span>{% else %}<span class="selo">{% translate "sem imagem" %}</span>{% endif %}
         {% if c.quadro_de == 'lugar' %}<span class="selo">{% translate "foto do lugar" %}</span>{% elif c.quadro_de == 'enviado' %}<span class="selo">{% translate "imagem enviada" %}</span>{% endif %}
         {% if c.aviso %}<div class="ajuda">{{ c.aviso }}</div>{% endif %}
@@ -45,6 +46,7 @@
               {% if c.tem_quadro %}
                 <button type="submit" name="acao" value="cena_refazer_imagem" class="botao discreto pequeno">{% translate "Refazer a imagem" %}</button>
                 <button type="submit" name="acao" value="cena_refazer_animacao" class="botao discreto pequeno" title="{% translate 'A mesma imagem, outra variacao do movimento' %}">{% translate "Refazer a animacao" %}</button>
+                {% if c.tem_clipe and not c.no_maior %}<button type="submit" name="acao" value="cena_qualidade_maxima" class="botao discreto pequeno" title="{% translate 'O mesmo movimento e a mesma variacao (seed), no modelo maior: mais detalhe, bem mais lento' %}">{% translate "Refazer em qualidade maxima" %}</button>{% endif %}
               {% endif %}
             </div>
           </form>

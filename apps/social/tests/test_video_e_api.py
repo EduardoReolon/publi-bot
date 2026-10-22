@@ -151,9 +151,10 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
         ),
     )
 
-    def pedir(imagem, prompt, *, segundos, tamanho, seed):
-        animados.append((segundos, tamanho, seed, prompt))
-        return {"id": f"video_{len(animados)}", "seed": seed}
+    def pedir(imagem, prompt, *, segundos, tamanho, seed, maior=False):
+        animados.append((segundos, tamanho, seed, prompt, maior))
+        modelo = "framepack" if maior else "framepack-fp8"
+        return {"id": f"video_{len(animados)}", "seed": seed, "model": modelo}
 
     monkeypatch.setattr(fontes, "pedir_animacao", pedir)
     monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "completed"})
@@ -202,6 +203,11 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     animar(1)  # de novo, sem pedir variacao: a mesma seed
     animar(1, nova_seed=True)
     assert animados[1][2] == primeira_seed and animados[2][2] != primeira_seed
+    assert post.extras["video_ia"]["cenas"][0]["modelo"] == "framepack-fp8"  # o menor
+    variacao = animados[2][2]
+    animar(1, maior=True)  # qualidade maxima: o modelo maior com a MESMA seed
+    assert animados[3][2] == variacao and animados[3][4]
+    assert post.cenas_do_video[0]["modelo"] == "framepack" and post.cenas_do_video[0]["no_maior"]
 
     # a cena 2 so tem a imagem: entra parada, aproximando devagar
     monkeypatch.setattr(fontes, "gerar_quadro", lambda *a, **k: (buffer.getvalue(), ""))
@@ -549,3 +555,51 @@ def test_da_folha_de_personagem_vai_so_a_primeira_figura():
 
     foto = Image.effect_noise((300, 200), 80).convert("RGB")  # foto comum: inteira
     assert cenas.primeira_figura(foto).size == (300, 300)
+
+
+@pytest.mark.django_db
+def test_so_o_personagem_principal_vira_referencia(ambiente, modulo, settings, tmp_path):
+    """Duas referencias se misturavam numa aparencia so (a roupa de um com o
+    rosto do outro): vai so a do 1o personagem citado NO TEXTO."""
+    from django.core.files.base import ContentFile
+
+    from apps.social import cenas
+    from apps.social.models import ElementoVisual
+
+    settings.MEDIA_ROOT = tmp_path
+    destino = _destino("instagram")
+    for nome, tipo in (("Bia", "personagem"), ("Carlos", "personagem"), ("Caneca", "objeto")):
+        e = ElementoVisual(destino=destino, nome=nome, tipo=tipo, descricao=nome)
+        e.imagem.save(f"{nome}.png", ContentFile(b"PNG"), save=True)
+    principal = cenas.principal_da_cena
+    assert principal(_post(destino), {"imagem": "Carlos conversa com a Bia"}).nome == "Carlos"
+    assert principal(_post(destino), {"imagem": "a Caneca na mesa e a Bia"}).nome == "Bia"
+    assert principal(_post(destino), {"imagem": "a Caneca na mesa"}).nome == "Caneca"
+    assert principal(_post(destino), {"imagem": "o escritorio vazio"}) is None
+
+
+@pytest.mark.django_db
+def test_modelo_da_animacao_pelo_env(ambiente, settings, monkeypatch):
+    from apps.inference.providers import animacao
+
+    pedidos = []
+
+    class Falso:
+        def criar_trabalho(self, **k):
+            pedidos.append(k["modelo"])
+            return {"id": "v1", "seed": 7}
+
+    conexao = type("C", (), {"default_model": "framepack"})()
+    monkeypatch.setattr(fontes, "_animacao", lambda: conexao)
+    monkeypatch.setattr(animacao, "get_animation_provider", lambda c: Falso())
+    monkeypatch.setattr("apps.inference.leases.reserva", lambda *a, **k: _nada())
+    settings.ANIMACAO_MODELO_MENOR, settings.ANIMACAO_MODELO_MAIOR = "rapido", "caprichado"
+    assert fontes.pedir_animacao(b"PNG", "p", segundos=2, tamanho="448x800")["model"] == "rapido"
+    fontes.pedir_animacao(b"PNG", "p", segundos=2, tamanho="448x800", maior=True)
+    assert pedidos == ["rapido", "caprichado"]
+
+
+def _nada():
+    from contextlib import nullcontext
+
+    return nullcontext()
