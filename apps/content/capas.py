@@ -254,10 +254,11 @@ def editar_imagem(
     mascara: bytes | None = None,
     referencias: list[bytes] | tuple = (),
     job=None,
-) -> bytes:
-    """Uma imagem com referencias (personagens) e/ou base + mascara (a foto real
-    mantida no lugar), pelo `/images/edits` do gerador. Sem a rota no gerador:
-    `RotaInexistente` (quem chama cai para `gerar_imagens`)."""
+) -> tuple[bytes, tuple[str, ...]]:
+    """(imagem, avisos) com referencias (personagens) e/ou base + mascara (a foto
+    real mantida no lugar), pelo `/images/edits` do gerador. `avisos`: o que o
+    gerador deixou de fazer. Sem a rota no gerador: `RotaInexistente` (quem
+    chama cai para `gerar_imagens`)."""
     geradas = _no_gerador(
         lambda cliente, modelo: [
             cliente.editar(
@@ -272,7 +273,7 @@ def editar_imagem(
         ],
         job=job,
     )
-    return geradas[0].conteudo
+    return geradas[0].conteudo, geradas[0].avisos
 
 
 def _no_gerador(chamar, *, job=None):

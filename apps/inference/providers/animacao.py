@@ -76,6 +76,27 @@ class OpenAIVideoClient:
         tamanho: str,
         seed: int | None = None,
     ) -> str:
+        return self.criar_trabalho(
+            imagem=imagem,
+            prompt=prompt,
+            modelo=modelo,
+            segundos=segundos,
+            tamanho=tamanho,
+            seed=seed,
+        )["id"]
+
+    def criar_trabalho(
+        self,
+        *,
+        imagem: bytes,
+        prompt: str,
+        modelo: str,
+        segundos: int,
+        tamanho: str,
+        seed: int | None = None,
+    ) -> dict:
+        """O trabalho criado (`id`, e `seed`: a usada, inclusive a sorteada,
+        quando o servidor a devolve — o worker devolve)."""
         dados = {"prompt": prompt, "model": modelo, "seconds": str(segundos), "size": tamanho}
         if seed is not None:
             # So o worker aceita (a Sora recusa campo que nao conhece): a mesma
@@ -87,10 +108,10 @@ class OpenAIVideoClient:
             data=dados,
             files={"input_reference": ("quadro.png", imagem, "image/png")},
         )
-        identificador = resposta.json().get("id")
-        if not identificador:
+        trabalho = resposta.json()
+        if not trabalho.get("id"):
             raise ProviderPermanentError("o servico de video nao devolveu o id do trabalho.")
-        return identificador
+        return trabalho
 
     def esperar(self, identificador: str, *, limite: float, dormir=time.sleep) -> None:
         fim = time.monotonic() + limite

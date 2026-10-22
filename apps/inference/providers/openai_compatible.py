@@ -364,8 +364,10 @@ class OpenAICompatibleImageClient(ImageClient):
             )
         self._levantar_se_erro(resposta)
         try:
-            item = (resposta.json().get("data") or [{}])[0]
-            return ImagemGerada(conteudo=base64.b64decode(item["b64_json"]))
+            dados = resposta.json()
+            item = (dados.get("data") or [{}])[0]
+            avisos = tuple(str(a) for a in dados.get("avisos") or [] if str(a).strip())
+            return ImagemGerada(conteudo=base64.b64decode(item["b64_json"]), avisos=avisos)
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise ProviderPermanentError(f"{self.base_url} nao devolveu a imagem editada.") from exc
 

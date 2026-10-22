@@ -117,36 +117,43 @@ def gerar_cenas(
         if post is None:
             return 0
         lista = cenas.cenas(post)
-        alvo = [n] if n else range(1, len(lista) + 1)
-        for numero in alvo:
-            if numero > len(lista):
-                break
-            cena = lista[numero - 1]
-            try:
-                if cena.get("animando"):
-                    estado = cenas.conferir_animacao(post, numero)
-                    if estado == "esperando":
+        alvo = [x for x in ([n] if n else range(1, len(lista) + 1)) if x <= len(lista)]
+        atual = alvo[0] if alvo else 0
+        try:
+            # 1. Uma animacao em curso (o worker anima uma de cada vez): conferir.
+            for atual in alvo:
+                if lista[atual - 1].get("animando"):
+                    if cenas.conferir_animacao(post, atual) == "esperando":
                         voltar(CONFERIR_ANIMACAO_A_CADA)
                     post.refresh_from_db()
                     lista = cenas.cenas(post)
-                    cena = lista[numero - 1]
-                    if estado == "pronta":
-                        continue
-                if (refazer_quadro and n) or not cenas._existe(cena.get("quadro", "")):
-                    cenas.gerar_quadro(post, numero)
-                    voltar(1, refazer_quadro=False)  # a proxima passagem anima
-                if so_quadros:
-                    continue
-                if (nova_seed and n) or not cenas._existe(cena.get("clipe", "")):
-                    cenas.pedir_animacao(post, numero, nova_seed=bool(nova_seed and n))
-                    voltar(CONFERIR_ANIMACAO_A_CADA, nova_seed=False)
-            except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
-                raise self.retry(exc=exc, countdown=PLACA_OCUPADA_ESPERA) from exc
-            except (video.VideoIndisponivel, ProviderPermanentError, ValueError) as exc:
-                post.avisos = [*(post.avisos or []), f"cena {numero}: {exc}"]
-                post.save(update_fields=["avisos", "atualizado_em"])
-                andamento.falhou(f"cena {numero}: {exc}")
-                return 0
+            # 2. As imagens iniciais que faltam, TODAS antes de animar, e as com
+            # personagem juntas: o worker carrega um modelo de imagem por vez
+            # (com referencia e sem sao modelos diferentes) e o de video a parte.
+            faltam_quadro = [
+                x
+                for x in alvo
+                if (refazer_quadro and n) or not cenas._existe(lista[x - 1].get("quadro", ""))
+            ]
+            if faltam_quadro:
+                faltam_quadro.sort(key=lambda x: not cenas.usa_referencia(post, lista[x - 1]))
+                atual = faltam_quadro[0]
+                cenas.gerar_quadro(post, atual)
+                voltar(1, refazer_quadro=False)
+            # 3. As animacoes, uma por vez.
+            if not so_quadros:
+                for atual in alvo:
+                    cena = lista[atual - 1]
+                    if (nova_seed and n) or not cenas._existe(cena.get("clipe", "")):
+                        cenas.pedir_animacao(post, atual, nova_seed=bool(nova_seed and n))
+                        voltar(CONFERIR_ANIMACAO_A_CADA, nova_seed=False)
+        except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
+            raise self.retry(exc=exc, countdown=PLACA_OCUPADA_ESPERA) from exc
+        except (video.VideoIndisponivel, ProviderPermanentError, ValueError) as exc:
+            post.avisos = [*(post.avisos or []), f"cena {atual}: {exc}"]
+            post.save(update_fields=["avisos", "atualizado_em"])
+            andamento.falhou(f"cena {atual}: {exc}")
+            return 0
         post.refresh_from_db()
         if not so_quadros and not cenas.faltam(post):
             fontes.na_fila(montar_cenas, str(post.pk), rotulo="Montar o video", alvo=post.pk)

@@ -150,7 +150,7 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
 
     def pedir(imagem, prompt, *, segundos, tamanho, seed):
         animados.append((segundos, tamanho, seed, prompt))
-        return f"video_{len(animados)}"
+        return {"id": f"video_{len(animados)}", "seed": seed}
 
     monkeypatch.setattr(fontes, "pedir_animacao", pedir)
     monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "completed"})
@@ -195,7 +195,7 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     animar(1)
     primeira_seed = post.extras["video_ia"]["cenas"][0]["seed"]
     # 3 s de cena: 2 trechos (2,2 s esticados ate 25% e o fim parado), nao 3
-    assert animados[0][:2] == (3, cenas.TAMANHO_DA_ANIMACAO) and animados[0][3] == "slow blink"
+    assert animados[0][:2] == (2, cenas.TAMANHO_DA_ANIMACAO) and animados[0][3] == "slow blink"
     animar(1)  # de novo, sem pedir variacao: a mesma seed
     animar(1, nova_seed=True)
     assert animados[1][2] == primeira_seed and animados[2][2] != primeira_seed
@@ -272,6 +272,8 @@ def test_lugar_real_na_janela_e_worker_sem_a_rota(
 
     def editar(prompt, *, tamanho, base=None, mascara=None, referencias=()):
         pedidos.append((base, mascara, referencias))
+        if len(pedidos) > 1:  # o worker 2.12 tem a rota, mas sem o modelo de referencia
+            return png("white", cenas.QUADRO), ("reference_image ignorado: modelo desligado",)
         raise RotaInexistente("sem rota")
 
     monkeypatch.setattr("apps.content.capas.editar_imagem", editar)
@@ -287,9 +289,16 @@ def test_lugar_real_na_janela_e_worker_sem_a_rota(
     post.refresh_from_db()
     assert "ainda nao aceita referencia" in post.extras["video_ia"]["cenas"][0]["aviso"]
 
+    cenas.gerar_quadro(post, 1)  # de novo: agora o worker tem a rota e avisa
+    post.refresh_from_db()
+    assert post.extras["video_ia"]["cenas"][0]["aviso"].startswith("reference_image ignorado")
+    assert Image.open(io.BytesIO(pedidos[1][1])).mode == "RGBA"  # a mascara tem alfa
+    assert cenas.usa_referencia(post, roteiro["cenas"][0])
+    assert not cenas.usa_referencia(post, roteiro["cenas"][1])
+
     cenas.gerar_quadro(post, 2)  # lugar de fundo, sem personagem: a propria foto
     post.refresh_from_db()
-    assert post.extras["video_ia"]["cenas"][1]["quadro_de"] == "lugar" and len(pedidos) == 1
+    assert post.extras["video_ia"]["cenas"][1]["quadro_de"] == "lugar" and len(pedidos) == 2
     assert "Museu do Olho" in cenas.pedido_das_imagens(post)
 
 
@@ -374,16 +383,19 @@ def test_conta_com_ia_grande_manda_o_post_para_ela(ambiente, modulo, monkeypatch
 
 
 def test_segundos_pedidos_sao_o_minimo_em_trechos_inteiros():
-    """O worker arredonda os trechos (~1,1 s) para baixo: pede-se em multiplos
-    deles, o menor clipe que esticado ate 25% (e meio segundo parado) cobre a cena."""
+    """O worker faz round(seconds / 1,2) trechos (contrato 2.12): pede-se o
+    menor clipe que esticado ate 25% (e meio segundo parado) cobre a cena."""
     from apps.social import cenas
 
-    # 3 s de cena: 2 trechos (2,2 s, esticados ate 2,75 s, + 0,5 s parado), nao 3
-    assert cenas.segundos_pedidos({"segundos": 3}) == 3
-    assert cenas.segundos_pedidos({"segundos": 2}) == 3  # 1 trecho nao chega a 2 s
+    # 3 s de cena: 2 trechos (2,4 s, esticados ate 3 s), nao 3
+    assert cenas.segundos_pedidos({"segundos": 3}) == 2
+    assert cenas.segundos_pedidos({"segundos": 2}) == 1  # 1 trecho (1,2 s -> 1,5 s + 0,5)
     assert cenas.segundos_pedidos({"segundos": 4}) == 4  # 3 trechos
     fala = {"fala": " ".join(["palavra"] * 13)}  # ~5,3 s de fala: 4 trechos
     assert cenas.segundos_pedidos(fala) == 5
+    for segundos in (1, 2, 4, 5, 6):  # o que se pede volta nos trechos certos no worker
+        trechos = max(1, round(segundos / cenas.TRECHO))
+        assert round(trechos * cenas.TRECHO) == segundos
 
 
 @pytest.mark.django_db
@@ -407,7 +419,9 @@ def test_worker_desligado_ou_reiniciado_no_meio_so_atrasa_a_cena(
     )
     pedidos = []
     monkeypatch.setattr(
-        fontes, "pedir_animacao", lambda *a, seed, **k: pedidos.append(seed) or "video_x"
+        fontes,
+        "pedir_animacao",
+        lambda *a, seed, **k: pedidos.append(seed) or {"id": "video_x", "seed": seed},
     )
     post = _post(
         _destino("instagram"),

@@ -71,6 +71,9 @@ class ImagemGerada:
     conteudo: bytes
     formato: str = ""
     prompt_revisado: str = ""
+    # O que o servidor deixou de fazer do que foi pedido (o /images/edits do
+    # worker: referencia ignorada com o modelo de referencia desligado).
+    avisos: tuple[str, ...] = ()
 
 
 class ImageClient(ABC):
