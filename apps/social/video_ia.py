@@ -39,7 +39,7 @@ TIPOS = {".mp4", ".mov", ".webm", ".m4v"}
 TAMANHO_MAXIMO = 200 * 1024 * 1024
 CENAS_MAXIMAS = 12
 SEGUNDOS_DA_CENA = (2, 4)
-PALAVRAS_POR_CENA = 10
+PALAVRAS_POR_SEGUNDO = 3  # a fala em off, num ritmo natural
 
 TEXTO_NO_VIDEO = {
     "": "SEM nenhum texto escrito na imagem (nada de letras, legendas ou logotipo)",
@@ -72,10 +72,20 @@ def regras_das_cenas(destino) -> str:
     minimo, maximo = _duracao(destino)
     menor, maior = SEGUNDOS_DA_CENA
     chamada = _chamada(destino)
-    texto = (
-        "- frase na tela: a conta usa; no maximo 6 palavras, so nas cenas em que ajuda.\n"
-        if destino.texto_no_video == "frases"
-        else "- frase na tela: deixe vazio (a conta nao usa).\n"
+    # "Frase na tela: vazio" era lido como "sem legenda": as legendas da fala
+    # entram sozinhas (a montagem as escreve); a frase e so texto EXTRA.
+    texto = {
+        "frases": (
+            "- frase na tela: a conta usa frases curtas no lugar das legendas; no maximo 6 "
+            "palavras, so nas cenas em que ajuda (vazio nas outras).\n"
+        ),
+        "legendas": (
+            "- as LEGENDAS da fala entram sozinhas (o sistema escreve a fala embaixo, cena a "
+            "cena); 'frase na tela' e so para um texto EXTRA, e fica vazio.\n"
+        ),
+    }.get(
+        destino.texto_no_video,
+        "- sem texto na tela (a conta nao usa legenda nem frase): 'frase na tela' fica vazio.\n",
     )
     nomes = ", ".join(e.nome for e in lugares(destino))
     return (
@@ -86,8 +96,11 @@ def regras_das_cenas(destino) -> str:
         f"{f' ({chamada})' if chamada else ''};\n"
         f"- cada cena de {menor} a {maior} s, com UM gesto lento (alguem leva a mao a "
         "testa, folhas sobem da mesa) e a camera parada ou aproximando devagar, sem cortes;\n"
-        f"- a fala e voz em off (narrador), ate {PALAVRAS_POR_CENA} palavras por cena; "
-        "ninguem fala em cena (boca fechada);\n"
+        f"- a fala e voz em off (narrador), cerca de {PALAVRAS_POR_SEGUNDO} palavras por "
+        f"segundo de cena (uma cena de {maior} s cabe ~{PALAVRAS_POR_SEGUNDO * maior} "
+        "palavras); ninguem fala em cena (boca fechada);\n"
+        "- fala que nao cabe numa cena se divide em duas cenas seguidas (a CHAMADA longa "
+        "pode ocupar 2 cenas);\n"
         "- a imagem inicial e o PRIMEIRO quadro: quem esta, onde, a pose e a expressao no "
         "comeco do gesto; personagens e lugares fixos PELO NOME; nenhum texto, letra ou "
         "numero na imagem;\n"

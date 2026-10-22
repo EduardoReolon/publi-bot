@@ -32,6 +32,33 @@ def _ancora(achado: re.Match) -> str:
     return re.sub(r"^\[([^\]]*)\]\([^)]*\)$", r"\1", texto) if texto.startswith("[") else ""
 
 
+# Abreviacoes que terminam em ponto sem terminar a frase: "Silva et al. 2024",
+# "Dr. Carlos", "p. 12". Partir ali cortava o achado no meio.
+_ABREVIACOES = re.compile(
+    r"(?:\bet al|\b(?:dr|dra|sr|sra|prof|profa|p|pp|n|nº|ex|aprox|cf|vol|ed|fig|tab|"
+    r"jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez))\.$",
+    re.I,
+)
+
+
+def dividir_em_frases(texto: str, *, minimo: int = 6) -> list[str]:
+    """As frases do texto (de `minimo` palavras para cima), sem cortar numa
+    abreviacao."""
+    frases = []
+    for paragrafo in texto.split("\n"):
+        paragrafo = paragrafo.strip().lstrip("#-* ").strip()
+        if len(paragrafo.split()) < minimo:
+            continue
+        pedacos = []
+        for pedaco in _FIM_DE_FRASE.split(paragrafo):
+            if pedacos and _ABREVIACOES.search(pedacos[-1]):
+                pedacos[-1] = f"{pedacos[-1]} {pedaco}"
+            else:
+                pedacos.append(pedaco)
+        frases += [f.strip() for f in pedacos if len(f.split()) >= minimo]
+    return frases
+
+
 def _texto_limpo(markdown: str) -> str:
     """Markdown do artigo sem links, HTML e lista de referencias."""
     return _MARCAS.sub(_ancora, _corpo(markdown))
@@ -86,12 +113,7 @@ def artigo(artigo_id) -> ArtigoParaRedes | None:
         if (s.body_markdown or "").strip()
     ]
     texto = _texto_limpo(obj.body_markdown)
-    frases = []
-    for paragrafo in texto.split("\n"):
-        paragrafo = paragrafo.strip().lstrip("#-* ").strip()
-        if len(paragrafo.split()) < 6:
-            continue
-        frases += [f.strip() for f in _FIM_DE_FRASE.split(paragrafo) if len(f.split()) >= 6]
+    frases = list(dict.fromkeys(dividir_em_frases(texto)))  # o artigo repete frase as vezes
     capa = capa_escolhida(obj)
     return ArtigoParaRedes(
         id=str(obj.pk),
