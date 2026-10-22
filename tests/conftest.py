@@ -7,7 +7,7 @@ import hashlib
 import pytest
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.db import connection
+from django.db import connection, transaction
 
 from apps.accounts.models import Domain, Tenant, User
 
@@ -103,7 +103,36 @@ def _schema_modelo(django_db_setup, django_db_blocker):
     return SCHEMA_MODELO
 
 
-def _copiar_schema(modelo: str, novo: str) -> None:
+# Os schemas que as fixtures de muitos testes pedem (`ambiente` -> "interface",
+# e as outras abaixo). Copiar as centenas de tabelas levava ~1,8 s por teste: era
+# o grosso da suite. Estes sao copiados UMA vez, no comeco da sessao, com commit,
+# e reaproveitados: o que cada teste grava neles continua sumindo no rollback da
+# transacao do teste (no Postgres, inclusive DDL). Copiados no comeco, e nao na
+# hora do teste, porque uma segunda conexao copiando enquanto a do teste segura
+# uma transacao aberta trava esperando a outra (as chaves estrangeiras para o
+# public). Os demais nomes sao copiados como sempre, dentro do teste.
+SCHEMAS_REAPROVEITADOS = (
+    "interface", "midia", "console", "diagnostico", "blocos", "conteudo", "ingestao",
+    "cadencia", "radar", "hibrida", "fontes", "conferencia", "integracoes", "operacao",
+    "capas", "youtube", "conhecimento", "fluxos", "busca", "fontesweb", "painel_teste",
+    "referencias",
+)  # fmt: skip
+
+
+@pytest.fixture(scope="session")
+def _schemas_reaproveitados(_schema_modelo, django_db_blocker) -> frozenset[str]:
+    with django_db_blocker.unblock():
+        for nome in SCHEMAS_REAPROVEITADOS:
+            with transaction.atomic(), connection.cursor() as cursor:
+                # Num banco reaproveitado (--reuse-db), uma copia antiga estaria
+                # sem as migracoes novas: sempre do zero.
+                cursor.execute(f'DROP SCHEMA IF EXISTS "{nome}" CASCADE')
+                _copiar_schema(_schema_modelo, nome, cursor)
+        connection.set_schema_to_public()
+    return frozenset(SCHEMAS_REAPROVEITADOS)
+
+
+def _copiar_schema(modelo: str, novo: str, cursor) -> None:
     """Copia tabelas, indices, chaves e dados do modelo para um schema novo.
 
     `LIKE ... INCLUDING ALL` preserva tipo com dimensao (vector(1024)),
@@ -112,42 +141,41 @@ def _copiar_schema(modelo: str, novo: str) -> None:
     seguir. A funcao clone_schema do django-tenants perde a dimensao do vetor
     e por isso nao serve aqui.
     """
-    with connection.cursor() as cursor:
-        cursor.execute("SET search_path TO public, extensions")
-        cursor.execute(f'CREATE SCHEMA "{novo}"')
-        cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = %s", [modelo])
-        tabelas = [linha[0] for linha in cursor.fetchall()]
-        for tabela in tabelas:
-            cursor.execute(
-                f'CREATE TABLE "{novo}"."{tabela}" (LIKE "{modelo}"."{tabela}" INCLUDING ALL)'
-            )
+    cursor.execute("SET search_path TO public, extensions")
+    cursor.execute(f'CREATE SCHEMA "{novo}"')
+    cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = %s", [modelo])
+    tabelas = [linha[0] for linha in cursor.fetchall()]
+    for tabela in tabelas:
         cursor.execute(
-            """SELECT c.conrelid::regclass::text, c.conname, pg_get_constraintdef(c.oid)
-               FROM pg_constraint c WHERE c.contype = 'f' AND c.connamespace = %s::regnamespace""",
-            [modelo],
+            f'CREATE TABLE "{novo}"."{tabela}" (LIKE "{modelo}"."{tabela}" INCLUDING ALL)'
         )
-        for tabela, nome, definicao in cursor.fetchall():
-            tabela = tabela.split(".")[-1].strip('"')
-            definicao = definicao.replace(f"{modelo}.", f'"{novo}".')
-            cursor.execute(f'ALTER TABLE "{novo}"."{tabela}" ADD CONSTRAINT "{nome}" {definicao}')
-        # Nomes vindos do catalogo do proprio Postgres, nao de fora.
-        for tabela in tabelas:
-            copia = f'INSERT INTO "{novo}"."{tabela}" OVERRIDING SYSTEM VALUE SELECT * '
-            cursor.execute(copia + f'FROM "{modelo}"."{tabela}"')
-        # Identidade copiada comeca do 1: acerta para depois dos dados copiados.
-        cursor.execute(
-            """SELECT table_name, column_name FROM information_schema.columns
-               WHERE table_schema = %s AND is_identity = 'YES'""",
-            [novo],
-        )
-        for tabela, coluna in cursor.fetchall():
-            sequencia = f'pg_get_serial_sequence(\'"{novo}"."{tabela}"\', %s)'
-            maximo = f'COALESCE((SELECT MAX("{coluna}") FROM "{novo}"."{tabela}"), 0) + 1'  # noqa: S608
-            cursor.execute(f"SELECT setval({sequencia}, {maximo}, false)", [coluna])
+    cursor.execute(
+        """SELECT c.conrelid::regclass::text, c.conname, pg_get_constraintdef(c.oid)
+           FROM pg_constraint c WHERE c.contype = 'f' AND c.connamespace = %s::regnamespace""",
+        [modelo],
+    )
+    for tabela, nome, definicao in cursor.fetchall():
+        tabela = tabela.split(".")[-1].strip('"')
+        definicao = definicao.replace(f"{modelo}.", f'"{novo}".')
+        cursor.execute(f'ALTER TABLE "{novo}"."{tabela}" ADD CONSTRAINT "{nome}" {definicao}')
+    # Nomes vindos do catalogo do proprio Postgres, nao de fora.
+    for tabela in tabelas:
+        copia = f'INSERT INTO "{novo}"."{tabela}" OVERRIDING SYSTEM VALUE SELECT * '
+        cursor.execute(copia + f'FROM "{modelo}"."{tabela}"')
+    # Identidade copiada comeca do 1: acerta para depois dos dados copiados.
+    cursor.execute(
+        """SELECT table_name, column_name FROM information_schema.columns
+           WHERE table_schema = %s AND is_identity = 'YES'""",
+        [novo],
+    )
+    for tabela, coluna in cursor.fetchall():
+        sequencia = f'pg_get_serial_sequence(\'"{novo}"."{tabela}"\', %s)'
+        maximo = f'COALESCE((SELECT MAX("{coluna}") FROM "{novo}"."{tabela}"), 0) + 1'  # noqa: S608
+        cursor.execute(f"SELECT setval({sequencia}, {maximo}, false)", [coluna])
 
 
 @pytest.fixture
-def tenant_factory(db, public_tenant, _schema_modelo):
+def tenant_factory(db, public_tenant, _schema_modelo, _schemas_reaproveitados):
     """Cria um tenant com schema real no Postgres.
 
     Cria o schema de verdade (nao um mock) porque tudo o que estes testes
@@ -162,7 +190,9 @@ def tenant_factory(db, public_tenant, _schema_modelo):
             slug=schema_name.replace("_", "-"),
             status=Tenant.Status.ACTIVE,
         )
-        _copiar_schema(_schema_modelo, schema_name)
+        if schema_name not in _schemas_reaproveitados:
+            with connection.cursor() as cursor:
+                _copiar_schema(_schema_modelo, schema_name, cursor)
         Domain.objects.create(
             domain=f"{tenant.slug}.{settings.ROOT_DOMAIN}", tenant=tenant, is_primary=True
         )

@@ -101,6 +101,7 @@ def editar(post, n: int, **campos) -> None:
 
 def para_a_tela(post) -> list[dict]:
     saida = []
+    numero = {e.pk: i for i, e in enumerate(referencias_do_video(post), start=1)}
     for n, cena in enumerate(cenas(post), start=1):
         quadro, clipe = cena.get("quadro", ""), cena.get("clipe", "")
         saida.append(
@@ -110,6 +111,8 @@ def para_a_tela(post) -> list[dict]:
                 "tem_quadro": _existe(quadro),
                 "tem_clipe": _existe(clipe),
                 "tem_referencia": _existe(cena.get("referencia", "")),
+                "usa": [(numero[e.pk], e.nome) for e in referencias_da_cena(post, cena)],
+                "com_referencia_local": settings.CENAS_REFERENCIA_LOCAL,
                 "animando": bool(cena.get("animando")),
                 "animando_desde": _hora((cena.get("animando") or {}).get("desde")),
                 "animando_no": (cena.get("animando") or {}).get("modelo", ""),
@@ -384,7 +387,11 @@ def gerar_quadro(post, n: int, *, sem_referencia: bool = False) -> str:
             )
         elif lugar is not None:
             base, mascara = _fundo(lugar, com_gente=True)
-        referencias = [] if sem_referencia else _referencias(post, cena)
+        # A referencia no gerador local copiava a pose e o fundo da imagem (e,
+        # so nas camadas de aparencia, trocava a pessoa): testado de varias
+        # formas, a imagem sai melhor so pela descricao. Fica atras da chave.
+        usa = settings.CENAS_REFERENCIA_LOCAL and not sem_referencia
+        referencias = _referencias(post, cena) if usa else []
         conteudo, aviso = fontes.gerar_quadro(
             prompts["imagem"],
             tamanho=f"{QUADRO[0]}x{QUADRO[1]}",
@@ -746,6 +753,10 @@ lento a partir dela), entao:
 - Cores da marca: fundo {fundo}, destaque {destaque}.
 - Nada de pessoas reais reconheciveis ou marcas de terceiros.
 {elementos}
+Cada cena diz quais imagens anexadas usar, pelo numero. Personagem e objeto:
+desenhe IGUAL a imagem (rosto, cabelo, roupa, cores), na pose e no lugar que a
+cena pede, nao copie o fundo nem a pose da imagem. Lugar real (foto): ele aparece
+como a cena diz (na janela, num quadro na parede ou de fundo), reconhecivel.
 """
 
 
@@ -759,16 +770,51 @@ def pedido_das_imagens(post) -> str:
         or "o das imagens da conta",
         fundo=cores["fundo"],
         destaque=cores["destaque"],
-        elementos=(
-            "- Personagens e lugares fixos (vou anexar as imagens; desenhe sempre igual):\n"
-            + identidade.ficha(destino)
-            + "\n"
-            if identidade.elementos(destino)
-            else ""
-        ),
+        elementos=_lista_das_referencias(post),
     )
+    numero = {e.pk: i for i, e in enumerate(referencias_do_video(post), start=1)}
     for n, cena in enumerate(cenas(post), start=1):
         texto += f"\nCena {n}: {cena.get('imagem', '')}"
         if cena.get("movimento"):
             texto += f" (o gesto que vem depois: {cena['movimento']})"
+        usa = [f"{e.nome} (imagem {numero[e.pk]})" for e in referencias_da_cena(post, cena)]
+        if usa:
+            texto += f"\n  Use: {', '.join(usa)}."
     return texto + "\n"
+
+
+def referencias_da_cena(post, cena: dict) -> list:
+    """Os elementos fixos com imagem que a cena chama pelo nome (no texto da
+    imagem inicial), na ordem em que aparecem no texto."""
+    from apps.social.iscas import normalizar
+
+    texto = f" {normalizar(cena.get('imagem') or '')} "
+    achados = [
+        e
+        for e in identidade.citados(cena.get("imagem") or "", identidade.elementos(post.destino))
+        if e.imagem
+    ]
+    return sorted(achados, key=lambda e: texto.find(f" {normalizar(e.nome)} "))
+
+
+def referencias_do_video(post) -> list:
+    """As imagens para anexar na IA de imagem de fora, numeradas na ordem em que
+    aparecem nas cenas (sem repetir): a folha do personagem, a foto do lugar."""
+    vistos, saida = set(), []
+    for cena in cenas(post):
+        for elemento in referencias_da_cena(post, cena):
+            if elemento.pk not in vistos:
+                vistos.add(elemento.pk)
+                saida.append(elemento)
+    return saida
+
+
+def _lista_das_referencias(post) -> str:
+    lista = referencias_do_video(post)
+    if not lista:
+        return ""
+    linhas = [
+        f"  Imagem {i}: {e.nome} ({e.get_tipo_display().lower()}): {e.descricao.strip()}"
+        for i, e in enumerate(lista, start=1)
+    ]
+    return "- As imagens que vou anexar, nesta ordem:\n" + "\n".join(linhas) + "\n"

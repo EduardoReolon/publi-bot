@@ -272,6 +272,7 @@ def test_lugar_real_na_janela_e_worker_sem_a_rota(
     from apps.social.models import ElementoVisual
 
     settings.MEDIA_ROOT = tmp_path
+    settings.CENAS_REFERENCIA_LOCAL = True  # desligada de fabrica
 
     def png(cor, tamanho=(200, 120)):
         buffer = io.BytesIO()
@@ -336,7 +337,14 @@ def test_lugar_real_na_janela_e_worker_sem_a_rota(
     cenas.gerar_quadro(post, 2)  # lugar de fundo, sem personagem: a propria foto
     post.refresh_from_db()
     assert post.extras["video_ia"]["cenas"][1]["quadro_de"] == "lugar" and len(pedidos) == 2
-    assert "Museu do Olho" in cenas.pedido_das_imagens(post)
+    pedido = cenas.pedido_das_imagens(post)
+    assert "Imagem 1: Carlos" in pedido and "Imagem 2: Museu do Olho" in pedido
+    assert "Use: Carlos (imagem 1), Museu do Olho (imagem 2)." in pedido
+    assert post.cenas_do_video[1]["usa"] == [(2, "Museu do Olho")]
+
+    settings.CENAS_REFERENCIA_LOCAL = False  # o padrao: a imagem daqui so pela descricao
+    cenas.gerar_quadro(post, 1)
+    assert pedidos[-1][2] == []
 
 
 @pytest.mark.django_db

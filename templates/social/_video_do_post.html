@@ -15,10 +15,29 @@
     {% endblocktranslate %}</p>
     <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
       {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
-      <button type="submit" name="acao" value="cenas_imagens" class="botao discreto pequeno" title="{% translate 'So as imagens iniciais que faltam (minutos): para conferir antes de animar' %}">{% translate "Gerar as imagens iniciais" %}</button>
+      <button type="submit" name="acao" value="cenas_imagens" class="botao discreto pequeno" title="{% translate 'As que faltam, pelo gerador daqui, so pela descricao: o cenario sai bom, o personagem sai parecido (nao igual). Para o personagem fiel, use a IA de fora.' %}">{% translate "Gerar as imagens iniciais aqui" %}</button>
       <button type="submit" name="acao" value="cenas_todas" class="botao secundario pequeno" title="{% translate 'As imagens e as animacoes que faltam, uma cena por vez (cada uma leva dezenas de minutos na placa); no fim, monta o video' %}">{% translate "Gerar tudo o que falta" %}</button>
       <button type="submit" name="acao" value="cenas_montar" class="botao pequeno" title="{% translate 'Junta as cenas com a voz e as legendas. Cena ainda sem animacao entra com a imagem parada, aproximando devagar' %}">{% translate "Montar o video" %}</button>
     </form>
+    <details class="ajuda" style="margin:.3rem 0"{% if not cenas.0.tem_quadro %} open{% endif %}><summary><strong>{% translate "Imagens iniciais numa IA de imagem de fora (recomendado)" %}</strong></summary>
+      <p>{% blocktranslate trimmed %}
+        1. Copie o pedido e cole numa IA de imagem (ChatGPT, Gemini...). 2. Anexe as imagens abaixo, na ordem
+        (clique com o botao direito, "Copiar imagem", e cole no chat). 3. Baixe cada imagem que ela fizer e envie
+        na sua cena ("Enviar a imagem inicial"). A cena anima a partir dela.
+      {% endblocktranslate %}</p>
+      {% with refs=post.referencias_do_video %}{% if refs %}
+        <div class="acoes" style="gap:.6rem; align-items:flex-start">
+          {% for e in refs %}<figure style="margin:0; text-align:center; width:110px">
+            <img src="{% url 'social:elemento_privado' e.pk %}" alt="{{ e.nome }}" style="width:110px; border-radius:.3rem; border:1px solid var(--borda)">
+            <figcaption class="ajuda">{{ forloop.counter }}. {{ e.nome }}</figcaption>
+          </figure>{% endfor %}
+        </div>
+      {% else %}
+        <p>{% translate "Nenhuma cena chama um personagem ou lugar fixo pelo nome (os da Identidade visual com imagem)." %}</p>
+      {% endif %}{% endwith %}
+      <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-quadros-{{ post.pk }}">{% translate "Copiar o pedido das imagens iniciais" %}</button></div>
+      <textarea id="pedido-quadros-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_das_imagens_iniciais }}</textarea>
+    </details>
     {% for c in cenas %}
       <div style="border-top:1px solid var(--borda); padding:.4rem 0">
         <strong>{% translate "Cena" %} {{ c.n }}</strong> <span class="ajuda">~{{ c.duracao }} s</span>
@@ -26,6 +45,7 @@
         {% if c.tem_clipe and c.modelo %}<span class="selo">{{ c.modelo }}</span>{% endif %}
         {% if c.tem_clipe %}<span class="selo ok">{% translate "animada" %}</span>{% elif c.tem_quadro %}<span class="selo espera">{% translate "so a imagem" %}</span>{% else %}<span class="selo">{% translate "sem imagem" %}</span>{% endif %}
         {% if c.quadro_de == 'lugar' %}<span class="selo">{% translate "foto do lugar" %}</span>{% elif c.quadro_de == 'enviado' %}<span class="selo">{% translate "imagem enviada" %}</span>{% endif %}
+        {% if c.usa %}<span class="ajuda">{% translate "usa" %}: {% for numero, nome in c.usa %}{{ nome }} ({{ numero }}){% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
         {% if c.aviso %}<div class="ajuda">{{ c.aviso }}</div>{% endif %}
         <div class="acoes" style="gap:.5rem; align-items:flex-start">
           {% if c.tem_quadro %}<a href="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}" data-ampliar><img src="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}?v={{ post.atualizado_em|date:'U' }}" alt="{% translate 'imagem inicial' %}" style="width:90px; border-radius:.3rem; border:1px solid var(--borda)"></a>{% endif %}
@@ -46,7 +66,7 @@
               {% elif not c.tem_clipe %}<button type="submit" name="acao" value="cena_gerar" class="botao secundario pequeno">{% if c.tem_quadro %}{% translate "Animar a cena" %}{% else %}{% translate "Gerar a cena" %}{% endif %}</button>{% endif %}
               {% if c.tem_quadro %}
                 <button type="submit" name="acao" value="cena_refazer_imagem" class="botao discreto pequeno">{% translate "Refazer a imagem" %}</button>
-                <button type="submit" name="acao" value="cena_sem_referencia" class="botao discreto pequeno" title="{% translate 'So pela descricao, sem a imagem do personagem: para comparar' %}">{% translate "Refazer sem referencia" %}</button>
+                {% if c.com_referencia_local %}<button type="submit" name="acao" value="cena_sem_referencia" class="botao discreto pequeno" title="{% translate 'So pela descricao, sem a imagem do personagem: para comparar' %}">{% translate "Refazer sem referencia" %}</button>{% endif %}
                 <button type="submit" name="acao" value="cena_refazer_animacao" class="botao discreto pequeno" title="{% translate 'A mesma imagem, outra variacao do movimento' %}">{% translate "Refazer a animacao" %}</button>
                 {% if c.tem_clipe and not c.no_maior %}<button type="submit" name="acao" value="cena_qualidade_maxima" class="botao discreto pequeno" title="{% translate 'O mesmo movimento e a mesma variacao (seed), no modelo maior: mais detalhe, bem mais lento' %}">{% translate "Refazer em qualidade maxima" %}</button>{% endif %}
               {% endif %}
@@ -60,11 +80,6 @@
         </form>
       </div>
     {% endfor %}
-    <details class="ajuda" style="margin:.3rem 0"><summary>{% translate "Imagens iniciais numa IA de imagem de fora" %}</summary>
-      <p>{% translate "Anexe as imagens dos personagens e dos lugares, cole o pedido e envie cada imagem na cena dela." %}</p>
-      <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-quadros-{{ post.pk }}">{% translate "Copiar o pedido das imagens iniciais" %}</button></div>
-      <textarea id="pedido-quadros-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_das_imagens_iniciais }}</textarea>
-    </details>
   {% else %}
     <p class="ajuda">{% translate "Este post ainda nao tem roteiro de video. Em 'Escrever com outra IA', converse ate o video ficar bom e cole a ultima resposta (com as CENAS): cada cena aparece aqui para gerar." %}</p>
   {% endif %}

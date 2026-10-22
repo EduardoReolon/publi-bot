@@ -666,6 +666,12 @@ class Post(models.Model):
         return cenas.pedido_das_imagens(self)
 
     @property
+    def referencias_do_video(self) -> list:
+        from apps.social import cenas
+
+        return cenas.referencias_do_video(self)
+
+    @property
     def no_foco(self) -> dict:
         """Como foi no seu foco, contra os da conta com o mesmo foco."""
         from apps.social import focos
