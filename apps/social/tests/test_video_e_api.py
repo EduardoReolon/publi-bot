@@ -230,6 +230,19 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     clipe = client.get(reverse("social:midia_da_cena", args=[post.pk, 1, "clipe"], urlconf=U))
     assert clipe.status_code == 200
 
+    # Refazer a imagem e SO a imagem: a cena fica parada ate pedirem a animacao.
+    fila = []
+    monkeypatch.setattr(fontes, "na_fila", lambda tarefa, *a, **k: fila.append(k) or "t")
+    monkeypatch.setattr(fontes, "ha_modelo_de_imagem", lambda: True)
+    monkeypatch.setattr(fontes, "tem_animacao", lambda: True)
+    client.post(acao, {"acao": "cena_refazer_imagem", "n": "1"})
+    post.refresh_from_db()
+    assert fila[-1]["so_quadros"] and fila[-1]["refazer_quadro"]
+    assert cenas.cenas(post)[0]["parada"]
+    client.post(acao, {"acao": "cena_gerar", "n": "1"})
+    post.refresh_from_db()
+    assert not fila[-1]["so_quadros"] and "parada" not in cenas.cenas(post)[0]
+
 
 @pytest.mark.django_db
 def test_lugar_real_na_janela_e_worker_sem_a_rota(
@@ -461,6 +474,58 @@ def test_worker_desligado_ou_reiniciado_no_meio_so_atrasa_a_cena(
     )
     with pytest.raises(video.VideoIndisponivel, match="sem_vram"):
         cenas.conferir_animacao(post, 2)
+
+
+@pytest.mark.django_db
+def test_clipe_pronto_chega_pela_varredura_e_parar_nao_pede_de_novo(
+    ambiente, modulo, settings, tmp_path, monkeypatch
+):
+    """A conferencia da tarefa pode ficar presa numa implantacao: a varredura de
+    5 em 5 minutos busca o clipe pronto. Parada, a cena nao e conferida nem pedida
+    de novo, nem com o worker reiniciado."""
+    import json
+
+    from django.core.files.base import ContentFile
+
+    from apps.social import cenas, tasks
+
+    settings.MEDIA_ROOT = tmp_path
+    monkeypatch.setattr(
+        fontes,
+        "executar",
+        lambda chave, variaveis, **k: json.dumps({"prompt": "frame", "movimento": "blink"}),
+    )
+    pedidos = []
+    monkeypatch.setattr(
+        fontes,
+        "pedir_animacao",
+        lambda *a, seed, **k: pedidos.append(seed) or {"id": f"video_{len(pedidos)}", "seed": seed},
+    )
+    post = _post(
+        _destino("instagram"), extras={"video_ia": {"cenas": [{"imagem": "a"}, {"imagem": "b"}]}}
+    )
+    lista = cenas.cenas(post)
+    for n, cena in enumerate(lista, start=1):
+        cena["quadro"] = default_storage.save(f"social/{post.pk}/q{n}.png", ContentFile(b"PNG"))
+    cenas._gravar(post, lista)
+    cenas.pedir_animacao(post, 1)
+    cenas.pedir_animacao(post, 2)
+    post.refresh_from_db()
+
+    cenas.parar_animacao(post, 2)
+    monkeypatch.setattr(fontes, "situacao_da_animacao", lambda i: {"status": "completed"})
+    monkeypatch.setattr(fontes, "baixar_animacao", lambda i: b"MP4")
+    assert cenas.retomar_animacoes() == 1  # a cena 1 chegou; a 2 parada nem e conferida
+    post.refresh_from_db()
+    tela = cenas.para_a_tela(post)
+    assert tela[0]["tem_clipe"] and not tela[1]["animando"] and len(pedidos) == 2
+
+    # A tarefa que ainda estava rodando pula a cena parada (nao pede de novo).
+    tasks.gerar_cenas.apply(args=[str(post.pk)], kwargs={"n": 2}).get()
+    assert len(pedidos) == 2
+    cenas.liberar(post, 2)  # pedido explicito ("Animar a cena")
+    post.refresh_from_db()
+    assert "parada" not in cenas.cenas(post)[1]
 
 
 def test_da_folha_de_personagem_vai_so_a_primeira_figura():

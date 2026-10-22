@@ -10,7 +10,7 @@
   {% if cenas %}
     <p class="ajuda">{% blocktranslate trimmed %}
       Cada cena: a imagem inicial, a animacao (worker) e a fala, que vira voz e legenda na montagem.
-      Mudou a fala? So monte de novo. Mudou a descricao da imagem? Refaca a imagem (ela anima de novo).
+      Mudou a fala? So monte de novo. Mudou a descricao da imagem? Refaca a imagem (so a imagem: confira e depois clique em Animar a cena).
       Nao gostou do movimento? Refaca a animacao: outra variacao, com a mesma imagem.
     {% endblocktranslate %}</p>
     <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
@@ -40,7 +40,8 @@
             <input type="hidden" name="segundos" value="{{ c.segundos }}">
             <div class="acoes">
               <button type="submit" name="acao" value="cena_salvar" class="botao discreto pequeno">{% translate "Salvar" %}</button>
-              {% if not c.tem_clipe %}<button type="submit" name="acao" value="cena_gerar" class="botao secundario pequeno">{% translate "Gerar a cena" %}</button>{% endif %}
+              {% if c.animando %}<button type="submit" name="acao" value="cena_parar" class="botao discreto pequeno" title="{% translate 'Nada mais e pedido para esta cena, nem se o worker reiniciar' %}">{% translate "Parar a animacao" %}</button>
+              {% elif not c.tem_clipe %}<button type="submit" name="acao" value="cena_gerar" class="botao secundario pequeno">{% if c.tem_quadro %}{% translate "Animar a cena" %}{% else %}{% translate "Gerar a cena" %}{% endif %}</button>{% endif %}
               {% if c.tem_quadro %}
                 <button type="submit" name="acao" value="cena_refazer_imagem" class="botao discreto pequeno">{% translate "Refazer a imagem" %}</button>
                 <button type="submit" name="acao" value="cena_refazer_animacao" class="botao discreto pequeno" title="{% translate 'A mesma imagem, outra variacao do movimento' %}">{% translate "Refazer a animacao" %}</button>

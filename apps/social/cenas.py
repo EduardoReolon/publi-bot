@@ -371,6 +371,57 @@ def segundos_pedidos(cena: dict) -> int:
     return max(1, round(trechos * TRECHO))
 
 
+def retomar_animacoes() -> int:
+    """De 5 em 5 minutos (publicar_posts): confere as animacoes em curso de todos
+    os posts. A conferencia normal e da tarefa `gerar_cenas`, que volta de minuto
+    em minuto; mas uma implantacao no meio pode segurar essa volta por horas, e o
+    clipe pronto no worker nao aparecia na tela. Devolve quantos clipes chegaram."""
+    from datetime import timedelta
+
+    from apps.inference.providers.base import ProviderError
+    from apps.social.models import Post
+
+    chegaram = 0
+    recentes = Post.objects.select_related("destino").filter(
+        extras__has_key="video_ia",
+        atualizado_em__gte=timezone.now() - timedelta(hours=ESPERA_MAXIMA_HORAS + 2),
+    )
+    for post in recentes:
+        for n, cena in enumerate(cenas(post), start=1):
+            if not cena.get("animando") or cena.get("parada"):
+                continue
+            try:
+                situacao = conferir_animacao(post, n)
+                if situacao == "perdida":
+                    pedir_animacao(post, n)
+                chegaram += situacao == "pronta"
+            except (video.VideoIndisponivel, ProviderError) as exc:
+                post.refresh_from_db()
+                post.avisos = [*(post.avisos or []), f"cena {n}: {exc}"]
+                post.save(update_fields=["avisos", "atualizado_em"])
+            post.refresh_from_db()
+    return chegaram
+
+
+def parar_animacao(post, n: int) -> None:
+    """Esquece a animacao em curso da cena n e marca a cena como parada: a
+    tarefa nao confere nem pede de novo (nem se o worker reiniciar) ate um pedido
+    explicito (`liberar`). O worker termina o que ja comecou, ou para ao reiniciar."""
+    lista, cena = _cena(post, n)
+    cena.pop("animando", None)
+    cena["parada"] = True
+    _gravar(post, lista)
+
+
+def liberar(post, n: int | None = None) -> None:
+    """Tira a marca de parada (da cena n, ou de todas): pedido explicito de animar."""
+    lista = cenas(post)
+    for i, cena in enumerate(lista, start=1):
+        if n in (None, i):
+            cena.pop("parada", None)
+    _gravar(post, lista)
+
+
 def pedir_animacao(post, n: int, *, nova_seed: bool = False) -> str:
     """Pede a animacao da cena n ao worker e guarda o trabalho na cena, sem
     esperar (`conferir_animacao` busca depois). `nova_seed`: outra variacao do
