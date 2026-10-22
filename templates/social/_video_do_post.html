@@ -29,6 +29,7 @@
         {% if c.aviso %}<div class="ajuda">{{ c.aviso }}</div>{% endif %}
         <div class="acoes" style="gap:.5rem; align-items:flex-start">
           {% if c.tem_quadro %}<a href="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}" data-ampliar><img src="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}?v={{ post.atualizado_em|date:'U' }}" alt="{% translate 'imagem inicial' %}" style="width:90px; border-radius:.3rem; border:1px solid var(--borda)"></a>{% endif %}
+          {% if c.tem_referencia %}<a href="{% url 'social:midia_da_cena' post.pk c.n 'referencia' %}" data-ampliar title="{% translate 'A referencia do personagem que o gerador recebeu nesta imagem' %}"><img src="{% url 'social:midia_da_cena' post.pk c.n 'referencia' %}?v={{ post.atualizado_em|date:'U' }}" alt="{% translate 'referencia enviada' %}" style="width:50px; border-radius:.3rem; border:1px dashed var(--borda)"></a>{% endif %}
           {% if c.tem_clipe %}<video src="{% url 'social:midia_da_cena' post.pk c.n 'clipe' %}?v={{ post.atualizado_em|date:'U' }}" controls preload="metadata" style="width:110px; border-radius:.3rem"></video>{% endif %}
           <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="flex:1; min-width:16rem">
             {% csrf_token %}<input type="hidden" name="n" value="{{ c.n }}"><input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
@@ -45,6 +46,7 @@
               {% elif not c.tem_clipe %}<button type="submit" name="acao" value="cena_gerar" class="botao secundario pequeno">{% if c.tem_quadro %}{% translate "Animar a cena" %}{% else %}{% translate "Gerar a cena" %}{% endif %}</button>{% endif %}
               {% if c.tem_quadro %}
                 <button type="submit" name="acao" value="cena_refazer_imagem" class="botao discreto pequeno">{% translate "Refazer a imagem" %}</button>
+                <button type="submit" name="acao" value="cena_sem_referencia" class="botao discreto pequeno" title="{% translate 'So pela descricao, sem a imagem do personagem: para comparar' %}">{% translate "Refazer sem referencia" %}</button>
                 <button type="submit" name="acao" value="cena_refazer_animacao" class="botao discreto pequeno" title="{% translate 'A mesma imagem, outra variacao do movimento' %}">{% translate "Refazer a animacao" %}</button>
                 {% if c.tem_clipe and not c.no_maior %}<button type="submit" name="acao" value="cena_qualidade_maxima" class="botao discreto pequeno" title="{% translate 'O mesmo movimento e a mesma variacao (seed), no modelo maior: mais detalhe, bem mais lento' %}">{% translate "Refazer em qualidade maxima" %}</button>{% endif %}
               {% endif %}
