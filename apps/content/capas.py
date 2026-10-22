@@ -253,6 +253,8 @@ def editar_imagem(
     base: bytes | None = None,
     mascara: bytes | None = None,
     referencias: list[bytes] | tuple = (),
+    forca: float = 0.6,
+    negativo: str = "",
     job=None,
 ) -> tuple[bytes, tuple[str, ...]]:
     """(imagem, avisos) com referencias (personagens) e/ou base + mascara (a foto
@@ -268,7 +270,8 @@ def editar_imagem(
                 base=base,
                 mascara=mascara,
                 referencias=referencias,
-                negativo=_negativo(),
+                forca_da_referencia=forca,
+                negativo=", ".join(n for n in (_negativo(), negativo) if n),
             )
         ],
         job=job,

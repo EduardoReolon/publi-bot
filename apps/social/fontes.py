@@ -519,6 +519,8 @@ def gerar_quadro(
     referencias: list[bytes] | tuple = (),
     base: bytes | None = None,
     mascara: bytes | None = None,
+    forca: float = 0.6,
+    negativo: str = "",
 ) -> tuple[bytes, str]:
     """(imagem, aviso) da imagem inicial de uma cena: com as referencias dos
     personagens e a foto real mantida pela mascara, quando o gerador tem a rota
@@ -530,7 +532,13 @@ def gerar_quadro(
     if referencias or base is not None:
         try:
             imagem, avisos = editar_imagem(
-                prompt, tamanho=tamanho, base=base, mascara=mascara, referencias=referencias
+                prompt,
+                tamanho=tamanho,
+                base=base,
+                mascara=mascara,
+                referencias=referencias,
+                forca=forca,
+                negativo=negativo,
             )
             return imagem, "; ".join(avisos)
         except RotaInexistente:
