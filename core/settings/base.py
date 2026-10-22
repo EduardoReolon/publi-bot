@@ -742,6 +742,10 @@ ANIMACAO_TAMANHO = env.get("ANIMACAO_TAMANHO", "448x800")
 # nao conhece vira o padrao dele. A conexao Sora usa o modelo da conexao.
 ANIMACAO_MODELO_MENOR = env.get("ANIMACAO_MODELO_MENOR", "framepack-fp8")
 ANIMACAO_MODELO_MAIOR = env.get("ANIMACAO_MODELO_MAIOR", "framepack")
+# A imagem inicial das cenas pelo gerador local COM a referencia do personagem
+# (IP-Adapter). Desligada: nos testes ela copiava a pose e o fundo da referencia,
+# e a imagem saia melhor so pela descricao. A com personagem fiel e a da IA de fora.
+CENAS_REFERENCIA_LOCAL = env.boolean("CENAS_REFERENCIA_LOCAL", False)
 
 # Quanto o cliente espera por um lote, em segundos.
 #

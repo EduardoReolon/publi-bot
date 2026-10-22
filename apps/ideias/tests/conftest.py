@@ -4,6 +4,7 @@ de teste, cliente autenticado."""
 from tests.conftest import (  # noqa: F401
     _exige_pgvector,
     _schema_modelo,
+    _schemas_reaproveitados,
     _sem_bases_academicas,
     embedding_falso,
     public_tenant,
