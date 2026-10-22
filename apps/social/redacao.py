@@ -214,6 +214,19 @@ def _cita_o_lugar(texto: str, local: str) -> bool:
     return bool(principal) and principal in _sem_acento(texto)
 
 
+def abre_com_lugar_real(post: Post, laminas: list[dict], cenas: list[dict]) -> bool:
+    """A capa (o "visual" da 1a lamina) ou a 1a cena (a "imagem") mostra um
+    lugar real da conta, com foto? Ai a imagem ja diz onde e: sem selo."""
+    from apps.social.video_ia import lugares
+
+    abertura = _sem_acento(
+        f"{(laminas or [{}])[0].get('visual', '')} {(cenas or [{}])[0].get('imagem', '')}"
+    )
+    return any(
+        _sem_acento(e.nome).strip() in abertura for e in lugares(post.destino) if e.nome.strip()
+    )
+
+
 def montar(post: Post, dados: dict) -> tuple[str, dict]:
     """O texto final e os extras, a partir do JSON do modelo."""
     r = rede(post.destino.rede)
@@ -225,10 +238,20 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     hashtags = _hashtags(dados.get("hashtags"), post.destino.hashtags_fixas, f.max_hashtags)
     if f.link == "bio" and "bio" not in corpo.lower():
         corpo = f"{corpo}\n\nLink na bio.".strip()
-    # Negocio local: todo post diz onde atende. Se o texto nao citou o lugar,
-    # a linha vai no fim (antes das hashtags) — garantido, sem depender do modelo.
+    # Negocio local: todo post diz onde atende. Se o texto nao citou o lugar e a
+    # abertura nao mostra um lugar real com foto, a linha vai no fim (antes das
+    # hashtags) — garantido, sem depender do modelo.
+    from apps.social import video_ia
+
     local = local_do_post(post)
-    if local and not _cita_o_lugar(f"{gancho} {corpo}", local):
+    roteiro = video_ia.ler_roteiro(dados.get("video"))
+    laminas_pedidas = [x for x in (dados.get("laminas") or []) if isinstance(x, dict)]
+    cenas_pedidas = (roteiro or {}).get("cenas") or []
+    if (
+        local
+        and not _cita_o_lugar(f"{gancho} {corpo}", local)
+        and not abre_com_lugar_real(post, laminas_pedidas, cenas_pedidas)
+    ):
         corpo = f"{corpo}\n\n\U0001f4cd {local}".strip()
     rodape = " ".join(f"#{h}" for h in hashtags)
     texto = "\n\n".join(p for p in [gancho, corpo] if p)
@@ -277,9 +300,6 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
     if f.max_laminas and formato in ("carrossel", "video"):
         extras["formato_sugerido"] = formato
         extras["por_que_formato"] = str(dados.get("por_que_formato") or "").strip()[:300]
-    from apps.social import video_ia
-
-    roteiro = video_ia.ler_roteiro(dados.get("video"))
     if f.max_laminas and roteiro and post.destino.video != post.destino.Video.NUNCA:
         extras["video_ia"] = roteiro
     if not f.max_laminas and str(dados.get("foto") or "").strip():

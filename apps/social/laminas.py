@@ -197,14 +197,18 @@ def _selo_do_lugar(desenho, cores: dict, local: str) -> None:
 
 def local_para_a_capa(post, laminas: list[dict]) -> str:
     """O lugar para o selo da capa: o da conta (ver redacao.local_do_post), se
-    a capa e a segunda lamina ainda nao o citam no texto."""
-    from apps.social.redacao import _cita_o_lugar, local_do_post
+    a capa e a segunda lamina ainda nao o citam no texto e a abertura (capa ou
+    1a cena) nao mostra um lugar real com foto (ver redacao.abre_com_lugar_real)."""
+    from apps.social.redacao import _cita_o_lugar, abre_com_lugar_real, local_do_post
 
     local = local_do_post(post)
     if not local:
         return ""
     inicio = " ".join(f"{x.get('titulo', '')} {x.get('texto', '')}" for x in laminas[:2])
-    return "" if _cita_o_lugar(inicio, local) else local
+    cenas = ((post.extras or {}).get("video_ia") or {}).get("cenas") or []
+    if _cita_o_lugar(inicio, local) or abre_com_lugar_real(post, laminas, cenas):
+        return ""
+    return local
 
 
 def _rodape(desenho, cores: dict, marca: str, n: int, total: int) -> None:
