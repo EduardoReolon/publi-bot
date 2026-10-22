@@ -201,6 +201,22 @@ EXEMPLO_DE_PERSONAGEM = (
 )
 
 
+REFERENCIA_LOCAL = (
+    "Anexe a folha de referencia de {nome}. Desenhe {nome} ({descricao}) UMA vez so: "
+    "corpo inteiro, de frente, em pe, bracos relaxados ao lado do corpo, expressao neutra, "
+    "centralizado e ocupando a maior parte da altura, NO MESMO traco, cores e roupa da folha. "
+    "Fundo cinza claro liso (#d9d9d9), sem chao, sem sombra, sem outros objetos, sem texto. "
+    "Formato quadrado 1:1."
+)
+
+
+def prompt_da_referencia_local(nome: str, descricao: str) -> str:
+    """O pedido da referencia para o gerador local (ver ElementoVisual.referencia_local)."""
+    return REFERENCIA_LOCAL.format(
+        nome=nome or "[nome]", descricao=descricao.strip().rstrip(".") or "[descricao]"
+    )
+
+
 def prompts_de_folha(nome: str = "", descricao: str = "", tipo: str = "personagem") -> list:
     """O pedido da folha de referencia em cada traco: [{"chave", "nome", "quando",
     "prompt"}]. Sem nome e descricao, com o modelo para preencher."""

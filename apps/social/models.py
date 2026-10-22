@@ -963,6 +963,13 @@ def _caminho_do_elemento(instancia, nome: str) -> str:
     return f"social/elementos/{instancia.destino_id}/{instancia.pk}{extensao}"
 
 
+def _caminho_da_referencia_local(instancia, nome: str) -> str:
+    import os
+
+    extensao = os.path.splitext(nome)[1].lower()[:5] or ".png"
+    return f"social/elementos/{instancia.destino_id}/{instancia.pk}-local{extensao}"
+
+
 class ElementoVisual(models.Model):
     """Um personagem, cenario ou objeto fixo da conta ("Gugu, o gorila de
     terno azul"): quem escreve o post o chama pelo nome na cena da lamina, e o
@@ -974,7 +981,8 @@ class ElementoVisual(models.Model):
         CENARIO = "cenario", _("Cenario")
         OBJETO = "objeto", _("Objeto")
         # Uma foto de verdade (um ponto da cidade, a fachada): entra na cena como
-        # esta, na janela ou de fundo, sem ser redesenhada (cenas.py).
+        # esta, na janela, num quadro na parede ou de fundo, sem ser redesenhada
+        # (cenas.py).
         LUGAR = "lugar", _("Lugar real (foto)")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -990,6 +998,14 @@ class ElementoVisual(models.Model):
     )
     imagem = models.ImageField(
         _("imagem de referencia (opcional)"), upload_to=_caminho_do_elemento, blank=True
+    )
+    # O gerador local (IP-Adapter) copia a referencia inteira, fundo e
+    # composicao: a folha (varias vistas) vira cena com o personagem repetido.
+    # Esta e a figura UMA vez, de frente, em fundo cinza liso: e a que ele usa.
+    referencia_local = models.ImageField(
+        _("referencia para o gerador local (opcional)"),
+        upload_to=_caminho_da_referencia_local,
+        blank=True,
     )
     ativo = models.BooleanField(_("ativo"), default=True)
     criado_em = models.DateTimeField(default=timezone.now)
@@ -1008,6 +1024,12 @@ class ElementoVisual(models.Model):
         from apps.social.identidade import prompts_de_folha
 
         return prompts_de_folha(self.nome, self.descricao, self.tipo)
+
+    @property
+    def prompt_da_referencia_local(self) -> str:
+        from apps.social.identidade import prompt_da_referencia_local
+
+        return prompt_da_referencia_local(self.nome, self.descricao)
 
 
 def _caminho_da_midia(instancia, nome: str) -> str:

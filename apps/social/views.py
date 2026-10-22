@@ -1901,9 +1901,10 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
                     nome=nome,
                     defaults={"tipo": tipo, "descricao": descricao, "ativo": True},
                 )
-                if request.FILES.get("imagem"):
-                    elemento.imagem = request.FILES["imagem"]
-                    elemento.save(update_fields=["imagem"])
+                for campo in ("imagem", "referencia_local"):
+                    if request.FILES.get(campo):
+                        setattr(elemento, campo, request.FILES[campo])
+                        elemento.save(update_fields=[campo])
                 messages.success(request, _("'%(n)s' salvo.") % {"n": nome})
             return redirect("social:identidade", destino.pk)
         elif acao == "apagar_elemento":
@@ -1955,13 +1956,15 @@ def identidade(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 def elemento_privado(request: HttpRequest, pk) -> HttpResponse:
-    """A imagem de referencia de um personagem ou cenario (com login)."""
+    """A imagem de referencia de um personagem ou cenario (com login);
+    `?local=1`: a referencia para o gerador local."""
     from apps.social.models import ElementoVisual
 
     elemento = get_object_or_404(ElementoVisual, pk=pk)
-    if not elemento.imagem:
+    arquivo = elemento.referencia_local if request.GET.get("local") else elemento.imagem
+    if not arquivo:
         raise Http404
-    return FileResponse(elemento.imagem.open("rb"))
+    return FileResponse(arquivo.open("rb"))
 
 
 def _api_da_outra_ia() -> str:

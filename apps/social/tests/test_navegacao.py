@@ -72,7 +72,8 @@ def test_personagens_fixos_no_pedido_e_na_geracao(ambiente, monkeypatch):
     destino.refresh_from_db()
     assert destino.estilo_das_imagens == "quadrinhos" and destino.cores == {"fundo": "#101010"}
     assert ElementoVisual.objects.get().nome == "Gugu"
-    assert "Gugu" in client.get(url).content.decode()
+    pagina = client.get(url).content.decode()
+    assert "Gugu" in pagina and "Copiar o prompt da referencia local" in pagina
 
     post = Post(
         destino=destino,
