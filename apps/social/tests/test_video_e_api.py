@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import io
 import shutil
 import subprocess
 import uuid
@@ -309,9 +310,14 @@ def test_lugar_real_na_janela_e_worker_sem_a_rota(
     assert len(referencias) == 1  # o Carlos (o lugar nao e referencia)
     largura, _altura = cenas.QUADRO
     janela = Image.open(io.BytesIO(mascara))
-    assert janela.getpixel((largura - 60, 120))[3] == 255  # a foto fica (a direita, no alto)
+    assert janela.getpixel((largura - 150, 200))[3] == 255  # a foto fica (a direita, no alto)
     assert janela.getpixel((60, 1200))[3] == 0  # o resto e pintado
-    assert Image.open(io.BytesIO(base)).getpixel((largura - 60, 120))[:3] == (0, 0, 255)
+    desenho = Image.open(io.BytesIO(base))
+    assert desenho.getpixel((largura - 150, 200))[:3] == (0, 0, 255)
+    # o batente da janela em volta da foto (fica, e diz ao gerador que e janela)
+    batente = cenas.MOLDURAS["janela"][1]
+    assert desenho.getpixel((largura - 150, 95))[:3] == batente
+    assert janela.getpixel((largura - 150, 95))[3] == 255
     post.refresh_from_db()
     assert "ainda nao aceita referencia" in post.extras["video_ia"]["cenas"][0]["aviso"]
 
@@ -612,3 +618,58 @@ def _nada():
     from contextlib import nullcontext
 
     return nullcontext()
+
+
+@pytest.mark.django_db
+def test_lugar_num_quadro_e_foto_sem_borda_lisa(ambiente, modulo, settings, tmp_path):
+    from django.core.files.base import ContentFile
+    from PIL import Image, ImageDraw
+
+    from apps.social import cenas
+    from apps.social.models import ElementoVisual
+
+    settings.MEDIA_ROOT = tmp_path
+    foto = Image.new("RGB", (400, 300), "white")  # a foto baixada, com faixa branca
+    ImageDraw.Draw(foto).rectangle((0, 40, 399, 259), fill=(10, 20, 200))
+    sem = cenas.sem_bordas(foto)
+    assert sem.size == (400, 220) and sem.getpixel((0, 0)) == (10, 20, 200)
+    assert cenas.sem_bordas(Image.new("RGB", (50, 50), "white")).size == (50, 50)
+
+    destino = _destino("instagram")
+    museu = ElementoVisual(destino=destino, nome="Museu", tipo="lugar", descricao="museu")
+    buffer = io.BytesIO()
+    foto.save(buffer, format="PNG")
+    museu.imagem.save("m.png", ContentFile(buffer.getvalue()), save=True)
+    post = _post(destino)
+    assert cenas._lugar_da_cena(post, {"imagem": "o Museu num quadro na parede"})[1] == "quadro"
+    assert cenas._lugar_da_cena(post, {"imagem": "o Museu na janela"})[1] == "janela"
+    assert cenas._lugar_da_cena(post, {"imagem": "o Museu ao entardecer"})[1] == "fundo"
+
+
+@pytest.mark.django_db
+def test_referencia_local_vence_a_folha(ambiente, modulo, settings, tmp_path):
+    from django.core.files.base import ContentFile
+    from PIL import Image
+
+    from apps.social import cenas
+    from apps.social.models import ElementoVisual
+
+    settings.MEDIA_ROOT = tmp_path
+
+    def png(cor, tamanho):
+        buffer = io.BytesIO()
+        Image.new("RGB", tamanho, cor).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    destino = _destino("instagram")
+    carlos = ElementoVisual(destino=destino, nome="Carlos", tipo="personagem", descricao="55")
+    carlos.imagem.save("folha.png", ContentFile(png("white", (160, 90))), save=True)
+    post = _post(destino)
+    cena = {"imagem": "Carlos na mesa"}
+    assert len(cenas._referencias(post, cena)) == 1  # sem a local: a folha (recortada)
+    carlos.referencia_local.save("local.png", ContentFile(png("gray", (80, 120))), save=True)
+    ref = Image.open(io.BytesIO(cenas._referencias(post, cena)[0]))
+    assert ref.size == (120, 120) and ref.getpixel((0, 0)) == (128, 128, 128)
+    assert "UMA vez so" in carlos.prompt_da_referencia_local and "Carlos" in (
+        carlos.prompt_da_referencia_local
+    )

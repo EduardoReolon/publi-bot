@@ -86,12 +86,26 @@
     {% for e in elementos %}
       <details class="secao">
         <summary><strong>{{ e.nome }}</strong> <span class="selo">{{ e.get_tipo_display }}</span>{% if not e.ativo %} <span class="selo">{% translate "desligado" %}</span>{% endif %}</summary>
-        {% if e.imagem %}<img src="{% url 'social:elemento_privado' e.pk %}" alt="" style="max-width:160px; display:block; margin:.4rem 0">{% endif %}
+        <div class="acoes" style="align-items:flex-start">
+          {% if e.imagem %}<img src="{% url 'social:elemento_privado' e.pk %}" alt="" style="max-width:160px; display:block; margin:.4rem 0">{% endif %}
+          {% if e.referencia_local %}<img src="{% url 'social:elemento_privado' e.pk %}?local=1" alt="{% translate 'referencia para o gerador local' %}" title="{% translate 'referencia para o gerador local' %}" style="max-width:90px; display:block; margin:.4rem 0; border:1px dashed var(--borda)">{% endif %}
+        </div>
         <form method="post" enctype="multipart/form-data">
           {% csrf_token %}<input type="hidden" name="acao" value="elemento"><input type="hidden" name="nome" value="{{ e.nome }}">
           <label>{% translate "Tipo" %} <select name="tipo">{% for v, r in tipos %}<option value="{{ v }}"{% if v == e.tipo %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
           <label>{% translate "Como e, sempre igual" %} <textarea name="descricao" rows="3" style="width:100%" required>{{ e.descricao }}</textarea></label>
           <label>{% translate "Imagem de referencia (opcional)" %} <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp"></label>
+          {% if e.tipo == 'personagem' or e.tipo == 'objeto' %}
+            <label>{% translate "Referencia para o gerador local (opcional)" %} <input type="file" name="referencia_local" accept="image/jpeg,image/png,image/webp"></label>
+            <p class="ajuda">{% blocktranslate trimmed %}
+              O gerador de imagem daqui (worker) copia a referencia inteira: o fundo e quantas vezes a figura aparece.
+              A folha, com varias vistas, sai como cena com o personagem repetido. Para ele, gere numa IA de imagem
+              (anexando a folha) a figura UMA vez, de frente, em fundo cinza liso, e envie aqui. A folha continua
+              servindo para a IA de fora.
+            {% endblocktranslate %}</p>
+            <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="local-{{ e.pk }}">{% translate "Copiar o prompt da referencia local" %}</button></div>
+            <textarea id="local-{{ e.pk }}" readonly rows="3" style="width:100%">{{ e.prompt_da_referencia_local }}</textarea>
+          {% endif %}
           <div class="acoes"><button type="submit" class="botao secundario pequeno">{% translate "Salvar" %}</button></div>
         </form>
         <details class="ajuda"><summary>{% translate "Prompts da folha de referencia deste elemento" %}</summary>
@@ -102,7 +116,7 @@
     {% endfor %}
     <details class="secao" {% if not elementos %}open{% endif %}>
       <summary><strong>{% translate "Novo personagem, cenario, objeto ou lugar real" %}</strong></summary>
-      <p class="ajuda">{% translate "Lugar real (foto): um ponto que o publico reconhece (o Museu do Olho, a araucaria da praca, a fachada). A foto entra no video como esta, na janela de uma cena ou de fundo; o roteiro o chama pelo nome. Confira o direito de uso da foto." %}</p>
+      <p class="ajuda">{% translate "Lugar real (foto): um ponto que o publico reconhece (o Museu do Olho, a araucaria da praca, a fachada). A foto entra no video como esta, na janela de uma cena, num quadro na parede ou de fundo; o roteiro o chama pelo nome e diz como. Confira o direito de uso da foto." %}</p>
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}<input type="hidden" name="acao" value="elemento">
         <label>{% translate "Nome (como o texto vai chama-lo)" %} <input type="text" name="nome" maxlength="60" required placeholder="Gugu"></label>

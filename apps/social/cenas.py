@@ -28,8 +28,11 @@ longo e cortado.
 A foto de um lugar real (Identidade visual > "Lugar real (foto)"):
 - "de fundo": a cena parte da propria foto (sem personagem, e ela; com
   personagem, a metade de cima da foto fica e a de baixo e pintada com ele);
-- "na janela": o PubliBot poe a foto num retangulo (a janela) e o gerador pinta
-  a cena em volta, sem tocar nela (a mascara). Os dois pedem a rota de edicao
+- "na janela" ou "num quadro na parede": o PubliBot poe a foto no alto, com a
+  MOLDURA desenhada (o batente e o peitoril da janela, ou a moldura do quadro), e
+  o gerador pinta a cena em volta, sem tocar nelas (a mascara). A moldura e o que
+  diz ao gerador o que a foto e: sem ela, a foto solta virava placa. Os dois pedem
+  a rota de edicao
   do worker (docs/WORKER_IMAGEM_E_CENAS.md); sem ela, a cena sai so pela
   descricao, com aviso.
 """
@@ -161,29 +164,76 @@ def _abrir(arquivo):
 
 
 def _lugar_da_cena(post, cena: dict):
-    """(lugar, "janela" | "fundo") citado na imagem da cena, ou (None, "")."""
+    """(lugar, "janela" | "quadro" | "fundo") citado na imagem da cena, ou
+    (None, ""). O roteiro diz como o lugar aparece (ver video_ia.regras_das_cenas)."""
     texto = cena.get("imagem") or ""
     achados = identidade.citados(texto, video_ia.lugares(post.destino))
     if not achados:
         return None, ""
     from apps.social.iscas import normalizar
 
-    return achados[0], "janela" if "janela" in normalizar(texto) else "fundo"
+    palavras = normalizar(texto)
+    if "janela" in palavras:
+        return achados[0], "janela"
+    if any(p in palavras for p in ("quadro", "moldura", "na parede", "pendurad")):
+        return achados[0], "quadro"
+    return achados[0], "fundo"
 
 
-def _janela(lugar, cor: str, *, a_direita: bool) -> tuple[bytes, bytes]:
-    """(base, mascara) da cena com a foto do lugar numa janela no alto: a foto
-    fica (opaca na mascara) e o resto e pintado (transparente)."""
+def sem_bordas(imagem):
+    """A foto sem as faixas lisas em volta (a borda branca de uma foto
+    baixada): elas faziam a foto parecer uma placa colada. Fica igual se a
+    borda nao for lisa ou se o corte comer mais da metade."""
+    from PIL import Image, ImageChops
+
+    imagem = imagem.convert("RGB")
+    canto = imagem.getpixel((0, 0))
+    diferenca = ImageChops.difference(imagem, Image.new("RGB", imagem.size, canto)).convert("L")
+    caixa = diferenca.point(lambda v: 255 if v > 25 else 0).getbbox()
+    if not caixa:
+        return imagem
+    largura, altura = imagem.size
+    if (caixa[2] - caixa[0]) * (caixa[3] - caixa[1]) < 0.5 * largura * altura:
+        return imagem
+    return imagem.crop(caixa)
+
+
+# A moldura em volta da foto, em fracao da largura da foto: (espessura, cor,
+# cor do filete de dentro, peitoril). Fica na mascara (o gerador nao a toca).
+MOLDURAS = {
+    "janela": (0.06, (236, 236, 232), (120, 120, 116), True),
+    "quadro": (0.045, (92, 70, 50), (60, 45, 32), False),
+}
+
+
+def _na_moldura(lugar, cor: str, *, como: str, a_direita: bool) -> tuple[bytes, bytes]:
+    """(base, mascara) da cena com a foto do lugar no alto, numa janela (batente
+    e peitoril) ou num quadro (moldura de madeira): a foto e a moldura ficam
+    (opacas na mascara) e o resto e pintado (transparente)."""
     from PIL import Image, ImageDraw
 
     largura, altura = QUADRO
     caixa = (int(largura * 0.46), int(altura * 0.24))
-    x = largura - caixa[0] - int(largura * 0.07) if a_direita else int(largura * 0.07)
-    y = int(altura * 0.07)
+    espessura, cor_da_moldura, filete, peitoril = MOLDURAS[como]
+    borda = max(6, int(caixa[0] * espessura))
+    x = largura - caixa[0] - int(largura * 0.09) if a_direita else int(largura * 0.09)
+    y = int(altura * 0.08)
     base = Image.new("RGB", QUADRO, cor)
-    base.paste(_cobrir(_abrir(lugar.imagem), caixa), (x, y))
+    desenho = ImageDraw.Draw(base)
+    fora = (x - borda, y - borda, x + caixa[0] + borda, y + caixa[1] + borda)
+    desenho.rectangle(fora, fill=cor_da_moldura)
+    desenho.rectangle((x - 2, y - 2, x + caixa[0] + 1, y + caixa[1] + 1), fill=filete)
+    extra = (0, 0, 0, 0)
+    if peitoril:  # o peitoril, mais largo que a janela, logo abaixo dela
+        extra = (fora[0] - borda, fora[3], fora[2] + borda, fora[3] + borda)
+        desenho.rectangle(extra, fill=cor_da_moldura)
+        desenho.line((extra[0], extra[3], extra[2], extra[3]), fill=filete, width=2)
+    base.paste(_cobrir(sem_bordas(_abrir(lugar.imagem)), caixa), (x, y))
     mascara = Image.new("RGBA", QUADRO, (0, 0, 0, 0))
-    ImageDraw.Draw(mascara).rectangle((x, y, x + caixa[0], y + caixa[1]), fill=(0, 0, 0, 255))
+    manter = ImageDraw.Draw(mascara)
+    manter.rectangle(fora, fill=(0, 0, 0, 255))
+    if peitoril:
+        manter.rectangle(extra, fill=(0, 0, 0, 255))
     return _png(base), _png(mascara)
 
 
@@ -268,7 +318,7 @@ def principal_da_cena(post, cena: dict):
     com_imagem = [
         e
         for e in identidade.citados(cena.get("imagem") or "", identidade.elementos(post.destino))
-        if e.imagem and e.tipo in (e.Tipo.PERSONAGEM, e.Tipo.OBJETO)
+        if (e.imagem or e.referencia_local) and e.tipo in (e.Tipo.PERSONAGEM, e.Tipo.OBJETO)
     ]
     com_imagem.sort(
         key=lambda e: (e.tipo != e.Tipo.PERSONAGEM, texto.find(f" {normalizar(e.nome)} "))
@@ -277,9 +327,17 @@ def principal_da_cena(post, cena: dict):
 
 
 def _referencias(post, cena: dict) -> list[bytes]:
-    """A figura do elemento principal da cena (a 1a da folha), ou nenhuma."""
+    """A figura do elemento principal da cena: a referencia para o gerador local
+    (inteira, num quadrado) ou, sem ela, a 1a figura da folha. Ou nenhuma."""
+    from PIL import ImageOps
+
     principal = principal_da_cena(post, cena)
-    return [_png(primeira_figura(_abrir(principal.imagem)))] if principal else []
+    if principal is None:
+        return []
+    if principal.referencia_local:
+        figura = _abrir(principal.referencia_local)
+        return [_png(ImageOps.pad(figura, (max(figura.size),) * 2, color=figura.getpixel((0, 0))))]
+    return [_png(primeira_figura(_abrir(principal.imagem)))]
 
 
 def usa_referencia(post, cena: dict) -> bool:
@@ -319,9 +377,11 @@ def gerar_quadro(post, n: int, *, sem_referencia: bool = False) -> str:
         )
         cores = {**laminas.CORES, **{k: v for k, v in (post.destino.cores or {}).items() if v}}
         base = mascara = None
-        if lugar is not None and como == "janela":
+        if lugar is not None and como in MOLDURAS:
             texto = cena.get("imagem") or ""
-            base, mascara = _janela(lugar, cores["fundo"], a_direita="direita" in texto.lower())
+            base, mascara = _na_moldura(
+                lugar, cores["fundo"], como=como, a_direita="direita" in texto.lower()
+            )
         elif lugar is not None:
             base, mascara = _fundo(lugar, com_gente=True)
         referencias = [] if sem_referencia else _referencias(post, cena)

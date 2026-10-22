@@ -105,8 +105,10 @@ def regras_das_cenas(destino) -> str:
         "comeco do gesto; personagens e lugares fixos PELO NOME; nenhum texto, letra ou "
         "numero na imagem;\n"
         + (
-            f"- lugares reais com foto ({nomes}): cite pelo nome e diga se aparece 'na "
-            "janela' ou 'de fundo';\n"
+            f"- lugares reais com foto ({nomes}): cite pelo nome e diga COMO aparece, com "
+            "uma destas palavras: 'na janela' (a vista por uma janela atras de alguem), 'num "
+            "quadro na parede' (uma foto emoldurada) ou 'de fundo' (a cena se passa no "
+            "lugar);\n"
             if nomes
             else ""
         )
