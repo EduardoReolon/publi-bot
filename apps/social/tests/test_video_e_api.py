@@ -244,10 +244,14 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     client.post(acao, {"acao": "cena_refazer_imagem", "n": "1"})
     post.refresh_from_db()
     assert fila[-1]["so_quadros"] and fila[-1]["refazer_quadro"]
+    assert fila[-1]["rotulo"] == "Imagem da cena 1"
     assert cenas.cenas(post)[0]["parada"]
     client.post(acao, {"acao": "cena_gerar", "n": "1"})
     post.refresh_from_db()
     assert not fila[-1]["so_quadros"] and "parada" not in cenas.cenas(post)[0]
+    assert fila[-1]["rotulo"] == "Animacao da cena 1"
+    client.post(acao, {"acao": "cena_sem_referencia", "n": "1"})
+    assert fila[-1]["sem_referencia"] and fila[-1]["rotulo"].endswith("(sem referencia)")
 
 
 @pytest.mark.django_db
@@ -314,6 +318,11 @@ def test_lugar_real_na_janela_e_worker_sem_a_rota(
     cenas.gerar_quadro(post, 1)  # de novo: agora o worker tem a rota e avisa
     post.refresh_from_db()
     assert post.extras["video_ia"]["cenas"][0]["aviso"].startswith("reference_image ignorado")
+    assert post.cenas_do_video[0]["tem_referencia"]  # a referencia enviada, para conferir
+    cenas.gerar_quadro(post, 1, sem_referencia=True)  # para comparar: so pelo texto
+    post.refresh_from_db()
+    assert not pedidos[-1][2] and not post.cenas_do_video[0]["tem_referencia"]
+    pedidos.pop()
     assert Image.open(io.BytesIO(pedidos[1][1])).mode == "RGBA"  # a mascara tem alfa
     assert cenas.usa_referencia(post, roteiro["cenas"][0])
     assert not cenas.usa_referencia(post, roteiro["cenas"][1])

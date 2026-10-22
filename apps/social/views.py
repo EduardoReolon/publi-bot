@@ -1321,6 +1321,7 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
     gera = acao in (
         "cena_gerar",
         "cena_refazer_imagem",
+        "cena_sem_referencia",
         "cena_refazer_animacao",
         "cena_qualidade_maxima",
         "cenas_todas",
@@ -1370,25 +1371,36 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
         elif acao in (
             "cena_gerar",
             "cena_refazer_imagem",
+            "cena_sem_referencia",
             "cena_refazer_animacao",
             "cena_qualidade_maxima",
         ):
-            if acao == "cena_refazer_imagem":
+            so_imagem = acao in ("cena_refazer_imagem", "cena_sem_referencia")
+            if so_imagem:
                 # Imagem nova: a animacao da antiga (em curso ou na fila de uma
                 # tarefa anterior) nao serve mais, e esta so anima quando pedirem.
                 cenas.parar_animacao(post, n)
             else:
                 cenas.liberar(post, n)
+            na_tela = cenas.para_a_tela(post)
+            tem_imagem = 1 <= n <= len(na_tela) and na_tela[n - 1]["tem_quadro"]
+            rotulo = {
+                "cena_refazer_imagem": "Imagem da cena {n}",
+                "cena_sem_referencia": "Imagem da cena {n} (sem referencia)",
+                "cena_refazer_animacao": "Animacao da cena {n} (outra variacao)",
+                "cena_qualidade_maxima": "Animacao da cena {n} (qualidade maxima)",
+            }.get(acao, "Animacao da cena {n}" if tem_imagem else "Imagem e animacao da cena {n}")
             fontes.na_fila(
                 gerar_cenas,
                 str(post.pk),
                 n=n,
                 # Refazer a imagem e SO a imagem: confira e depois anime ("Animar a cena").
-                so_quadros=acao == "cena_refazer_imagem",
-                refazer_quadro=acao == "cena_refazer_imagem",
+                so_quadros=so_imagem,
+                refazer_quadro=so_imagem,
+                sem_referencia=acao == "cena_sem_referencia",
                 nova_seed=acao == "cena_refazer_animacao",
                 maior=acao == "cena_qualidade_maxima",
-                rotulo=f"Cena {n} do video",
+                rotulo=rotulo.format(n=n),
                 alvo=post.pk,
             )
             messages.info(
@@ -1422,7 +1434,7 @@ def midia_da_cena(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
 
     post = get_object_or_404(Post, pk=pk)
     lista = cenas.cenas(post)
-    campo = {"quadro": "quadro", "clipe": "clipe"}.get(tipo)
+    campo = {"quadro": "quadro", "clipe": "clipe", "referencia": "referencia"}.get(tipo)
     caminho = lista[n - 1].get(campo, "") if campo and 1 <= n <= len(lista) else ""
     if not caminho or not default_storage.exists(caminho):
         raise Http404

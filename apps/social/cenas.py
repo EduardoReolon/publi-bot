@@ -106,6 +106,7 @@ def para_a_tela(post) -> list[dict]:
                 "n": n,
                 "tem_quadro": _existe(quadro),
                 "tem_clipe": _existe(clipe),
+                "tem_referencia": _existe(cena.get("referencia", "")),
                 "animando": bool(cena.get("animando")),
                 "animando_desde": _hora((cena.get("animando") or {}).get("desde")),
                 "animando_no": (cena.get("animando") or {}).get("modelo", ""),
@@ -294,9 +295,11 @@ def _guardar(post, nome: str, conteudo: bytes) -> str:
     return default_storage.save(caminho, ContentFile(conteudo))
 
 
-def gerar_quadro(post, n: int) -> str:
-    """A imagem inicial da cena n pelo gerador daqui (com as referencias dos
-    personagens e a foto do lugar, quando o worker tem a rota de edicao)."""
+def gerar_quadro(post, n: int, *, sem_referencia: bool = False) -> str:
+    """A imagem inicial da cena n pelo gerador daqui (com a referencia do
+    personagem e a foto do lugar, quando o worker tem a rota de edicao).
+    `sem_referencia`: so pelo texto (para comparar). A referencia enviada fica
+    guardada na cena, para conferir na tela o que o gerador recebeu."""
     lista, cena = _cena(post, n)
     lugar, como = _lugar_da_cena(post, cena)
     personagens = [
@@ -304,7 +307,7 @@ def gerar_quadro(post, n: int) -> str:
         for e in identidade.citados(cena.get("imagem") or "", identidade.elementos(post.destino))
         if e.tipo != e.Tipo.LUGAR
     ]
-    aviso = ""
+    aviso, referencias = "", []
     if lugar is not None and como == "fundo" and not personagens:
         conteudo, de = _png(_cobrir(_abrir(lugar.imagem), QUADRO)), "lugar"
     else:
@@ -321,10 +324,11 @@ def gerar_quadro(post, n: int) -> str:
             base, mascara = _janela(lugar, cores["fundo"], a_direita="direita" in texto.lower())
         elif lugar is not None:
             base, mascara = _fundo(lugar, com_gente=True)
+        referencias = [] if sem_referencia else _referencias(post, cena)
         conteudo, aviso = fontes.gerar_quadro(
             prompts["imagem"],
             tamanho=f"{QUADRO[0]}x{QUADRO[1]}",
-            referencias=_referencias(post, cena),
+            referencias=referencias,
             base=base,
             mascara=mascara,
             forca=FORCA_DA_REFERENCIA,
@@ -333,6 +337,10 @@ def gerar_quadro(post, n: int) -> str:
         de = "gerado"
     post.refresh_from_db()
     lista, cena = _cena(post, n)
+    if de == "gerado" and referencias:
+        cena["referencia"] = _guardar(post, f"cena-{n}-referencia.png", referencias[0])
+    else:
+        cena.pop("referencia", None)
     cena.update(
         quadro=_guardar(post, f"cena-{n}-quadro.png", conteudo),
         quadro_de=de,

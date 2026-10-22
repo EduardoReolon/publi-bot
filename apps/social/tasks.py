@@ -88,6 +88,7 @@ def gerar_cenas(
     nova_seed: bool = False,
     so_quadros: bool = False,
     maior: bool = False,
+    sem_referencia: bool = False,
     trabalho: str | None = None,
 ) -> int:
     """As cenas do video (cenas.py), uma por vez: a imagem inicial que falta (ou
@@ -112,6 +113,7 @@ def gerar_cenas(
                 "nova_seed": nova_seed,
                 "so_quadros": so_quadros,
                 "maior": maior,
+                "sem_referencia": sem_referencia,
                 "trabalho": trabalho,
                 **mudou,
             },
@@ -146,7 +148,7 @@ def gerar_cenas(
             if faltam_quadro:
                 faltam_quadro.sort(key=lambda x: not cenas.usa_referencia(post, lista[x - 1]))
                 atual = faltam_quadro[0]
-                cenas.gerar_quadro(post, atual)
+                cenas.gerar_quadro(post, atual, sem_referencia=bool(sem_referencia and n))
                 voltar(1, f"cena {atual}: imagem inicial pronta", refazer_quadro=False)
             # 3. As animacoes, uma por vez.
             if not so_quadros:
