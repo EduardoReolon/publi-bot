@@ -765,6 +765,62 @@ def respostas(pergunta_ids: list[str]) -> dict[str, dict]:
     }
 
 
+# -- O artigo no PubliBot e no ar -------------------------------------------------------
+def pagina_do_artigo(artigo_id) -> str:
+    """A pagina do artigo DENTRO do PubliBot (revisar), que existe antes de ele ir
+    ao ar: e para la que o link do post leva quem esta montando as redes."""
+    from django.urls import reverse
+
+    return reverse("content:revisar", args=[artigo_id]) if artigo_id else ""
+
+
+def situacao_do_artigo(artigo_id) -> dict:
+    """{"no_ar": bool, "agendado_para": datetime | None, "aprovado": bool}."""
+    from apps.content.models import Article
+
+    obj = Article.objects.filter(pk=artigo_id).only("status", "scheduled_for").first()
+    if obj is None:
+        return {"no_ar": False, "agendado_para": None, "aprovado": False}
+    return {
+        "no_ar": obj.status == Article.Status.PUBLISHED,
+        "aprovado": obj.status == Article.Status.APPROVED_SCHEDULED,
+        "agendado_para": obj.scheduled_for
+        if obj.status == Article.Status.APPROVED_SCHEDULED
+        else None,
+    }
+
+
+def adiantar_artigo(artigo_id) -> str:
+    """O post do artigo chegou na hora e o artigo ainda nao esta no ar: o
+    artigo fura a fila e sai agora (o horario dele na cadencia fica livre para o
+    proximo). "no_ar", "adiantado", "sem_aprovar" (nao da para publicar algo
+    que ninguem aprovou: o post espera) ou "sem_artigo" (foi apagado: o post
+    segue com o link que tem)."""
+    from django.utils import timezone
+
+    from apps.content.models import Article
+    from apps.integrations.models import PublicationSlot
+    from apps.integrations.tasks import publicar_vencidos
+
+    obj = Article.objects.filter(pk=artigo_id).first()
+    if obj is None:
+        return "sem_artigo"
+    if obj.status not in (
+        Article.Status.PUBLISHED,
+        Article.Status.APPROVED_SCHEDULED,
+    ):
+        return "sem_aprovar"
+    if obj.status == Article.Status.PUBLISHED:
+        return "no_ar"
+    agora = timezone.now()
+    if obj.scheduled_for is None or obj.scheduled_for > agora:
+        obj.scheduled_for = agora
+        obj.save(update_fields=["scheduled_for"])
+        PublicationSlot.objects.filter(article=obj, slot_at__gt=agora).update(article=None)
+    publicar_vencidos(limite=50)
+    return "adiantado"
+
+
 # -- Enderecos ------------------------------------------------------------------------
 def endereco_publico(caminho: str) -> str:
     """URL absoluta no dominio do tenant (link rastreado, imagens, link na bio)."""

@@ -452,3 +452,15 @@ def test_sonda_responde_mesmo_com_host_desconhecido(client):
     resposta = client.get("/healthz/", HTTP_HOST="10.0.0.7")
     assert resposta.status_code == 200
     assert resposta.json()["status"] == "ok"
+
+
+def test_ritmo_e_calculado_dos_dias_e_horarios():
+    semanal = PublicationSchedule(
+        mode=PublicationSchedule.Mode.WEEKLY_SLOTS, weekdays=[0, 3], times_of_day=["09:00"]
+    )
+    assert semanal.ritmo == "2 publicacao(oes) por semana (cerca de 1 a cada 3,5 dia(s))"
+    por_intervalo = PublicationSchedule(
+        mode=PublicationSchedule.Mode.INTERVAL_DAYS, interval_days=10
+    )
+    assert por_intervalo.ritmo == "1 publicacao a cada 10 dia(s)"
+    assert PublicationSchedule(mode=PublicationSchedule.Mode.WEEKLY_SLOTS).ritmo == ""

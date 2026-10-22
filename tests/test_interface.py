@@ -490,6 +490,49 @@ def test_aprovar_reserva_o_horario_da_cadencia(ambiente, artigo_para_revisar):
 
 
 @pytest.mark.django_db
+def test_agendar_com_prioridade_empurra_os_agendados_um_horario(ambiente, artigo_para_revisar):
+    """O artigo com prioridade vai para o 1o horario, mesmo ocupado, e todos os
+    agendados andam um horario: o do 1o vai para o 2o, o do 2o para o 3o."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.integrations.models import PublicationSlot
+
+    pronto_para_aprovar(artigo_para_revisar)
+    _, _, client = ambiente
+    site = Site.objects.create(name="Site", slug="site", base_url="https://site.exemplo.org")
+    amanha = timezone.now() + timedelta(days=1)
+    horarios = [
+        PublicationSlot.objects.create(site=site, slot_at=amanha + timedelta(days=2 * i))
+        for i in range(3)
+    ]
+    agendados = []
+    for i, horario in enumerate(horarios[:2]):
+        a = Article.objects.create(
+            title=f"A{i}",
+            status=Article.Status.APPROVED_SCHEDULED,
+            scheduled_for=horario.slot_at,
+        )
+        horario.article = a
+        horario.save()
+        agendados.append(a)
+
+    resposta = client.post(
+        reverse("content:revisar", args=[artigo_para_revisar.pk], urlconf="core.urls_tenants"),
+        _dados_de_aprovacao(acao="prioridade"),
+        follow=True,
+    )
+    assert "agendado para" in resposta.content.decode()
+    ordem = [h.article_id for h in PublicationSlot.objects.order_by("slot_at")]
+    assert ordem == [artigo_para_revisar.pk, agendados[0].pk, agendados[1].pk]
+    agendados[1].refresh_from_db()
+    assert agendados[1].scheduled_for == horarios[2].slot_at
+    artigo_para_revisar.refresh_from_db()
+    assert artigo_para_revisar.scheduled_for == amanha
+
+
+@pytest.mark.django_db
 def test_cadencia_salva_gera_os_horarios_e_aprovar_usa_o_proximo(ambiente):
     """Sem horario gerado, o aprovado saia na hora: salvar a cadencia ja gera, e
     aprovar sem vaga gera antes de desistir."""
@@ -506,7 +549,6 @@ def test_cadencia_salva_gera_os_horarios_e_aprovar_usa_o_proximo(ambiente):
             "secao": "cadencia",
             "mode": PublicationSchedule.Mode.WEEKLY_SLOTS,
             "interval_days": 7,
-            "max_per_day": 1,
             "buffer_threshold": 2,
             "qa_consumes_slot": "on",
             "is_active": "on",

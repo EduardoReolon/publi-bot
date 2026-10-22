@@ -336,8 +336,9 @@ class PublicationSchedule(models.Model):
         blank=True,
         help_text=_("Lista de 'HH:MM' no fuso do site."),
     )
+    # So no modo "A cada N dias". No de dias e horarios fixos, o ritmo sai dos
+    # dias e horarios (ver `ritmo`): os dois juntos se contradiziam na tela.
     interval_days = models.PositiveSmallIntegerField(_("intervalo em dias"), default=7)
-    max_per_day = models.PositiveSmallIntegerField(_("maximo por dia"), default=1)
 
     # Quando o numero de artigos prontos cai abaixo disto, o sistema avisa que
     # e hora de produzir mais.
@@ -356,6 +357,19 @@ class PublicationSchedule(models.Model):
 
     def __str__(self) -> str:
         return f"Cadencia de {self.site}"
+
+    @property
+    def ritmo(self) -> str:
+        """O ritmo que a cadencia da, calculado (informativo)."""
+        if self.mode == self.Mode.INTERVAL_DAYS:
+            return _("1 publicacao a cada %(n)s dia(s)") % {"n": self.interval_days}
+        por_semana = len(self.weekdays or []) * len(self.times_of_day or [])
+        if not por_semana:
+            return ""
+        return _("%(n)s publicacao(oes) por semana (cerca de 1 a cada %(d)s dia(s))") % {
+            "n": por_semana,
+            "d": f"{7 / por_semana:.1f}".rstrip("0").rstrip(".").replace(".", ","),
+        }
 
 
 class PublicationSlot(models.Model):

@@ -56,7 +56,7 @@
           <tr>
             <td>{{ c.texto|truncatechars:240 }}{% if c.autor %}<div class="ajuda">{{ c.autor }} · {{ c.escrito_em|date:"d/m H:i" }}</div>{% endif %}</td>
             <td><span class="selo {% if c.tipo == 'pergunta' %}alerta{% elif c.tipo == 'reclamacao' %}ruim{% elif c.tipo == 'elogio' %}ok{% endif %}">{{ c.get_tipo_display }}</span></td>
-            <td>{{ c.post.destino.nome }}{% if c.post.url_remota %} · <a href="{{ c.post.url_remota }}" target="_blank" rel="noopener noreferrer">{% translate "ver" %}</a>{% endif %}<div class="ajuda">{{ c.post.artigo_titulo|truncatechars:60 }}</div></td>
+            <td>{{ c.post.destino.nome }}{% if c.post.url_remota %} · <a href="{{ c.post.url_remota }}" target="_blank" rel="noopener noreferrer">{% translate "ver" %}</a>{% endif %}<div class="ajuda">{% if c.post.artigo_id %}<a href="{{ c.post.pagina_do_artigo }}">{{ c.post.artigo_titulo|truncatechars:60 }}</a>{% else %}{{ c.post.artigo_titulo|truncatechars:60 }}{% endif %}</div></td>
             <td>
               {% if c.respondido_em %}<span class="selo ok">{% translate "respondido" %}</span> <span class="ajuda">{{ c.respondido_em|date:"d/m" }}</span>
               {% elif c.pergunta_id %}<span class="selo espera">{% translate "esperando a resposta ser aprovada em Perguntas" %}</span>

@@ -107,6 +107,47 @@ def garantir_horarios_livres(schedule: PublicationSchedule) -> list[PublicationS
         dias += 30
 
 
+def agendar_com_prioridade(artigo: Article) -> datetime | None:
+    """O artigo vai para o PRIMEIRO horario futuro da cadencia, ocupado ou nao,
+    e todos os artigos agendados dali em diante andam um horario (o que estava
+    no 1o vai para o 2o, e assim por diante). Dois artigos com prioridade em
+    seguida: o ultimo fica na frente. Horario de resposta nao se mexe. Devolve
+    o novo horario, ou None sem cadencia (ai vale o agendamento comum)."""
+    with transaction.atomic():
+        horarios = list(
+            PublicationSlot.objects.select_for_update(of=("self",))
+            .filter(slot_at__gte=timezone.now(), answer__isnull=True)
+            .select_related("article")
+            .order_by("slot_at")
+        )
+        if not horarios:
+            return None
+        fila = [artigo] + [
+            h.article
+            for h in horarios
+            if h.article
+            and h.article.pk != artigo.pk
+            and h.article.status == Article.Status.APPROVED_SCHEDULED
+        ]
+        if len(horarios) < len(fila):  # o ultimo da fila precisa de mais um horario
+            for schedule in PublicationSchedule.objects.filter(is_active=True).select_related(
+                "site"
+            ):
+                garantir_horarios_livres(schedule)
+            horarios = list(
+                PublicationSlot.objects.select_for_update()
+                .filter(slot_at__gte=timezone.now(), answer__isnull=True)
+                .order_by("slot_at")
+            )
+        PublicationSlot.objects.filter(pk__in=[h.pk for h in horarios]).update(article=None)
+        for horario, item in zip(horarios, fila, strict=False):
+            horario.article = item
+            horario.save(update_fields=["article"])
+            item.scheduled_for = horario.slot_at
+            item.save(update_fields=["scheduled_for"])
+        return artigo.scheduled_for
+
+
 def proximo_horario() -> datetime:
     """Quando sai o proximo conteudo aprovado sem data escolhida: o primeiro
     horario livre da cadencia (gerando mais, se faltar). Sem cadencia ativa,
