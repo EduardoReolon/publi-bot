@@ -101,6 +101,9 @@ def test_ia_sugere_video_com_cenas_e_nada_sai_sozinho(
     assert "CENAS:" in pedido_do_post and "Responda JA com o post pronto" in pedido_do_post
     assert "a CADA" in pedido_do_post and "Agende pelo link da bio" in pedido_do_post
     assert "de 2 a 4 s" in pedido_do_post and "ninguem fala em cena" in pedido_do_post
+    assert "3 palavras por segundo" in pedido_do_post and "pode ocupar 2 cenas" in pedido_do_post
+    assert "MESMO sentido em que o artigo" in pedido_do_post
+    assert "PERSONAGENS FIXOS" in pedido_do_post
 
     texto = video_ia.pedido(post)
     assert "9:16" in texto and "FRASES CURTAS" in texto

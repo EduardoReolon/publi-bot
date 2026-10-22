@@ -8,7 +8,12 @@ cria outras pela tela). O placar de cada uma diz qual funciona em cada conta.
 
 from __future__ import annotations
 
-NAO_INVENTE = " Nao invente caso, paciente, cliente, historia ou numero: use so o MATERIAL."
+NAO_INVENTE = (
+    " Nao invente caso real, paciente, cliente, depoimento ou numero: use so o MATERIAL"
+    " (uma cena com os personagens fixos da conta e ilustracao, e vale)."
+)
+# O texto anterior: as sementes que ninguem editou ainda o tem (migracao 0027).
+NAO_INVENTE_ANTES = " Nao invente caso, paciente, cliente, historia ou numero: use so o MATERIAL."
 
 SEMENTES = [
     {

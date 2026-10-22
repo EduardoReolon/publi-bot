@@ -3,6 +3,7 @@ por algoritmo (numero que o artigo nao tem volta para o modelo corrigir)."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import timedelta
 
@@ -456,3 +457,70 @@ def test_selo_do_lugar_na_capa_quando_o_comeco_nao_cita(ambiente, modulo):
     assert laminas.local_para_a_capa(post, com) == ""
     capa_com_selo = laminas.desenhar(sem, apenas=1, local="Curitiba e regiao")[0]
     assert capa_com_selo != laminas.desenhar(sem, apenas=1)[0]
+
+
+def test_frases_nao_cortam_na_abreviacao():
+    texto = (
+        "Segundo Silva et al. em 2021, o sono curto aumenta o risco. O Dr. Souza mediu 40% a mais."
+    )
+    assert fontes.dividir_em_frases(texto, minimo=3) == [
+        "Segundo Silva et al. em 2021, o sono curto aumenta o risco.",
+        "O Dr. Souza mediu 40% a mais.",
+    ]
+
+
+def test_achado_vem_com_a_secao_e_a_frase_anterior_sem_repetir(modulo):
+    secao = (
+        "Voce acorda cansado mesmo depois de dormir oito horas por noite. Em um estudo com "
+        "2.300 adultos, 38% relataram cansaco persistente."
+    )
+    # a frase repetida, como no texto do site (o destaque repete a frase do corpo)
+    artigo = dataclasses.replace(
+        ARTIGO,
+        secoes=[("O que diz a pesquisa", secao)],
+        frases=[*ARTIGO.frases, ARTIGO.frases[1]],
+    )
+    achados = material.montar(artigo, publico="adultos", negocio=fontes.negocio())["achados"]
+    com_38 = [a for a in achados if "38%" in a]
+    assert len(com_38) == 1
+    assert 'secao "O que diz a pesquisa"' in com_38[0]
+    assert "logo antes" in com_38[0] and "oito horas" in com_38[0]
+
+
+def test_regra_dos_numeros_e_dos_personagens_no_prompt_e_nas_abordagens():
+    from apps.social import prompts
+    from apps.social.abordagens import NAO_INVENTE, SEMENTES
+
+    sistema = prompts.PROMPTS["social_instagram"]["sistema"]
+    assert prompts.REGRA_DOS_NUMEROS.strip() in sistema
+    assert prompts.REGRA_DOS_PERSONAGENS.strip() in sistema
+    assert any(NAO_INVENTE in s["instrucao"] for s in SEMENTES)
+
+
+def test_legendas_entram_sozinhas_e_a_frase_e_extra(ambiente):
+    from apps.social import video_ia
+
+    regras = video_ia.regras_das_cenas(_destino("instagram", texto_no_video="legendas"))
+    assert "LEGENDAS da fala entram sozinhas" in regras and "texto EXTRA" in regras
+    assert "3 palavras por segundo" in regras and "CHAMADA longa" in regras
+
+
+def test_abordagem_nao_editada_ganha_o_texto_novo_e_a_editada_fica(ambiente):
+    import importlib
+
+    from django.apps import apps as registro
+
+    from apps.social.abordagens import NAO_INVENTE, NAO_INVENTE_ANTES
+
+    garantir_abordagens()
+    velha, editada = Abordagem.objects.filter(instrucao__contains=NAO_INVENTE)[:2]
+    velha.instrucao = velha.instrucao.replace(NAO_INVENTE, NAO_INVENTE_ANTES)
+    velha.save()
+    editada.instrucao = editada.instrucao.replace(NAO_INVENTE, NAO_INVENTE_ANTES) + " Minha."
+    editada.save()
+    migracao = importlib.import_module("apps.social.migrations.0027_numeros_e_personagens")
+    migracao.publicar(registro, None)
+    velha.refresh_from_db()
+    editada.refresh_from_db()
+    assert NAO_INVENTE in velha.instrucao
+    assert NAO_INVENTE_ANTES in editada.instrucao

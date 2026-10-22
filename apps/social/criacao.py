@@ -16,6 +16,7 @@ import re
 
 from apps.social import redacao
 from apps.social.models import Post
+from apps.social.prompts import REGRA_DOS_NUMEROS, REGRA_DOS_PERSONAGENS
 from apps.social.redes import rede
 from core.resposta_ia import itens, ler_blocos
 
@@ -50,7 +51,7 @@ IMAGENS DA CONTA: {imagens}
 REGRAS:
 - Use SO o que esta no MATERIAL abaixo: nenhum numero, estudo, caso ou promessa
   que nao esteja la. Numero, so copiado exatamente como esta.
-- Nada de link ou endereco no texto: o sistema poe o link no lugar certo.
+{regras_do_material}- Nada de link ou endereco no texto: o sistema poe o link no lugar certo.
 - Nao comece com 'Voce sabia' nem repetindo o titulo do artigo.
 - Respeite as REGRAS QUE NUNCA SE QUEBRAM e as instrucoes do negocio.
 - Deixe claro, numa frase simples (a penultima lamina ou o fim da legenda), o
@@ -114,7 +115,7 @@ FORMATO_E_CENAS = (
     "CENAS: (quando o formato for video, ou o pedido disser que vai tambem como video; uma "
     "linha por cena)\n"
     "- segundos | fala (voz em off) | imagem inicial (o primeiro quadro) | movimento (o "
-    "gesto e a camera) | frase na tela (ou vazio)\n"
+    "gesto e a camera) | frase na tela (texto EXTRA, alem das legendas; ou vazio)\n"
 )
 FOTO = (
     "FOTO: a cena da imagem do post (concreta, sem texto; personagens e lugares fixos pelo nome)\n"
@@ -196,6 +197,7 @@ def pedido(post: Post, *, na_tela: bool = False) -> str:
         idioma=v["idioma"],
         oferta=v["oferta"],
         regiao=v["regiao"],
+        regras_do_material=REGRA_DOS_NUMEROS + REGRA_DOS_PERSONAGENS,
     )
 
 

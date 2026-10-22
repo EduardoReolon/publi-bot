@@ -28,6 +28,41 @@ def _curta(frase: str) -> str:
     return frase if len(frase) <= TAMANHO_DA_FRASE else frase[: TAMANHO_DA_FRASE - 1] + "…"
 
 
+# O achado com numero vai INTEIRO e com o contexto: a secao onde esta e a frase
+# anterior. Sozinho, "chega a 40%" nao diz 40% de que, de quem, em que situacao,
+# e o post usava o numero em outro sentido.
+TAMANHO_DO_ACHADO = 600
+TAMANHO_DO_CONTEXTO = 220
+
+
+def _contextos(artigo: fontes.ArtigoParaRedes) -> dict[str, tuple[str, str]]:
+    """{frase: (secao, frase anterior)}."""
+    saida: dict[str, tuple[str, str]] = {}
+    for titulo, texto in artigo.secoes:
+        frases = fontes.dividir_em_frases(texto, minimo=1)
+        for i, frase in enumerate(frases):
+            saida.setdefault(frase, (titulo, frases[i - 1] if i else ""))
+    return saida
+
+
+def _com_contexto(frases: list[str], artigo: fontes.ArtigoParaRedes) -> list[str]:
+    contextos = _contextos(artigo)
+    saida = []
+    for frase in dict.fromkeys(frases):
+        texto = frase if len(frase) <= TAMANHO_DO_ACHADO else frase[: TAMANHO_DO_ACHADO - 1] + "…"
+        secao, anterior = contextos.get(frase, ("", ""))
+        partes = [f'secao "{secao}"'] if secao else []
+        if anterior:
+            antes = (
+                anterior
+                if len(anterior) <= TAMANHO_DO_CONTEXTO
+                else "…" + anterior[-(TAMANHO_DO_CONTEXTO - 1) :]
+            )
+            partes.append(f'logo antes: "{antes}"')
+        saida.append(f"{texto} [{'; '.join(partes)}]" if partes else texto)
+    return saida
+
+
 def _normalizados(vetores) -> np.ndarray:
     v = np.asarray(vetores, dtype=float)
     return v / (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
@@ -63,7 +98,7 @@ def montar(
                 primeiras.append(primeira)
         return {
             "identificacao": [_curta(f) for f in primeiras[:POR_LISTA]],
-            "achados": [_curta(f) for f in com_numero[:POR_LISTA]],
+            "achados": _com_contexto(com_numero[:POR_LISTA], artigo),
             "dores": dores[:3],
             "secoes": secoes,
         }
@@ -85,7 +120,7 @@ def montar(
 
     return {
         "identificacao": [_curta(f) for f in identificacao],
-        "achados": [_curta(f) for f in achados],
+        "achados": _com_contexto(achados, artigo),
         "dores": dores_do_artigo,
         "secoes": secoes,
     }

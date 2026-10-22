@@ -34,6 +34,23 @@ _CAMPOS = {
     ),
 }
 
+# Um numero tirado do contexto muda de sentido ("ate 40% em uma empresa" virando
+# "reduza 40%"): o mesmo sentido do artigo, sempre. Vale para a nossa IA e para
+# a outra (criacao.py).
+REGRA_DOS_NUMEROS = (
+    "- Numero, so no MESMO sentido em que o artigo o usa: o mesmo grupo, a mesma "
+    "medida, o mesmo periodo e as mesmas ressalvas ('ate', 'potencial', 'em media', "
+    "'num estudo com'). Cada achado vem com a secao e a frase de onde saiu: leia antes "
+    "de usar, e nunca aplique um numero a outra situacao.\n"
+)
+# As abordagens dizem "nao invente historia", e o video pede caso ou historia:
+# a cena com os personagens fixos da conta e ilustracao, nao caso inventado.
+REGRA_DOS_PERSONAGENS = (
+    "- Contar uma cena com os PERSONAGENS FIXOS da conta (pelo nome) e permitido: e "
+    "ilustracao, nao caso real. Eles vivem a situacao do publico; o que a cena afirma "
+    "(numero, resultado, depoimento) continua so o que esta no MATERIAL.\n"
+)
+
 _SISTEMA = (
     "Voce escreve posts para redes sociais a partir de um artigo ja publicado, escrito "
     "com fontes. O post leva a pessoa ao artigo; ele nao substitui o artigo.\n\n"
@@ -41,7 +58,9 @@ _SISTEMA = (
     "Regras:\n"
     "- Use SO o que esta no MATERIAL do artigo: nenhum numero, estudo, caso ou promessa "
     "que nao esteja la. Numero, so copiado exatamente como esta.\n"
-    "- Nada de link ou endereco no texto: o PubliBot poe o link no lugar certo.\n"
+    + REGRA_DOS_NUMEROS
+    + REGRA_DOS_PERSONAGENS
+    + "- Nada de link ou endereco no texto: o PubliBot poe o link no lugar certo.\n"
     "- Nao comece com 'Voce sabia' nem repetindo o titulo do artigo.\n"
     "- Escreva para o PUBLICO desta conta, no TOM pedido, seguindo a ABORDAGEM.\n"
     "- Respeite as REGRAS QUE NUNCA SE QUEBRAM e as instrucoes do negocio.\n"
