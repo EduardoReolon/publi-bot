@@ -108,12 +108,12 @@ class CadenciaForm(forms.ModelForm):
         fields = [
             "mode",
             "interval_days",
-            "max_per_day",
             "buffer_threshold",
             "qa_consumes_slot",
             "is_active",
         ]
         help_texts = {
+            "interval_days": _("So no modo 'A cada N dias' (usa o primeiro horario abaixo)."),
             "buffer_threshold": _(
                 "Abaixo disto o sistema avisa que a reserva de conteudo aprovado esta acabando."
             ),

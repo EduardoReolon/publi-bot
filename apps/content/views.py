@@ -1307,7 +1307,7 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
         aplicar_edicao_humana(artigo, dados["body_markdown"], editor=request.user)
         artigo.refresh_from_db()
 
-    if acao not in ("aprovar", "publicar_ja"):
+    if acao not in ("aprovar", "prioridade", "publicar_ja"):
         messages.success(request, _("Alteracoes salvas."))
         return redirect("content:revisar", pk=artigo.pk)
 
@@ -1362,7 +1362,13 @@ def _processar_revisao(request: HttpRequest, artigo: Article) -> HttpResponse:
         )
         return redirect("content:revisar", pk=artigo.pk)
 
-    if not agendamento.cleaned_data["quando"] and not artigo.e_atualizacao:
+    if acao == "prioridade":
+        from apps.integrations.scheduling import agendar_com_prioridade
+
+        # O 1o horario da cadencia, e os ja agendados andam um horario.
+        agendar_com_prioridade(artigo)
+        artigo.refresh_from_db()
+    elif not agendamento.cleaned_data["quando"] and not artigo.e_atualizacao:
         # O horario da cadencia fica reservado para este artigo.
         livre = _horario_livre()
         if livre is not None and livre.slot_at == artigo.scheduled_for:

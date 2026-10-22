@@ -511,3 +511,34 @@ def test_tentar_de_novo_testa_o_servidor_e_fecha_o_disjuntor_de_quem_responde(
     fora.refresh_from_db()
     assert not viva.circuito_aberto and fora.circuito_aberto
     assert "continua fora do ar" in resposta.content.decode()
+
+
+@pytest.mark.django_db
+def test_post_antes_do_artigo_adianta_o_artigo_e_espera_o_link_vivo(ambiente, monkeypatch):
+    """O post chegou na hora e o artigo ainda esta agendado para depois: o
+    artigo fura a fila (sai agora, o horario dele fica livre) e o post vai na
+    passada seguinte. Artigo sem aprovacao: o post espera, com aviso."""
+    from apps.content.models import Article
+    from apps.integrations import tasks as tarefas
+
+    enviados = []
+    monkeypatch.setattr(tarefas, "publicar_vencidos", lambda limite: enviados.append(limite))
+    artigo = Article.objects.create(
+        title="Cansaco",
+        status=Article.Status.APPROVED_SCHEDULED,
+        scheduled_for=timezone.now() + timedelta(days=3),
+    )
+    destino = Destino.objects.create(rede="gmn", nome="Google")
+    post = _post(destino, texto="oi", artigo_id=artigo.pk)
+    assert "o artigo e adiantado" in post.artigo_depois_do_post
+    assert post.pagina_do_artigo.endswith(f"/artigos/{artigo.pk}/")
+
+    publicacao.publicar_vencidos()
+    artigo.refresh_from_db()
+    assert artigo.scheduled_for <= timezone.now() and enviados == [50]
+
+    artigo.status = Article.Status.PENDING_REVIEW
+    artigo.save(update_fields=["status"])
+    publicacao.publicar_vencidos()
+    post.refresh_from_db()
+    assert post.situacao == Post.Situacao.APROVADO and publicacao.AVISO_SEM_ARTIGO in post.avisos

@@ -652,6 +652,34 @@ class Post(models.Model):
         return video_ia.roteiro_em_texto(video_ia.roteiro(self))
 
     @property
+    def pagina_do_artigo(self) -> str:
+        """A pagina do artigo no PubliBot (existe antes de ele ir ao ar)."""
+        from apps.social import fontes
+
+        return fontes.pagina_do_artigo(self.artigo_id)
+
+    @property
+    def artigo_depois_do_post(self) -> str:
+        """Aviso quando o post esta agendado para antes do artigo ir ao ar (na
+        hora, o artigo fura a fila; sem aprovacao, o post espera). Vazio: ok."""
+        from apps.social import fontes
+
+        if not self.artigo_id or self.situacao != self.Situacao.APROVADO:
+            return ""
+        artigo = fontes.situacao_do_artigo(self.artigo_id)
+        if artigo["no_ar"]:
+            return ""
+        if not artigo["aprovado"]:
+            return "o artigo ainda nao foi aprovado: o post espera ele ir ao ar"
+        if (
+            self.agendado_para
+            and artigo["agendado_para"]
+            and (self.agendado_para < artigo["agendado_para"])
+        ):
+            return "o post sai antes do artigo: na hora, o artigo e adiantado e sai junto"
+        return ""
+
+    @property
     def cenas_do_video(self) -> list[dict]:
         """As cenas do video, com o que ja tem (imagem inicial, clipe) e o que
         mudou desde a ultima geracao (para a tela)."""

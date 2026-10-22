@@ -25,7 +25,9 @@
   {% else %}
     <p style="margin:.4rem 0">
       {% translate "Artigo:" %}
-      {% if post.artigo_url %}<a href="{{ post.artigo_url }}" target="_blank" rel="noopener noreferrer">{{ post.artigo_titulo }}</a>{% else %}{{ post.artigo_titulo }}{% endif %}
+      {% if post.artigo_id %}<a href="{{ post.pagina_do_artigo }}">{{ post.artigo_titulo }}</a>{% else %}{{ post.artigo_titulo }}{% endif %}
+      {% if post.artigo_url %}<a href="{{ post.artigo_url }}" target="_blank" rel="noopener noreferrer" class="ajuda" title="{% translate 'A pagina publicada no site' %}">({% translate "no site" %})</a>{% endif %}
+      {% with aviso=post.artigo_depois_do_post %}{% if aviso %}<span class="selo alerta" title="{{ aviso }}">{% translate "antes do artigo" %}</span> <span class="ajuda">{{ aviso }}</span>{% endif %}{% endwith %}
     </p>
   {% endif %}
   <div class="ajuda"><strong>{{ post.get_motivo_display }}.</strong> {{ post.por_que }}</div>

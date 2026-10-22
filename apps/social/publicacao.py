@@ -13,6 +13,7 @@ import logging
 
 from django.utils import timezone
 
+from apps.social import fontes
 from apps.social.escolha import proximo_horario
 from apps.social.models import Post
 from apps.social.redes import rede
@@ -139,6 +140,23 @@ def marcar_publicado(post: Post, *, url: str = "", id_remoto: str = "") -> Post:
     return post
 
 
+AVISO_SEM_ARTIGO = (
+    "o post chegou na hora, mas o artigo dele ainda nao foi aprovado: ele espera o "
+    "artigo ir ao ar (o link levaria a uma pagina que nao existe)"
+)
+
+
+def _artigo_no_ar(post) -> bool:
+    """O artigo do post esta no ar? Se ainda nao, ele fura a fila e sai agora (o
+    post vai na passada seguinte, com o link vivo). Sem aprovacao, o post espera
+    e o aviso diz por que."""
+    situacao = fontes.adiantar_artigo(post.artigo_id)
+    if situacao == "sem_aprovar" and AVISO_SEM_ARTIGO not in (post.avisos or []):
+        post.avisos = [*(post.avisos or []), AVISO_SEM_ARTIGO]
+        post.save(update_fields=["avisos", "atualizado_em"])
+    return situacao in ("no_ar", "sem_artigo")
+
+
 def publicar_vencidos(*, http=None) -> int:
     """Os aprovados com horario vencido, nas contas conectadas. Cada post e
     "reservado" (APROVADO -> PUBLICANDO numa so instrucao) antes de ir a rede:
@@ -148,6 +166,8 @@ def publicar_vencidos(*, http=None) -> int:
         situacao=Post.Situacao.APROVADO, agendado_para__lte=timezone.now()
     ).select_related("destino", "abordagem")
     for post in vencidos:
+        if post.artigo_id and not _artigo_no_ar(post):
+            continue  # o artigo sai primeiro; o post vai na proxima passada
         if not post.destino.conectado or (post.extras or {}).get("so_copiar"):
             continue  # fica para copiar: a tela mostra "na hora de postar"
         reservado = Post.objects.filter(pk=post.pk, situacao=Post.Situacao.APROVADO).update(

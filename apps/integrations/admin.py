@@ -212,7 +212,6 @@ class PublicationScheduleAdmin(admin.ModelAdmin):
     list_display = (
         "site",
         "mode",
-        "max_per_day",
         "buffer_threshold",
         "qa_consumes_slot",
         "is_active",
@@ -224,7 +223,7 @@ class PublicationScheduleAdmin(admin.ModelAdmin):
         (
             _("Quando publicar"),
             {
-                "fields": ("weekdays", "times_of_day", "interval_days", "max_per_day"),
+                "fields": ("weekdays", "times_of_day", "interval_days"),
                 "description": _(
                     "Dias da semana: 0 = segunda, 6 = domingo. Horarios no formato "
                     "'HH:MM', no fuso do site — que vem do cadastro do site, nunca "

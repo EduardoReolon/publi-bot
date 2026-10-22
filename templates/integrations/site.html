@@ -73,8 +73,9 @@
         <form method="post">
           {% csrf_token %}
           <input type="hidden" name="secao" value="cadencia">
+          {% if cadencia.instance.ritmo %}<p class="ajuda">{% translate "Ritmo hoje" %}: <strong>{{ cadencia.instance.ritmo }}</strong></p>{% endif %}
           {% for campo in cadencia %}
-            <div class="campo">
+            <div class="campo"{% if campo.name == 'interval_days' %} data-so-modo="interval_days"{% elif campo.name == 'dias' %} data-so-modo="weekly_slots"{% endif %}>
               <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
               {{ campo }}
               {% if campo.help_text %}<div class="ajuda">{{ campo.help_text }}</div>{% endif %}
@@ -84,6 +85,20 @@
           {% for erro in cadencia.non_field_errors %}<div class="erro">{{ erro }}</div>{% endfor %}
           <button type="submit" class="botao secundario">{% translate "Salvar cadencia" %}</button>
         </form>
+        <script>
+          (function () {
+            // Mostra so o campo do modo escolhido: intervalo OU dias da semana.
+            var modo = document.querySelector('select[name="mode"]');
+            if (!modo) return;
+            function aplicar() {
+              document.querySelectorAll("[data-so-modo]").forEach(function (campo) {
+                campo.hidden = campo.getAttribute("data-so-modo") !== modo.value;
+              });
+            }
+            modo.addEventListener("change", aplicar);
+            aplicar();
+          })();
+        </script>
 
         <h2>{% translate "Proximos horarios" %}</h2>
         <form method="post" action="{% url 'integrations:gerar_horarios' %}">
