@@ -1351,11 +1351,29 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 return
             cenas.enviar_quadro(post, n, arquivo)
             messages.success(request, _("Imagem inicial da cena %(n)s trocada.") % {"n": n})
+        elif acao == "cena_parar":
+            cenas.parar_animacao(post, n)
+            messages.success(
+                request,
+                _(
+                    "Animacao da cena %(n)s parada: nada mais e pedido para ela. O worker "
+                    "termina o que ja comecou (ou reinicie o worker para liberar a placa)."
+                )
+                % {"n": n},
+            )
         elif acao in ("cena_gerar", "cena_refazer_imagem", "cena_refazer_animacao"):
+            if acao == "cena_refazer_imagem":
+                # Imagem nova: a animacao da antiga (em curso ou na fila de uma
+                # tarefa anterior) nao serve mais, e esta so anima quando pedirem.
+                cenas.parar_animacao(post, n)
+            else:
+                cenas.liberar(post, n)
             fontes.na_fila(
                 gerar_cenas,
                 str(post.pk),
                 n=n,
+                # Refazer a imagem e SO a imagem: confira e depois anime ("Animar a cena").
+                so_quadros=acao == "cena_refazer_imagem",
                 refazer_quadro=acao == "cena_refazer_imagem",
                 nova_seed=acao == "cena_refazer_animacao",
                 rotulo=f"Cena {n} do video",
@@ -1365,6 +1383,8 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 request, _("Gerando a cena %(n)s (minutos). Recarregue depois.") % {"n": n}
             )
         elif acao in ("cenas_todas", "cenas_imagens"):
+            if acao == "cenas_todas":
+                cenas.liberar(post)
             fontes.na_fila(
                 gerar_cenas,
                 str(post.pk),

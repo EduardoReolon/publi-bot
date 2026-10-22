@@ -99,8 +99,11 @@ def gerar_cenas(
     from apps.social import cenas, fontes, video
     from apps.social.models import Post
 
-    def voltar(segundos: int, **mudou):
+    def voltar(segundos: int, motivo: str = "", **mudou):
+        # O motivo aparece na tela de Operacao (enquanto espera, o registro fica
+        # em "Aguardando capacidade" com este texto).
         raise self.retry(
+            exc=RuntimeError(motivo) if motivo else None,
             countdown=segundos,
             kwargs={
                 "n": n,
@@ -122,9 +125,12 @@ def gerar_cenas(
         try:
             # 1. Uma animacao em curso (o worker anima uma de cada vez): conferir.
             for atual in alvo:
-                if lista[atual - 1].get("animando"):
+                if lista[atual - 1].get("animando") and not lista[atual - 1].get("parada"):
                     if cenas.conferir_animacao(post, atual) == "esperando":
-                        voltar(CONFERIR_ANIMACAO_A_CADA)
+                        voltar(
+                            CONFERIR_ANIMACAO_A_CADA,
+                            f"cena {atual}: animando no worker (confere de minuto em minuto)",
+                        )
                     post.refresh_from_db()
                     lista = cenas.cenas(post)
             # 2. As imagens iniciais que faltam, TODAS antes de animar, e as com
@@ -139,14 +145,20 @@ def gerar_cenas(
                 faltam_quadro.sort(key=lambda x: not cenas.usa_referencia(post, lista[x - 1]))
                 atual = faltam_quadro[0]
                 cenas.gerar_quadro(post, atual)
-                voltar(1, refazer_quadro=False)
+                voltar(1, f"cena {atual}: imagem inicial pronta", refazer_quadro=False)
             # 3. As animacoes, uma por vez.
             if not so_quadros:
                 for atual in alvo:
                     cena = lista[atual - 1]
+                    if cena.get("parada"):
+                        continue
                     if (nova_seed and n) or not cenas._existe(cena.get("clipe", "")):
                         cenas.pedir_animacao(post, atual, nova_seed=bool(nova_seed and n))
-                        voltar(CONFERIR_ANIMACAO_A_CADA, nova_seed=False)
+                        voltar(
+                            CONFERIR_ANIMACAO_A_CADA,
+                            f"cena {atual}: animacao pedida ao worker",
+                            nova_seed=False,
+                        )
         except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
             raise self.retry(exc=exc, countdown=PLACA_OCUPADA_ESPERA) from exc
         except (video.VideoIndisponivel, ProviderPermanentError, ValueError) as exc:
@@ -219,7 +231,7 @@ def publicar_posts() -> int:
     """De 5 em 5 minutos: publica os aprovados que venceram, nas contas conectadas,
     responde os comentarios cuja pergunta ja foi respondida e quem pediu a isca."""
     from apps.accounts.varredura import para_cada_tenant
-    from apps.social import iscas
+    from apps.social import cenas, iscas
     from apps.social.comentarios import responder_aprovadas
     from apps.social.escolha import atender_pedidos
     from apps.social.publicacao import publicar_vencidos
@@ -229,7 +241,8 @@ def publicar_posts() -> int:
         + responder_aprovadas()
         + iscas.responder()
         + retomar_escrita()
-        + atender_pedidos(),
+        + atender_pedidos()
+        + cenas.retomar_animacoes(),
         "publicar_posts",
     )
 
