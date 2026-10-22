@@ -1318,7 +1318,13 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
         n = int(request.POST.get("n") or 0)
     except ValueError:
         n = 0
-    gera = acao in ("cena_gerar", "cena_refazer_imagem", "cena_refazer_animacao", "cenas_todas")
+    gera = acao in (
+        "cena_gerar",
+        "cena_refazer_imagem",
+        "cena_refazer_animacao",
+        "cena_qualidade_maxima",
+        "cenas_todas",
+    )
     if (gera or acao == "cenas_imagens") and not fontes.ha_modelo_de_imagem():
         messages.error(
             request, _("Nao ha gerador de imagem cadastrado (Configuracao > Inferencia).")
@@ -1361,7 +1367,12 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 )
                 % {"n": n},
             )
-        elif acao in ("cena_gerar", "cena_refazer_imagem", "cena_refazer_animacao"):
+        elif acao in (
+            "cena_gerar",
+            "cena_refazer_imagem",
+            "cena_refazer_animacao",
+            "cena_qualidade_maxima",
+        ):
             if acao == "cena_refazer_imagem":
                 # Imagem nova: a animacao da antiga (em curso ou na fila de uma
                 # tarefa anterior) nao serve mais, e esta so anima quando pedirem.
@@ -1376,6 +1387,7 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 so_quadros=acao == "cena_refazer_imagem",
                 refazer_quadro=acao == "cena_refazer_imagem",
                 nova_seed=acao == "cena_refazer_animacao",
+                maior=acao == "cena_qualidade_maxima",
                 rotulo=f"Cena {n} do video",
                 alvo=post.pk,
             )

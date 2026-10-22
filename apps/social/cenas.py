@@ -107,6 +107,8 @@ def para_a_tela(post) -> list[dict]:
                 "tem_quadro": _existe(quadro),
                 "tem_clipe": _existe(clipe),
                 "animando": bool(cena.get("animando")),
+                "animando_desde": _hora((cena.get("animando") or {}).get("desde")),
+                "animando_no": (cena.get("animando") or {}).get("modelo", ""),
                 "imagem_mudou": _existe(quadro)
                 and cena.get("quadro_de") == "gerado"
                 and cena.get("quadro_do_texto", cena.get("imagem")) != cena.get("imagem"),
@@ -116,6 +118,15 @@ def para_a_tela(post) -> list[dict]:
             }
         )
     return saida
+
+
+def _hora(quando: str | None) -> str:
+    """'14:05' (na hora local) de um isoformat, ou ''."""
+    from datetime import datetime
+
+    if not quando:
+        return ""
+    return timezone.localtime(datetime.fromisoformat(quando)).strftime("%H:%M")
 
 
 def duracao_estimada(cena: dict) -> float:
@@ -245,29 +256,35 @@ def primeira_figura(imagem):
     return ImageOps.pad(recorte, (max(recorte.size),) * 2, color=fundo)
 
 
+def principal_da_cena(post, cena: dict):
+    """O elemento que vira a referencia da cena: o 1o PERSONAGEM citado no texto
+    (pela posicao no texto, nao pela ordem do cadastro); sem personagem, o 1o
+    objeto. So um: o IP-Adapter mistura as referencias numa so aparencia, e com
+    duas pessoas saia a roupa de um com o rosto do outro. Os demais vao pelo texto."""
+    from apps.social.iscas import normalizar
+
+    texto = f" {normalizar(cena.get('imagem') or '')} "
+    com_imagem = [
+        e
+        for e in identidade.citados(cena.get("imagem") or "", identidade.elementos(post.destino))
+        if e.imagem and e.tipo in (e.Tipo.PERSONAGEM, e.Tipo.OBJETO)
+    ]
+    com_imagem.sort(
+        key=lambda e: (e.tipo != e.Tipo.PERSONAGEM, texto.find(f" {normalizar(e.nome)} "))
+    )
+    return com_imagem[0] if com_imagem else None
+
+
 def _referencias(post, cena: dict) -> list[bytes]:
-    """As figuras dos personagens e objetos citados (a 1a da folha), ate 3."""
-    saida = []
-    for elemento in identidade.citados(
-        cena.get("imagem") or "", identidade.elementos(post.destino)
-    ):
-        if elemento.tipo not in (elemento.Tipo.PERSONAGEM, elemento.Tipo.OBJETO):
-            continue
-        if not elemento.imagem:
-            continue
-        saida.append(_png(primeira_figura(_abrir(elemento.imagem))))
-        if len(saida) == 3:
-            break
-    return saida
+    """A figura do elemento principal da cena (a 1a da folha), ou nenhuma."""
+    principal = principal_da_cena(post, cena)
+    return [_png(primeira_figura(_abrir(principal.imagem)))] if principal else []
 
 
 def usa_referencia(post, cena: dict) -> bool:
     """A imagem inicial da cena leva referencia de personagem (no worker, outro
     modelo de imagem: as cenas com e sem referencia sao geradas em grupos)."""
-    return any(
-        e.tipo in (e.Tipo.PERSONAGEM, e.Tipo.OBJETO) and e.imagem
-        for e in identidade.citados(cena.get("imagem") or "", identidade.elementos(post.destino))
-    )
+    return principal_da_cena(post, cena) is not None
 
 
 def _guardar(post, nome: str, conteudo: bytes) -> str:
@@ -422,11 +439,14 @@ def liberar(post, n: int | None = None) -> None:
     _gravar(post, lista)
 
 
-def pedir_animacao(post, n: int, *, nova_seed: bool = False) -> str:
+def pedir_animacao(post, n: int, *, nova_seed: bool = False, maior: bool = False) -> str:
     """Pede a animacao da cena n ao worker e guarda o trabalho na cena, sem
     esperar (`conferir_animacao` busca depois). `nova_seed`: outra variacao do
-    mesmo movimento (refazer a animacao)."""
+    mesmo movimento (refazer a animacao). `maior`: no modelo maior, com a MESMA
+    seed (refazer em qualidade maxima, mantendo a composicao). Um trabalho perdido
+    (o worker reiniciou) e pedido de novo no modelo em que tinha sido pedido."""
     lista, cena = _cena(post, n)
+    maior = maior or cena.pop("pedir_no_maior", False)
     if not _existe(cena.get("quadro", "")):
         raise video.VideoIndisponivel(f"a cena {n} ainda nao tem imagem inicial.")
     seed = cena.get("seed")
@@ -446,6 +466,7 @@ def pedir_animacao(post, n: int, *, nova_seed: bool = False) -> str:
         segundos=segundos_pedidos(cena),
         tamanho=TAMANHO_DA_ANIMACAO,
         seed=seed,
+        maior=maior,
     )
     identificador = trabalho["id"]
     post.refresh_from_db()
@@ -454,6 +475,8 @@ def pedir_animacao(post, n: int, *, nova_seed: bool = False) -> str:
         "id": identificador,
         # A usada, que o worker devolve (a mesma que pedimos, ou a sorteada).
         "seed": trabalho.get("seed") or seed,
+        "modelo": trabalho.get("model") or "",
+        "maior": maior,
         "movimento": cena.get("movimento", ""),
         "desde": timezone.now().isoformat(),
     }
@@ -487,6 +510,8 @@ def conferir_animacao(post, n: int) -> str:
         cena.update(
             clipe=_guardar(post, f"cena-{n}-clipe.mp4", clipe),
             seed=animando["seed"],
+            modelo=animando.get("modelo", ""),
+            no_maior=bool(animando.get("maior")),
             clipe_do_movimento=animando.get("movimento", ""),
             aviso="",
         )
@@ -499,6 +524,7 @@ def conferir_animacao(post, n: int) -> str:
         cena.pop("animando", None)
         if estado == "sumiu":
             cena["seed"] = animando["seed"]  # pede de novo a mesma variacao
+            cena["pedir_no_maior"] = bool(animando.get("maior"))  # e no mesmo modelo
             _gravar(post, lista)
             return "perdida"
         _gravar(post, lista)

@@ -63,6 +63,11 @@ def redespachar(job: GenerationJob) -> None:
     )
 
 
+class Conferindo(Exception):
+    """O `exc` de um `retry` que so volta para conferir um trabalho em curso
+    (ex.: a animacao no worker): o registro fica "Executando", com o motivo."""
+
+
 class _Marcador:
     def __init__(self) -> None:
         self.falha = ""
@@ -97,7 +102,11 @@ def acompanhar(trabalho: str | None):
         espera = pedido.when if isinstance(pedido.when, int | float) else 600
         _atualizar(
             trabalho,
-            status=GenerationJob.Status.WAITING_CAPACITY,
+            status=(
+                GenerationJob.Status.RUNNING
+                if isinstance(pedido.exc, Conferindo)
+                else GenerationJob.Status.WAITING_CAPACITY
+            ),
             last_error=str(pedido.exc or pedido.message or "tentando de novo")[:2000],
             next_attempt_at=timezone.now() + timedelta(seconds=espera),
         )

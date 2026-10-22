@@ -87,6 +87,7 @@ def gerar_cenas(
     refazer_quadro: bool = False,
     nova_seed: bool = False,
     so_quadros: bool = False,
+    maior: bool = False,
     trabalho: str | None = None,
 ) -> int:
     """As cenas do video (cenas.py), uma por vez: a imagem inicial que falta (ou
@@ -103,13 +104,14 @@ def gerar_cenas(
         # O motivo aparece na tela de Operacao (enquanto espera, o registro fica
         # em "Aguardando capacidade" com este texto).
         raise self.retry(
-            exc=RuntimeError(motivo) if motivo else None,
+            exc=fontes.Conferindo(motivo) if motivo else None,
             countdown=segundos,
             kwargs={
                 "n": n,
                 "refazer_quadro": refazer_quadro,
                 "nova_seed": nova_seed,
                 "so_quadros": so_quadros,
+                "maior": maior,
                 "trabalho": trabalho,
                 **mudou,
             },
@@ -152,12 +154,16 @@ def gerar_cenas(
                     cena = lista[atual - 1]
                     if cena.get("parada"):
                         continue
-                    if (nova_seed and n) or not cenas._existe(cena.get("clipe", "")):
-                        cenas.pedir_animacao(post, atual, nova_seed=bool(nova_seed and n))
+                    pedida = (nova_seed or maior) and n
+                    if pedida or not cenas._existe(cena.get("clipe", "")):
+                        cenas.pedir_animacao(
+                            post, atual, nova_seed=bool(nova_seed and n), maior=bool(maior and n)
+                        )
                         voltar(
                             CONFERIR_ANIMACAO_A_CADA,
                             f"cena {atual}: animacao pedida ao worker",
                             nova_seed=False,
+                            maior=False,
                         )
         except (*fontes.imagem_indisponivel(), *fontes.modelo_indisponivel()) as exc:
             raise self.retry(exc=exc, countdown=PLACA_OCUPADA_ESPERA) from exc
