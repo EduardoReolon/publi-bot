@@ -71,10 +71,12 @@ _SISTEMA = (
     "- Deixe claro, numa frase simples (a penultima lamina ou o fim da legenda), o que o "
     "negocio faz por essa dor (a OFERTA), como quem explica e nao como anuncio: sem preco, "
     "sem promessa de resultado.\n"
-    "- Se o negocio atende numa REGIAO, traga o lugar para perto do leitor logo no comeco "
-    "(o gancho, a capa ou a segunda lamina: 'aqui em <a cidade>'), e uma "
-    "hashtag do lugar, se houver hashtag. Sem inventar dado local: numero do lugar, so "
-    "se estiver no MATERIAL.\n\n"
+    "- Se o negocio atende numa REGIAO, o leitor tem de reconhecer o lugar logo no comeco, "
+    "de UM jeito so: (a) se a capa ou a 1a cena mostra em destaque um dos LUGARES reais da "
+    "conta (os com foto), NAO escreva o nome da cidade no texto, porque a imagem ja diz; "
+    "(b) senao, traga o lugar no gancho, na capa ou na segunda lamina ('aqui em <a "
+    "cidade>'). Nos dois casos, pode haver uma hashtag do lugar. Sem inventar dado local: "
+    "numero do lugar, so se estiver no MATERIAL.\n\n"
     "Responda SOMENTE com um objeto JSON:\n{campos}"
 )
 

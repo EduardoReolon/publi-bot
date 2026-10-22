@@ -57,10 +57,12 @@ REGRAS:
 - Deixe claro, numa frase simples (a penultima lamina ou o fim da legenda), o
   que o negocio faz por essa dor (a OFERTA abaixo), como quem explica e nao como
   anuncio: sem preco, sem promessa de resultado.
-- Se o negocio atende numa REGIAO, traga o lugar para perto do leitor logo no
-  comeco (o gancho, a capa ou a segunda lamina: "aqui em <a cidade>") e, se houver
-  hashtag, uma do lugar. Se a capa e a segunda nao citarem, o sistema poe um selo
-  com o lugar no alto da capa.
+- Se o negocio atende numa REGIAO, o leitor tem de reconhecer o lugar logo no
+  comeco, de UM jeito so: (a) se a capa ou a 1a cena mostra em destaque um dos
+  LUGARES reais da conta (os com foto), NAO escreva o nome da cidade no texto,
+  porque a imagem ja diz; (b) senao, traga o lugar no gancho, na capa ou na
+  segunda lamina ("aqui em <a cidade>"). Nos dois casos, pode haver uma hashtag
+  do lugar. Se nada disso aparecer, o sistema poe um selo com o lugar.
 
 Responda JA com o post pronto, nos blocos abaixo, terminando com FIM: escolha
 o formato que melhor serve a ideia e mande o material completo dele. Depois do

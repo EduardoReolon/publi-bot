@@ -524,3 +524,35 @@ def test_abordagem_nao_editada_ganha_o_texto_novo_e_a_editada_fica(ambiente):
     editada.refresh_from_db()
     assert NAO_INVENTE in velha.instrucao
     assert NAO_INVENTE_ANTES in editada.instrucao
+
+
+def test_lugar_real_na_abertura_dispensa_o_selo_e_a_linha_do_lugar(
+    ambiente, modulo, settings, tmp_path
+):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.social import laminas
+    from apps.social.models import ElementoVisual
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    destino = _destino("instagram")
+    ElementoVisual.objects.create(
+        destino=destino,
+        nome="Museu Azul",
+        tipo=ElementoVisual.Tipo.LUGAR,
+        imagem=SimpleUploadedFile("museu.png", b"\x89PNG"),
+    )
+    post = Post.objects.create(
+        destino=destino, artigo_id=ARTIGO.id, artigo_titulo=ARTIGO.titulo, motivo=Post.Motivo.NOVO
+    )
+    capa = [{"titulo": "Cansado de acordar cansado?", "visual": "a Bia em frente ao museu azul"}]
+    assert laminas.local_para_a_capa(post, capa) == ""
+    post.extras = {"video_ia": {"cenas": [{"imagem": "Museu Azul de fundo, a Bia boceja"}]}}
+    assert laminas.local_para_a_capa(post, [{"titulo": "Cansado?"}]) == ""
+    post.extras = {}
+    assert laminas.local_para_a_capa(post, [{"titulo": "Cansado?"}]) == "Curitiba e regiao"
+
+    texto, _ = redacao.montar(post, {"gancho": "Cansado?", "texto": "x", "laminas": capa})
+    assert "\U0001f4cd" not in texto
+    texto, _ = redacao.montar(post, {"gancho": "Cansado?", "texto": "x", "laminas": []})
+    assert "\U0001f4cd Curitiba e regiao" in texto
