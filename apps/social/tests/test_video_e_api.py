@@ -720,3 +720,17 @@ def test_imagem_com_faixa_vazia_vira_quadro_cheio():
     assert quadro.getpixel((360, 1270)) != (245, 246, 248)  # o pe nao e mais a faixa
     quase_9_16 = Image.new("RGB", (1024, 1536), (30, 60, 160))  # o 2:3 das IAs: so corta
     assert cenas.encaixar(quase_9_16).size == cenas.QUADRO
+
+
+def test_previsao_da_animacao_pelo_modelo_e_pelos_trechos(settings):
+    from django.utils import timezone
+
+    from apps.social import cenas
+
+    settings.ANIMACAO_MINUTOS_DE_CARGA = 3
+    settings.ANIMACAO_MINUTOS_POR_TRECHO_MENOR = 7.5
+    settings.ANIMACAO_MINUTOS_POR_TRECHO_MAIOR = 15
+    agora = timezone.now().isoformat()
+    assert cenas.previsao({"desde": agora, "trechos": 3}).startswith("~26 min, por volta de")
+    assert cenas.previsao({"desde": agora, "trechos": 2, "maior": True}).startswith("~33 min")
+    assert cenas.previsao({}) == ""
