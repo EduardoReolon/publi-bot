@@ -116,6 +116,7 @@ def para_a_tela(post) -> list[dict]:
                 "animando": bool(cena.get("animando")),
                 "animando_desde": _hora((cena.get("animando") or {}).get("desde")),
                 "animando_no": (cena.get("animando") or {}).get("modelo", ""),
+                "previsao": previsao(cena.get("animando") or {}),
                 "imagem_mudou": _existe(quadro)
                 and cena.get("quadro_de") == "gerado"
                 and cena.get("quadro_do_texto", cena.get("imagem")) != cena.get("imagem"),
@@ -498,6 +499,25 @@ def segundos_pedidos(cena: dict) -> int:
     return max(1, round(trechos * TRECHO))
 
 
+def previsao(animando: dict) -> str:
+    """Quando a animacao em curso deve ficar pronta, para a tela ("~26 min, por
+    volta de 14:30"): a carga do modelo mais os trechos, no ritmo do modelo
+    (ANIMACAO_MINUTOS_* no .env). Uma estimativa: com o worker ocupado com
+    outra coisa, ou reiniciado, demora mais."""
+    from datetime import datetime, timedelta
+
+    if not animando.get("desde"):
+        return ""
+    por_trecho = (
+        settings.ANIMACAO_MINUTOS_POR_TRECHO_MAIOR
+        if animando.get("maior")
+        else settings.ANIMACAO_MINUTOS_POR_TRECHO_MENOR
+    )
+    minutos = settings.ANIMACAO_MINUTOS_DE_CARGA + por_trecho * animando.get("trechos", 3)
+    fim = datetime.fromisoformat(animando["desde"]) + timedelta(minutes=minutos)
+    return f"~{round(minutos)} min, por volta de {timezone.localtime(fim):%H:%M}"
+
+
 def retomar_animacoes() -> int:
     """De 5 em 5 minutos (publicar_posts): confere as animacoes em curso de todos
     os posts. A conferencia normal e da tarefa `gerar_cenas`, que volta de minuto
@@ -570,10 +590,11 @@ def pedir_animacao(post, n: int, *, nova_seed: bool = False, maior: bool = False
     )
     with default_storage.open(cena["quadro"], "rb") as arquivo:
         quadro = arquivo.read()
+    segundos = segundos_pedidos(cena)
     trabalho = fontes.pedir_animacao(
         quadro,
         prompts["movimento"] or prompts["imagem"],
-        segundos=segundos_pedidos(cena),
+        segundos=segundos,
         tamanho=TAMANHO_DA_ANIMACAO,
         seed=seed,
         maior=maior,
@@ -587,6 +608,7 @@ def pedir_animacao(post, n: int, *, nova_seed: bool = False, maior: bool = False
         "seed": trabalho.get("seed") or seed,
         "modelo": trabalho.get("model") or "",
         "maior": maior,
+        "trechos": max(1, round(segundos / TRECHO)),
         "movimento": cena.get("movimento", ""),
         "desde": timezone.now().isoformat(),
     }

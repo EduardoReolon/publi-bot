@@ -742,6 +742,12 @@ ANIMACAO_TAMANHO = env.get("ANIMACAO_TAMANHO", "448x800")
 # nao conhece vira o padrao dele. A conexao Sora usa o modelo da conexao.
 ANIMACAO_MODELO_MENOR = env.get("ANIMACAO_MODELO_MENOR", "framepack-fp8")
 ANIMACAO_MODELO_MAIOR = env.get("ANIMACAO_MODELO_MAIOR", "framepack")
+# Quanto a animacao leva na placa, para a previsao na tela: a carga do modelo e
+# os minutos por trecho de ~1,2 s (medidos numa RTX 3050: fp8 ~17 s por passo,
+# 25 passos por trecho; bf16 ~35 s por passo).
+ANIMACAO_MINUTOS_DE_CARGA = float(env.get("ANIMACAO_MINUTOS_DE_CARGA", "3"))
+ANIMACAO_MINUTOS_POR_TRECHO_MENOR = float(env.get("ANIMACAO_MINUTOS_POR_TRECHO_MENOR", "7.5"))
+ANIMACAO_MINUTOS_POR_TRECHO_MAIOR = float(env.get("ANIMACAO_MINUTOS_POR_TRECHO_MAIOR", "15"))
 # A imagem inicial das cenas pelo gerador local COM a referencia do personagem
 # (IP-Adapter). Desligada: nos testes ela copiava a pose e o fundo da referencia,
 # e a imagem saia melhor so pela descricao. A com personagem fiel e a da IA de fora.
