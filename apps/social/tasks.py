@@ -129,11 +129,17 @@ def gerar_cenas(
         try:
             # 1. Uma animacao em curso (o worker anima uma de cada vez): conferir.
             for atual in alvo:
-                if lista[atual - 1].get("animando") and not lista[atual - 1].get("parada"):
+                cena = lista[atual - 1]
+                # O lote ("Animar o que falta") nao espera a cena que ja tem
+                # animacao e esta sendo refeita por outro botao: quem pediu a
+                # refacao confere e, ao terminar, monta o video de novo.
+                refeita_por_outro = not n and cenas._existe(cena.get("clipe", ""))
+                if cena.get("animando") and not cena.get("parada") and not refeita_por_outro:
                     if cenas.conferir_animacao(post, atual) == "esperando":
                         voltar(
                             CONFERIR_ANIMACAO_A_CADA,
-                            f"cena {atual}: animando no worker (confere de minuto em minuto)",
+                            f"cena {atual}: animando no worker (confere de minuto em minuto)"
+                            + ("" if n else "; depois segue nas outras e monta o video"),
                         )
                     post.refresh_from_db()
                     lista = cenas.cenas(post)

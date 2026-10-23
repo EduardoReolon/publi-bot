@@ -58,6 +58,10 @@ def test_acompanhar_marca_cada_desfecho(tenant_factory):
             raise Retry(exc=acompanhamento.Conferindo("cena 2: animando no worker"), when=60)
         job = GenerationJob.objects.get(pk=conferindo)
         assert job.status == "running" and job.last_error == "cena 2: animando no worker"
+        antes = job.updated_at
+        with pytest.raises(Retry), acompanhamento.acompanhar(conferindo):
+            raise Retry(exc=acompanhamento.Conferindo("cena 3: animando no worker"), when=60)
+        assert GenerationJob.objects.get(pk=conferindo).updated_at > antes  # a hora anda
 
         quebrou = novo()
         with pytest.raises(ValueError), acompanhamento.acompanhar(quebrou):

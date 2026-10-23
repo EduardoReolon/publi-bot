@@ -734,3 +734,34 @@ def test_previsao_da_animacao_pelo_modelo_e_pelos_trechos(settings):
     assert cenas.previsao({"desde": agora, "trechos": 3}).startswith("~26 min, por volta de")
     assert cenas.previsao({"desde": agora, "trechos": 2, "maior": True}).startswith("~33 min")
     assert cenas.previsao({}) == ""
+
+
+@pytest.mark.django_db
+def test_lote_nao_espera_a_cena_refeita_por_outro_botao(
+    ambiente, modulo, settings, tmp_path, monkeypatch
+):
+    """Todas as cenas animadas e a 2 sendo refeita (outra variacao): o lote
+    "Animar o que falta" termina e manda montar, sem ficar conferindo a 2."""
+    from django.core.files.base import ContentFile
+    from django.utils import timezone
+
+    from apps.social import cenas, tasks
+
+    settings.MEDIA_ROOT = tmp_path
+    conferidas, fila = [], []
+    monkeypatch.setattr(
+        fontes, "situacao_da_animacao", lambda i: conferidas.append(i) or {"status": "in_progress"}
+    )
+    monkeypatch.setattr(fontes, "na_fila", lambda tarefa, *a, **k: fila.append(k["rotulo"]))
+    post = _post(
+        _destino("instagram"), extras={"video_ia": {"cenas": [{"imagem": "a"}, {"imagem": "b"}]}}
+    )
+    lista = cenas.cenas(post)
+    for n, cena in enumerate(lista, start=1):
+        cena["quadro"] = default_storage.save(f"social/{post.pk}/q{n}.png", ContentFile(b"PNG"))
+        cena["clipe"] = default_storage.save(f"social/{post.pk}/c{n}.mp4", ContentFile(b"MP4"))
+    lista[1]["animando"] = {"id": "v2", "seed": 1, "desde": timezone.now().isoformat()}
+    cenas._gravar(post, lista)
+
+    tasks.gerar_cenas.apply(args=[str(post.pk)]).get()
+    assert conferidas == [] and fila == ["Montar o video"]
