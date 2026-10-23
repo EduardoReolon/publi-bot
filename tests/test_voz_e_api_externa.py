@@ -59,9 +59,33 @@ def test_elevenlabs_manda_a_voz_na_rota_e_a_chave_no_cabecalho(chamadas):
     assert audio == b"MP3"
     assert url.startswith("https://api.elevenlabs.io/v1/text-to-speech/abc")
     assert kwargs["headers"]["xi-api-key"] == "k"
-    assert kwargs["json"] == {"text": "Ola", "model_id": "eleven_multilingual_v2"}
+    assert kwargs["json"]["text"] == "Ola"
+    assert kwargs["json"]["model_id"] == "eleven_multilingual_v2"
+    assert kwargs["json"]["voice_settings"]["stability"] < 0.5  # tom de conversa
+    assert "previous_text" not in kwargs["json"]
     ElevenLabsClient(base_url="https://api.elevenlabs.io").falar(texto="Ola", voz="")
     assert ElevenLabsClient.VOZ_PADRAO in feitas[1][0]  # sem voz: a padrao
+    # As falas vizinhas vao junto: a entonacao continua de uma cena para a outra.
+    ElevenLabsClient(base_url="https://api.elevenlabs.io").falar(
+        texto="tudo bem?", voz="abc", antes="Oi,", depois="Vamos la."
+    )
+    corpo = feitas[2][1]["json"]
+    assert corpo["previous_text"] == "Oi," and corpo["next_text"] == "Vamos la."
+
+
+def test_placa_ocupada_na_voz_diz_quando_voltar(chamadas, monkeypatch):
+    def post(url, **kwargs):
+        return httpx.Response(
+            503,
+            headers={"Retry-After": "198"},
+            json={"error": {"code": "gpu_ocupada"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", post)
+    with pytest.raises(ProviderTransientError) as erro:
+        OpenAIVoiceClient(base_url="http://gpu:8090").falar(texto="Ola", voz="qwen:carla")
+    assert erro.value.retry_after == 198
 
 
 def test_openai_e_google(chamadas):
@@ -262,13 +286,13 @@ def test_voz_do_kokoro_vai_no_worker_e_recusa_passa_para_a_outra(
         def __init__(self, conexao):
             self.conexao = conexao
 
-        def falar(self, *, texto, voz, modelo=""):
+        def falar(self, *, texto, voz, modelo="", antes="", depois=""):
             falaram.append(self.conexao.name)
             if self.conexao != worker:
                 raise ProviderPermanentError("voice_not_found")
             return b"MP3"
 
-    monkeypatch.setattr(modulo_de_voz, "get_voice_provider", lambda c: Falso(c))
+    monkeypatch.setattr(modulo_de_voz, "get_voice_provider", lambda c, timeout=None: Falso(c))
     monkeypatch.setattr(leases, "reserva", lambda *a, **k: nullcontext())
     monkeypatch.setattr(
         fontes,
@@ -278,3 +302,37 @@ def test_voz_do_kokoro_vai_no_worker_e_recusa_passa_para_a_outra(
     )
     assert fontes.falar("Ola", "pm_alex") == b"MP3"
     assert falaram[-1] == "Worker (voz)" and len(falaram) == 2
+
+
+@pytest.mark.django_db
+def test_vozes_do_worker_qwen_e_kokoro(public_tenant, settings, monkeypatch):
+    """ "qwen:carla" e "kokoro:pf_dora" sao do worker, como "pm_alex"; o worker
+    e reconhecido pelo endereco; a lista de vozes vem do GET /v1/audio/voices."""
+    from django.core.cache import cache
+
+    from apps.social import fontes
+
+    settings.IMAGEM_BASE_URL = "http://100.64.0.5:8090"
+    settings.IMAGEM_SEGREDO = "segredo-do-worker"
+    call_command("configurar_api", "elevenlabs", "--chave", "k", stdout=io.StringIO())
+    call_command("configurar_api", "worker_voz", stdout=io.StringIO())
+    worker = InferenceConnection.objects.get(name="Worker (voz)")
+    worker.default_model = "qualquer"  # pelo endereco, nao pelo nome do modelo
+    worker.save(update_fields=["default_model"])
+    for voz in ("qwen:carla", "kokoro:pf_dora", "pm_alex"):
+        assert fontes.voz_do_worker(voz)
+        assert fontes._conexoes_de_voz(voz)[0] == worker
+    assert not fontes.voz_do_worker("JBFqnCBsd6RMkjVDRZzb")
+
+    exemplo = {"data": [{"id": "qwen:carla", "motor": "qwen", "descricao": "calorosa"}]}
+    pedidos = []
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda url, **k: pedidos.append(url)
+        or httpx.Response(200, json=exemplo, request=httpx.Request("GET", url)),
+    )
+    cache.delete("social:vozes_do_worker")
+    assert fontes.vozes_do_worker()[0]["id"] == "qwen:carla"
+    assert pedidos == ["http://100.64.0.5:8090/v1/audio/voices"]
+    cache.delete("social:vozes_do_worker")

@@ -508,12 +508,36 @@ def baixar_animacao(identificador: str) -> bytes:
     return clipe
 
 
-# A voz do Kokoro (o worker) tem o idioma e o genero no nome: "pm_alex" (pt,
-# masculina), "af_bella". A da ElevenLabs e um id de 20 letras; a da OpenAI, um
-# nome ("nova"); a do Google, "pt-BR-Neural2-B".
-_VOZ_DO_KOKORO = re.compile(r"^[a-z][fm]_[a-z]+$")
+# As vozes do worker: a do Kokoro tem o idioma e o genero no nome ("pm_alex",
+# pt masculina; "pf_dora"), com ou sem "kokoro:"; a do Qwen e sempre
+# "qwen:<nome>" (criada no worker). A da ElevenLabs e um id de 20 letras; a da
+# OpenAI, um nome ("nova"); a do Google, "pt-BR-Neural2-B".
+_VOZ_DO_WORKER = re.compile(r"^([a-z][fm]_[a-z]+|(kokoro|qwen):[a-z0-9_-]+)$")
 _VOZ_DA_ELEVENLABS = re.compile(r"^[A-Za-z0-9]{20}$")
 _VOZ_DO_GOOGLE = re.compile(r"^[a-z]{2}-[A-Z]{2}-")
+# A voz do Qwen carrega o modelo na placa antes de cada fala: espera mais.
+TEMPO_DA_VOZ_NO_WORKER = 300.0
+
+
+def voz_do_worker(voz: str) -> bool:
+    """A voz e do worker (Kokoro ou Qwen), pelo formato?"""
+    return bool(_VOZ_DO_WORKER.match(voz or ""))
+
+
+def _do_worker(conexao) -> bool:
+    """A conexao e o worker (pelo endereco do worker ou pelo motor)?"""
+    from urllib.parse import urlparse
+
+    from django.conf import settings
+
+    from apps.inference.models import InferenceConnection
+
+    if conexao.kind != InferenceConnection.Kind.OPENAI_COMPATIBLE:
+        return False
+    worker = urlparse(getattr(settings, "IMAGEM_BASE_URL", "") or "").hostname
+    if worker and urlparse(conexao.base_url or "").hostname == worker:
+        return True
+    return any(m in (conexao.default_model or "").lower() for m in ("kokoro", "qwen"))
 
 
 def _servico_da_voz(voz: str, conexao) -> bool:
@@ -521,8 +545,8 @@ def _servico_da_voz(voz: str, conexao) -> bool:
     from apps.inference.models import InferenceConnection
 
     tipo = InferenceConnection.Kind
-    if _VOZ_DO_KOKORO.match(voz):
-        return "kokoro" in (conexao.default_model or "").lower()
+    if _VOZ_DO_WORKER.match(voz):
+        return _do_worker(conexao)
     if _VOZ_DA_ELEVENLABS.match(voz):
         return conexao.kind == tipo.ELEVENLABS
     if _VOZ_DO_GOOGLE.match(voz):
@@ -556,12 +580,48 @@ def _conexoes_de_voz(voz: str) -> list:
     return sorted(todas, key=ordem)
 
 
-def falar(texto: str, voz: str = "") -> bytes:
+def vozes_do_worker() -> list[dict]:
+    """As vozes que o worker fala ([{"id", "motor", "descricao"}]), pelo
+    `GET /v1/audio/voices` (contrato 2.14), guardadas por 10 min. Vazio sem o
+    worker ou fora do ar: e so ajuda na tela."""
+    import httpx
+    from django.core.cache import cache
+
+    from apps.inference.models import InferenceConnection
+    from apps.inference.providers.openai_compatible import raiz_da_api
+    from apps.inference.security import decifrar_chave
+
+    guardadas = cache.get("social:vozes_do_worker")
+    if guardadas is not None:
+        return guardadas
+    vozes: list[dict] = []
+    for conexao in InferenceConnection.objects.filter(is_active=True):
+        if not (conexao.atende(InferenceConnection.Workload.VOZ) and _do_worker(conexao)):
+            continue
+        chave = decifrar_chave(conexao)
+        try:
+            resposta = httpx.get(
+                f"{raiz_da_api(conexao.base_url)}/audio/voices",
+                headers={"Authorization": f"Bearer {chave}"} if chave else {},
+                timeout=4,
+            )
+            resposta.raise_for_status()
+            vozes = [v for v in resposta.json().get("data") or [] if v.get("id")]
+        except (httpx.HTTPError, ValueError):
+            vozes = []
+        break
+    cache.set("social:vozes_do_worker", vozes, 600)
+    return vozes
+
+
+def falar(texto: str, voz: str = "", *, antes: str = "", depois: str = "") -> bytes:
     """O audio (MP3) do texto, pela conexao de voz (ElevenLabs, OpenAI, Google,
-    o Kokoro do worker). Com mais de uma, vai na que tem a voz: a que recusa
-    (voz que ela nao conhece) passa para a proxima."""
+    o worker). Com mais de uma, vai na que tem a voz: a que recusa (voz que ela
+    nao conhece) passa para a proxima. `antes`/`depois`: as falas vizinhas, para
+    a entonacao continuar de uma cena para a outra (onde o servico aceita).
+    Placa do worker ocupada: `ProviderTransientError` com `retry_after`."""
     from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
-    from apps.inference.providers.base import ProviderPermanentError
+    from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
     from apps.inference.providers.voz import get_voice_provider
 
     conexoes = _conexoes_de_voz(voz)
@@ -573,12 +633,23 @@ def falar(texto: str, voz: str = "") -> bytes:
     for conexao in conexoes:
         try:
             with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
-                audio = get_voice_provider(conexao).falar(
-                    texto=texto, voz=voz, modelo=conexao.default_model
+                cliente = get_voice_provider(
+                    conexao, timeout=TEMPO_DA_VOZ_NO_WORKER if _do_worker(conexao) else None
+                )
+                audio = cliente.falar(
+                    texto=texto,
+                    voz=voz,
+                    modelo=conexao.default_model,
+                    antes=antes,
+                    depois=depois,
                 )
         except ProviderPermanentError as exc:
             recusas.append(f"{conexao.name}: {exc}")
             continue  # a voz e de outro servico: tenta o proximo
+        except ProviderTransientError as exc:
+            if getattr(exc, "retry_after", None) is None:
+                registrar_falha(conexao)
+            raise  # placa ocupada (com Retry-After) nao e falha da conexao
         except Exception:
             registrar_falha(conexao)
             raise

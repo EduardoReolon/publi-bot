@@ -671,14 +671,28 @@ def faltam(post) -> list[int]:
 
 
 # -- A montagem -----------------------------------------------------------------------------
-def _segmento(pasta: Path, n: int, cena: dict, post, cores: dict, ffmpeg: str, ffprobe: str):
+def _segmento(
+    pasta: Path,
+    n: int,
+    cena: dict,
+    post,
+    cores: dict,
+    ffmpeg: str,
+    ffprobe: str,
+    *,
+    antes: str = "",
+    depois: str = "",
+):
     """Uma cena: o clipe (ou o quadro, aproximando devagar) no tempo da fala,
-    com a legenda e a frase por cima e a voz. Devolve (arquivo, duracao)."""
+    com a legenda e a frase por cima e a voz. Devolve (arquivo, duracao).
+    `antes`/`depois`: as falas vizinhas, para a voz nao soar frase solta."""
     largura, altura = video.LARGURA, video.ALTURA
     audio = None
     fala = (cena.get("fala") or "").strip()
     if fala and fontes.tem_voz():
-        audio = video._guardar_em(pasta, f"{n}.mp3", video._audio(post, fala))
+        audio = video._guardar_em(
+            pasta, f"{n}.mp3", video._audio(post, fala, antes=antes, depois=depois)
+        )
         # O gesto planejado tem o seu tempo: fala curta nao corta a cena.
         duracao = max(video._duracao(ffprobe, audio) + video.PAUSA, cena.get("segundos") or 0)
     else:
@@ -790,8 +804,19 @@ def montar(post) -> str:
     cores = {**laminas.CORES, **{k: v for k, v in (post.destino.cores or {}).items() if v}}
     with tempfile.TemporaryDirectory() as pasta:
         pasta = Path(pasta)
+        falas = [(c.get("fala") or "").strip() for c in lista]
         partes = [
-            _segmento(pasta, n, cena, post, cores, ffmpeg, ffprobe)
+            _segmento(
+                pasta,
+                n,
+                cena,
+                post,
+                cores,
+                ffmpeg,
+                ffprobe,
+                antes=" ".join(f for f in falas[: n - 1] if f)[-400:],
+                depois=" ".join(f for f in falas[n:] if f)[:400],
+            )
             for n, cena in enumerate(lista, start=1)
         ]
         final = _juntar(ffmpeg, pasta, partes)
