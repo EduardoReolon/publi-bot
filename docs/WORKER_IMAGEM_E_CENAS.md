@@ -141,3 +141,35 @@ Versão menor sobe (rotas e campos novos não quebram ninguém):
 - `video-resposta.json`: a `_nota` cita `seed` e o arredondamento de `seconds`.
 
 Depois, copie os dois para `tests/contrato_do_worker/` daqui.
+
+---
+
+## 3. Voz: como falar e as falas vizinhas (`POST /v1/audio/speech`)
+
+Cada cena do vídeo é um pedido de voz. Lidas uma a uma, as falas soavam como
+frases soltas de quem lê. O publi-bot já manda, **só para o worker**, dois
+campos a mais no corpo (hoje o worker os ignora, sem erro):
+
+```json
+{
+  "model": "kokoro",
+  "voice": "qwen:carla",
+  "input": "Trabalhando até tarde de novo pra fechar o mês?",
+  "response_format": "mp3",
+  "instructions": "Fale em portugues do Brasil como quem conversa com uma pessoa, ...",
+  "previous_text": "a fala da cena anterior (ate 400 caracteres)",
+  "next_text": "a fala da cena seguinte (ate 400 caracteres)"
+}
+```
+
+- **`instructions`** é o campo da OpenAI para "como falar" (o `gpt-4o-mini-tts`
+  usa). Sugestão: no Qwen3-TTS, passar como a instrução de estilo do modelo
+  (o `instruct` dos modelos que aceitam), para a voz variar a entonação. No
+  Kokoro, ignorar.
+- **`previous_text` / `next_text`** são os nomes da ElevenLabs para as falas
+  vizinhas. Sugestão: gerar a fala com o contexto (por exemplo, sintetizar
+  vizinha + fala + vizinha e recortar só a fala, se o motor permitir alinhar),
+  ou ignorar se não der.
+
+Com isso no worker, a versão menor do contrato sobe e a nota do
+`/v1/audio/speech` diz quais dos dois campos ele usa.

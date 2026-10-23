@@ -515,6 +515,13 @@ def baixar_animacao(identificador: str) -> bytes:
 _VOZ_DO_WORKER = re.compile(r"^([a-z][fm]_[a-z]+|(kokoro|qwen):[a-z0-9_-]+)$")
 _VOZ_DA_ELEVENLABS = re.compile(r"^[A-Za-z0-9]{20}$")
 _VOZ_DO_GOOGLE = re.compile(r"^[a-z]{2}-[A-Z]{2}-")
+# Como falar, para o servico que aceita instrucao (o worker, os modelos novos
+# da OpenAI): conversa, e nao leitura. Generico: vale para qualquer negocio.
+INSTRUCAO_DA_FALA = (
+    "Fale em portugues do Brasil como quem conversa com uma pessoa, com naturalidade e "
+    "calor: varie a entonacao, suba no fim das perguntas, faca pausas curtas nas virgulas "
+    "e reticencias, de enfase nas palavras importantes. Nao soe como leitura."
+)
 # A voz do Qwen carrega o modelo na placa antes de cada fala: espera mais.
 TEMPO_DA_VOZ_NO_WORKER = 300.0
 
@@ -633,8 +640,11 @@ def falar(texto: str, voz: str = "", *, antes: str = "", depois: str = "") -> by
     for conexao in conexoes:
         try:
             with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
+                do_worker = _do_worker(conexao)
                 cliente = get_voice_provider(
-                    conexao, timeout=TEMPO_DA_VOZ_NO_WORKER if _do_worker(conexao) else None
+                    conexao,
+                    timeout=TEMPO_DA_VOZ_NO_WORKER if do_worker else None,
+                    do_worker=do_worker,
                 )
                 audio = cliente.falar(
                     texto=texto,
@@ -642,6 +652,7 @@ def falar(texto: str, voz: str = "", *, antes: str = "", depois: str = "") -> by
                     modelo=conexao.default_model,
                     antes=antes,
                     depois=depois,
+                    instrucao=INSTRUCAO_DA_FALA,
                 )
         except ProviderPermanentError as exc:
             recusas.append(f"{conexao.name}: {exc}")
