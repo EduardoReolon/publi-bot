@@ -41,9 +41,11 @@ class VoiceClient(ABC):
         idioma: str = "pt-BR",
         antes: str = "",
         depois: str = "",
+        instrucao: str = "",
     ) -> bytes:
         """O audio (MP3) do texto, na voz pedida. `antes` e `depois`: as falas
-        vizinhas (o servico que aceita usa para a entonacao continuar)."""
+        vizinhas (o servico que aceita usa para a entonacao continuar);
+        `instrucao`: como falar (o servico que aceita)."""
 
     def _post(self, url: str, **kwargs) -> httpx.Response:
         try:
@@ -92,6 +94,7 @@ class ElevenLabsClient(VoiceClient):
         idioma: str = "pt-BR",
         antes: str = "",
         depois: str = "",
+        instrucao: str = "",
     ) -> bytes:
         voz = voz or self.VOZ_PADRAO
         corpo = {
@@ -115,6 +118,15 @@ class ElevenLabsClient(VoiceClient):
 
 class OpenAIVoiceClient(VoiceClient):
     MODELO_PADRAO = "tts-1"
+    # `instructions` ("como falar") so existe nos modelos novos da OpenAI
+    # (gpt-4o-mini-tts); o tts-1 recusa campo que nao conhece.
+    MODELOS_COM_INSTRUCAO = ("gpt-4o",)
+
+    def __init__(self, *args, do_worker: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        # O worker (Kokoro/Qwen) aceita `instructions` e as falas vizinhas
+        # (`previous_text`/`next_text`, como na ElevenLabs); a OpenAI, nao.
+        self.do_worker = do_worker
 
     def falar(
         self,
@@ -125,18 +137,28 @@ class OpenAIVoiceClient(VoiceClient):
         idioma: str = "pt-BR",
         antes: str = "",
         depois: str = "",
+        instrucao: str = "",
     ) -> bytes:
         from apps.inference.providers.openai_compatible import raiz_da_api
 
+        modelo = modelo or self.MODELO_PADRAO
+        corpo = {
+            "model": modelo,
+            "voice": voz or "alloy",
+            "input": texto,
+            "response_format": "mp3",
+        }
+        if instrucao and (self.do_worker or modelo.startswith(self.MODELOS_COM_INSTRUCAO)):
+            corpo["instructions"] = instrucao
+        if self.do_worker:
+            if antes:
+                corpo["previous_text"] = antes
+            if depois:
+                corpo["next_text"] = depois
         resposta = self._post(
             f"{raiz_da_api(self.base_url)}/audio/speech",
             headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
-            json={
-                "model": modelo or self.MODELO_PADRAO,
-                "voice": voz or "alloy",
-                "input": texto,
-                "response_format": "mp3",
-            },
+            json=corpo,
         )
         return resposta.content
 
@@ -151,6 +173,7 @@ class GoogleVoiceClient(VoiceClient):
         idioma: str = "pt-BR",
         antes: str = "",
         depois: str = "",
+        instrucao: str = "",
     ) -> bytes:
         resposta = self._post(
             f"{self.base_url}/v1/text:synthesize",
@@ -175,7 +198,9 @@ ENDERECOS = {
 }
 
 
-def get_voice_provider(connection, *, timeout: float | None = None) -> VoiceClient:
+def get_voice_provider(
+    connection, *, timeout: float | None = None, do_worker: bool = False
+) -> VoiceClient:
     from apps.inference.models import InferenceConnection
     from apps.inference.security import decifrar_chave
 
@@ -189,8 +214,10 @@ def get_voice_provider(connection, *, timeout: float | None = None) -> VoiceClie
         raise ProviderPermanentError(
             f"A conexao {connection.name!r} e do tipo {connection.kind!r}, que nao fala."
         )
+    extras = {"do_worker": do_worker} if classe is OpenAIVoiceClient else {}
     return classe(
         base_url=connection.base_url,
         api_key=decifrar_chave(connection),
         timeout=timeout if timeout is not None else 120.0,
+        **extras,
     )

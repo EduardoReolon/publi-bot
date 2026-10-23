@@ -286,13 +286,13 @@ def test_voz_do_kokoro_vai_no_worker_e_recusa_passa_para_a_outra(
         def __init__(self, conexao):
             self.conexao = conexao
 
-        def falar(self, *, texto, voz, modelo="", antes="", depois=""):
+        def falar(self, *, texto, voz, modelo="", antes="", depois="", instrucao=""):
             falaram.append(self.conexao.name)
             if self.conexao != worker:
                 raise ProviderPermanentError("voice_not_found")
             return b"MP3"
 
-    monkeypatch.setattr(modulo_de_voz, "get_voice_provider", lambda c, timeout=None: Falso(c))
+    monkeypatch.setattr(modulo_de_voz, "get_voice_provider", lambda c, **k: Falso(c))
     monkeypatch.setattr(leases, "reserva", lambda *a, **k: nullcontext())
     monkeypatch.setattr(
         fontes,
@@ -336,3 +336,18 @@ def test_vozes_do_worker_qwen_e_kokoro(public_tenant, settings, monkeypatch):
     assert fontes.vozes_do_worker()[0]["id"] == "qwen:carla"
     assert pedidos == ["http://100.64.0.5:8090/v1/audio/voices"]
     cache.delete("social:vozes_do_worker")
+
+
+def test_instrucao_e_vizinhas_so_para_quem_aceita(chamadas):
+    """O worker recebe `instructions` e as falas vizinhas; a OpenAI, so a
+    instrucao, e so no modelo que aceita (o tts-1 recusaria o campo)."""
+    feitas, _ = chamadas
+    falar = {"texto": "tudo bem?", "voz": "qwen:carla", "antes": "Oi,", "instrucao": "conversa"}
+    OpenAIVoiceClient(base_url="http://gpu:8090", do_worker=True).falar(**falar)
+    corpo = feitas[0][1]["json"]
+    assert corpo["instructions"] == "conversa" and corpo["previous_text"] == "Oi,"
+    OpenAIVoiceClient(base_url="https://api.openai.com").falar(**falar)
+    assert "instructions" not in feitas[1][1]["json"]
+    assert "previous_text" not in feitas[1][1]["json"]
+    OpenAIVoiceClient(base_url="https://api.openai.com").falar(**falar, modelo="gpt-4o-mini-tts")
+    assert feitas[2][1]["json"]["instructions"] == "conversa"
