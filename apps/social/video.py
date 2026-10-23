@@ -39,6 +39,20 @@ def voz_do_post(post) -> str:
     return ((post.extras or {}).get("voz") or "").strip() or post.destino.voz
 
 
+def _fala_convertida(post, gravada: bytes) -> bytes:
+    """A fala gravada (a entonacao) na voz do video, guardada por
+    voz+gravacao: montar de novo nao converte de novo."""
+    voz = voz_do_post(post)
+    chave = hashlib.sha256(f"{voz}\n".encode() + gravada).hexdigest()[:32]
+    caminho = f"social/audios/convertida-{chave}.mp3"
+    if default_storage.exists(caminho):
+        with default_storage.open(caminho, "rb") as arquivo:
+            return arquivo.read()
+    audio = fontes.converter_fala(gravada, voz)
+    default_storage.save(caminho, ContentFile(audio))
+    return audio
+
+
 def _audio(post, fala: str, *, antes: str = "", depois: str = "") -> bytes:
     """O audio da fala, guardado por voz+texto+vizinhas (so paga a fala que
     mudou). As vizinhas mudam a entonacao (ElevenLabs), por isso entram na chave;

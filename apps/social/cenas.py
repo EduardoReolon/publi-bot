@@ -459,9 +459,10 @@ def gerar_quadro(post, n: int, *, sem_referencia: bool = False) -> str:
     return cena["quadro"]
 
 
-# A fala gravada (no navegador, ou um arquivo): entra no lugar da voz gerada,
-# com a entonacao de quem gravou. As pontas em silencio saem e o volume e
-# igualado ao das outras falas.
+# A entonacao gravada (no navegador, ou um arquivo): um GUIA, nunca entra no
+# video. Na montagem, o servico da voz a repete na voz do video (conversao:
+# mesmas palavras, ritmo e pausas, outro timbre). As pontas em silencio saem e
+# o volume e igualado antes de mandar.
 LIMPAR_A_GRAVACAO = (
     "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-45dB,areverse,"
     "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-45dB,areverse,"
@@ -471,8 +472,8 @@ FALA_GRAVADA_MAXIMA = 20 * 1024 * 1024
 
 
 def enviar_fala(post, n: int, arquivo) -> str:
-    """A fala gravada da cena n (webm, ogg, m4a, mp3, wav: o que o celular der):
-    vira MP3 limpo e passa a valer no lugar da voz gerada."""
+    """A entonacao gravada da cena n (webm, ogg, m4a, mp3, wav: o que o celular
+    der): vira MP3 limpo e fica guardada como guia para a voz do video."""
     ffmpeg, ffprobe = video._ffmpeg()
     if arquivo.size and arquivo.size > FALA_GRAVADA_MAXIMA:
         raise video.VideoIndisponivel("a gravacao passou de 20 MB.")
@@ -749,15 +750,30 @@ def _segmento(
     *,
     antes: str = "",
     depois: str = "",
+    avisos: dict | None = None,
 ):
     """Uma cena: o clipe (ou o quadro, aproximando devagar) no tempo da fala,
     com a legenda e a frase por cima e a voz. Devolve (arquivo, duracao).
-    `antes`/`depois`: as falas vizinhas, para a voz nao soar frase solta."""
+    `antes`/`depois`: as falas vizinhas, para a voz nao soar frase solta.
+    Com a entonacao gravada, a voz do video a repete (conversao); sem servico
+    que converta, vale a voz gerada e `avisos[n]` diz por que. A gravacao em
+    si nunca entra no video."""
+    from apps.inference.providers.base import RotaInexistente
+
     largura, altura = video.LARGURA, video.ALTURA
     audio = None
     fala = (cena.get("fala") or "").strip()
-    if _existe(cena.get("fala_gravada", "")):  # a gravada vence a gerada
-        audio = video._copiar_do_armazenamento(pasta, f"{n}.mp3", cena["fala_gravada"])
+    convertida = None
+    if _existe(cena.get("fala_gravada", "")):
+        with default_storage.open(cena["fala_gravada"], "rb") as arquivo:
+            gravada = arquivo.read()
+        try:
+            convertida = video._fala_convertida(post, gravada)
+        except RotaInexistente as exc:
+            if avisos is not None:
+                avisos[n] = f"entonacao gravada nao usada (voz gerada no lugar): {exc}"
+    if convertida is not None:
+        audio = video._guardar_em(pasta, f"{n}.mp3", convertida)
         duracao = max(video._duracao(ffprobe, audio) + video.PAUSA, cena.get("segundos") or 0)
     elif fala and fontes.tem_voz():
         audio = video._guardar_em(
@@ -863,6 +879,18 @@ def _juntar(ffmpeg: str, pasta: Path, partes: list[tuple[Path, float]]) -> Path:
     return final
 
 
+def _avisar_das_falas(post, avisos: dict[int, str]) -> None:
+    """Guarda, em cada cena, por que a entonacao gravada nao entrou (ou limpa)."""
+    post.refresh_from_db()
+    lista = cenas(post)
+    for n, cena in enumerate(lista, start=1):
+        if n in avisos:
+            cena["aviso_fala"] = avisos[n][:500]
+        else:
+            cena.pop("aviso_fala", None)
+    _gravar(post, lista)
+
+
 def montar(post) -> str:
     """O video do post: todas as cenas no tempo das falas, com a voz e as
     legendas. Cena sem animacao ainda entra com o quadro aproximando devagar
@@ -875,6 +903,7 @@ def montar(post) -> str:
     with tempfile.TemporaryDirectory() as pasta:
         pasta = Path(pasta)
         falas = [(c.get("fala") or "").strip() for c in lista]
+        avisos: dict[int, str] = {}
         partes = [
             _segmento(
                 pasta,
@@ -886,9 +915,11 @@ def montar(post) -> str:
                 ffprobe,
                 antes=" ".join(f for f in falas[: n - 1] if f)[-400:],
                 depois=" ".join(f for f in falas[n:] if f)[:400],
+                avisos=avisos,
             )
             for n, cena in enumerate(lista, start=1)
         ]
+        _avisar_das_falas(post, avisos)
         final = _juntar(ffmpeg, pasta, partes)
         return video_ia.guardar(post, final.read_bytes(), ".mp4", de="cenas")
 

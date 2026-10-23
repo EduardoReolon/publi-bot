@@ -1361,17 +1361,20 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
         elif acao == "cena_enviar_fala":
             arquivo = request.FILES.get("fala_gravada")
             if arquivo is None:
-                messages.error(request, _("Grave ou escolha o audio da fala."))
+                messages.error(request, _("Grave ou escolha o audio da entonacao."))
                 return
             cenas.enviar_fala(post, n, arquivo)
             messages.success(
                 request,
-                _("Fala da cena %(n)s gravada: ela entra no lugar da voz. Monte o video.")
+                _(
+                    "Entonacao da cena %(n)s guardada: na montagem, a voz do video a "
+                    "repete. Monte o video."
+                )
                 % {"n": n},
             )
         elif acao == "cena_tirar_fala":
             cenas.tirar_fala(post, n)
-            messages.success(request, _("Cena %(n)s volta a voz gerada.") % {"n": n})
+            messages.success(request, _("Cena %(n)s sem entonacao: so a voz gerada.") % {"n": n})
         elif acao == "cenas_enviar_imagens":
             # Todas de uma vez: a 1a imagem vai na cena 1, a 2a na 2... A tela
             # ordena os arquivos pela hora em que foram baixados (ver o template).

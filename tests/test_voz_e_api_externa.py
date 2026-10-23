@@ -351,3 +351,28 @@ def test_instrucao_e_vizinhas_so_para_quem_aceita(chamadas):
     assert "previous_text" not in feitas[1][1]["json"]
     OpenAIVoiceClient(base_url="https://api.openai.com").falar(**falar, modelo="gpt-4o-mini-tts")
     assert feitas[2][1]["json"]["instructions"] == "conversa"
+
+
+def test_converter_a_entonacao_na_elevenlabs_e_no_worker(chamadas):
+    """A entonacao gravada vira a voz do video: a ElevenLabs pelo
+    speech-to-speech (tirando o ruido); o worker pelo /v1/audio/convert, e sem
+    a rota (404) e `RotaInexistente`; a OpenAI nao converte."""
+    from apps.inference.providers.base import RotaInexistente
+
+    feitas, respostas = chamadas
+    ElevenLabsClient(base_url="https://api.elevenlabs.io", api_key="k").converter(
+        audio=b"GRAVADA", voz="abc"
+    )
+    url, kwargs = feitas[0]
+    assert url.startswith("https://api.elevenlabs.io/v1/speech-to-speech/abc")
+    assert kwargs["data"]["remove_background_noise"] == "true"
+    assert kwargs["files"]["audio"][1] == b"GRAVADA"
+    worker = OpenAIVoiceClient(base_url="http://gpu:8090", do_worker=True)
+    assert worker.converter(audio=b"G", voz="qwen:carla") == b"MP3"
+    assert feitas[1][0] == "http://gpu:8090/v1/audio/convert"
+    assert feitas[1][1]["data"] == {"voice": "qwen:carla"}
+    respostas.append((404, {"detail": "Not Found"}))
+    with pytest.raises(RotaInexistente):
+        worker.converter(audio=b"G", voz="qwen:carla")
+    with pytest.raises(RotaInexistente):
+        OpenAIVoiceClient(base_url="https://api.openai.com").converter(audio=b"G", voz="nova")
