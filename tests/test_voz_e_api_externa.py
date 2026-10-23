@@ -232,3 +232,47 @@ def test_maquina_ocupada_nao_vira_animacao_inexistente(public_tenant, settings):
     conexao.save(update_fields=["is_active"])
     with pytest.raises(Exception, match="nenhuma animacao cadastrada"):
         fontes._animacao(para_pedir=False)
+
+
+@pytest.mark.django_db
+def test_voz_do_kokoro_vai_no_worker_e_recusa_passa_para_a_outra(
+    public_tenant, settings, monkeypatch
+):
+    """Duas vozes cadastradas (ElevenLabs e o worker): "pm_alex" e do Kokoro e
+    vai no worker; se uma conexao recusa a voz, a fala tenta a outra."""
+    from contextlib import nullcontext
+
+    from apps.inference import leases
+    from apps.inference.providers import voz as modulo_de_voz
+    from apps.inference.providers.base import ProviderPermanentError
+    from apps.social import fontes
+
+    settings.IMAGEM_BASE_URL = "http://100.64.0.5:8090"
+    settings.IMAGEM_SEGREDO = "segredo-do-worker"
+    call_command("configurar_api", "elevenlabs", "--chave", "k", stdout=io.StringIO())
+    call_command("configurar_api", "worker_voz", stdout=io.StringIO())
+    worker = InferenceConnection.objects.get(name="Worker (voz)")
+    assert fontes._conexoes_de_voz("pm_alex")[0] == worker
+
+    falaram = []
+
+    class Falso:
+        def __init__(self, conexao):
+            self.conexao = conexao
+
+        def falar(self, *, texto, voz, modelo=""):
+            falaram.append(self.conexao.name)
+            if self.conexao != worker:
+                raise ProviderPermanentError("voice_not_found")
+            return b"MP3"
+
+    monkeypatch.setattr(modulo_de_voz, "get_voice_provider", lambda c: Falso(c))
+    monkeypatch.setattr(leases, "reserva", lambda *a, **k: nullcontext())
+    monkeypatch.setattr(
+        fontes,
+        "_conexoes_de_voz",
+        lambda voz: [c for c in InferenceConnection.objects.filter(is_active=True) if c != worker]
+        + [worker],
+    )
+    assert fontes.falar("Ola", "pm_alex") == b"MP3"
+    assert falaram[-1] == "Worker (voz)" and len(falaram) == 2
