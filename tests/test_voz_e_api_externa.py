@@ -205,3 +205,30 @@ def test_configurar_api_do_worker_usa_o_env(public_tenant, settings):
     assert isinstance(get_voice_provider(voz), OpenAIVoiceClient)
     with pytest.raises(Exception, match="--chave"):
         call_command("configurar_api", "anthropic", stdout=io.StringIO())
+
+
+@pytest.mark.django_db
+def test_maquina_ocupada_nao_vira_animacao_inexistente(public_tenant, settings):
+    """Sem vaga (ou com o circuito aberto), pedir a animacao e "tente depois",
+    nao "nenhuma animacao cadastrada"; e conferir o trabalho ja pedido nao
+    disputa vaga: usa a conexao assim mesmo."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.inference.providers.base import ProviderTransientError
+    from apps.social import fontes
+
+    settings.IMAGEM_BASE_URL = "http://100.64.0.5:8090"
+    settings.IMAGEM_SEGREDO = "segredo-do-worker"
+    call_command("configurar_api", "worker_animacao", stdout=io.StringIO())
+    conexao = InferenceConnection.objects.get(name="Worker (animacao)")
+    conexao.circuit_open_until = timezone.now() + timedelta(minutes=5)
+    conexao.save(update_fields=["circuit_open_until"])
+    with pytest.raises(ProviderTransientError, match="ocupada"):
+        fontes._animacao()
+    assert fontes._animacao(para_pedir=False) == conexao
+    conexao.is_active = False
+    conexao.save(update_fields=["is_active"])
+    with pytest.raises(Exception, match="nenhuma animacao cadastrada"):
+        fontes._animacao(para_pedir=False)

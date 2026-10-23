@@ -78,7 +78,9 @@ class _Marcador:
 
 
 def _atualizar(trabalho, **campos) -> None:
-    GenerationJob.objects.filter(pk=trabalho).update(**campos)
+    # `.update()` nao passa pelo auto_now: sem isto, o "Atualizado" da tela de
+    # Operacao ficava parado na hora em que o trabalho comecou.
+    GenerationJob.objects.filter(pk=trabalho).update(updated_at=timezone.now(), **campos)
 
 
 @contextmanager
