@@ -508,28 +508,73 @@ def baixar_animacao(identificador: str) -> bytes:
     return clipe
 
 
-def falar(texto: str, voz: str = "") -> bytes:
-    """O audio (MP3) do texto, pela conexao de voz (ElevenLabs, OpenAI, Google)."""
-    from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
+# A voz do Kokoro (o worker) tem o idioma e o genero no nome: "pm_alex" (pt,
+# masculina), "af_bella". A da ElevenLabs e um id de 20 letras; a da OpenAI, um
+# nome ("nova"); a do Google, "pt-BR-Neural2-B".
+_VOZ_DO_KOKORO = re.compile(r"^[a-z][fm]_[a-z]+$")
+
+
+def _conexoes_de_voz(voz: str) -> list:
+    """As conexoes de voz que valem para este cliente, a mais provavel de ter a
+    voz primeiro: a escolhida pela vaga, ou, para voz do Kokoro, a do worker."""
+    from django.db.models import Q
+
+    from apps.content.inference import _tenant_atual
     from apps.inference.models import InferenceConnection
+
+    carga = InferenceConnection.Workload.VOZ
+    escolhida = _conexao_externa(carga)
+    tenant = _tenant_atual()
+    todas = [
+        c
+        for c in InferenceConnection.objects.filter(is_active=True).filter(
+            Q(tenant=tenant) | Q(tenant__isnull=True)
+        )
+        if c.atende(carga)
+    ]
+
+    def ordem(c) -> tuple:
+        do_kokoro = "kokoro" in (c.default_model or "").lower()
+        return (
+            not (bool(_VOZ_DO_KOKORO.match(voz or "")) and do_kokoro),
+            c != escolhida,
+            c.tenant_id is None,
+        )
+
+    return sorted(todas, key=ordem)
+
+
+def falar(texto: str, voz: str = "") -> bytes:
+    """O audio (MP3) do texto, pela conexao de voz (ElevenLabs, OpenAI, Google,
+    o Kokoro do worker). Com mais de uma, vai na que tem a voz: a que recusa
+    (voz que ela nao conhece) passa para a proxima."""
+    from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
     from apps.inference.providers.base import ProviderPermanentError
     from apps.inference.providers.voz import get_voice_provider
 
-    conexao = _conexao_externa(InferenceConnection.Workload.VOZ)
-    if conexao is None:
+    conexoes = _conexoes_de_voz(voz)
+    if not conexoes:
         raise ProviderPermanentError(
             "nenhuma voz cadastrada (manage.py configurar_api elevenlabs --chave ...)."
         )
-    try:
-        with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
-            audio = get_voice_provider(conexao).falar(
-                texto=texto, voz=voz, modelo=conexao.default_model
-            )
-    except Exception:
-        registrar_falha(conexao)
-        raise
-    registrar_sucesso(conexao)
-    return audio
+    recusas = []
+    for conexao in conexoes:
+        try:
+            with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
+                audio = get_voice_provider(conexao).falar(
+                    texto=texto, voz=voz, modelo=conexao.default_model
+                )
+        except ProviderPermanentError as exc:
+            recusas.append(f"{conexao.name}: {exc}")
+            continue  # a voz e de outro servico: tenta o proximo
+        except Exception:
+            registrar_falha(conexao)
+            raise
+        registrar_sucesso(conexao)
+        return audio
+    raise ProviderPermanentError(
+        f"nenhuma conexao de voz aceitou a voz {voz!r}: " + " | ".join(recusas)
+    )
 
 
 def ha_modelo_de_imagem() -> bool:
