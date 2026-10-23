@@ -780,3 +780,21 @@ def test_regras_pedem_narracao_continua(ambiente):
 
     regras = video_ia.regras_das_cenas(_destino("instagram"))
     assert "UMA narracao continua" in regras and "nada de frase solta" in regras
+
+
+@pytest.mark.django_db
+def test_voz_do_video_no_post_e_vazia_volta_a_da_conta(ambiente, modulo):
+    from django.urls import reverse
+
+    from apps.social import video
+
+    _, _, client = ambiente
+    post = _post(_destino("instagram", voz="pm_alex"), extras={"video_ia": {"cenas": []}})
+    assert video.voz_do_post(post) == "pm_alex"
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
+    client.post(acao, {"acao": "cenas_voz", "voz": " qwen:carla "})
+    post.refresh_from_db()
+    assert post.extras["voz"] == "qwen:carla" and video.voz_do_post(post) == "qwen:carla"
+    client.post(acao, {"acao": "cenas_voz", "voz": ""})
+    post.refresh_from_db()
+    assert "voz" not in post.extras and video.voz_do_post(post) == "pm_alex"
