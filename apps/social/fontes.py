@@ -512,11 +512,28 @@ def baixar_animacao(identificador: str) -> bytes:
 # masculina), "af_bella". A da ElevenLabs e um id de 20 letras; a da OpenAI, um
 # nome ("nova"); a do Google, "pt-BR-Neural2-B".
 _VOZ_DO_KOKORO = re.compile(r"^[a-z][fm]_[a-z]+$")
+_VOZ_DA_ELEVENLABS = re.compile(r"^[A-Za-z0-9]{20}$")
+_VOZ_DO_GOOGLE = re.compile(r"^[a-z]{2}-[A-Z]{2}-")
+
+
+def _servico_da_voz(voz: str, conexao) -> bool:
+    """A voz tem cara de ser deste servico (pelo formato do id)?"""
+    from apps.inference.models import InferenceConnection
+
+    tipo = InferenceConnection.Kind
+    if _VOZ_DO_KOKORO.match(voz):
+        return "kokoro" in (conexao.default_model or "").lower()
+    if _VOZ_DA_ELEVENLABS.match(voz):
+        return conexao.kind == tipo.ELEVENLABS
+    if _VOZ_DO_GOOGLE.match(voz):
+        return conexao.kind == tipo.GOOGLE_TTS
+    return False
 
 
 def _conexoes_de_voz(voz: str) -> list:
     """As conexoes de voz que valem para este cliente, a mais provavel de ter a
-    voz primeiro: a escolhida pela vaga, ou, para voz do Kokoro, a do worker."""
+    voz primeiro: a do servico que o formato do id indica (Kokoro, ElevenLabs,
+    Google), depois a escolhida pela vaga."""
     from django.db.models import Q
 
     from apps.content.inference import _tenant_atual
@@ -534,12 +551,7 @@ def _conexoes_de_voz(voz: str) -> list:
     ]
 
     def ordem(c) -> tuple:
-        do_kokoro = "kokoro" in (c.default_model or "").lower()
-        return (
-            not (bool(_VOZ_DO_KOKORO.match(voz or "")) and do_kokoro),
-            c != escolhida,
-            c.tenant_id is None,
-        )
+        return (not _servico_da_voz(voz or "", c), c != escolhida, c.tenant_id is None)
 
     return sorted(todas, key=ordem)
 

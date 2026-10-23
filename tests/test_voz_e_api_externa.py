@@ -253,6 +253,8 @@ def test_voz_do_kokoro_vai_no_worker_e_recusa_passa_para_a_outra(
     call_command("configurar_api", "worker_voz", stdout=io.StringIO())
     worker = InferenceConnection.objects.get(name="Worker (voz)")
     assert fontes._conexoes_de_voz("pm_alex")[0] == worker
+    elevenlabs = fontes._conexoes_de_voz("JBFqnCBsd6RMkjVDRZzb")[0]
+    assert elevenlabs.kind == InferenceConnection.Kind.ELEVENLABS
 
     falaram = []
 
