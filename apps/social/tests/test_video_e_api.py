@@ -681,3 +681,23 @@ def test_referencia_local_vence_a_folha(ambiente, modulo, settings, tmp_path):
     assert "UMA vez so" in carlos.prompt_da_referencia_local and "Carlos" in (
         carlos.prompt_da_referencia_local
     )
+
+
+def test_imagem_com_faixa_vazia_vira_quadro_cheio():
+    """A IA de fora devolveu a cena em cima e uma faixa branca embaixo: a faixa
+    sai e a cena entra inteira sobre o fundo desfocado, sem faixa branca."""
+    from PIL import Image, ImageDraw
+
+    from apps.social import cenas
+
+    imagem = Image.new("RGB", (572, 1024), (245, 246, 248))
+    desenho = ImageDraw.Draw(imagem)
+    for x in range(0, 572, 20):  # a cena: listras, nada lisa
+        desenho.rectangle((x, 0, x + 9, 679), fill=(30, 60, 160))
+        desenho.rectangle((x + 10, 0, x + 19, 679), fill=(200, 120, 40))
+    assert cenas.sem_bordas(imagem).size == (572, 680)
+    quadro = cenas.encaixar(imagem)
+    assert quadro.size == cenas.QUADRO
+    assert quadro.getpixel((360, 1270)) != (245, 246, 248)  # o pe nao e mais a faixa
+    quase_9_16 = Image.new("RGB", (1024, 1536), (30, 60, 160))  # o 2:3 das IAs: so corta
+    assert cenas.encaixar(quase_9_16).size == cenas.QUADRO

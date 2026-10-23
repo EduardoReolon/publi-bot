@@ -184,21 +184,56 @@ def _lugar_da_cena(post, cena: dict):
 
 
 def sem_bordas(imagem):
-    """A foto sem as faixas lisas em volta (a borda branca de uma foto
-    baixada): elas faziam a foto parecer uma placa colada. Fica igual se a
-    borda nao for lisa ou se o corte comer mais da metade."""
-    from PIL import Image, ImageChops
+    """A imagem sem as faixas lisas nas beiradas, lado a lado: a borda branca de
+    uma foto baixada (parecia placa colada) ou a metade vazia que a IA de imagem
+    deixa quando nao faz 9:16 (virava uma faixa branca no video). A faixa e a
+    sequencia de linhas (ou colunas, de ponta a ponta) lisas e da MESMA cor da
+    beirada. Fica igual se o corte comer mais da metade (a imagem e lisa)."""
+    from PIL import ImageStat
 
     imagem = imagem.convert("RGB")
-    canto = imagem.getpixel((0, 0))
-    diferenca = ImageChops.difference(imagem, Image.new("RGB", imagem.size, canto)).convert("L")
-    caixa = diferenca.point(lambda v: 255 if v > 25 else 0).getbbox()
-    if not caixa:
-        return imagem
+    cinza = imagem.convert("L")
     largura, altura = imagem.size
-    if (caixa[2] - caixa[0]) * (caixa[3] - caixa[1]) < 0.5 * largura * altura:
+
+    def faixa(linhas) -> int:
+        """Quantas linhas, da beirada para dentro, sao a faixa."""
+        cor, n = None, 0
+        for caixa in linhas:
+            menor, maior = cinza.crop(caixa).getextrema()
+            media = ImageStat.Stat(cinza.crop(caixa)).mean[0]
+            if maior - menor > 24 or (cor is not None and abs(media - cor) > 12):
+                break
+            cor = media if cor is None else cor
+            n += 1
+        return n
+
+    topo = faixa((0, y, largura, y + 1) for y in range(altura))
+    base = altura - faixa((0, y - 1, largura, y) for y in range(altura, 0, -1))
+    esquerda = faixa((x, 0, x + 1, altura) for x in range(largura))
+    direita = largura - faixa((x - 1, 0, x, altura) for x in range(largura, 0, -1))
+    if base <= topo or direita <= esquerda:
         return imagem
-    return imagem.crop(caixa)
+    if (direita - esquerda) * (base - topo) < 0.5 * largura * altura:
+        return imagem
+    return imagem.crop((esquerda, topo, direita, base))
+
+
+def encaixar(imagem, tamanho: tuple[int, int] = QUADRO):
+    """A imagem no quadro 9:16: perto disso (ate ~20% de diferenca, como o 2:3
+    das IAs), cobre o quadro cortando as beiradas; muito diferente, entra
+    inteira, centrada, sobre uma copia dela ampliada e desfocada (como nos
+    Reels), em vez de cortar metade da cena."""
+    from PIL import ImageFilter, ImageOps
+
+    imagem = sem_bordas(imagem)
+    alvo = tamanho[0] / tamanho[1]
+    proporcao = imagem.width / imagem.height
+    if abs(proporcao - alvo) / alvo <= 0.2:
+        return _cobrir(imagem, tamanho)
+    fundo = _cobrir(imagem, tamanho).filter(ImageFilter.GaussianBlur(28))
+    frente = ImageOps.contain(imagem, tamanho)
+    fundo.paste(frente, ((tamanho[0] - frente.width) // 2, (tamanho[1] - frente.height) // 2))
+    return fundo
 
 
 # A moldura em volta da foto, em fracao da largura da foto: (espessura, cor,
@@ -430,7 +465,7 @@ def enviar_quadro(post, n: int, arquivo) -> str:
         raise video.VideoIndisponivel("envie uma imagem JPG, PNG ou WebP.") from exc
     lista, cena = _cena(post, n)
     cena.update(
-        quadro=_guardar(post, f"cena-{n}-quadro.png", _png(_cobrir(imagem, QUADRO))),
+        quadro=_guardar(post, f"cena-{n}-quadro.png", _png(encaixar(imagem))),
         quadro_de="enviado",
         quadro_do_texto=cena.get("imagem", ""),
         aviso="",
@@ -747,6 +782,9 @@ Gere as imagens iniciais (o PRIMEIRO quadro) das cenas abaixo, uma por cena, na
 ordem, vertical 9:16 (1080 x 1920). Cada uma vai ser animada depois (um gesto
 lento a partir dela), entao:
 
+- A cena ocupa a imagem INTEIRA, de cima a baixo: sem faixa branca, borda,
+  moldura ou espaco vazio (se o formato vertical nao der, prefira o mais alto
+  que conseguir, sem completar com faixa).
 - NAO escreva nenhum texto, letra, numero ou logotipo na imagem.
 - A pose e a do COMECO do gesto descrito; boca fechada (a voz e de narrador).
 - Estilo (o mesmo em todas): {estilo}.
