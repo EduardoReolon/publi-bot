@@ -261,6 +261,22 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     client.post(acao, {"acao": "cena_sem_referencia", "n": "1"})
     assert fila[-1]["sem_referencia"] and fila[-1]["rotulo"].endswith("(sem referencia)")
 
+    # A fala gravada no navegador: entra no lugar da voz gerada (a cena 1 nao
+    # chama mais a voz); mudou o texto, a tela avisa; "voltar" volta a gerada.
+    gravada = SimpleUploadedFile("fala.webm", _mp3(1.2), "audio/webm")
+    client.post(acao, {"acao": "cena_enviar_fala", "n": "1", "fala_gravada": gravada})
+    post.refresh_from_db()
+    assert post.cenas_do_video[0]["tem_fala_gravada"]
+    pedidas = len(falas)
+    cenas.montar(post)
+    assert len(falas) == pedidas  # a cena 1 usou a gravacao
+    client.post(acao, {"acao": "cena_salvar", "n": "1", "fala": "Outra fala.", "imagem": "x"})
+    post.refresh_from_db()
+    assert post.cenas_do_video[0]["fala_mudou"]
+    client.post(acao, {"acao": "cena_tirar_fala", "n": "1"})
+    post.refresh_from_db()
+    assert not post.cenas_do_video[0]["tem_fala_gravada"]
+
     # Todas as imagens de uma vez: a 1a na cena 1, a 2a na cena 2; a 3a sobra.
     def arquivo(cor):
         dados = io.BytesIO()

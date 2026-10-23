@@ -1358,6 +1358,20 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 return
             cenas.enviar_quadro(post, n, arquivo)
             messages.success(request, _("Imagem inicial da cena %(n)s trocada.") % {"n": n})
+        elif acao == "cena_enviar_fala":
+            arquivo = request.FILES.get("fala_gravada")
+            if arquivo is None:
+                messages.error(request, _("Grave ou escolha o audio da fala."))
+                return
+            cenas.enviar_fala(post, n, arquivo)
+            messages.success(
+                request,
+                _("Fala da cena %(n)s gravada: ela entra no lugar da voz. Monte o video.")
+                % {"n": n},
+            )
+        elif acao == "cena_tirar_fala":
+            cenas.tirar_fala(post, n)
+            messages.success(request, _("Cena %(n)s volta a voz gerada.") % {"n": n})
         elif acao == "cenas_enviar_imagens":
             # Todas de uma vez: a 1a imagem vai na cena 1, a 2a na 2... A tela
             # ordena os arquivos pela hora em que foram baixados (ver o template).
@@ -1469,7 +1483,12 @@ def midia_da_cena(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
 
     post = get_object_or_404(Post, pk=pk)
     lista = cenas.cenas(post)
-    campo = {"quadro": "quadro", "clipe": "clipe", "referencia": "referencia"}.get(tipo)
+    campo = {
+        "quadro": "quadro",
+        "clipe": "clipe",
+        "referencia": "referencia",
+        "fala": "fala_gravada",
+    }.get(tipo)
     caminho = lista[n - 1].get(campo, "") if campo and 1 <= n <= len(lista) else ""
     if not caminho or not default_storage.exists(caminho):
         raise Http404

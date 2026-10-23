@@ -174,3 +174,31 @@ mais no corpo:
 > valer, e `voz.campos` vai dizer. Onde eles valem hoje: a ElevenLabs usa as
 > falas vizinhas (`previous_text`/`next_text`), e o `gpt-4o-mini-tts` da OpenAI
 > usa a instrução.
+
+---
+
+## 4. Proposta: conversão de voz (`POST /v1/audio/convert`)
+
+O publi-bot já aceita, em cada cena, a **fala gravada** (no navegador, ou um
+arquivo): ela entra no lugar da voz gerada, com a entonação de quem gravou.
+Hoje sai na voz de quem gravou. O passo seguinte é o worker trocar só o
+**timbre**: a pessoa grava com a entonação certa, e sai na voz da conta
+(ex.: `qwen:carla`), com as mesmas palavras, ritmo e pausas.
+
+```http
+POST /v1/audio/convert
+Authorization: Bearer <WORKER_SHARED_SECRET>
+Content-Type: multipart/form-data
+
+audio=<a gravacao, mp3 (o publi-bot ja limpa o silencio das pontas e o volume)>
+voice=qwen:carla        (uma voz do worker; a referencia dela e o alvo)
+```
+
+**`200`:** o MP3 convertido (`audio/mpeg`). **`422 voz_desconhecida`** como no
+`/v1/audio/speech`; **`503 gpu_ocupada`** com `Retry-After`, como a voz do Qwen.
+
+Sugestão: um modelo de conversão sem treino, que usa a gravação de referência
+da voz como alvo (Seed-VC, por exemplo), na placa e pelo árbitro. `/health/`
+publica `rotas.conversao_de_voz: true`; o publi-bot passa a mandar a fala
+gravada para converter quando a voz do vídeo for do worker, e guarda as duas
+(a original e a convertida).
