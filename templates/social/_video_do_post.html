@@ -108,12 +108,76 @@
           <input type="file" name="imagem" accept="image/jpeg,image/png,image/webp" style="width:auto">
           <button type="submit" name="acao" value="cena_enviar_imagem" class="botao discreto pequeno" title="{% translate 'A imagem inicial feita fora (ou uma foto): a cena anima a partir dela' %}">{% translate "Enviar a imagem inicial" %}</button>
         </form>
+        <div class="acoes" style="gap:.4rem; margin:.2rem 0; align-items:center">
+          {% if c.tem_fala_gravada %}
+            <span class="selo ok">{% translate "fala gravada" %}</span>
+            <audio src="{% url 'social:midia_da_cena' post.pk c.n 'fala' %}?v={{ post.atualizado_em|date:'U' }}" controls preload="none" style="height:2rem"></audio>
+            {% if c.fala_mudou %}<span class="selo alerta">{% translate "o texto da fala mudou: grave de novo" %}</span>{% endif %}
+            <form method="post" action="{% url 'social:acao_no_post' post.pk %}">{% csrf_token %}<input type="hidden" name="n" value="{{ c.n }}"><input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+              <button type="submit" name="acao" value="cena_tirar_fala" class="botao discreto pequeno">{% translate "Voltar a voz gerada" %}</button></form>
+          {% endif %}
+        </div>
+        <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="gap:.4rem; margin:.2rem 0; align-items:center" data-gravar>
+          {% csrf_token %}<input type="hidden" name="n" value="{{ c.n }}"><input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+          <button type="button" class="botao secundario pequeno" data-gravar-botao title="{% translate 'Grave a fala desta cena com a entonacao que voce quer: ela entra no lugar da voz gerada' %}">&#127908; {% translate "Gravar a fala" %}</button>
+          <audio data-gravar-previa controls hidden style="height:2rem"></audio>
+          <input type="file" name="fala_gravada" accept="audio/*" style="width:auto">
+          <button type="submit" name="acao" value="cena_enviar_fala" class="botao discreto pequeno">{% translate "Enviar a fala" %}</button>
+          <span class="ajuda" data-gravar-estado></span>
+        </form>
       </div>
     {% endfor %}
   {% else %}
     <p class="ajuda">{% translate "Este post ainda nao tem roteiro de video. Em 'Escrever com outra IA', converse ate o video ficar bom e cole a ultima resposta (com as CENAS): cada cena aparece aqui para gerar." %}</p>
   {% endif %}
   {% endwith %}
+  <script>
+    // Gravar a fala no navegador (no celular tambem): grava, mostra a previa
+    // e poe o audio no campo de arquivo do formulario; "Enviar a fala" manda.
+    document.querySelectorAll("[data-gravar]").forEach(function (form) {
+      if (form.dataset.ligado) return;
+      form.dataset.ligado = "1";
+      var botao = form.querySelector("[data-gravar-botao]");
+      var previa = form.querySelector("[data-gravar-previa]");
+      var estado = form.querySelector("[data-gravar-estado]");
+      var campo = form.querySelector('input[name="fala_gravada"]');
+      var gravador = null, pedacos = [];
+      botao.addEventListener("click", function () {
+        if (gravador && gravador.state === "recording") { gravador.stop(); return; }
+        if (!navigator.mediaDevices || !window.MediaRecorder) {
+          estado.textContent = "{% translate 'Este navegador nao grava: envie um arquivo de audio.' %}";
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (fluxo) {
+          pedacos = [];
+          gravador = new MediaRecorder(fluxo);
+          gravador.ondataavailable = function (e) { if (e.data.size) pedacos.push(e.data); };
+          gravador.onstop = function () {
+            fluxo.getTracks().forEach(function (t) { t.stop(); });
+            var tipo = gravador.mimeType || "audio/webm";
+            var extensao = tipo.indexOf("mp4") >= 0 ? "m4a" : tipo.indexOf("ogg") >= 0 ? "ogg" : "webm";
+            var audio = new Blob(pedacos, { type: tipo });
+            previa.src = URL.createObjectURL(audio);
+            previa.hidden = false;
+            try {
+              var lista = new DataTransfer();
+              lista.items.add(new File([audio], "fala." + extensao, { type: tipo }));
+              campo.files = lista.files;
+              estado.textContent = "{% translate 'Ouca e clique em Enviar a fala (ou grave de novo).' %}";
+            } catch (erro) {
+              estado.textContent = "{% translate 'Gravou, mas este navegador nao deixa anexar: envie um arquivo.' %}";
+            }
+            botao.innerHTML = "&#127908; {% translate 'Gravar de novo' %}";
+          };
+          gravador.start();
+          botao.textContent = "{% translate 'Parar' %}";
+          estado.textContent = "{% translate 'Gravando... fale a fala da cena.' %}";
+        }).catch(function () {
+          estado.textContent = "{% translate 'Sem acesso ao microfone (permita no navegador).' %}";
+        });
+      });
+    });
+  </script>
   <details class="ajuda" style="margin:.3rem 0"><summary>{% translate "Ou o video inteiro numa IA de video de fora" %}</summary>
     <p>{% translate "Sora, Veo, Kling, Runway, ou o ChatGPT/Gemini que gera video. O pedido leva a identidade da conta e o roteiro (ou pede que ela o monte). Depois envie o video aqui." %}</p>
     <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-video-{{ post.pk }}">{% translate "Copiar o pedido do video" %}</button></div>

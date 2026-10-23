@@ -111,6 +111,9 @@ def para_a_tela(post) -> list[dict]:
                 "tem_quadro": _existe(quadro),
                 "tem_clipe": _existe(clipe),
                 "tem_referencia": _existe(cena.get("referencia", "")),
+                "tem_fala_gravada": _existe(cena.get("fala_gravada", "")),
+                "fala_mudou": _existe(cena.get("fala_gravada", ""))
+                and cena.get("fala_gravada_do_texto", cena.get("fala")) != cena.get("fala"),
                 "usa": [(numero[e.pk], e.nome) for e in referencias_da_cena(post, cena)],
                 "com_referencia_local": settings.CENAS_REFERENCIA_LOCAL,
                 "animando": bool(cena.get("animando")),
@@ -456,6 +459,70 @@ def gerar_quadro(post, n: int, *, sem_referencia: bool = False) -> str:
     return cena["quadro"]
 
 
+# A fala gravada (no navegador, ou um arquivo): entra no lugar da voz gerada,
+# com a entonacao de quem gravou. As pontas em silencio saem e o volume e
+# igualado ao das outras falas.
+LIMPAR_A_GRAVACAO = (
+    "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-45dB,areverse,"
+    "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-45dB,areverse,"
+    "loudnorm=I=-16:TP=-1.5:LRA=11"
+)
+FALA_GRAVADA_MAXIMA = 20 * 1024 * 1024
+
+
+def enviar_fala(post, n: int, arquivo) -> str:
+    """A fala gravada da cena n (webm, ogg, m4a, mp3, wav: o que o celular der):
+    vira MP3 limpo e passa a valer no lugar da voz gerada."""
+    ffmpeg, ffprobe = video._ffmpeg()
+    if arquivo.size and arquivo.size > FALA_GRAVADA_MAXIMA:
+        raise video.VideoIndisponivel("a gravacao passou de 20 MB.")
+    lista, cena = _cena(post, n)
+    with tempfile.TemporaryDirectory() as pasta:
+        pasta = Path(pasta)
+        entrada = pasta / "gravada"
+        entrada.write_bytes(arquivo.read())
+        saida = pasta / "fala.mp3"
+        video._rodar(
+            [
+                ffmpeg,
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                str(entrada),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "44100",
+                "-af",
+                LIMPAR_A_GRAVACAO,
+                "-b:a",
+                "128k",
+                str(saida),
+            ]
+        )
+        if video._duracao(ffprobe, saida) < 0.3:
+            raise video.VideoIndisponivel("a gravacao saiu sem fala (so silencio).")
+        conteudo = saida.read_bytes()
+    post.refresh_from_db()
+    lista, cena = _cena(post, n)
+    cena.update(
+        fala_gravada=_guardar(post, f"cena-{n}-fala.mp3", conteudo),
+        fala_gravada_do_texto=cena.get("fala", ""),
+    )
+    _gravar(post, lista)
+    return cena["fala_gravada"]
+
+
+def tirar_fala(post, n: int) -> None:
+    """Volta a voz gerada na cena n."""
+    lista, cena = _cena(post, n)
+    cena.pop("fala_gravada", None)
+    cena.pop("fala_gravada_do_texto", None)
+    _gravar(post, lista)
+
+
 def enviar_quadro(post, n: int, arquivo) -> str:
     """A imagem inicial feita fora (ou uma foto): vira o quadro da cena n."""
     from PIL import UnidentifiedImageError
@@ -689,7 +756,10 @@ def _segmento(
     largura, altura = video.LARGURA, video.ALTURA
     audio = None
     fala = (cena.get("fala") or "").strip()
-    if fala and fontes.tem_voz():
+    if _existe(cena.get("fala_gravada", "")):  # a gravada vence a gerada
+        audio = video._copiar_do_armazenamento(pasta, f"{n}.mp3", cena["fala_gravada"])
+        duracao = max(video._duracao(ffprobe, audio) + video.PAUSA, cena.get("segundos") or 0)
+    elif fala and fontes.tem_voz():
         audio = video._guardar_em(
             pasta, f"{n}.mp3", video._audio(post, fala, antes=antes, depois=depois)
         )
