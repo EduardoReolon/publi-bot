@@ -179,26 +179,33 @@ mais no corpo:
 
 ## 4. Proposta: conversão de voz (`POST /v1/audio/convert`)
 
-O publi-bot já aceita, em cada cena, a **fala gravada** (no navegador, ou um
-arquivo): ela entra no lugar da voz gerada, com a entonação de quem gravou.
-Hoje sai na voz de quem gravou. O passo seguinte é o worker trocar só o
-**timbre**: a pessoa grava com a entonação certa, e sai na voz da conta
-(ex.: `qwen:carla`), com as mesmas palavras, ritmo e pausas.
+Em cada cena, a pessoa pode gravar (no navegador, ou enviar um arquivo) a fala
+com a entonação que quer. A gravação é **só um guia**: ela nunca entra no
+vídeo. Na montagem, o publi-bot pede ao serviço da voz do vídeo que a repita
+no timbre dela: mesmas palavras, ritmo, pausas e ênfase, outra voz. A voz pode
+ser a da conta (ex.: `qwen:carla`) ou **um modelo da voz da própria pessoa**
+(ex.: `qwen:eduardo`, criado no worker com uma gravação boa): assim ela grava a
+entonação em qualquer lugar, com barulho, e sai com a voz limpa dela.
+
+A ElevenLabs já faz isso (speech-to-speech, com remoção de ruído); o publi-bot
+usa quando a voz é dela. Para o worker:
 
 ```http
 POST /v1/audio/convert
 Authorization: Bearer <WORKER_SHARED_SECRET>
 Content-Type: multipart/form-data
 
-audio=<a gravacao, mp3 (o publi-bot ja limpa o silencio das pontas e o volume)>
-voice=qwen:carla        (uma voz do worker; a referencia dela e o alvo)
+audio=<a gravacao, mp3 (o publi-bot ja corta o silencio das pontas e iguala o volume)>
+voice=qwen:carla        (uma voz do worker; a referencia dela e o timbre de saida)
 ```
 
-**`200`:** o MP3 convertido (`audio/mpeg`). **`422 voz_desconhecida`** como no
-`/v1/audio/speech`; **`503 gpu_ocupada`** com `Retry-After`, como a voz do Qwen.
+- **`200`:** o MP3 convertido (`audio/mpeg`).
+- **`422 voz_desconhecida`**, como no `/v1/audio/speech`; **`503 gpu_ocupada`**
+  com `Retry-After`, como a voz do Qwen. **`404`** (worker sem a rota): o
+  publi-bot usa a voz gerada e avisa na cena.
+- A gravação pode vir de lugar ruim: vale **tirar o ruído antes** de converter,
+  e só a entonação dela importa.
 
 Sugestão: um modelo de conversão sem treino, que usa a gravação de referência
 da voz como alvo (Seed-VC, por exemplo), na placa e pelo árbitro. `/health/`
-publica `rotas.conversao_de_voz: true`; o publi-bot passa a mandar a fala
-gravada para converter quando a voz do vídeo for do worker, e guarda as duas
-(a original e a convertida).
+publica `rotas.conversao_de_voz: true`.

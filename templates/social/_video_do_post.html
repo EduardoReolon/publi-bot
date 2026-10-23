@@ -110,19 +110,20 @@
         </form>
         <div class="acoes" style="gap:.4rem; margin:.2rem 0; align-items:center">
           {% if c.tem_fala_gravada %}
-            <span class="selo ok">{% translate "fala gravada" %}</span>
+            <span class="selo ok" title="{% translate 'Um guia: a voz do video repete esta entonacao. A gravacao nao entra no video.' %}">{% translate "entonacao gravada" %}</span>
             <audio src="{% url 'social:midia_da_cena' post.pk c.n 'fala' %}?v={{ post.atualizado_em|date:'U' }}" controls preload="none" style="height:2rem"></audio>
             {% if c.fala_mudou %}<span class="selo alerta">{% translate "o texto da fala mudou: grave de novo" %}</span>{% endif %}
+            {% if c.aviso_fala %}<span class="ajuda">{{ c.aviso_fala }}</span>{% endif %}
             <form method="post" action="{% url 'social:acao_no_post' post.pk %}">{% csrf_token %}<input type="hidden" name="n" value="{{ c.n }}"><input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
-              <button type="submit" name="acao" value="cena_tirar_fala" class="botao discreto pequeno">{% translate "Voltar a voz gerada" %}</button></form>
+              <button type="submit" name="acao" value="cena_tirar_fala" class="botao discreto pequeno">{% translate "Tirar a entonacao (so a voz gerada)" %}</button></form>
           {% endif %}
         </div>
         <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="gap:.4rem; margin:.2rem 0; align-items:center" data-gravar>
           {% csrf_token %}<input type="hidden" name="n" value="{{ c.n }}"><input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
-          <button type="button" class="botao secundario pequeno" data-gravar-botao title="{% translate 'Grave a fala desta cena com a entonacao que voce quer: ela entra no lugar da voz gerada' %}">&#127908; {% translate "Gravar a fala" %}</button>
+          <button type="button" class="botao secundario pequeno" data-gravar-botao title="{% translate 'Fale a fala desta cena com a entonacao que voce quer. E so um guia: a voz do video (a da conta, ou um modelo da sua voz) repete a entonacao; a gravacao em si nao entra. Lugar com barulho nao estraga.' %}">&#127908; {% translate "Gravar a entonacao" %}</button>
           <audio data-gravar-previa controls hidden style="height:2rem"></audio>
           <input type="file" name="fala_gravada" accept="audio/*" style="width:auto">
-          <button type="submit" name="acao" value="cena_enviar_fala" class="botao discreto pequeno">{% translate "Enviar a fala" %}</button>
+          <button type="submit" name="acao" value="cena_enviar_fala" class="botao discreto pequeno">{% translate "Enviar a entonacao" %}</button>
           <span class="ajuda" data-gravar-estado></span>
         </form>
       </div>
@@ -132,8 +133,8 @@
   {% endif %}
   {% endwith %}
   <script>
-    // Gravar a fala no navegador (no celular tambem): grava, mostra a previa
-    // e poe o audio no campo de arquivo do formulario; "Enviar a fala" manda.
+    // Gravar a entonacao no navegador (no celular tambem): grava, mostra a previa
+    // e poe o audio no campo de arquivo do formulario; "Enviar a entonacao" manda.
     document.querySelectorAll("[data-gravar]").forEach(function (form) {
       if (form.dataset.ligado) return;
       form.dataset.ligado = "1";
@@ -163,7 +164,7 @@
               var lista = new DataTransfer();
               lista.items.add(new File([audio], "fala." + extensao, { type: tipo }));
               campo.files = lista.files;
-              estado.textContent = "{% translate 'Ouca e clique em Enviar a fala (ou grave de novo).' %}";
+              estado.textContent = "{% translate 'Ouca e clique em Enviar a entonacao (ou grave de novo).' %}";
             } catch (erro) {
               estado.textContent = "{% translate 'Gravou, mas este navegador nao deixa anexar: envie um arquivo.' %}";
             }
@@ -171,7 +172,7 @@
           };
           gravador.start();
           botao.textContent = "{% translate 'Parar' %}";
-          estado.textContent = "{% translate 'Gravando... fale a fala da cena.' %}";
+          estado.textContent = "{% translate 'Gravando... fale a fala da cena, com a entonacao que voce quer.' %}";
         }).catch(function () {
           estado.textContent = "{% translate 'Sem acesso ao microfone (permita no navegador).' %}";
         });

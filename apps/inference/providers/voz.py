@@ -22,7 +22,11 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
+from apps.inference.providers.base import (
+    ProviderPermanentError,
+    ProviderTransientError,
+    RotaInexistente,
+)
 
 
 class VoiceClient(ABC):
@@ -47,7 +51,12 @@ class VoiceClient(ABC):
         vizinhas (o servico que aceita usa para a entonacao continuar);
         `instrucao`: como falar (o servico que aceita)."""
 
-    def _post(self, url: str, **kwargs) -> httpx.Response:
+    def converter(self, *, audio: bytes, voz: str, modelo: str = "") -> bytes:
+        """A fala gravada (so a entonacao) dita na voz pedida: mesmas palavras,
+        ritmo e pausas, outro timbre. Quem nao converte: `RotaInexistente`."""
+        raise RotaInexistente(f"{type(self).__name__} nao converte fala gravada.")
+
+    def _post(self, url: str, *, rota_opcional: bool = False, **kwargs) -> httpx.Response:
         try:
             resposta = httpx.post(url, timeout=self.timeout, **kwargs)
         except httpx.HTTPError as exc:
@@ -63,6 +72,8 @@ class VoiceClient(ABC):
             except ValueError:
                 erro.retry_after = None
             raise erro
+        if rota_opcional and resposta.status_code in (404, 405):
+            raise RotaInexistente(f"{url} nao existe neste servidor ({resposta.status_code}).")
         if resposta.status_code >= 400:
             raise ProviderPermanentError(
                 f"{url} recusou ({resposta.status_code}): {resposta.text[:300]}"
@@ -115,6 +126,21 @@ class ElevenLabsClient(VoiceClient):
         )
         return resposta.content
 
+    def converter(self, *, audio: bytes, voz: str, modelo: str = "") -> bytes:
+        """Speech-to-speech da ElevenLabs: a entonacao da gravacao, na voz da
+        conta, tirando o ruido de fundo (gravar num lugar ruim nao estraga)."""
+        resposta = self._post(
+            f"{self.base_url}/v1/speech-to-speech/{voz or self.VOZ_PADRAO}"
+            "?output_format=mp3_44100_128",
+            headers={"xi-api-key": self.api_key, "accept": "audio/mpeg"},
+            data={
+                "model_id": "eleven_multilingual_sts_v2",
+                "remove_background_noise": "true",
+            },
+            files={"audio": ("entonacao.mp3", audio, "audio/mpeg")},
+        )
+        return resposta.content
+
 
 class OpenAIVoiceClient(VoiceClient):
     MODELO_PADRAO = "tts-1"
@@ -159,6 +185,22 @@ class OpenAIVoiceClient(VoiceClient):
             f"{raiz_da_api(self.base_url)}/audio/speech",
             headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
             json=corpo,
+        )
+        return resposta.content
+
+    def converter(self, *, audio: bytes, voz: str, modelo: str = "") -> bytes:
+        """No worker, `POST /v1/audio/convert` (docs/WORKER_IMAGEM_E_CENAS.md,
+        secao 4). Worker sem a rota, ou a OpenAI: `RotaInexistente`."""
+        from apps.inference.providers.openai_compatible import raiz_da_api
+
+        if not self.do_worker:
+            return super().converter(audio=audio, voz=voz, modelo=modelo)
+        resposta = self._post(
+            f"{raiz_da_api(self.base_url)}/audio/convert",
+            rota_opcional=True,
+            headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
+            data={"voice": voz},
+            files={"audio": ("entonacao.mp3", audio, "audio/mpeg")},
         )
         return resposta.content
 

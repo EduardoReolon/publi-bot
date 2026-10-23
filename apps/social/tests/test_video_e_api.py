@@ -261,15 +261,26 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     client.post(acao, {"acao": "cena_sem_referencia", "n": "1"})
     assert fila[-1]["sem_referencia"] and fila[-1]["rotulo"].endswith("(sem referencia)")
 
-    # A fala gravada no navegador: entra no lugar da voz gerada (a cena 1 nao
-    # chama mais a voz); mudou o texto, a tela avisa; "voltar" volta a gerada.
+    # A entonacao gravada no navegador e so um guia: a voz do video a repete
+    # (conversao). Sem servico que converta, vale a voz gerada, com aviso; a
+    # gravacao em si nunca entra.
     gravada = SimpleUploadedFile("fala.webm", _mp3(1.2), "audio/webm")
     client.post(acao, {"acao": "cena_enviar_fala", "n": "1", "fala_gravada": gravada})
     post.refresh_from_db()
     assert post.cenas_do_video[0]["tem_fala_gravada"]
     pedidas = len(falas)
+    cenas.montar(post)  # nenhuma conexao converte: voz gerada e aviso
+    post.refresh_from_db()
+    assert len(falas) == pedidas  # a voz gerada (ja guardada), nao a gravacao
+    assert "entonacao gravada nao usada" in post.cenas_do_video[0]["aviso_fala"]
+    convertidas = []
+    monkeypatch.setattr(
+        fontes, "converter_fala", lambda audio, voz="": convertidas.append(voz) or _mp3(1.0)
+    )
     cenas.montar(post)
-    assert len(falas) == pedidas  # a cena 1 usou a gravacao
+    post.refresh_from_db()
+    assert convertidas == [destino.voz]  # a voz do video repetiu a entonacao
+    assert "aviso_fala" not in post.cenas_do_video[0]
     client.post(acao, {"acao": "cena_salvar", "n": "1", "fala": "Outra fala.", "imagem": "x"})
     post.refresh_from_db()
     assert post.cenas_do_video[0]["fala_mudou"]

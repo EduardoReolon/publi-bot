@@ -587,6 +587,45 @@ def _conexoes_de_voz(voz: str) -> list:
     return sorted(todas, key=ordem)
 
 
+def converter_fala(audio: bytes, voz: str = "") -> bytes:
+    """A fala gravada (so como guia de entonacao) dita na voz do video: mesmas
+    palavras, ritmo e pausas, no timbre da voz (a da conta, ou um modelo da voz
+    de quem gravou). Nenhum servico converte essa voz: `RotaInexistente` (quem
+    monta usa a voz gerada); placa ocupada: `ProviderTransientError`."""
+    from apps.inference.leases import gerar_owner_key, registrar_falha, registrar_sucesso, reserva
+    from apps.inference.providers.base import (
+        ProviderPermanentError,
+        ProviderTransientError,
+        RotaInexistente,
+    )
+    from apps.inference.providers.voz import get_voice_provider
+
+    recusas = []
+    for conexao in _conexoes_de_voz(voz):
+        do_worker = _do_worker(conexao)
+        try:
+            with reserva(conexao, owner_key=gerar_owner_key(), model_name=conexao.default_model):
+                cliente = get_voice_provider(
+                    conexao,
+                    timeout=TEMPO_DA_VOZ_NO_WORKER if do_worker else None,
+                    do_worker=do_worker,
+                )
+                convertida = cliente.converter(audio=audio, voz=voz, modelo=conexao.default_model)
+        except ProviderPermanentError as exc:  # inclui RotaInexistente: tenta a proxima
+            recusas.append(f"{conexao.name}: {exc}")
+            continue
+        except ProviderTransientError as exc:
+            if getattr(exc, "retry_after", None) is None:
+                registrar_falha(conexao)
+            raise
+        registrar_sucesso(conexao)
+        return convertida
+    raise RotaInexistente(
+        f"nenhum servico de voz converteu a fala gravada para {voz or 'a voz padrao'!r}"
+        + (": " + " | ".join(recusas) if recusas else "")
+    )
+
+
 def vozes_do_worker() -> list[dict]:
     """As vozes que o worker fala ([{"id", "motor", "descricao"}]), pelo
     `GET /v1/audio/voices` (contrato 2.14), guardadas por 10 min. Vazio sem o
