@@ -121,8 +121,8 @@ class DestinoForm(forms.ModelForm):
 class IdentidadeForm(forms.ModelForm):
     """O visual da conta: cores das laminas, a ultima lamina, os estilos que a
     IA pode escolher, as orientacoes (gerais, so das imagens, so dos videos) e o
-    video por IA (texto na tela, como termina) — na tela Identidade visual. A
-    voz e as legendas do video narrado ficam fora da tela (video.py)."""
+    video por IA (texto na tela, como termina, a voz da narracao) — na tela
+    Identidade visual."""
 
     cor_fundo = forms.CharField(label=_("cor de fundo das laminas"), required=False)
     cor_texto = forms.CharField(label=_("cor do texto"), required=False)
@@ -151,6 +151,7 @@ class IdentidadeForm(forms.ModelForm):
             "video",
             "texto_no_video",
             "chamada_do_video",
+            "voz",
         ]
         widgets = {
             "descricao_do_estilo": forms.Textarea(attrs={"rows": 3}),

@@ -67,10 +67,12 @@ def test_personagens_fixos_no_pedido_e_na_geracao(ambiente, monkeypatch):
             "descricao_do_estilo": "traco grosso",
             "chamada_final": "Mande para alguem | link na bio",
             "cor_fundo": "#101010",
+            "voz": "JBFqnCBsd6RMkjVDRZzb",
         },
     )
     destino.refresh_from_db()
     assert destino.estilo_das_imagens == "quadrinhos" and destino.cores == {"fundo": "#101010"}
+    assert destino.voz == "JBFqnCBsd6RMkjVDRZzb"  # a voz da narracao, na Identidade visual
     assert ElementoVisual.objects.get().nome == "Gugu"
     pagina = client.get(url).content.decode()
     assert "Gugu" in pagina and "Copiar o prompt da referencia local" in pagina
