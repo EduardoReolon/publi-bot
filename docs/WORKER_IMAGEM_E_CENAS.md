@@ -147,8 +147,8 @@ Depois, copie os dois para `tests/contrato_do_worker/` daqui.
 ## 3. Voz: como falar e as falas vizinhas (`POST /v1/audio/speech`)
 
 Cada cena do vídeo é um pedido de voz. Lidas uma a uma, as falas soavam como
-frases soltas de quem lê. O publi-bot já manda, **só para o worker**, dois
-campos a mais no corpo (hoje o worker os ignora, sem erro):
+frases soltas de quem lê. O publi-bot manda, **só para o worker**, três campos a
+mais no corpo:
 
 ```json
 {
@@ -162,14 +162,15 @@ campos a mais no corpo (hoje o worker os ignora, sem erro):
 }
 ```
 
-- **`instructions`** é o campo da OpenAI para "como falar" (o `gpt-4o-mini-tts`
-  usa). Sugestão: no Qwen3-TTS, passar como a instrução de estilo do modelo
-  (o `instruct` dos modelos que aceitam), para a voz variar a entonação. No
-  Kokoro, ignorar.
-- **`previous_text` / `next_text`** são os nomes da ElevenLabs para as falas
-  vizinhas. Sugestão: gerar a fala com o contexto (por exemplo, sintetizar
-  vizinha + fala + vizinha e recortar só a fala, se o motor permitir alinhar),
-  ou ignorar se não der.
-
-Com isso no worker, a versão menor do contrato sobe e a nota do
-`/v1/audio/speech` diz quais dos dois campos ele usa.
+> **Contrato 2.15:** o worker aceita os três campos, mas **ignora** os três nos
+> dois motores, e diz isso em `/health/` → `voz.campos` (todos `false`). O
+> clone do Qwen3-TTS (modelo Base) não tem controle por instrução, e as falas
+> vizinhas exigiriam gerar três falas e recortar sem marcas de tempo. No worker,
+> **o tom de cada voz vem da gravação de referência**: para variar o estilo, use
+> vozes diferentes (ex.: `qwen:eduardo-vendas`, `qwen:eduardo-calmo`; veja o
+> `GRAVAR_VOZ.md` do worker) e escolha a voz na Identidade visual da conta.
+>
+> O publi-bot continua mandando os campos: com outro motor eles podem passar a
+> valer, e `voz.campos` vai dizer. Onde eles valem hoje: a ElevenLabs usa as
+> falas vizinhas (`previous_text`/`next_text`), e o `gpt-4o-mini-tts` da OpenAI
+> usa a instrução.
