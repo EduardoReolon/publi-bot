@@ -254,6 +254,25 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     client.post(acao, {"acao": "cena_sem_referencia", "n": "1"})
     assert fila[-1]["sem_referencia"] and fila[-1]["rotulo"].endswith("(sem referencia)")
 
+    # Todas as imagens de uma vez: a 1a na cena 1, a 2a na cena 2; a 3a sobra.
+    def arquivo(cor):
+        dados = io.BytesIO()
+        Image.new("RGB", (720, 1280), cor).save(dados, format="PNG")
+        return SimpleUploadedFile(f"{cor}.png", dados.getvalue(), "image/png")
+
+    client.post(
+        acao,
+        {
+            "acao": "cenas_enviar_imagens",
+            "imagens": [arquivo("green"), arquivo("blue"), arquivo("white")],
+        },
+    )
+    post.refresh_from_db()
+    tela = post.cenas_do_video
+    assert [c["quadro_de"] for c in tela] == ["enviado", "enviado"]
+    with default_storage.open(tela[1]["quadro"], "rb") as guardada:
+        assert Image.open(guardada).getpixel((10, 10)) == (0, 0, 255)
+
 
 @pytest.mark.django_db
 def test_lugar_real_na_janela_e_worker_sem_a_rota(
