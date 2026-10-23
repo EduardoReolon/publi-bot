@@ -1358,6 +1358,26 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 return
             cenas.enviar_quadro(post, n, arquivo)
             messages.success(request, _("Imagem inicial da cena %(n)s trocada.") % {"n": n})
+        elif acao == "cenas_enviar_imagens":
+            # Todas de uma vez: a 1a imagem vai na cena 1, a 2a na 2... A tela
+            # ordena os arquivos pela hora em que foram baixados (ver o template).
+            arquivos = request.FILES.getlist("imagens")
+            if not arquivos:
+                messages.error(request, _("Escolha as imagens."))
+                return
+            total = len(cenas.cenas(post))
+            for i, arquivo in enumerate(arquivos[:total], start=1):
+                cenas.enviar_quadro(post, i, arquivo)
+            messages.success(
+                request,
+                _("%(q)s imagem(ns) inicial(is) enviada(s), da cena 1 em diante.")
+                % {"q": min(len(arquivos), total)},
+            )
+            if len(arquivos) > total:
+                messages.warning(
+                    request,
+                    _("O video tem %(t)s cenas: as imagens a mais ficaram de fora.") % {"t": total},
+                )
         elif acao == "cena_parar":
             cenas.parar_animacao(post, n)
             messages.success(

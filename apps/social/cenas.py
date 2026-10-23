@@ -782,9 +782,6 @@ Gere as imagens iniciais (o PRIMEIRO quadro) das cenas abaixo, uma por cena, na
 ordem, vertical 9:16 (1080 x 1920). Cada uma vai ser animada depois (um gesto
 lento a partir dela), entao:
 
-- A cena ocupa a imagem INTEIRA, de cima a baixo: sem faixa branca, borda,
-  moldura ou espaco vazio (se o formato vertical nao der, prefira o mais alto
-  que conseguir, sem completar com faixa).
 - NAO escreva nenhum texto, letra, numero ou logotipo na imagem.
 - A pose e a do COMECO do gesto descrito; boca fechada (a voz e de narrador).
 - Estilo (o mesmo em todas): {estilo}.

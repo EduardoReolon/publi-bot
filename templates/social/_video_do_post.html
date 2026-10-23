@@ -16,7 +16,7 @@
     <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes">
       {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
       <button type="submit" name="acao" value="cenas_imagens" class="botao discreto pequeno" title="{% translate 'As que faltam, pelo gerador daqui, so pela descricao: o cenario sai bom, o personagem sai parecido (nao igual). Para o personagem fiel, use a IA de fora.' %}">{% translate "Gerar as imagens iniciais aqui" %}</button>
-      <button type="submit" name="acao" value="cenas_todas" class="botao secundario pequeno" title="{% translate 'As imagens e as animacoes que faltam, uma cena por vez (cada uma leva dezenas de minutos na placa); no fim, monta o video' %}">{% translate "Gerar tudo o que falta" %}</button>
+      <button type="submit" name="acao" value="cenas_todas" class="botao secundario pequeno" title="{% translate 'Anima, uma por vez, as cenas que ainda nao tem animacao (cada uma leva minutos na placa) e no fim monta o video. Nao refaz imagem nem animacao que ja existem; cena sem imagem ganha uma feita aqui.' %}">{% translate "Animar o que falta e montar" %}</button>
       <button type="submit" name="acao" value="cenas_montar" class="botao pequeno" title="{% translate 'Junta as cenas com a voz e as legendas. Cena ainda sem animacao entra com a imagem parada, aproximando devagar' %}">{% translate "Montar o video" %}</button>
     </form>
     <details class="ajuda" style="margin:.3rem 0"{% if not cenas.0.tem_quadro %} open{% endif %}><summary><strong>{% translate "Imagens iniciais numa IA de imagem de fora (recomendado)" %}</strong></summary>
@@ -37,6 +37,28 @@
       {% endif %}{% endwith %}
       <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-quadros-{{ post.pk }}">{% translate "Copiar o pedido das imagens iniciais" %}</button></div>
       <textarea id="pedido-quadros-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_das_imagens_iniciais }}</textarea>
+      <form method="post" action="{% url 'social:acao_no_post' post.pk %}" enctype="multipart/form-data" class="acoes" style="margin-top:.3rem">
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+        <input type="file" name="imagens" multiple accept="image/jpeg,image/png,image/webp" style="width:auto" data-ordenar-por-data>
+        <button type="submit" name="acao" value="cenas_enviar_imagens" class="botao discreto pequeno" title="{% translate 'Na ordem em que voce as baixou: a 1a vai na cena 1, a 2a na cena 2... Baixe na ordem das cenas.' %}">{% translate "Enviar as imagens de todas as cenas" %}</button>
+      </form>
+      <p class="ajuda">{% translate "Baixe as imagens na ordem das cenas e escolha todas juntas: a ordem vem da hora do download, nao do nome do arquivo. Uma ficou fora do lugar? Troque so ela, na cena." %}</p>
+      <script>
+        // O seletor de arquivos devolve na ordem do nome (aleatorio, nas IAs):
+        // reordena pela hora do download, que segue a ordem das cenas.
+        document.querySelectorAll("[data-ordenar-por-data]").forEach(function (campo) {
+          if (campo.dataset.ligado) return;
+          campo.dataset.ligado = "1";
+          campo.addEventListener("change", function () {
+            if (typeof DataTransfer === "undefined") return;
+            var lista = new DataTransfer();
+            Array.from(campo.files)
+              .sort(function (a, b) { return a.lastModified - b.lastModified; })
+              .forEach(function (f) { lista.items.add(f); });
+            campo.files = lista.files;
+          });
+        });
+      </script>
     </details>
     {% for c in cenas %}
       <div style="border-top:1px solid var(--borda); padding:.4rem 0">
