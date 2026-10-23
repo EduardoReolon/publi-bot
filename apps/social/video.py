@@ -33,15 +33,18 @@ def _ffmpeg() -> tuple[str, str]:
     return ffmpeg, ffprobe
 
 
-def _audio(post, fala: str) -> bytes:
-    """O audio da fala, guardado por voz+texto (so paga a fala que mudou)."""
+def _audio(post, fala: str, *, antes: str = "", depois: str = "") -> bytes:
+    """O audio da fala, guardado por voz+texto+vizinhas (so paga a fala que
+    mudou). As vizinhas mudam a entonacao (ElevenLabs), por isso entram na chave;
+    a voz do worker nao as usa, e mudar uma fala nao refaz as outras."""
     voz = post.destino.voz
-    chave = hashlib.sha256(f"{voz}\n{fala}".encode()).hexdigest()[:32]
+    contexto = "" if fontes.voz_do_worker(voz) else f"\n{antes}\n{depois}"
+    chave = hashlib.sha256(f"{voz}\n{fala}{contexto}".encode()).hexdigest()[:32]
     caminho = f"social/audios/{chave}.mp3"
     if default_storage.exists(caminho):
         with default_storage.open(caminho, "rb") as arquivo:
             return arquivo.read()
-    audio = fontes.falar(fala, voz)
+    audio = fontes.falar(fala, voz, antes=antes, depois=depois)
     default_storage.save(caminho, ContentFile(audio))
     return audio
 

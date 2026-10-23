@@ -142,7 +142,14 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     settings.MEDIA_ROOT = tmp_path
     _, _, client = ambiente
     falas, animados = [], []
-    monkeypatch.setattr(fontes, "falar", lambda texto, voz="": falas.append(texto) or _mp3(1.0))
+    vizinhas = []
+
+    def falar(texto, voz="", *, antes="", depois=""):
+        falas.append(texto)
+        vizinhas.append((antes, depois))
+        return _mp3(1.0)
+
+    monkeypatch.setattr(fontes, "falar", falar)
     monkeypatch.setattr(fontes, "tem_voz", lambda: True)
     monkeypatch.setattr(
         fontes,
@@ -765,3 +772,11 @@ def test_lote_nao_espera_a_cena_refeita_por_outro_botao(
 
     tasks.gerar_cenas.apply(args=[str(post.pk)]).get()
     assert conferidas == [] and fila == ["Montar o video"]
+
+
+@pytest.mark.django_db
+def test_regras_pedem_narracao_continua(ambiente):
+    from apps.social import video_ia
+
+    regras = video_ia.regras_das_cenas(_destino("instagram"))
+    assert "UMA narracao continua" in regras and "nada de frase solta" in regras

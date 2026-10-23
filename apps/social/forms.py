@@ -166,6 +166,17 @@ class IdentidadeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["estilos_permitidos"].choices = [(e, NOMES[e]) for e in ESCOLHIVEIS]
         self.fields["video"].required = False  # vazio: a IA so sugere
+        from apps.social.fontes import vozes_do_worker
+
+        vozes = vozes_do_worker()
+        if vozes:  # as que o worker fala hoje, para copiar o nome
+            self.fields["voz"].help_text = f"{self.fields['voz'].help_text} " + _(
+                "Vozes do worker agora: %(v)s."
+            ) % {
+                "v": "; ".join(
+                    f"{v['id']} ({v.get('descricao') or v.get('motor', '')})" for v in vozes
+                )
+            }
         for chave in ("fundo", "texto", "destaque"):
             self.initial[f"cor_{chave}"] = (self.instance.cores or {}).get(chave, "")
 

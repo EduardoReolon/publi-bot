@@ -32,8 +32,18 @@ class VoiceClient(ABC):
         self.timeout = timeout
 
     @abstractmethod
-    def falar(self, *, texto: str, voz: str, modelo: str = "", idioma: str = "pt-BR") -> bytes:
-        """O audio (MP3) do texto, na voz pedida."""
+    def falar(
+        self,
+        *,
+        texto: str,
+        voz: str,
+        modelo: str = "",
+        idioma: str = "pt-BR",
+        antes: str = "",
+        depois: str = "",
+    ) -> bytes:
+        """O audio (MP3) do texto, na voz pedida. `antes` e `depois`: as falas
+        vizinhas (o servico que aceita usa para a entonacao continuar)."""
 
     def _post(self, url: str, **kwargs) -> httpx.Response:
         try:
@@ -41,9 +51,16 @@ class VoiceClient(ABC):
         except httpx.HTTPError as exc:
             raise ProviderTransientError(f"nao foi possivel falar com {url}: {exc}") from exc
         if resposta.status_code in (408, 429) or resposta.status_code >= 500:
-            raise ProviderTransientError(
+            erro = ProviderTransientError(
                 f"{url} respondeu {resposta.status_code}: {resposta.text[:300]}"
             )
+            # 503 com Retry-After: a placa esta ocupada (a voz do Qwen espera
+            # uma animacao); quem chama volta depois desse tempo.
+            try:
+                erro.retry_after = int(resposta.headers.get("Retry-After") or 0) or None
+            except ValueError:
+                erro.retry_after = None
+            raise erro
         if resposta.status_code >= 400:
             raise ProviderPermanentError(
                 f"{url} recusou ({resposta.status_code}): {resposta.text[:300]}"
@@ -56,13 +73,42 @@ class ElevenLabsClient(VoiceClient):
     # Voz pronta da biblioteca (a dos exemplos da documentacao): so para testar e
     # para conta sem voz escolhida; a da conta vai em Configurar > a conta > Video e voz.
     VOZ_PADRAO = "JBFqnCBsd6RMkjVDRZzb"
+    # Entonacao de conversa, e nao de leitura: menos estabilidade varia mais o
+    # tom, e o estilo puxa a expressao da voz. Os valores padrao da ElevenLabs
+    # (estabilidade 0,5, estilo 0) soavam como alguem lendo.
+    AJUSTES = {
+        "stability": 0.35,
+        "similarity_boost": 0.75,
+        "style": 0.3,
+        "use_speaker_boost": True,
+    }
 
-    def falar(self, *, texto: str, voz: str, modelo: str = "", idioma: str = "pt-BR") -> bytes:
+    def falar(
+        self,
+        *,
+        texto: str,
+        voz: str,
+        modelo: str = "",
+        idioma: str = "pt-BR",
+        antes: str = "",
+        depois: str = "",
+    ) -> bytes:
         voz = voz or self.VOZ_PADRAO
+        corpo = {
+            "text": texto,
+            "model_id": modelo or self.MODELO_PADRAO,
+            "voice_settings": self.AJUSTES,
+        }
+        # As falas vizinhas: cada cena e um pedido, e sem elas cada frase saia
+        # como se comecasse e terminasse uma conversa.
+        if antes:
+            corpo["previous_text"] = antes
+        if depois:
+            corpo["next_text"] = depois
         resposta = self._post(
             f"{self.base_url}/v1/text-to-speech/{voz}?output_format=mp3_44100_128",
             headers={"xi-api-key": self.api_key, "accept": "audio/mpeg"},
-            json={"text": texto, "model_id": modelo or self.MODELO_PADRAO},
+            json=corpo,
         )
         return resposta.content
 
@@ -70,7 +116,16 @@ class ElevenLabsClient(VoiceClient):
 class OpenAIVoiceClient(VoiceClient):
     MODELO_PADRAO = "tts-1"
 
-    def falar(self, *, texto: str, voz: str, modelo: str = "", idioma: str = "pt-BR") -> bytes:
+    def falar(
+        self,
+        *,
+        texto: str,
+        voz: str,
+        modelo: str = "",
+        idioma: str = "pt-BR",
+        antes: str = "",
+        depois: str = "",
+    ) -> bytes:
         from apps.inference.providers.openai_compatible import raiz_da_api
 
         resposta = self._post(
@@ -87,7 +142,16 @@ class OpenAIVoiceClient(VoiceClient):
 
 
 class GoogleVoiceClient(VoiceClient):
-    def falar(self, *, texto: str, voz: str, modelo: str = "", idioma: str = "pt-BR") -> bytes:
+    def falar(
+        self,
+        *,
+        texto: str,
+        voz: str,
+        modelo: str = "",
+        idioma: str = "pt-BR",
+        antes: str = "",
+        depois: str = "",
+    ) -> bytes:
         resposta = self._post(
             f"{self.base_url}/v1/text:synthesize",
             params={"key": self.api_key},

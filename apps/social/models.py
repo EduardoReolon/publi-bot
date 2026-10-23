@@ -239,10 +239,10 @@ class Destino(models.Model):
         max_length=100,
         blank=True,
         help_text=_(
-            "A voz que narra o video. O formato diz o servico: Kokoro (o worker) "
-            "pm_alex, pf_dora; ElevenLabs, o ID de 20 letras e numeros (no site: Voices > "
-            "a voz > ID); OpenAI, alloy, nova...; Google, pt-BR-Neural2-B. Vazio: a voz "
-            "padrao do servico."
+            "A voz que narra o video. O formato diz o servico: worker, Kokoro (pm_alex, "
+            "pf_dora) ou Qwen (qwen:carla, uma voz criada no worker com deploy/criar_voz.sh); "
+            "ElevenLabs, o ID de 20 letras e numeros (no site: Voices > a voz > ID); OpenAI, "
+            "alloy, nova...; Google, pt-BR-Neural2-B. Vazio: a voz padrao do servico."
         ),
     )
     # Identidade visual: o estilo das imagens das laminas (para a IA de imagem).

@@ -186,9 +186,11 @@ def gerar_cenas(
         return 1
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=12)
 def montar_cenas(self, post_id: str, trabalho: str | None = None) -> str:
-    """O video das cenas (voz, legenda, transicoes). Voz ocupada: de novo em 10 min."""
+    """O video das cenas (voz, legenda, transicoes). Voz ocupada: de novo no
+    tempo que o worker pediu (a voz do Qwen espera a placa; uma animacao leva
+    ate ~25 min), ou em 10 min. As falas ja feitas ficam guardadas."""
     from apps.inference.providers.base import ProviderPermanentError, ProviderTransientError
     from apps.social import cenas, fontes, video
     from apps.social.models import Post
@@ -200,7 +202,8 @@ def montar_cenas(self, post_id: str, trabalho: str | None = None) -> str:
         try:
             cenas.montar(post)
         except ProviderTransientError as exc:
-            raise self.retry(exc=exc, countdown=600) from exc
+            espera = min(getattr(exc, "retry_after", None) or 600, 1800)
+            raise self.retry(exc=exc, countdown=espera) from exc
         except (video.VideoIndisponivel, ProviderPermanentError) as exc:
             post.avisos = [*(post.avisos or []), f"video nao montado: {exc}"]
             post.save(update_fields=["avisos", "atualizado_em"])
