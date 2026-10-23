@@ -19,6 +19,14 @@
       <button type="submit" name="acao" value="cenas_todas" class="botao secundario pequeno" title="{% translate 'Anima, uma por vez, as cenas que ainda nao tem animacao (cada uma leva minutos na placa) e no fim monta o video. Nao refaz imagem nem animacao que ja existem; cena sem imagem ganha uma feita aqui.' %}">{% translate "Animar o que falta e montar" %}</button>
       <button type="submit" name="acao" value="cenas_montar" class="botao pequeno" title="{% translate 'Junta as cenas com a voz e as legendas. Cena ainda sem animacao entra com a imagem parada, aproximando devagar' %}">{% translate "Montar o video" %}</button>
     </form>
+    <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes" style="gap:.4rem; margin:.2rem 0">
+      {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+      <label class="ajuda">{% translate "Voz deste video" %}
+        <input type="text" name="voz" value="{{ post.extras.voz|default:'' }}" list="vozes-{{ post.pk }}" placeholder="{{ post.destino.voz|default:_('a padrao do servico') }}" style="width:16rem">
+      </label>
+      <datalist id="vozes-{{ post.pk }}">{% for v in post.vozes_do_worker %}<option value="{{ v.id }}">{{ v.descricao|default:v.motor }}</option>{% endfor %}</datalist>
+      <button type="submit" name="acao" value="cenas_voz" class="botao discreto pequeno" title="{% translate 'Vazio: a voz da conta (Identidade visual). O formato diz o servico: pm_alex (Kokoro), qwen:nome (Qwen, no worker), o ID de 20 letras da ElevenLabs' %}">{% translate "Salvar a voz" %}</button>
+    </form>
     <details class="ajuda" style="margin:.3rem 0"{% if not cenas.0.tem_quadro %} open{% endif %}><summary><strong>{% translate "Imagens iniciais numa IA de imagem de fora (recomendado)" %}</strong></summary>
       <p>{% blocktranslate trimmed %}
         1. Copie o pedido e cole numa IA de imagem (ChatGPT, Gemini...). 2. Anexe as imagens abaixo, na ordem

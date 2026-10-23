@@ -654,6 +654,12 @@ class Post(models.Model):
         return video_ia.roteiro_em_texto(video_ia.roteiro(self))
 
     @property
+    def vozes_do_worker(self) -> list[dict]:
+        from apps.social import fontes
+
+        return fontes.vozes_do_worker()
+
+    @property
     def pagina_do_artigo(self) -> str:
         """A pagina do artigo no PubliBot (existe antes de ele ir ao ar)."""
         from apps.social import fontes

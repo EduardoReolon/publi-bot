@@ -33,11 +33,17 @@ def _ffmpeg() -> tuple[str, str]:
     return ffmpeg, ffprobe
 
 
+def voz_do_post(post) -> str:
+    """A voz da narracao: a escolhida neste post ou, sem ela, a da conta
+    (Identidade visual). Vazio nas duas: a padrao do servico."""
+    return ((post.extras or {}).get("voz") or "").strip() or post.destino.voz
+
+
 def _audio(post, fala: str, *, antes: str = "", depois: str = "") -> bytes:
     """O audio da fala, guardado por voz+texto+vizinhas (so paga a fala que
     mudou). As vizinhas mudam a entonacao (ElevenLabs), por isso entram na chave;
     a voz do worker nao as usa, e mudar uma fala nao refaz as outras."""
-    voz = post.destino.voz
+    voz = voz_do_post(post)
     contexto = "" if fontes.voz_do_worker(voz) else f"\n{antes}\n{depois}"
     chave = hashlib.sha256(f"{voz}\n{fala}{contexto}".encode()).hexdigest()[:32]
     caminho = f"social/audios/{chave}.mp3"

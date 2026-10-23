@@ -1437,6 +1437,21 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 alvo=post.pk,
             )
             messages.info(request, _("Gerando, uma cena por vez. Recarregue depois."))
+        elif acao == "cenas_voz":
+            # A voz so deste video; vazio volta a voz da conta.
+            extras = dict(post.extras or {})
+            voz = " ".join(request.POST.get("voz", "").split())[:100]
+            if voz:
+                extras["voz"] = voz
+            else:
+                extras.pop("voz", None)
+            post.extras = extras
+            post.save(update_fields=["extras", "atualizado_em"])
+            messages.success(
+                request,
+                _("Voz deste video: %(v)s. Monte o video de novo para ouvir.")
+                % {"v": voz or _("a da conta")},
+            )
         elif acao == "cenas_montar":
             fontes.na_fila(montar_cenas, str(post.pk), rotulo="Montar o video", alvo=post.pk)
             messages.info(request, _("Montando o video (voz, legendas, transicoes)."))
