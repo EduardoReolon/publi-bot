@@ -82,7 +82,7 @@
 
   {% if centro %}
     <details class="secao" {% if not rascunho %}open{% endif %}>
-      <summary><strong>{% translate "Nova rodada com a outra IA" %}</strong></summary>
+      <summary><strong>{% if rascunho %}{% blocktranslate with n=rascunho.numero %}Colar outra resposta (substitui a rodada {{ n }}){% endblocktranslate %}{% else %}{% translate "Nova rodada com a outra IA" %}{% endif %}</strong></summary>
       <p class="ajuda">{% translate "Copie o pedido (leva a empresa, a area, o funil e tudo o que as rodadas ja acharam), cole na outra IA e traga a resposta. Pode voltar quantas vezes quiser: cada rodada fica no historico." %}</p>
       <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-estudo">{% translate "Copiar o pedido" %}</button></div>
       <form method="post">

@@ -1006,9 +1006,11 @@ def test_gravar_todas_as_entonacoes_e_salvar_de_uma_vez(ambiente, modulo, settin
 
     from apps.social import video
 
-    assert cenas.voz_pronta(post, 1) == ""
     with default_storage.open(cenas.cenas(post)[0]["fala_gravada"], "rb") as arquivo:
         convertida = video.caminho_da_convertida(post, arquivo.read())
+    if default_storage.exists(convertida):  # de outro teste com o mesmo audio
+        default_storage.delete(convertida)
+    assert cenas.voz_pronta(post, 1) == ""
     default_storage.save(convertida, ContentFile(_mp3(1.0)))
     assert cenas.voz_pronta(post, 1) == convertida
     assert "data-voz-url" in client.get(tela).content.decode()
