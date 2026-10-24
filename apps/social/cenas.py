@@ -99,15 +99,58 @@ def editar(post, n: int, **campos) -> None:
     _gravar(post, lista)
 
 
+def _na_fila(post, lista: list[dict]) -> dict[int, list[str]]:
+    """Por cena, as tarefas abertas que ainda vao fazer algo nela e nao
+    comecaram: a da propria cena (sem animacao em curso) e o lote ("Animar o que
+    falta"), para as cenas que ele ainda nao fez."""
+    fila: dict[int, list[str]] = {}
+    for job in fontes.trabalhos_abertos(post.pk):
+        dados = job.step_payloads or {}
+        if not dados.get("tarefa", "").endswith("gerar_cenas"):
+            continue
+        k = dados.get("kwargs") or {}
+        for n, cena in enumerate(lista, start=1):
+            if cena.get("animando"):
+                continue  # ja esta no worker: termina la ("Parar a animacao")
+            if k.get("n"):
+                vai = k["n"] == n
+            elif k.get("so_quadros"):
+                vai = not _existe(cena.get("quadro", "")) and not cena.get("parada")
+            else:
+                vai = not _existe(cena.get("clipe", "")) and not cena.get("parada")
+            if vai:
+                fila.setdefault(n, []).append(str(job.pk))
+    return fila
+
+
+def nao_fazer(post, n: int) -> int:
+    """ "Nao fazer" a cena n: cancela os pedidos so dela que nao comecaram e
+    marca a cena parada (o lote passa por ela). Devolve quantos cancelou."""
+    lista, cena = _cena(post, n)
+    canceladas = 0
+    for job in fontes.trabalhos_abertos(post.pk):
+        dados = job.step_payloads or {}
+        k = dados.get("kwargs") or {}
+        if dados.get("tarefa", "").endswith("gerar_cenas") and k.get("n") == n:
+            canceladas += fontes.cancelar_trabalho(job.pk)
+    if not cena.get("animando"):
+        cena["parada"] = True
+        _gravar(post, lista)
+    return canceladas
+
+
 def para_a_tela(post) -> list[dict]:
     saida = []
+    lista = cenas(post)
+    fila = _na_fila(post, lista)
     numero = {e.pk: i for i, e in enumerate(referencias_do_video(post), start=1)}
-    for n, cena in enumerate(cenas(post), start=1):
+    for n, cena in enumerate(lista, start=1):
         quadro, clipe = cena.get("quadro", ""), cena.get("clipe", "")
         saida.append(
             {
                 **cena,
                 "n": n,
+                "na_fila": bool(fila.get(n)),
                 "tem_quadro": _existe(quadro),
                 "tem_clipe": _existe(clipe),
                 "tem_referencia": _existe(cena.get("referencia", "")),

@@ -853,3 +853,63 @@ def test_voz_do_video_no_post_e_vazia_volta_a_da_conta(ambiente, modulo):
     client.post(acao, {"acao": "cenas_voz", "voz": ""})
     post.refresh_from_db()
     assert "voz" not in post.extras and video.voz_do_post(post) == "pm_alex"
+
+
+@pytest.mark.django_db
+def test_nao_fazer_tira_da_fila_o_que_nao_comecou(ambiente, modulo, settings, tmp_path):
+    """Na tela do post, a cena com pedido que ainda nao comecou tem "Nao fazer":
+    cancela o pedido dela e o lote passa por ela. A que ja anima no worker fica.
+    Na Operacao, "Nao fazer" cancela a tarefa; cancelada, ela nao roda mais."""
+    from django.core.files.base import ContentFile
+
+    from apps.ops.acompanhamento import Cancelado, acompanhar
+    from apps.ops.models import GenerationJob
+    from apps.social import cenas
+
+    settings.MEDIA_ROOT = tmp_path
+    _, _, client = ambiente
+    post = _post(
+        _destino("instagram"),
+        extras={"video_ia": {"cenas": [{"imagem": "a"}, {"imagem": "b"}, {"imagem": "c"}]}},
+    )
+    lista = cenas.cenas(post)
+    for n, cena in enumerate(lista, start=1):
+        cena["quadro"] = default_storage.save(f"social/{post.pk}/q{n}.png", ContentFile(b"PNG"))
+    lista[0]["animando"] = {"id": "video_1", "seed": 1}
+    cenas._gravar(post, lista)
+
+    def tarefa(**kwargs):
+        return GenerationJob.objects.create(
+            kind=GenerationJob.Kind.TAREFA,
+            target_object_id=post.pk,
+            status=GenerationJob.Status.WAITING_CAPACITY,
+            step_payloads={
+                "rotulo": "x",
+                "tarefa": "apps.social.tasks.gerar_cenas",
+                "kwargs": kwargs,
+            },
+        )
+
+    da_cena_2, lote = tarefa(n=2), tarefa()
+    tela = post.cenas_do_video
+    assert [c["na_fila"] for c in tela] == [False, True, True]  # a 1 ja esta no worker
+    pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
+    assert "cena_nao_fazer" in pagina
+
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
+    client.post(acao, {"acao": "cena_nao_fazer", "n": "2"})
+    da_cena_2.refresh_from_db()
+    post.refresh_from_db()
+    assert da_cena_2.status == GenerationJob.Status.CANCELED
+    assert [c["na_fila"] for c in post.cenas_do_video] == [False, False, True]
+    assert cenas.cenas(post)[1]["parada"]
+
+    operacao = client.get(reverse("operacao:trabalhos", urlconf=U)).content.decode()
+    assert "nao-fazer" in operacao
+    client.post(reverse("operacao:nao_fazer", args=[lote.pk], urlconf=U))
+    lote.refresh_from_db()
+    assert lote.status == GenerationJob.Status.CANCELED
+    with pytest.raises(Cancelado), acompanhar(str(lote.pk)):
+        pass
+    lote.refresh_from_db()
+    assert lote.status == GenerationJob.Status.CANCELED

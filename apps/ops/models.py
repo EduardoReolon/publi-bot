@@ -57,6 +57,8 @@ class GenerationJob(models.Model):
         WAITING_HUMAN = "waiting_human", _("Aguardando revisao humana")
         DONE = "done", _("Concluido")
         FAILED = "failed", _("Falhou")
+        # "Nao fazer" na tela: a tarefa avulsa para na proxima passagem.
+        CANCELED = "canceled", _("Cancelado")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 

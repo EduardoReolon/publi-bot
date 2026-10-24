@@ -64,7 +64,11 @@ def redespachar(request: HttpRequest, pk) -> HttpResponse:
 
     job = get_object_or_404(GenerationJob, pk=pk)
 
-    if job.status not in (GenerationJob.Status.FAILED, GenerationJob.Status.WAITING_CAPACITY):
+    if job.status not in (
+        GenerationJob.Status.FAILED,
+        GenerationJob.Status.WAITING_CAPACITY,
+        GenerationJob.Status.CANCELED,
+    ):
         messages.error(
             request, _("So trabalhos falhados ou aguardando capacidade sao redespachados.")
         )
@@ -80,6 +84,20 @@ def redespachar(request: HttpRequest, pk) -> HttpResponse:
     messages.success(
         request, _("Trabalho devolvido a fila, do passo %(n)s.") % {"n": job.current_step}
     )
+    return redirect("operacao:trabalhos")
+
+
+@login_required
+@require_POST
+def nao_fazer(request: HttpRequest, pk) -> HttpResponse:
+    """Cancela uma tarefa avulsa aberta: ela para na proxima passagem. O que ja
+    esta no worker (uma animacao em curso) termina la."""
+    from apps.ops.acompanhamento import cancelar
+
+    if cancelar(pk):
+        messages.success(request, _("Tarefa cancelada: ela para na proxima passagem."))
+    else:
+        messages.error(request, _("Essa tarefa ja terminou (ou nao e avulsa)."))
     return redirect("operacao:trabalhos")
 
 

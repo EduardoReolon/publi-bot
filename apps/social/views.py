@@ -1405,6 +1405,12 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                     request,
                     _("O video tem %(t)s cenas: as imagens a mais ficaram de fora.") % {"t": total},
                 )
+        elif acao == "cena_nao_fazer":
+            cenas.nao_fazer(post, n)
+            messages.success(
+                request,
+                _("Cena %(n)s fora da fila: nada e feito nela ate voce pedir de novo.") % {"n": n},
+            )
         elif acao == "cena_parar":
             cenas.parar_animacao(post, n)
             messages.success(
@@ -1454,8 +1460,7 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                 request, _("Gerando a cena %(n)s (minutos). Recarregue depois.") % {"n": n}
             )
         elif acao in ("cenas_todas", "cenas_imagens"):
-            if acao == "cenas_todas":
-                cenas.liberar(post)
+            cenas.liberar(post)  # pedido explicito: tambem as que estavam fora da fila
             fontes.na_fila(
                 gerar_cenas,
                 str(post.pk),

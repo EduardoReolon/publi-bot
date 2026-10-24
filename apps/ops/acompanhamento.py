@@ -16,6 +16,8 @@ tarefa pede para tentar de novo), Concluido ou Falhou, com o motivo.
 
 O varredor do orquestrador ignora este tipo (`jobs_para_retomar`): quem
 retoma e o proprio Celery. "Redespachar" na tela manda a mesma tarefa de novo.
+"Nao fazer" (`cancelar`) marca Cancelado: a tarefa para na proxima passagem
+(o que ja esta no worker, como uma animacao em curso, termina la).
 """
 
 from __future__ import annotations
@@ -23,12 +25,18 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import timedelta
 
+from celery.exceptions import Ignore
 from django.db.models import F
 from django.utils import timezone
 
 from apps.ops.models import GenerationJob
 
 TIPO = GenerationJob.Kind.TAREFA
+ABERTOS = (
+    GenerationJob.Status.PENDING,
+    GenerationJob.Status.RUNNING,
+    GenerationJob.Status.WAITING_CAPACITY,
+)
 
 
 def na_fila(tarefa, *args, rotulo: str, alvo=None, **kwargs) -> str:
@@ -63,6 +71,29 @@ def redespachar(job: GenerationJob) -> None:
     )
 
 
+def abertos(alvo) -> list[GenerationJob]:
+    """As tarefas avulsas ainda abertas (na fila, rodando ou esperando) do alvo."""
+    return list(GenerationJob.objects.filter(kind=TIPO, target_object_id=alvo, status__in=ABERTOS))
+
+
+def cancelar(trabalho) -> bool:
+    """ "Nao fazer": a tarefa para na proxima passagem (ver `acompanhar`)."""
+    return bool(
+        GenerationJob.objects.filter(pk=trabalho, kind=TIPO, status__in=ABERTOS).update(
+            status=GenerationJob.Status.CANCELED,
+            last_error="cancelado na tela",
+            next_attempt_at=None,
+            finished_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+    )
+
+
+class Cancelado(Ignore):
+    """A tarefa foi cancelada ("Nao fazer"): termina sem fazer nada e sem erro
+    (o `Ignore` do Celery nao conta como falha nem tenta de novo)."""
+
+
 class Conferindo(Exception):
     """O `exc` de um `retry` que so volta para conferir um trabalho em curso
     (ex.: a animacao no worker): o registro fica "Executando", com o motivo."""
@@ -80,7 +111,10 @@ class _Marcador:
 def _atualizar(trabalho, **campos) -> None:
     # `.update()` nao passa pelo auto_now: sem isto, o "Atualizado" da tela de
     # Operacao ficava parado na hora em que o trabalho comecou.
-    GenerationJob.objects.filter(pk=trabalho).update(updated_at=timezone.now(), **campos)
+    # Cancelada no meio da passagem: o cancelamento fica (a proxima nao roda).
+    GenerationJob.objects.filter(pk=trabalho).exclude(status=GenerationJob.Status.CANCELED).update(
+        updated_at=timezone.now(), **campos
+    )
 
 
 @contextmanager
@@ -92,6 +126,8 @@ def acompanhar(trabalho: str | None):
         return
     from celery.exceptions import Retry
 
+    if GenerationJob.objects.filter(pk=trabalho, status=GenerationJob.Status.CANCELED).exists():
+        raise Cancelado()
     _atualizar(
         trabalho,
         status=GenerationJob.Status.RUNNING,
