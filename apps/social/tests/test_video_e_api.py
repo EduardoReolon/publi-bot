@@ -277,9 +277,14 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     monkeypatch.setattr(
         fontes, "converter_fala", lambda audio, voz="": convertidas.append(voz) or _mp3(1.0)
     )
-    cenas.montar(post)
+    montado = cenas.montar(post)
     post.refresh_from_db()
     assert convertidas == [destino.voz]  # a voz do video repetiu a entonacao
+    # A cena 1 (3 s planejados) dura a fala convertida (1 s): o video encurta.
+    copia = tmp_path / "v2.mp4"
+    with default_storage.open(montado, "rb") as arquivo:
+        copia.write_bytes(arquivo.read())
+    assert video._duracao(shutil.which("ffprobe"), copia) < 4.0
     assert "aviso_fala" not in post.cenas_do_video[0]
     client.post(acao, {"acao": "cena_salvar", "n": "1", "fala": "Outra fala.", "imagem": "x"})
     post.refresh_from_db()

@@ -774,7 +774,9 @@ def _segmento(
                 avisos[n] = f"entonacao gravada nao usada (voz gerada no lugar): {exc}"
     if convertida is not None:
         audio = video._guardar_em(pasta, f"{n}.mp3", convertida)
-        duracao = max(video._duracao(ffprobe, audio) + video.PAUSA, cena.get("segundos") or 0)
+        # A entonacao gravada manda no ritmo: a cena dura a fala, para mais (a
+        # animacao desacelera e segura o fim) ou para menos (o fim e cortado).
+        duracao = video._duracao(ffprobe, audio) + video.PAUSA
     elif fala and fontes.tem_voz():
         audio = video._guardar_em(
             pasta, f"{n}.mp3", video._audio(post, fala, antes=antes, depois=depois)
