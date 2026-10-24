@@ -150,8 +150,10 @@ FIM"""
 
     client.post(
         tela,
-        {"acao": "buscar", "rodada": rodada.pk, "modo": "estimativa", "palavras": "consorcio\nrara",
-         "sementes": "consorcio imovel", "site": "[https://www.exemplo.com.br](https://www.exemplo.com.br)"},
+        {"acao": "buscar", "velocidade": "na_hora", "rodada": rodada.pk, "modo": "estimativa",
+         "palavras": "consorcio\nrara",
+         "sementes": "consorcio imovel",
+         "site": "[https://www.exemplo.com.br](https://www.exemplo.com.br)"},
     )  # fmt: skip
     rodada.refresh_from_db()
     assert rodada.situacao == Rodada.Situacao.PRONTA, rodada.erro
@@ -184,7 +186,8 @@ FIM"""
     assert segunda.modo == "real" and segunda.cidades == [CASCAVEL, TOLEDO]
     client.post(
         tela,
-        {"acao": "buscar", "rodada": segunda.pk, "modo": "real", "palavras": "consorcio\nrara",
+        {"acao": "buscar", "velocidade": "na_hora", "rodada": segunda.pk, "modo": "real",
+         "palavras": "consorcio\nrara",
          "cidades": [str(CASCAVEL), str(TOLEDO)]},
     )  # fmt: skip
     segunda.refresh_from_db()
@@ -310,3 +313,68 @@ def test_estudo_vira_tenant_com_os_primeiros_passos_feitos(
         guia = EditorialProfile.carregar()
         assert guia.tom_humor == 2 and guia.regra_de_ouro == "claro e sem promessa"
         assert ContasExternas.carregar().dataforseo_login == "login-do-dono"
+
+
+@pytest.mark.django_db
+def test_rodada_na_fila_padrao_ideias_e_depois_volume(estudo_pronto, monkeypatch):
+    """A fila padrao (a barata, que vem marcada): posta as ideias, espera, colhe;
+    posta o volume (sem repetir as ideias, que ja vieram com volume), espera,
+    colhe e monta como o modo ao vivo. O colhedor do Radar nao mexe nelas."""
+    from apps.radar import coleta as coleta_do_radar
+    from apps.radar import fila
+    from apps.radar.models import TarefaNaFila
+
+    client, _ = estudo_pronto
+    postadas, prontas = [], {"sim": False}
+
+    def postar(tipo, lote, *, contas, finalidade, rodada=None):
+        criadas = []
+        for corpo, contexto in lote:
+            postadas.append((tipo, corpo))
+            criadas.append(
+                TarefaNaFila.objects.create(
+                    task_id=f"t{len(postadas)}", tipo=tipo, finalidade=finalidade,
+                    contexto={**contexto, "_corpo": corpo},
+                )
+            )  # fmt: skip
+        return criadas
+
+    def colher(tarefa, contas):
+        if not prontas["sim"]:
+            return None
+        corpo = tarefa.contexto["_corpo"]
+        if tarefa.tipo == TarefaNaFila.Tipo.IDEIAS:
+            itens = [{"keyword": "consorcio de imoveis", "search_volume": 5000, "cpc": 2.0,
+                      "competition_index": 40, "monthly_searches": []}]  # fmt: skip
+        else:
+            itens = [{"keyword": p, "search_volume": 10000, "cpc": 1.5, "competition_index": 70,
+                      "monthly_searches": []} for p in corpo["keywords"]]  # fmt: skip
+        return {"result": itens}
+
+    monkeypatch.setattr(fila, "postar", postar)
+    monkeypatch.setattr(fila, "colher", colher)
+    estudo = Estudo.objects.create(nome="X", cidade=CASCAVEL, raio_km=30)
+    rodada = Rodada.objects.create(
+        estudo=estudo, numero=1, palavras=["consorcio"], sementes=["consorcio imovel"],
+        situacao=Rodada.Situacao.NA_FILA,
+    )  # fmt: skip
+    assert rodada.fila  # a barata vem marcada
+    assert float(coleta.custo_estimado(rodada)) == pytest.approx(0.12)
+
+    assert coleta.avancar_na_fila(rodada) == "esperando"  # ideias postadas
+    assert [t for t, _ in postadas] == ["ideias"]
+    assert coleta.avancar_na_fila(rodada) == "esperando"  # ainda na fila
+    coleta_do_radar.colher_fila()  # o Radar nao colhe as tarefas do estudo
+    assert TarefaNaFila.objects.filter(situacao="aguardando").count() == 1
+    prontas["sim"] = True
+    assert coleta.avancar_na_fila(rodada) == "esperando"  # ideias colhidas, volume postado
+    assert postadas[1][0] == "volume" and postadas[1][1]["keywords"] == ["consorcio"]
+    assert coleta.avancar_na_fila(rodada) == "pronta"
+    rodada.refresh_from_db()
+    assert rodada.situacao == Rodada.Situacao.PRONTA and rodada.etapa == {}
+    assert rodada.resultado["consorcio"]["volume_area"] > 0
+    assert rodada.resultado["consorcio de imoveis"]["origem"] == "ideia"
+
+    tela = reverse("estudos:estudo", args=[estudo.pk], urlconf=U)
+    Rodada.objects.create(estudo=estudo, numero=2, palavras=["x"])
+    assert 'value="fila" checked' in client.get(tela).content.decode()

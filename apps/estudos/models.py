@@ -101,6 +101,10 @@ class Rodada(models.Model):
     site = models.CharField(_("site para ideias"), max_length=200, blank=True)
     # Codigos do IBGE das cidades buscadas uma a uma (modo real).
     cidades = models.JSONField(_("cidades"), default=list, blank=True)
+    # Fila padrao da DataForSEO (mais barata, volta em minutos) ou ao vivo.
+    fila = models.BooleanField(_("fila padrao (mais barata)"), default=True)
+    # O passo em que a rodada esta na fila (ver coleta.avancar_na_fila).
+    etapa = models.JSONField(_("etapa na fila"), default=dict, blank=True)
     situacao = models.CharField(
         _("situacao"), max_length=10, choices=Situacao.choices, default=Situacao.RASCUNHO
     )

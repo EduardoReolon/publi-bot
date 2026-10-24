@@ -4,19 +4,26 @@ from __future__ import annotations
 
 from celery import shared_task
 
+# Na fila padrao: confere de 2 em 2 minutos, ate 24 h (o prazo da DataForSEO).
+CONFERIR_A_CADA = 120
 
-@shared_task
-def buscar_rodada(rodada_id: str, trabalho: str | None = None) -> str:
+
+@shared_task(bind=True, max_retries=720)
+def buscar_rodada(self, rodada_id: str, trabalho: str | None = None) -> str:
     from apps.estudos import coleta
     from apps.estudos.models import Rodada
-    from apps.ops.acompanhamento import acompanhar
+    from apps.ops.acompanhamento import Conferindo, acompanhar
 
     with acompanhar(trabalho) as andamento:
         rodada = Rodada.objects.select_related("estudo").filter(pk=rodada_id).first()
         if rodada is None:
             return "sem rodada"
+        esperando = False
         try:
-            coleta.executar(rodada)
+            if rodada.fila:
+                esperando = coleta.avancar_na_fila(rodada) == "esperando"
+            else:
+                coleta.executar(rodada)
         except Exception as exc:  # o erro fica na rodada, para a tela
             from apps.radar.custos import TetoAtingido
             from apps.radar.provedores import ProvedorIndisponivel
@@ -28,6 +35,11 @@ def buscar_rodada(rodada_id: str, trabalho: str | None = None) -> str:
                 raise
             andamento.falhou(str(exc))
             return "falhou"
+        if esperando:
+            raise self.retry(
+                exc=Conferindo("na fila padrao da DataForSEO (confere de 2 em 2 minutos)"),
+                countdown=CONFERIR_A_CADA,
+            )
         return "pronta"
 
 
