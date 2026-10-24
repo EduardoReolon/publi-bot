@@ -530,7 +530,8 @@ def test_post_antes_do_artigo_adianta_o_artigo_e_espera_o_link_vivo(ambiente, mo
     )
     destino = Destino.objects.create(rede="gmn", nome="Google")
     post = _post(destino, texto="oi", artigo_id=artigo.pk)
-    assert "o artigo e adiantado" in post.artigo_depois_do_post
+    assert "o artigo e adiantado" in post.artigo_depois_do_post["texto"]
+    assert not post.artigo_depois_do_post["grave"]
     assert post.pagina_do_artigo.endswith(f"/artigos/{artigo.pk}/")
 
     publicacao.publicar_vencidos()
@@ -542,3 +543,4 @@ def test_post_antes_do_artigo_adianta_o_artigo_e_espera_o_link_vivo(ambiente, mo
     publicacao.publicar_vencidos()
     post.refresh_from_db()
     assert post.situacao == Post.Situacao.APROVADO and publicacao.AVISO_SEM_ARTIGO in post.avisos
+    assert post.artigo_depois_do_post["grave"]  # vermelho: o post nao sai na data
