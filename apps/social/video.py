@@ -39,12 +39,26 @@ def voz_do_post(post) -> str:
     return ((post.extras or {}).get("voz") or "").strip() or post.destino.voz
 
 
+def caminho_da_convertida(post, gravada: bytes) -> str:
+    """Onde fica a fala gravada ja na voz do video (por voz+gravacao)."""
+    voz = voz_do_post(post)
+    chave = hashlib.sha256(f"{voz}\n".encode() + gravada).hexdigest()[:32]
+    return f"social/audios/convertida-{chave}.mp3"
+
+
+def caminho_da_fala(post, fala: str, *, antes: str = "", depois: str = "") -> str:
+    """Onde fica a voz gerada da fala (por voz+texto+vizinhas; ver `_audio`)."""
+    voz = voz_do_post(post)
+    contexto = "" if fontes.voz_do_worker(voz) else f"\n{antes}\n{depois}"
+    chave = hashlib.sha256(f"{voz}\n{fala}{contexto}".encode()).hexdigest()[:32]
+    return f"social/audios/{chave}.mp3"
+
+
 def _fala_convertida(post, gravada: bytes) -> bytes:
     """A fala gravada (a entonacao) na voz do video, guardada por
     voz+gravacao: montar de novo nao converte de novo."""
     voz = voz_do_post(post)
-    chave = hashlib.sha256(f"{voz}\n".encode() + gravada).hexdigest()[:32]
-    caminho = f"social/audios/convertida-{chave}.mp3"
+    caminho = caminho_da_convertida(post, gravada)
     if default_storage.exists(caminho):
         with default_storage.open(caminho, "rb") as arquivo:
             return arquivo.read()
@@ -58,9 +72,7 @@ def _audio(post, fala: str, *, antes: str = "", depois: str = "") -> bytes:
     mudou). As vizinhas mudam a entonacao (ElevenLabs), por isso entram na chave;
     a voz do worker nao as usa, e mudar uma fala nao refaz as outras."""
     voz = voz_do_post(post)
-    contexto = "" if fontes.voz_do_worker(voz) else f"\n{antes}\n{depois}"
-    chave = hashlib.sha256(f"{voz}\n{fala}{contexto}".encode()).hexdigest()[:32]
-    caminho = f"social/audios/{chave}.mp3"
+    caminho = caminho_da_fala(post, fala, antes=antes, depois=depois)
     if default_storage.exists(caminho):
         with default_storage.open(caminho, "rb") as arquivo:
             return arquivo.read()

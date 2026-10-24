@@ -715,6 +715,30 @@ def enviar_fala(post, n: int, arquivo) -> str:
     return cena["fala_gravada"]
 
 
+def _vizinhas(lista: list[dict], n: int) -> tuple[str, str]:
+    """As falas antes e depois da cena n, como a montagem manda para a voz."""
+    falas = [(c.get("fala") or "").strip() for c in lista]
+    return (
+        " ".join(f for f in falas[: n - 1] if f)[-400:],
+        " ".join(f for f in falas[n:] if f)[:400],
+    )
+
+
+def voz_pronta(post, n: int) -> str:
+    """O audio da cena n como vai no video (a entonacao ja convertida, ou a voz
+    gerada), se ja foi feito numa montagem; "" se nao (nada e gerado aqui)."""
+    lista, cena = _cena(post, n)
+    if _existe(cena.get("fala_gravada", "")):
+        with default_storage.open(cena["fala_gravada"], "rb") as arquivo:
+            caminho = video.caminho_da_convertida(post, arquivo.read())
+    elif (cena.get("fala") or "").strip():
+        antes, depois = _vizinhas(lista, n)
+        caminho = video.caminho_da_fala(post, cena["fala"].strip(), antes=antes, depois=depois)
+    else:
+        return ""
+    return caminho if _existe(caminho) else ""
+
+
 def tirar_fala(post, n: int) -> None:
     """Volta a voz gerada na cena n."""
     lista, cena = _cena(post, n)
@@ -1106,7 +1130,6 @@ def montar(post) -> str:
     cores = {**laminas.CORES, **{k: v for k, v in (post.destino.cores or {}).items() if v}}
     with tempfile.TemporaryDirectory() as pasta:
         pasta = Path(pasta)
-        falas = [(c.get("fala") or "").strip() for c in lista]
         avisos: dict[int, str] = {}
         partes = [
             _segmento(
@@ -1117,8 +1140,8 @@ def montar(post) -> str:
                 cores,
                 ffmpeg,
                 ffprobe,
-                antes=" ".join(f for f in falas[: n - 1] if f)[-400:],
-                depois=" ".join(f for f in falas[n:] if f)[:400],
+                antes=_vizinhas(lista, n)[0],
+                depois=_vizinhas(lista, n)[1],
                 avisos=avisos,
             )
             for n, cena in enumerate(lista, start=1)

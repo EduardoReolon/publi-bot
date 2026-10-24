@@ -15,6 +15,7 @@
     .apagada { opacity:.4; }
     .salvar-tudo { position:sticky; bottom:0; z-index:5; background:var(--superficie, var(--fundo)); border-top:1px solid var(--borda); box-shadow:0 -2px 8px var(--sombra, rgba(0,0,0,.1)); padding:.6rem 0; margin-top:1rem; display:flex; gap:.6rem; align-items:center; }
     .salvar-tudo .botao { flex:1; font-size:1.05rem; padding:.8rem; }
+    .entonacao.tocando { outline:3px solid var(--realce, #36c); outline-offset:4px; border-radius:.4rem; }
   </style>
 
   <p class="ajuda"><a href="{{ voltar|default:'/redes/' }}">&larr; {% translate "Voltar ao post" %}</a></p>
@@ -26,8 +27,22 @@
   {% endblocktranslate %}</p>
 
   {% csrf_token %}
+  {% if cenas %}
+    <div class="secao" style="padding:.6rem">
+      <div class="linha">
+        <button type="button" class="botao secundario" data-ouvir="minha">&#9654; {% translate "Ouvir tudo: minhas gravacoes" %}</button>
+        <button type="button" class="botao secundario" data-ouvir="video">&#9654; {% translate "Ouvir tudo: voz do video" %}</button>
+        <button type="button" class="botao discreto" data-parar-tudo hidden>&#9632; {% translate "Parar" %}</button>
+      </div>
+      <p class="ajuda" data-ouvindo>{% blocktranslate trimmed %}
+        Toca as cenas em sequencia, com a pausa que a montagem deixa entre elas: para sentir a
+        continuidade antes de salvar (as gravacoes novas entram, mesmo sem salvar). "Voz do video"
+        usa a voz da ultima montagem; cena regravada, ou ainda nao montada, toca a sua gravacao.
+      {% endblocktranslate %}</p>
+    </div>
+  {% endif %}
   {% for c in cenas %}
-    <div class="entonacao" data-cena="{{ c.n }}">
+    <div class="entonacao" data-cena="{{ c.n }}"{% if c.tem_fala_gravada %} data-salva-url="{% url 'social:midia_da_cena' post.pk c.n 'fala' %}?v={{ post.atualizado_em|date:'U' }}"{% endif %}{% if c.voz_pronta %} data-voz-url="{% url 'social:midia_da_cena' post.pk c.n 'voz' %}?v={{ post.atualizado_em|date:'U' }}"{% endif %}>
       <div>
         {% if c.tem_clipe %}
           <video src="{% url 'social:midia_da_cena' post.pk c.n 'clipe' %}?v={{ post.atualizado_em|date:'U' }}"{% if c.tem_quadro %} poster="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}?v={{ post.atualizado_em|date:'U' }}"{% endif %} controls playsinline preload="metadata"></video>
@@ -189,6 +204,49 @@
             botaoSalvar.disabled = false;
           });
       });
+
+      // Ouvir tudo em sequencia, com a pausa da montagem entre as cenas.
+      var PAUSA = {{ pausa|stringformat:".2f" }} * 1000;
+      var tocador = new Audio(), fila = [], esperando = null;
+      var pararTudo = document.querySelector("[data-parar-tudo]");
+      var ouvindo = document.querySelector("[data-ouvindo]");
+      function marcar(caixa) {
+        document.querySelectorAll(".entonacao.tocando").forEach(function (c) { c.classList.remove("tocando"); });
+        if (caixa) { caixa.classList.add("tocando"); caixa.scrollIntoView({ behavior: "smooth", block: "center" }); }
+      }
+      function encerrar() {
+        tocador.pause(); clearTimeout(esperando); fila = []; marcar(null);
+        if (pararTudo) pararTudo.hidden = true;
+      }
+      function proxima() {
+        var item = fila.shift();
+        if (!item) { encerrar(); return; }
+        marcar(item.caixa);
+        tocador.src = item.url;
+        tocador.play().catch(function () { esperando = setTimeout(proxima, PAUSA); });
+      }
+      tocador.addEventListener("ended", function () { esperando = setTimeout(proxima, PAUSA); });
+      document.querySelectorAll("[data-ouvir]").forEach(function (botao) {
+        botao.addEventListener("click", function () {
+          encerrar(); parar();
+          var modo = botao.dataset.ouvir;
+          document.querySelectorAll("[data-cena]").forEach(function (caixa) {
+            var n = caixa.dataset.cena, nova = cenas[n] && cenas[n].blob;
+            var excluida = cenas[n] && cenas[n].excluir;
+            var url = nova ? URL.createObjectURL(nova)
+              : modo === "video" && caixa.dataset.vozUrl && !excluida ? caixa.dataset.vozUrl
+              : !excluida ? caixa.dataset.salvaUrl : null;
+            if (url) fila.push({ caixa: caixa, url: url });
+          });
+          if (!fila.length) {
+            ouvindo.textContent = "{% translate 'Nada para ouvir ainda: grave as cenas (ou monte o video).' %}";
+            return;
+          }
+          if (pararTudo) pararTudo.hidden = false;
+          proxima();
+        });
+      });
+      if (pararTudo) pararTudo.addEventListener("click", encerrar);
 
       window.addEventListener("beforeunload", function (e) {
         if (pendentes().length) { e.preventDefault(); e.returnValue = ""; }
