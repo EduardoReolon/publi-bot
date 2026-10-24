@@ -166,11 +166,95 @@ def _acao(request, estudo: Estudo):
             alvo=estudo.pk,
         )
         messages.info(request, _("Buscando no Google (alguns minutos). Recarregue depois."))
+    elif acao == "virar_cliente":
+        _virar_cliente(request, estudo)
     elif acao == "campanha":
         estudo.campanha = request.POST.getlist("campanha")
         estudo.negativas = _lista(request.POST.get("negativas", ""))
         estudo.save(update_fields=["campanha", "negativas", "atualizado_em"])
         messages.success(request, _("Campanha salva."))
+
+
+def _pedido_do_cliente(estudo: Estudo) -> str:
+    from apps.estudos import passagem
+
+    return passagem.pedido(estudo) if not estudo.tenant_criado else ""
+
+
+def _endereco_do_tenant(estudo: Estudo) -> str:
+    from apps.accounts.models import Domain
+
+    if not estudo.tenant_criado:
+        return ""
+    dominio = Domain.objects.filter(
+        tenant__schema_name=estudo.tenant_criado, is_primary=True
+    ).first()
+    return f"//{dominio.domain}/" if dominio else ""
+
+
+def _virar_cliente(request, estudo: Estudo) -> None:
+    """Um tenant novo para a empresa do estudo, com os primeiros passos feitos
+    (o cadastro de sempre, com quem esta logado como dono)."""
+    from django.conf import settings
+    from django.db import transaction
+
+    from apps.accounts.forms import SignupForm, criar_tenant_e_dono
+    from apps.estudos import passagem
+    from apps.estudos.tasks import criar_tenant_do_estudo
+    from apps.ops.acompanhamento import na_fila
+
+    if estudo.tenant_criado:
+        messages.info(
+            request, _("Este estudo ja virou o tenant %(t)s.") % {"t": estudo.tenant_criado}
+        )
+        return
+    form = SignupForm(
+        {
+            "subdomain": request.POST.get("subdomain", ""),
+            "organization": request.POST.get("organization", ""),
+            "aceite": "on",
+        },
+        usuario=request.user,
+    )
+    if not form.is_valid():
+        for erros in form.errors.values():
+            for erro in erros:
+                messages.error(request, erro)
+        return
+    dados = passagem.dados_do_estudo(estudo, request.POST.get("resposta", ""))
+    copiar = bool(request.POST.get("copiar_contas"))
+    from django_tenants.utils import get_public_schema_name, schema_context
+
+    with transaction.atomic():
+        # O registro do tenant vive no public (o django-tenants recusa de dentro
+        # de um tenant); o estudo e a fila continuam aqui.
+        with schema_context(get_public_schema_name()):
+            tenant, _usuario = criar_tenant_e_dono(
+                subdomain=form.cleaned_data["subdomain"],
+                organization=form.cleaned_data["organization"],
+                root_domain=settings.ROOT_DOMAIN,
+                usuario=request.user,
+            )
+        estudo.tenant_criado = tenant.schema_name
+        estudo.save(update_fields=["tenant_criado", "atualizado_em"])
+        transaction.on_commit(
+            lambda: na_fila(
+                criar_tenant_do_estudo,
+                str(tenant.pk),
+                dados,
+                copiar_contas=copiar,
+                rotulo=f"Tenant {tenant.name} a partir do estudo",
+                alvo=estudo.pk,
+            )
+        )
+    messages.success(
+        request,
+        _(
+            "Tenant %(t)s sendo criado (um minuto ou dois), ja com o Negocio, o Radar e o "
+            "Guia preenchidos. Falta o site, que o cliente conecta em Site e cadencia."
+        )
+        % {"t": tenant.name},
+    )
 
 
 @login_required
@@ -226,6 +310,8 @@ def estudo(request: HttpRequest, pk) -> HttpResponse:
             "total_de_palavras": len(dados),
             "filtro": filtro,
             "funil": funil.funil(estudo, dados) if estudo.campanha else None,
+            "pedido_do_cliente": _pedido_do_cliente(estudo),
+            "endereco_do_tenant": _endereco_do_tenant(estudo),
         },
     )
 

@@ -64,6 +64,8 @@ class Estudo(models.Model):
     # As palavras que entram na campanha (marcadas na tela ou sugeridas pela IA).
     campanha = models.JSONField(_("palavras da campanha"), default=list, blank=True)
     negativas = models.JSONField(_("palavras negativas"), default=list, blank=True)
+    # O tenant criado a partir deste estudo (o schema), quando virou cliente.
+    tenant_criado = models.CharField(_("tenant criado"), max_length=63, blank=True)
     criado_em = models.DateTimeField(_("criado em"), auto_now_add=True)
     atualizado_em = models.DateTimeField(_("atualizado em"), auto_now=True)
 

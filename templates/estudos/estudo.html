@@ -159,6 +159,27 @@
     {% endif %}
   </div>
 
+  <details class="secao" id="virar-cliente">
+    <summary><strong>{% translate "Virar cliente: criar um tenant com este estudo" %}</strong></summary>
+    {% if estudo.tenant_criado %}
+      <p>{% translate "Este estudo ja virou o tenant" %} <strong>{{ estudo.tenant_criado }}</strong>{% if endereco_do_tenant %}: <a href="{{ endereco_do_tenant }}">{% translate "abrir" %}</a>{% endif %}. <span class="ajuda">{% translate "Acompanhe a criacao em Operacao." %}</span></p>
+    {% else %}
+      <p class="ajuda">{% translate "Para quando a empresa quiser artigos e trafego organico. O tenant novo nasce com os primeiros passos feitos: o Negocio (tema, publico, oferta, dores, frentes, onde atende, valor do cliente), as sementes e a regiao do Radar e o Guia editorial, a partir de um pedido so para a outra IA (que leva a descricao e as buscas do estudo). Voce fica como dono; o site o cliente conecta depois, em Site e cadencia." %}</p>
+      <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-cliente">{% translate "Copiar o pedido dos primeiros passos" %}</button></div>
+      <textarea id="pedido-cliente" readonly rows="5" style="width:100%">{{ pedido_do_cliente }}</textarea>
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="acao" value="virar_cliente"><input type="hidden" name="voltar" value="{{ request.path }}#virar-cliente">
+        <textarea name="resposta" rows="5" style="width:100%" placeholder="{% translate 'Cole a resposta (TEMA, PUBLICO, OFERTA... ate EXEMPLOS). Sem resposta, o tenant nasce so com a regiao e o valor do cliente.' %}"></textarea>
+        <div class="acoes" style="gap:.6rem; align-items:flex-end">
+          <label class="campo">{% translate "Nome da organizacao" %} <input name="organization" required value="{{ estudo.nome }}"></label>
+          <label class="campo">{% translate "Subdominio" %} <input name="subdomain" required pattern="[a-z][a-z0-9-]*" placeholder="empresa-x"></label>
+          <label class="ajuda"><input type="checkbox" name="copiar_contas" checked> {% translate "Usar as mesmas contas externas (DataForSEO, YouTube, OpenAlex)" %}</label>
+        </div>
+        <button type="submit" class="botao" onclick="return confirm('{% translate "Criar o tenant agora?" %}')">{% translate "Criar o tenant" %}</button>
+      </form>
+    {% endif %}
+  </details>
+
   {% if rodadas %}
     <div class="secao">
       <h2>{% translate "Historico das rodadas" %}</h2>
