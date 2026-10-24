@@ -953,3 +953,49 @@ def test_ajustar_o_final_com_outra_ia_muda_so_o_que_veio(ambiente, modulo):
     )
     with pytest.raises(video.VideoIndisponivel):
         cenas.ajustar_final(post, "sem json")
+
+
+@pytest.mark.django_db
+def test_gravar_todas_as_entonacoes_e_salvar_de_uma_vez(ambiente, modulo, settings, tmp_path):
+    """A tela das entonacoes mostra cada cena com a frase; um envio so salva as
+    novas (trocando a que havia) e tira as marcadas para excluir."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.social import cenas
+
+    settings.MEDIA_ROOT = tmp_path
+    _, _, client = ambiente
+    post = _post(
+        _destino("instagram"),
+        extras={
+            "video_ia": {
+                "cenas": [
+                    {"fala": "Primeira frase.", "imagem": "a"},
+                    {"fala": "Segunda frase.", "imagem": "b"},
+                    {"fala": "", "imagem": "c"},
+                ]
+            }
+        },
+    )
+    cenas.enviar_fala(post, 2, SimpleUploadedFile("antes.webm", _mp3(1.0), "audio/webm"))
+    post.refresh_from_db()
+    tela = reverse("social:entonacoes", args=[post.pk], urlconf=U)
+    pagina = client.get(tela, {"voltar": "/redes/#video"}).content.decode()
+    assert "Primeira frase." in pagina and "Segunda frase." in pagina
+    assert (
+        "data-salvar" in pagina and "(cena sem fala)" in pagina and 'href="/redes/#video"' in pagina
+    )
+    revisar = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
+    assert "Gravar as entonacoes (todas as cenas)" in revisar
+
+    resposta = client.post(
+        tela,
+        {
+            "fala_1": SimpleUploadedFile("fala-1.webm", _mp3(1.2), "audio/webm"),
+            "excluir_2": "1",
+        },
+    )
+    assert resposta.json() == {"salvas": [1], "tiradas": [2], "erros": []}
+    post.refresh_from_db()
+    tela_das_cenas = post.cenas_do_video
+    assert tela_das_cenas[0]["tem_fala_gravada"] and not tela_das_cenas[1]["tem_fala_gravada"]

@@ -1,0 +1,198 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Entonacoes" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <style>
+    .entonacao { display:grid; grid-template-columns:110px 1fr; gap:.7rem; padding:.7rem 0; border-top:1px solid var(--borda); }
+    @media (min-width: 700px) { .entonacao { grid-template-columns:170px 1fr; } }
+    .entonacao video, .entonacao img { width:100%; border-radius:.4rem; background:#000; display:block; }
+    .entonacao .fala { font-size:1.15rem; line-height:1.45; margin:.2rem 0 .5rem; }
+    .gravar { width:3.4rem; height:3.4rem; border-radius:50%; border:0; font-size:1.4rem; color:#fff; background:var(--erro, #c33); cursor:pointer; flex:none; }
+    .gravar.gravando { animation:pulsar 1s infinite; }
+    @keyframes pulsar { 50% { opacity:.55; } }
+    .linha { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin:.25rem 0; }
+    .linha audio { height:2.2rem; max-width:100%; flex:1 1 12rem; }
+    .apagada { opacity:.4; }
+    .salvar-tudo { position:sticky; bottom:0; z-index:5; background:var(--superficie, var(--fundo)); border-top:1px solid var(--borda); box-shadow:0 -2px 8px var(--sombra, rgba(0,0,0,.1)); padding:.6rem 0; margin-top:1rem; display:flex; gap:.6rem; align-items:center; }
+    .salvar-tudo .botao { flex:1; font-size:1.05rem; padding:.8rem; }
+  </style>
+
+  <p class="ajuda"><a href="{{ voltar|default:'/redes/' }}">&larr; {% translate "Voltar ao post" %}</a></p>
+  <h1>{% translate "Gravar as entonacoes" %}</h1>
+  <p class="ajuda">{% blocktranslate trimmed %}
+    Toque no microfone, fale a frase com a entonacao que voce quer e toque de novo para parar. Grave
+    todas, uma atras da outra (pode refazer quantas vezes quiser), e salve uma vez so no fim. E so
+    um guia: a voz do video repete a sua entonacao, e a gravacao nao entra no video.
+  {% endblocktranslate %}</p>
+
+  {% csrf_token %}
+  {% for c in cenas %}
+    <div class="entonacao" data-cena="{{ c.n }}">
+      <div>
+        {% if c.tem_clipe %}
+          <video src="{% url 'social:midia_da_cena' post.pk c.n 'clipe' %}?v={{ post.atualizado_em|date:'U' }}"{% if c.tem_quadro %} poster="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}?v={{ post.atualizado_em|date:'U' }}"{% endif %} controls playsinline preload="metadata"></video>
+        {% elif c.tem_quadro %}
+          <img src="{% url 'social:midia_da_cena' post.pk c.n 'quadro' %}?v={{ post.atualizado_em|date:'U' }}" alt="{% translate 'imagem inicial' %}">
+        {% else %}
+          <div class="ajuda" style="aspect-ratio:9/16; border:1px dashed var(--borda); border-radius:.4rem; display:flex; align-items:center; justify-content:center">{% translate "sem imagem" %}</div>
+        {% endif %}
+      </div>
+      <div>
+        <div class="ajuda">{% blocktranslate with n=c.n d=c.duracao %}Cena {{ n }} &middot; ~{{ d }} s{% endblocktranslate %}</div>
+        {% if c.fala %}
+          <p class="fala">{{ c.fala }}</p>
+          <div class="linha">
+            <button type="button" class="gravar" data-gravar title="{% translate 'Gravar' %}">&#127908;</button>
+            <span class="ajuda" data-estado>{% if c.tem_fala_gravada %}{% translate "ja tem entonacao: grave de novo para trocar" %}{% else %}{% translate "toque para gravar" %}{% endif %}</span>
+          </div>
+          <div class="linha" data-nova hidden>
+            <span class="selo espera">{% translate "nova" %}</span>
+            <audio controls></audio>
+            <button type="button" class="botao discreto pequeno" data-descartar>{% translate "Descartar" %}</button>
+          </div>
+          {% if c.tem_fala_gravada %}
+            <div class="linha" data-salva>
+              <span class="selo ok" data-rotulo>{% translate "salva" %}</span>
+              <audio src="{% url 'social:midia_da_cena' post.pk c.n 'fala' %}?v={{ post.atualizado_em|date:'U' }}" controls preload="none"></audio>
+              <button type="button" class="botao discreto pequeno" data-excluir>{% translate "Excluir" %}</button>
+            </div>
+            {% if c.fala_mudou %}<span class="selo alerta">{% translate "o texto da fala mudou: grave de novo" %}</span>{% endif %}
+          {% endif %}
+        {% else %}
+          <p class="ajuda">{% translate "(cena sem fala)" %}</p>
+        {% endif %}
+      </div>
+    </div>
+  {% empty %}
+    <p class="vazio">{% translate "Este post ainda nao tem cenas." %}</p>
+  {% endfor %}
+
+  {% if cenas %}
+    <div class="salvar-tudo">
+      <button type="button" class="botao" data-salvar disabled>{% translate "Salvar" %} (<span data-pendentes>0</span>)</button>
+      <span class="ajuda" data-geral></span>
+    </div>
+  {% endif %}
+
+  <script>
+    (function () {
+      var cenas = {};          // n -> {blob, extensao, excluir}
+      var fluxo = null, gravador = null, atual = null, pedacos = [], relogio = null;
+      var botaoSalvar = document.querySelector("[data-salvar]");
+      var geral = document.querySelector("[data-geral]");
+
+      function pendentes() {
+        return Object.keys(cenas).filter(function (n) { return cenas[n].blob || cenas[n].excluir; });
+      }
+      function atualizar() {
+        var total = pendentes().length;
+        document.querySelector("[data-pendentes]").textContent = total;
+        botaoSalvar.disabled = total === 0;
+      }
+      function estado(caixa, texto) { caixa.querySelector("[data-estado]").textContent = texto; }
+      function microfone() {
+        if (fluxo) return Promise.resolve(fluxo);
+        return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (f) { fluxo = f; return f; });
+      }
+      function parar() { if (gravador && gravador.state === "recording") gravador.stop(); }
+
+      function gravar(caixa) {
+        var n = caixa.dataset.cena, botao = caixa.querySelector("[data-gravar]");
+        if (!navigator.mediaDevices || !window.MediaRecorder) {
+          estado(caixa, "{% translate 'Este navegador nao grava audio.' %}");
+          return;
+        }
+        microfone().then(function (f) {
+          pedacos = [];
+          atual = caixa;
+          gravador = new MediaRecorder(f);
+          gravador.ondataavailable = function (e) { if (e.data.size) pedacos.push(e.data); };
+          gravador.onstop = function () {
+            clearInterval(relogio);
+            botao.classList.remove("gravando");
+            botao.innerHTML = "&#127908;";
+            var tipo = gravador.mimeType || "audio/webm";
+            var extensao = tipo.indexOf("mp4") >= 0 ? "m4a" : tipo.indexOf("ogg") >= 0 ? "ogg" : "webm";
+            var blob = new Blob(pedacos, { type: tipo });
+            cenas[n] = { blob: blob, extensao: extensao, excluir: false };
+            var nova = caixa.querySelector("[data-nova]");
+            nova.querySelector("audio").src = URL.createObjectURL(blob);
+            nova.hidden = false;
+            var salva = caixa.querySelector("[data-salva]");
+            if (salva) salva.classList.add("apagada");
+            estado(caixa, "{% translate 'gravada: ouca, regrave ou siga para a proxima' %}");
+            atualizar();
+            atual = null;
+            // A proxima cena com fala, para gravar em sequencia.
+            var todas = Array.prototype.slice.call(document.querySelectorAll("[data-cena]"));
+            var seguinte = todas.slice(todas.indexOf(caixa) + 1).filter(function (c) { return c.querySelector("[data-gravar]"); })[0];
+            if (seguinte) seguinte.scrollIntoView({ behavior: "smooth", block: "start" });
+          };
+          gravador.start();
+          botao.classList.add("gravando");
+          botao.innerHTML = "&#9632;";
+          var inicio = Date.now();
+          estado(caixa, "{% translate 'gravando' %}... 0 s");
+          relogio = setInterval(function () {
+            estado(caixa, "{% translate 'gravando' %}... " + Math.round((Date.now() - inicio) / 1000) + " s");
+          }, 500);
+        }).catch(function () {
+          estado(caixa, "{% translate 'Sem acesso ao microfone (permita no navegador).' %}");
+        });
+      }
+
+      document.querySelectorAll("[data-cena]").forEach(function (caixa) {
+        var n = caixa.dataset.cena;
+        var botao = caixa.querySelector("[data-gravar]");
+        if (!botao) return;
+        botao.addEventListener("click", function () {
+          if (atual === caixa) { parar(); return; }
+          if (atual) parar();  // uma gravacao por vez
+          gravar(caixa);
+        });
+        caixa.querySelector("[data-descartar]").addEventListener("click", function () {
+          if (cenas[n]) cenas[n].blob = null;
+          caixa.querySelector("[data-nova]").hidden = true;
+          var salva = caixa.querySelector("[data-salva]");
+          if (salva && !(cenas[n] && cenas[n].excluir)) salva.classList.remove("apagada");
+          estado(caixa, "{% translate 'toque para gravar' %}");
+          atualizar();
+        });
+        var excluir = caixa.querySelector("[data-excluir]");
+        if (excluir) excluir.addEventListener("click", function () {
+          cenas[n] = cenas[n] || { blob: null, excluir: false };
+          cenas[n].excluir = !cenas[n].excluir;
+          var salva = caixa.querySelector("[data-salva]");
+          salva.classList.toggle("apagada", cenas[n].excluir || !!cenas[n].blob);
+          salva.querySelector("[data-rotulo]").textContent = cenas[n].excluir
+            ? "{% translate 'sai ao salvar' %}" : "{% translate 'salva' %}";
+          excluir.textContent = cenas[n].excluir ? "{% translate 'Manter' %}" : "{% translate 'Excluir' %}";
+          atualizar();
+        });
+      });
+
+      if (botaoSalvar) botaoSalvar.addEventListener("click", function () {
+        parar();
+        var dados = new FormData();
+        dados.append("csrfmiddlewaretoken", document.querySelector("[name=csrfmiddlewaretoken]").value);
+        pendentes().forEach(function (n) {
+          if (cenas[n].blob) dados.append("fala_" + n, cenas[n].blob, "fala-" + n + "." + cenas[n].extensao);
+          else if (cenas[n].excluir) dados.append("excluir_" + n, "1");
+        });
+        botaoSalvar.disabled = true;
+        geral.textContent = "{% translate 'Salvando...' %}";
+        fetch(window.location.href, { method: "POST", body: dados, credentials: "same-origin" })
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function () { cenas = {}; window.location.reload(); })
+          .catch(function (erro) {
+            geral.textContent = "{% translate 'Nao salvou' %} (" + erro.message + "). {% translate 'Tente de novo: as gravacoes continuam aqui.' %}";
+            botaoSalvar.disabled = false;
+          });
+      });
+
+      window.addEventListener("beforeunload", function (e) {
+        if (pendentes().length) { e.preventDefault(); e.returnValue = ""; }
+      });
+    })();
+  </script>
+{% endblock %}
