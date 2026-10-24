@@ -913,3 +913,43 @@ def test_nao_fazer_tira_da_fila_o_que_nao_comecou(ambiente, modulo, settings, tm
         pass
     lote.refresh_from_db()
     assert lote.status == GenerationJob.Status.CANCELED
+
+
+@pytest.mark.django_db
+def test_ajustar_o_final_com_outra_ia_muda_so_o_que_veio(ambiente, modulo):
+    """O pedido leva o texto do post e o roteiro; a resposta muda so as cenas e
+    os campos que vieram (a imagem e a animacao ficam)."""
+    from apps.social import cenas
+
+    _, _, client = ambiente
+    post = _post(
+        _destino("instagram"),
+        texto="Qual destes voce ja viveu? A) um B) dois",
+        extras={
+            "video_ia": {
+                "cenas": [
+                    {"fala": "Comeco.", "imagem": "a", "clipe": "social/c1.mp4"},
+                    {"fala": "Siga para mais.", "imagem": "b", "movimento": "acena"},
+                ]
+            }
+        },
+    )
+    pedido = post.pedido_do_final_do_video
+    assert "Qual destes voce ja viveu?" in pedido and "Siga para mais." in pedido
+    assert '"n": 2' in pedido
+
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
+    resposta = (
+        'Aqui:\n```json\n{"cenas": [{"n": 2, "fala": "Responda nos comentarios!"}, {"n": 9}]}\n```'
+    )
+    client.post(acao, {"acao": "cenas_ajustar_final", "resposta": resposta})
+    post.refresh_from_db()
+    lista = cenas.cenas(post)
+    assert lista[1]["fala"] == "Responda nos comentarios!" and lista[1]["movimento"] == "acena"
+    assert lista[0]["fala"] == "Comeco." and lista[0]["clipe"] == "social/c1.mp4"
+    assert (
+        cenas.ajustar_final(post, '{"cenas": [{"n": 2, "fala": "Responda nos comentarios!"}]}')
+        == []
+    )
+    with pytest.raises(video.VideoIndisponivel):
+        cenas.ajustar_final(post, "sem json")

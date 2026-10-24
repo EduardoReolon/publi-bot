@@ -264,9 +264,10 @@ def montar(post: Post, dados: dict) -> tuple[str, dict]:
         enquete = enquete_limpa(dados)
         if enquete is not None:
             extras["enquete"] = enquete
-            if post.destino.rede != "linkedin":
-                # Sem enquete na API desta rede: post comum, com a pergunta e as
-                # opcoes para responder nos comentarios.
+            if post.destino.rede != "linkedin" or _fica_o_video(post):
+                # Sem enquete na API desta rede (ou com video, que o LinkedIn nao
+                # junta com enquete): a pergunta e as opcoes vao no texto, para
+                # responder nos comentarios.
                 letras = "ABCD"
                 opcoes = "\n".join(f"{letras[i]}) {o}" for i, o in enumerate(enquete["opcoes"]))
                 pergunta = f"{enquete['pergunta']}\n{opcoes}\nResponda nos comentarios com a letra."
@@ -329,7 +330,14 @@ INSTRUCAO_DA_ENQUETE = (
 
 
 def e_enquete(post: Post) -> bool:
-    return (post.extras or {}).get("formato") == "enquete"
+    extras = post.extras or {}
+    return extras.get("formato") == "enquete" or bool(extras.get("como_enquete"))
+
+
+def _fica_o_video(post: Post) -> bool:
+    """O post ja e video e so o texto esta sendo refeito (enquete ou de volta)."""
+    extras = post.extras or {}
+    return bool(extras.get("manter_video")) and extras.get("formato") == "video"
 
 
 def enquete_limpa(dados: dict) -> dict | None:
@@ -552,6 +560,11 @@ def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat
     video = (
         {c: antes[c] for c in CAMPOS_DO_VIDEO if c in antes} if antes.get("manter_video") else {}
     )
+    if _fica_o_video(post):
+        # O post continua video (Reels): a enquete vai so no texto.
+        video["formato"] = "video"
+        if antes.get("como_enquete"):
+            video["como_enquete"] = True
     post.texto = iscas.garantir_chamada(post, texto)
     foco = focos.do_post(post)
     # O que veio da sugestao (ideia, recado em teste, foco) continua no post.
