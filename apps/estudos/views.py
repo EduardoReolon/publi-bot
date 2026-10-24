@@ -116,21 +116,31 @@ def _acao(request, estudo: Estudo):
                 request, _("A resposta nao trouxe PALAVRAS, SEMENTES nem SITE. Confira o formato.")
             )
             return
-        numero = (
-            estudo.rodadas.order_by("-numero").values_list("numero", flat=True).first() or 0
-        ) + 1
-        Rodada.objects.create(
-            estudo=estudo,
-            numero=numero,
-            pedido=request.POST.get("pedido", ""),
-            resposta=resposta,
-            analise=lido["analise"],
-            modo=lido["modo"],
-            palavras=lido["palavras"],
-            sementes=lido["sementes"],
-            site=lido["site"],
-            cidades=lido["cidades"],
-        )
+        campos = {
+            "pedido": request.POST.get("pedido", ""),
+            "resposta": resposta,
+            "analise": lido["analise"],
+            "modo": lido["modo"],
+            "palavras": lido["palavras"],
+            "sementes": lido["sementes"],
+            "site": lido["site"],
+            "cidades": lido["cidades"],
+            "situacao": Rodada.Situacao.RASCUNHO,
+            "erro": "",
+        }
+        # A rodada ainda nao buscada (ou que falhou) e trocada pela resposta
+        # nova: colar de novo nao empilha rascunhos.
+        aberta = estudo.rodadas.filter(
+            situacao__in=[Rodada.Situacao.RASCUNHO, Rodada.Situacao.FALHOU]
+        ).first()
+        if aberta is not None:
+            Rodada.objects.filter(pk=aberta.pk).update(**campos)
+            numero = aberta.numero
+        else:
+            numero = (
+                estudo.rodadas.order_by("-numero").values_list("numero", flat=True).first() or 0
+            ) + 1
+            Rodada.objects.create(estudo=estudo, numero=numero, **campos)
         # A campanha e as negativas sugeridas valem para o estudo (a tela
         # deixa desmarcar).
         if lido["campanha"]:

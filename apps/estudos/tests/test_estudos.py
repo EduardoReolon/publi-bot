@@ -144,6 +144,9 @@ FIM"""
     conferir = client.get(tela).content.decode()
     assert "Quero estimativa" in conferir and "consorcio\nrara</textarea>" in conferir
     assert "join:" not in conferir
+    # Colar de novo (ex.: depois de mudar o raio) troca o rascunho, nao empilha.
+    client.post(tela, {"acao": "colar", "resposta": resposta, "pedido": texto})
+    assert list(Rodada.objects.values_list("numero", flat=True)) == [1]
 
     client.post(
         tela,
