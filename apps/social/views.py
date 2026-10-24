@@ -1377,6 +1377,14 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
         elif acao == "cena_tirar_fala":
             cenas.tirar_fala(post, n)
             messages.success(request, _("Cena %(n)s sem entonacao: so a voz gerada.") % {"n": n})
+        elif acao in ("cena_usar_versao", "cena_apagar_versao"):
+            i = int(request.POST.get("i") or -1)
+            if acao == "cena_usar_versao":
+                cenas.usar_versao(post, n, i)
+                messages.success(request, _("Cena %(n)s voltou a versao escolhida.") % {"n": n})
+            else:
+                cenas.apagar_versao(post, n, i)
+                messages.success(request, _("Versao apagada da cena %(n)s.") % {"n": n})
         elif acao == "cenas_enviar_imagens":
             # Todas de uma vez: a 1a imagem vai na cena 1, a 2a na 2... A tela
             # ordena os arquivos pela hora em que foram baixados (ver o template).
@@ -1494,7 +1502,12 @@ def midia_da_cena(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
         "referencia": "referencia",
         "fala": "fala_gravada",
     }.get(tipo)
-    caminho = lista[n - 1].get(campo, "") if campo and 1 <= n <= len(lista) else ""
+    cena = lista[n - 1] if 1 <= n <= len(lista) else {}
+    caminho = cena.get(campo, "") if campo else ""
+    if tipo.startswith("versao-") and tipo[7:].isdigit():  # um clipe do historico
+        historico = cena.get("historico") or []
+        i = int(tipo[7:])
+        caminho = historico[i].get("clipe", "") if i < len(historico) else ""
     if not caminho or not default_storage.exists(caminho):
         raise Http404
     return FileResponse(default_storage.open(caminho, "rb"), filename=caminho.rsplit("/", 1)[-1])

@@ -112,6 +112,11 @@ def para_a_tela(post) -> list[dict]:
                 "tem_clipe": _existe(clipe),
                 "tem_referencia": _existe(cena.get("referencia", "")),
                 "tem_fala_gravada": _existe(cena.get("fala_gravada", "")),
+                "versoes": [
+                    {**v, "i": i, "tipo": f"versao-{i}", "quando": _dia_e_hora(v.get("clipe_em"))}
+                    for i, v in enumerate(cena.get("historico") or [])
+                    if _existe(v.get("clipe", ""))
+                ],
                 "fala_mudou": _existe(cena.get("fala_gravada", ""))
                 and cena.get("fala_gravada_do_texto", cena.get("fala")) != cena.get("fala"),
                 "usa": [(numero[e.pk], e.nome) for e in referencias_da_cena(post, cena)],
@@ -138,6 +143,15 @@ def _hora(quando: str | None) -> str:
     if not quando:
         return ""
     return timezone.localtime(datetime.fromisoformat(quando)).strftime("%H:%M")
+
+
+def _dia_e_hora(quando: str | None) -> str:
+    """'24/10 14:05' (na hora local) de um isoformat, ou ''."""
+    from datetime import datetime
+
+    if not quando:
+        return ""
+    return timezone.localtime(datetime.fromisoformat(quando)).strftime("%d/%m %H:%M")
 
 
 def duracao_estimada(cena: dict) -> float:
@@ -395,6 +409,78 @@ def _guardar(post, nome: str, conteudo: bytes) -> str:
     return default_storage.save(caminho, ContentFile(conteudo))
 
 
+def _unico() -> str:
+    """Um pedaco de nome que nao se repete: a imagem e o clipe de cada versao
+    tem o seu arquivo (o historico guarda os anteriores)."""
+    import uuid
+
+    return uuid.uuid4().hex[:10]
+
+
+# -- O historico das versoes da cena ---------------------------------------------------
+# Cada animacao nova (ou imagem nova) guarda a versao que estava em uso, em vez
+# de apaga-la: da para testar varias, voltar a uma anterior e apagar as que nao
+# servem. A versao em uso e a da propria cena (clipe, quadro, seed, modelo).
+CAMPOS_DA_VERSAO = (
+    "clipe",
+    "quadro",
+    "quadro_de",
+    "seed",
+    "modelo",
+    "no_maior",
+    "clipe_em",
+)
+
+
+def _arquivar(cena: dict) -> None:
+    """Poe a versao em uso (se tem animacao) no inicio do historico."""
+    if not _existe(cena.get("clipe", "")):
+        return
+    versao = {c: cena[c] for c in CAMPOS_DA_VERSAO if c in cena}
+    versao["movimento"] = cena.get("clipe_do_movimento", cena.get("movimento", ""))
+    versao["imagem"] = cena.get("quadro_do_texto", cena.get("imagem", ""))
+    cena.setdefault("historico", []).insert(0, versao)
+
+
+def usar_versao(post, n: int, i: int) -> None:
+    """A versao i do historico volta a ser a da cena (com a imagem, o movimento
+    e a descricao dela, para a qualidade maxima repetir a mesma coisa); a que
+    estava em uso vai para o historico."""
+    lista, cena = _cena(post, n)
+    historico = cena.get("historico") or []
+    if not 0 <= i < len(historico):
+        raise video.VideoIndisponivel("essa versao nao existe mais.")
+    escolhida = historico.pop(i)
+    _arquivar(cena)
+    for campo in CAMPOS_DA_VERSAO:
+        cena.pop(campo, None)
+    cena.update({c: escolhida[c] for c in CAMPOS_DA_VERSAO if c in escolhida})
+    cena.update(
+        movimento=escolhida.get("movimento") or cena.get("movimento", ""),
+        clipe_do_movimento=escolhida.get("movimento", ""),
+        imagem=escolhida.get("imagem") or cena.get("imagem", ""),
+        quadro_do_texto=escolhida.get("imagem", ""),
+    )
+    cena.pop("animando", None)
+    _gravar(post, lista)
+
+
+def apagar_versao(post, n: int, i: int) -> None:
+    """Apaga a versao i do historico (o clipe, e a imagem se nenhuma outra
+    versao nem a cena a usa). A versao em uso nao esta no historico."""
+    lista, cena = _cena(post, n)
+    historico = cena.get("historico") or []
+    if not 0 <= i < len(historico):
+        return
+    versao = historico.pop(i)
+    em_uso = {cena.get("quadro"), *(v.get("quadro") for v in historico)}
+    for campo in ("clipe", "quadro"):
+        caminho = versao.get(campo, "")
+        if caminho and (campo == "clipe" or caminho not in em_uso) and _existe(caminho):
+            default_storage.delete(caminho)
+    _gravar(post, lista)
+
+
 def gerar_quadro(post, n: int, *, sem_referencia: bool = False) -> str:
     """A imagem inicial da cena n pelo gerador daqui (com a referencia do
     personagem e a foto do lugar, quando o worker tem a rota de edicao).
@@ -447,8 +533,9 @@ def gerar_quadro(post, n: int, *, sem_referencia: bool = False) -> str:
         cena["referencia"] = _guardar(post, f"cena-{n}-referencia.png", referencias[0])
     else:
         cena.pop("referencia", None)
+    _arquivar(cena)  # a versao anterior (imagem e animacao) vai para o historico
     cena.update(
-        quadro=_guardar(post, f"cena-{n}-quadro.png", conteudo),
+        quadro=_guardar(post, f"cena-{n}-quadro-{_unico()}.png", conteudo),
         quadro_de=de,
         quadro_do_texto=cena.get("imagem", ""),
         aviso=aviso,
@@ -533,8 +620,9 @@ def enviar_quadro(post, n: int, arquivo) -> str:
     except (UnidentifiedImageError, OSError) as exc:
         raise video.VideoIndisponivel("envie uma imagem JPG, PNG ou WebP.") from exc
     lista, cena = _cena(post, n)
+    _arquivar(cena)
     cena.update(
-        quadro=_guardar(post, f"cena-{n}-quadro.png", _png(encaixar(imagem))),
+        quadro=_guardar(post, f"cena-{n}-quadro-{_unico()}.png", _png(encaixar(imagem))),
         quadro_de="enviado",
         quadro_do_texto=cena.get("imagem", ""),
         aviso="",
@@ -707,8 +795,10 @@ def conferir_animacao(post, n: int) -> str:
         clipe = fontes.baixar_animacao(animando["id"])
         post.refresh_from_db()
         lista, cena = _cena(post, n)
+        _arquivar(cena)  # a animacao anterior vai para o historico
         cena.update(
-            clipe=_guardar(post, f"cena-{n}-clipe.mp4", clipe),
+            clipe=_guardar(post, f"cena-{n}-clipe-{_unico()}.mp4", clipe),
+            clipe_em=timezone.now().isoformat(),
             seed=animando["seed"],
             modelo=animando.get("modelo", ""),
             no_maior=bool(animando.get("maior")),

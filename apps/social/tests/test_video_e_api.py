@@ -217,6 +217,28 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
     assert animados[3][2] == variacao and animados[3][4]
     assert post.cenas_do_video[0]["modelo"] == "framepack" and post.cenas_do_video[0]["no_maior"]
 
+    # O historico: cada animacao nova guardou a anterior, que pode voltar ou sumir.
+    versoes = post.cenas_do_video[0]["versoes"]
+    assert [v["seed"] for v in versoes] == [variacao, primeira_seed, primeira_seed]
+    maxima = cenas.cenas(post)[0]["clipe"]
+    client.post(acao, {"acao": "cena_usar_versao", "n": "1", "i": "0"})
+    post.refresh_from_db()
+    cena = cenas.cenas(post)[0]
+    assert cena["seed"] == variacao and cena["modelo"] == "framepack-fp8" and not cena["no_maior"]
+    assert cena["historico"][0]["clipe"] == maxima and cena["historico"][0]["no_maior"]
+    assert cena["movimento"] == "pisca" and cena["imagem"] == "mulher cansada"
+    versao = client.get(reverse("social:midia_da_cena", args=[post.pk, 1, "versao-0"], urlconf=U))
+    assert versao.status_code == 200
+    antigo = cena["historico"][2]["clipe"]
+    client.post(acao, {"acao": "cena_apagar_versao", "n": "1", "i": "2"})
+    post.refresh_from_db()
+    cena = cenas.cenas(post)[0]
+    assert not default_storage.exists(antigo) and len(cena["historico"]) == 2
+    assert default_storage.exists(cena["quadro"])  # a imagem e a mesma das outras versoes
+    client.post(acao, {"acao": "cena_usar_versao", "n": "1", "i": "0"})  # volta a maxima
+    post.refresh_from_db()
+    assert cenas.cenas(post)[0]["clipe"] == maxima
+
     # a cena 2 so tem a imagem: entra parada, aproximando devagar
     monkeypatch.setattr(fontes, "gerar_quadro", lambda *a, **k: (buffer.getvalue(), ""))
     cenas.gerar_quadro(post, 2)
@@ -241,6 +263,7 @@ def test_cenas_geradas_refeitas_e_montadas(ambiente, modulo, settings, tmp_path,
 
     pagina = client.get(reverse("social:inicio", urlconf=U), {"aba": "revisar"}).content.decode()
     assert "Refazer a animacao" in pagina and "Montar o video" in pagina
+    assert "Versoes anteriores" in pagina and "cena_apagar_versao" in pagina
     clipe = client.get(reverse("social:midia_da_cena", args=[post.pk, 1, "clipe"], urlconf=U))
     assert clipe.status_code == 200
 
