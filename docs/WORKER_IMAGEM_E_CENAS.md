@@ -215,3 +215,15 @@ voice=qwen:carla        (so voz do Qwen: a referencia dela e o timbre de saida)
 - **Espera:** cada conversão carrega o modelo; o publi-bot espera até 300 s.
 - **`/health/` → `rotas.conversao_de_voz`** diz se a rota está ligada. O
   publi-bot não consulta antes: tenta, e o `404` cai na voz gerada com aviso.
+
+## 5. Acabamento de locução (contrato 2.17)
+
+Toda fala que sai do worker (`/v1/audio/speech` e `/v1/audio/convert`) vem com
+acabamento de locução pelo ffmpeg e o volume normalizado em -16 LUFS (MP3,
+44,1 kHz). `/health/` → `voz.acabamento` diz se está ligado (`ligado`,
+`ffmpeg`); sem ffmpeg no worker, a fala sai sem acabamento.
+
+Do lado daqui nada muda: o publi-bot só normaliza a **gravação de entonação**
+antes de mandá-la para a conversão (`LIMPAR_A_GRAVACAO`, também -16 LUFS), e a
+montagem usa a voz como o worker devolveu.
+
