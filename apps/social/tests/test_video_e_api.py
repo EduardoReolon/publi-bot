@@ -955,6 +955,7 @@ def test_ajustar_o_final_com_outra_ia_muda_so_o_que_veio(ambiente, modulo):
         cenas.ajustar_final(post, "sem json")
 
 
+@pytest.mark.skipif(not FFMPEG, reason="sem ffmpeg nesta maquina")
 @pytest.mark.django_db
 def test_gravar_todas_as_entonacoes_e_salvar_de_uma_vez(ambiente, modulo, settings, tmp_path):
     """A tela das entonacoes mostra cada cena com a frase; um envio so salva as
