@@ -27,7 +27,7 @@
       {% translate "Artigo:" %}
       {% if post.artigo_id %}<a href="{{ post.pagina_do_artigo }}">{{ post.artigo_titulo }}</a>{% else %}{{ post.artigo_titulo }}{% endif %}
       {% if post.artigo_url %}<a href="{{ post.artigo_url }}" target="_blank" rel="noopener noreferrer" class="ajuda" title="{% translate 'A pagina publicada no site' %}">({% translate "no site" %})</a>{% endif %}
-      {% with aviso=post.artigo_depois_do_post %}{% if aviso %}<span class="selo alerta" title="{{ aviso }}">{% translate "antes do artigo" %}</span> <span class="ajuda">{{ aviso }}</span>{% endif %}{% endwith %}
+      {% with aviso=post.artigo_depois_do_post %}{% if aviso %}{% if aviso.grave %}<div class="aviso ruim" style="margin:.3rem 0"><strong>{% translate "Artigo nao aprovado" %}:</strong> {{ aviso.texto }}</div>{% else %}<span class="selo alerta" title="{{ aviso.texto }}">{% translate "antes do artigo" %}</span> <span class="ajuda">{{ aviso.texto }}</span>{% endif %}{% endif %}{% endwith %}
     </p>
   {% endif %}
   <div class="ajuda"><strong>{{ post.get_motivo_display }}.</strong> {{ post.por_que }}</div>
@@ -75,10 +75,9 @@
   {% endif %}
 
   {% if post.avisos %}
-    <div class="aviso alerta" style="margin-top:.6rem">
-      <strong>{% translate "Confira antes de aprovar:" %}</strong>
+    <details class="ajuda" style="margin-top:.3rem"><summary>{% translate "Avisos" %} ({{ post.avisos|length }})</summary>
       <ul>{% for a in post.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
-    </div>
+    </details>
   {% endif %}
 
   {% if post.texto %}

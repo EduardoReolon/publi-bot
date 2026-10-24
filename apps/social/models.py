@@ -667,25 +667,34 @@ class Post(models.Model):
         return fontes.pagina_do_artigo(self.artigo_id)
 
     @property
-    def artigo_depois_do_post(self) -> str:
-        """Aviso quando o post esta agendado para antes do artigo ir ao ar (na
-        hora, o artigo fura a fila; sem aprovacao, o post espera). Vazio: ok."""
+    def artigo_depois_do_post(self) -> dict | None:
+        """Aviso quando o post agendado sai antes do artigo ir ao ar: {"texto",
+        "grave"}. Grave (vermelho): o artigo nao foi aprovado, e o post NAO sai
+        na data (espera o artigo). Nao grave: na hora, o artigo fura a fila e
+        sai junto. None: ok."""
         from apps.social import fontes
 
         if not self.artigo_id or self.situacao != self.Situacao.APROVADO:
-            return ""
+            return None
         artigo = fontes.situacao_do_artigo(self.artigo_id)
         if artigo["no_ar"]:
-            return ""
+            return None
         if not artigo["aprovado"]:
-            return "o artigo ainda nao foi aprovado: o post espera ele ir ao ar"
+            return {
+                "texto": "o artigo ainda nao foi aprovado: na data, o post NAO sai; ele espera "
+                "o artigo ir ao ar",
+                "grave": True,
+            }
         if (
             self.agendado_para
             and artigo["agendado_para"]
             and (self.agendado_para < artigo["agendado_para"])
         ):
-            return "o post sai antes do artigo: na hora, o artigo e adiantado e sai junto"
-        return ""
+            return {
+                "texto": "o post sai antes do artigo: na hora, o artigo e adiantado e sai junto",
+                "grave": False,
+            }
+        return None
 
     @property
     def cenas_do_video(self) -> list[dict]:
