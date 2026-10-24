@@ -762,6 +762,8 @@ class TarefaNaFila(models.Model):
         SERP = "serp", _("Pagina de resultados")
         VOLUME = "volume", _("Volume de busca")
         AVALIACOES = "avaliacoes", _("Avaliacoes")
+        IDEIAS = "ideias", _("Ideias de palavras (sementes)")
+        IDEIAS_DO_SITE = "ideias_site", _("Ideias de palavras (site)")
 
     class Situacao(models.TextChoices):
         AGUARDANDO = "aguardando", _("Aguardando")

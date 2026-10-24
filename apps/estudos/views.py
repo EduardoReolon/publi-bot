@@ -163,6 +163,8 @@ def _acao(request, estudo: Estudo):
         rodada.sementes = _lista(request.POST.get("sementes", ""))[:20]
         rodada.site = pedido.site_limpo(request.POST.get("site", ""))
         rodada.cidades = [int(c) for c in request.POST.getlist("cidades")]
+        rodada.fila = request.POST.get("velocidade") != "na_hora"
+        rodada.etapa = {}
         rodada.situacao = Rodada.Situacao.NA_FILA
         rodada.erro = ""
         rodada.save()
@@ -175,7 +177,12 @@ def _acao(request, estudo: Estudo):
             rotulo=f"Estudo {estudo.nome}: rodada {rodada.numero}",
             alvo=estudo.pk,
         )
-        messages.info(request, _("Buscando no Google (alguns minutos). Recarregue depois."))
+        messages.info(
+            request,
+            _("Na fila da DataForSEO: volta em alguns minutos. Recarregue depois.")
+            if rodada.fila
+            else _("Buscando no Google (um minuto). Recarregue depois."),
+        )
     elif acao == "virar_cliente":
         _virar_cliente(request, estudo)
     elif acao == "campanha":

@@ -544,7 +544,10 @@ def colher_fila() -> int:
     contas = ContasExternas.carregar()
     agora = timezone.now()
     colhidas = 0
-    for tarefa in TarefaNaFila.objects.filter(situacao=TarefaNaFila.Situacao.AGUARDANDO):
+    # As dos estudos de mercado sao colhidas pela propria rodada do estudo.
+    for tarefa in TarefaNaFila.objects.filter(situacao=TarefaNaFila.Situacao.AGUARDANDO).exclude(
+        finalidade=ChamadaExterna.Finalidade.ESTUDO
+    ):
         if fila.vencida(tarefa, agora):
             tarefa.situacao = TarefaNaFila.Situacao.EXPIRADA
             tarefa.save(update_fields=["situacao"])

@@ -36,6 +36,8 @@ ESTIMATIVAS = {
     ("dataforseo", "labs"): Decimal("0.05"),
     # Ideias de palavras do Google Ads (keywords_for_keywords / _for_site).
     ("dataforseo", "ideias"): Decimal("0.09"),
+    ("dataforseo", "ideias_fila"): Decimal("0.06"),
+    ("dataforseo", "ideias_site_fila"): Decimal("0.06"),
     ("dataforseo", "avaliacoes_fila"): Decimal("0.05"),
 }
 

@@ -49,6 +49,14 @@ ROTAS = {
         "/keywords_data/google_ads/search_volume/task_post",
         "/keywords_data/google_ads/search_volume/task_get/{id}",
     ),
+    TarefaNaFila.Tipo.IDEIAS: (
+        "/keywords_data/google_ads/keywords_for_keywords/task_post",
+        "/keywords_data/google_ads/keywords_for_keywords/task_get/{id}",
+    ),
+    TarefaNaFila.Tipo.IDEIAS_DO_SITE: (
+        "/keywords_data/google_ads/keywords_for_site/task_post",
+        "/keywords_data/google_ads/keywords_for_site/task_get/{id}",
+    ),
     TarefaNaFila.Tipo.AVALIACOES: (
         "/business_data/google/reviews/task_post",
         "/business_data/google/reviews/task_get/{id}",

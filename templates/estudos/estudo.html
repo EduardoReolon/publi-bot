@@ -69,6 +69,10 @@
             <label class="ajuda"><input type="checkbox" name="cidades" value="{{ c.codigo }}" {% if c.codigo in rascunho.cidades %}checked{% endif %}> {{ c.municipio.nome }} ({{ c.populacao|default:"?" }})</label>
           {% endif %}{% endfor %}</div>
         </details>
+        <div class="acoes" style="gap:1rem">
+          <label><input type="radio" name="velocidade" value="fila" {% if rascunho.fila %}checked{% endif %}> <strong>{% translate "Barata" %}</strong> <span class="ajuda">{% translate "(fila padrao da DataForSEO: volta em alguns minutos)" %}</span></label>
+          <label><input type="radio" name="velocidade" value="na_hora" {% if not rascunho.fila %}checked{% endif %}> <strong>{% translate "Na hora" %}</strong> <span class="ajuda">{% translate "(ao vivo: cerca de 50% mais caro)" %}</span></label>
+        </div>
         <label class="campo">{% translate "Palavras (uma por linha)" %} <span class="ajuda">({{ rascunho.palavras|length }})</span>
           <textarea name="palavras" rows="6" style="width:100%">{{ palavras_do_rascunho }}</textarea></label>
         <label class="campo">{% translate "Sementes para o Google sugerir mais (ate 20)" %}
