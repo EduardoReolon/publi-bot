@@ -116,21 +116,31 @@ def _acao(request, estudo: Estudo):
                 request, _("A resposta nao trouxe PALAVRAS, SEMENTES nem SITE. Confira o formato.")
             )
             return
-        numero = (
-            estudo.rodadas.order_by("-numero").values_list("numero", flat=True).first() or 0
-        ) + 1
-        Rodada.objects.create(
-            estudo=estudo,
-            numero=numero,
-            pedido=request.POST.get("pedido", ""),
-            resposta=resposta,
-            analise=lido["analise"],
-            modo=lido["modo"],
-            palavras=lido["palavras"],
-            sementes=lido["sementes"],
-            site=lido["site"],
-            cidades=lido["cidades"],
-        )
+        campos = {
+            "pedido": request.POST.get("pedido", ""),
+            "resposta": resposta,
+            "analise": lido["analise"],
+            "modo": lido["modo"],
+            "palavras": lido["palavras"],
+            "sementes": lido["sementes"],
+            "site": lido["site"],
+            "cidades": lido["cidades"],
+            "situacao": Rodada.Situacao.RASCUNHO,
+            "erro": "",
+        }
+        # A rodada ainda nao buscada (ou que falhou) e trocada pela resposta
+        # nova: colar de novo nao empilha rascunhos.
+        aberta = estudo.rodadas.filter(
+            situacao__in=[Rodada.Situacao.RASCUNHO, Rodada.Situacao.FALHOU]
+        ).first()
+        if aberta is not None:
+            Rodada.objects.filter(pk=aberta.pk).update(**campos)
+            numero = aberta.numero
+        else:
+            numero = (
+                estudo.rodadas.order_by("-numero").values_list("numero", flat=True).first() or 0
+            ) + 1
+            Rodada.objects.create(estudo=estudo, numero=numero, **campos)
         # A campanha e as negativas sugeridas valem para o estudo (a tela
         # deixa desmarcar).
         if lido["campanha"]:
@@ -151,7 +161,7 @@ def _acao(request, estudo: Estudo):
         )
         rodada.palavras = _lista(request.POST.get("palavras", ""))
         rodada.sementes = _lista(request.POST.get("sementes", ""))[:20]
-        rodada.site = request.POST.get("site", "").strip()[:200]
+        rodada.site = pedido.site_limpo(request.POST.get("site", ""))
         rodada.cidades = [int(c) for c in request.POST.getlist("cidades")]
         rodada.situacao = Rodada.Situacao.NA_FILA
         rodada.erro = ""
@@ -301,6 +311,9 @@ def estudo(request: HttpRequest, pk) -> HttpResponse:
             "rodadas": rodadas,
             "rascunho": rascunho,
             "custo_do_rascunho": coleta.custo_estimado(rascunho) if rascunho else None,
+            "palavras_do_rascunho": "\n".join(rascunho.palavras) if rascunho else "",
+            "sementes_do_rascunho": "\n".join(rascunho.sementes) if rascunho else "",
+            "negativas_do_estudo": "\n".join(estudo.negativas or []),
             "linhas": linhas,
             # As da campanha que nao estao na tabela (filtro, ou alem das 300):
             # o formulario as manda de volta, para nao sumirem ao salvar.
