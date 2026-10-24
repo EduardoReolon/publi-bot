@@ -609,6 +609,8 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
         else:
             extras.pop("formato", None)
             extras.pop("enquete", None)
+        # So o texto e reescrito: o video (cenas, imagens, animacoes, voz) fica.
+        extras["manter_video"] = True
         post.extras = extras
         post.situacao = Post.Situacao.SUGERIDO
         post.save(update_fields=["extras", "situacao", "atualizado_em"])

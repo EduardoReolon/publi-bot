@@ -440,12 +440,20 @@ def test_enquete_no_linkedin_e_post_comum_no_instagram(ambiente, monkeypatch):
         },
     }
     monkeypatch.setattr(fontes, "executar", lambda chave, variaveis, **_: json.dumps(resposta))
+    # Um post que ja tinha video (cenas com imagens, a voz): refazer como
+    # enquete reescreve so o texto, e o trabalho do video fica.
+    video = {"cenas": [{"fala": "Oi", "imagem": "x", "quadro": "social/q1.png"}]}
     post = Post.objects.create(
-        destino=insta, entrada=entrada, motivo=Post.Motivo.CASO, extras={"formato": "enquete"}
+        destino=insta,
+        entrada=entrada,
+        motivo=Post.Motivo.CASO,
+        extras={"formato": "enquete", "manter_video": True, "video_ia": video, "voz": "pf_dora"},
     )
     redacao.escrever(post)
     post.refresh_from_db()
     assert post.extras["formato"] == "enquete" and len(post.extras["enquete"]["opcoes"]) == 4
+    assert post.extras["video_ia"] == video and post.extras["voz"] == "pf_dora"
+    assert "manter_video" not in post.extras
     assert post.extras["enquete"]["opcoes"][3] == "x" * 30
     assert "A) Eu mesmo" in post.texto and "Responda nos comentarios" in post.texto
 
@@ -507,6 +515,7 @@ def test_trocar_o_link_e_refazer_como_enquete_pela_tela(ambiente, monkeypatch):
     client.post(acao, {"acao": "enquete"})
     post.refresh_from_db()
     assert post.extras["formato"] == "enquete" and escritos == [str(post.pk)]
+    assert post.extras["manter_video"]  # a reescrita guarda o video
     client.post(acao, {"acao": "post_comum"})
     post.refresh_from_db()
     assert "formato" not in post.extras
