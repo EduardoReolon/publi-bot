@@ -72,6 +72,7 @@
       <div style="border-top:1px solid var(--borda); padding:.4rem 0">
         <strong>{% translate "Cena" %} {{ c.n }}</strong> <span class="ajuda">~{{ c.duracao }} s</span>
         {% if c.animando %}<span class="selo espera">{% translate "animando no worker" %}{% if c.animando_desde %} {% translate "desde" %} {{ c.animando_desde }}{% endif %}{% if c.animando_no %} ({{ c.animando_no }}){% endif %}</span>{% if c.previsao %} <span class="ajuda" title="{% translate 'Estimativa pelo modelo e pelos trechos; com o worker ocupado ou reiniciado, demora mais' %}">{% translate "previsao" %}: {{ c.previsao }}</span>{% endif %}{% endif %}
+        {% if c.na_fila %}<span class="selo espera">{% translate "na fila" %}</span>{% elif c.parada and not c.tem_clipe %}<span class="selo">{% translate "fora da fila" %}</span>{% endif %}
         {% if c.tem_clipe and c.modelo %}<span class="selo">{{ c.modelo }}</span>{% endif %}
         {% if c.tem_clipe %}<span class="selo ok">{% translate "animada" %}</span>{% elif c.tem_quadro %}<span class="selo espera">{% translate "so a imagem" %}</span>{% else %}<span class="selo">{% translate "sem imagem" %}</span>{% endif %}
         {% if c.quadro_de == 'lugar' %}<span class="selo">{% translate "foto do lugar" %}</span>{% elif c.quadro_de == 'enviado' %}<span class="selo">{% translate "imagem enviada" %}</span>{% endif %}
@@ -92,6 +93,7 @@
             <input type="hidden" name="segundos" value="{{ c.segundos }}">
             <div class="acoes">
               <button type="submit" name="acao" value="cena_salvar" class="botao discreto pequeno">{% translate "Salvar" %}</button>
+              {% if c.na_fila %}<button type="submit" name="acao" value="cena_nao_fazer" class="botao discreto pequeno" title="{% translate 'Tira esta cena da fila (ainda nao comecou): nada e feito nela ate voce pedir de novo' %}">{% translate "Nao fazer" %}</button>{% endif %}
               {% if c.animando %}<button type="submit" name="acao" value="cena_parar" class="botao discreto pequeno" title="{% translate 'Nada mais e pedido para esta cena, nem se o worker reiniciar' %}">{% translate "Parar a animacao" %}</button>
               {% elif not c.tem_clipe %}<button type="submit" name="acao" value="cena_gerar" class="botao secundario pequeno">{% if c.tem_quadro %}{% translate "Animar a cena" %}{% else %}{% translate "Gerar a cena" %}{% endif %}</button>{% endif %}
               {% if c.tem_quadro %}

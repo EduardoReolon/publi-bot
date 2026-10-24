@@ -1114,6 +1114,19 @@ def na_fila(tarefa, *args, rotulo: str, alvo=None, **kwargs) -> str:
     return registrar(tarefa, *args, rotulo=rotulo, alvo=alvo, **kwargs)
 
 
+def trabalhos_abertos(alvo) -> list:
+    """As tarefas abertas do alvo na Operacao (para "Nao fazer" na tela)."""
+    from apps.ops.acompanhamento import abertos
+
+    return abertos(alvo)
+
+
+def cancelar_trabalho(trabalho) -> bool:
+    from apps.ops.acompanhamento import cancelar
+
+    return cancelar(trabalho)
+
+
 def acompanhar(trabalho: str | None):
     """Dentro da tarefa: marca o andamento do registro (ver `na_fila`)."""
     from apps.ops.acompanhamento import acompanhar as marcar

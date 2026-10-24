@@ -149,7 +149,8 @@ def gerar_cenas(
             faltam_quadro = [
                 x
                 for x in alvo
-                if (refazer_quadro and n) or not cenas._existe(lista[x - 1].get("quadro", ""))
+                if (refazer_quadro and n)
+                or not (cenas._existe(lista[x - 1].get("quadro", "")) or lista[x - 1].get("parada"))
             ]
             if faltam_quadro:
                 faltam_quadro.sort(key=lambda x: not cenas.usa_referencia(post, lista[x - 1]))

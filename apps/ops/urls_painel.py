@@ -16,4 +16,5 @@ urlpatterns = [
     path("", views_painel.trabalhos, name="trabalhos"),
     path("<uuid:pk>/", views_painel.detalhe_do_trabalho, name="trabalho"),
     path("<uuid:pk>/redespachar/", views_painel.redespachar, name="redespachar"),
+    path("<uuid:pk>/nao-fazer/", views_painel.nao_fazer, name="nao_fazer"),
 ]
