@@ -1510,6 +1510,55 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
 
 
 @login_required
+def entonacoes(request: HttpRequest, pk) -> HttpResponse:
+    """Gravar a entonacao de todas as cenas, uma atras da outra, e salvar de uma
+    vez: o audio novo entra (troca o que havia), o marcado para excluir sai.
+    A pagina manda tudo num envio so (fetch), e responde em JSON."""
+    from django.http import JsonResponse
+
+    from apps.social import cenas, video
+
+    post = get_object_or_404(Post.objects.select_related("destino"), pk=pk)
+    lista = cenas.cenas(post)
+    if request.method == "POST":
+        salvas, tiradas, erros = [], [], []
+        for n in range(1, len(lista) + 1):
+            arquivo = request.FILES.get(f"fala_{n}")
+            try:
+                if arquivo is not None:
+                    cenas.enviar_fala(post, n, arquivo)
+                    salvas.append(n)
+                elif request.POST.get(f"excluir_{n}"):
+                    cenas.tirar_fala(post, n)
+                    tiradas.append(n)
+            except video.VideoIndisponivel as exc:
+                erros.append(f"cena {n}: {exc}")
+            post.refresh_from_db()
+        partes = []
+        if salvas:
+            partes.append(_("entonacao salva nas cenas %(n)s") % {"n": ", ".join(map(str, salvas))})
+        if tiradas:
+            partes.append(_("tirada das cenas %(n)s") % {"n": ", ".join(map(str, tiradas))})
+        if partes:
+            messages.success(request, "; ".join(partes).capitalize() + ".")
+        for erro in erros:
+            messages.error(request, erro)
+        return JsonResponse({"salvas": salvas, "tiradas": tiradas, "erros": erros})
+    return render(
+        request,
+        "social/entonacoes.html",
+        {
+            "aba": "redes",
+            "post": post,
+            "cenas": post.cenas_do_video,
+            "voltar": request.GET.get("voltar", "")
+            if request.GET.get("voltar", "").startswith("/")
+            else reverse("social:inicio"),
+        },
+    )
+
+
+@login_required
 def midia_da_cena(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
     """A imagem inicial ou a animacao de uma cena do video (com login)."""
     from django.core.files.storage import default_storage

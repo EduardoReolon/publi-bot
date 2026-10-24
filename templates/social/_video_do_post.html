@@ -19,6 +19,7 @@
       <button type="submit" name="acao" value="cenas_todas" class="botao secundario pequeno" title="{% translate 'Anima, uma por vez, as cenas que ainda nao tem animacao (cada uma leva minutos na placa) e no fim monta o video. Nao refaz imagem nem animacao que ja existem; cena sem imagem ganha uma feita aqui.' %}">{% translate "Animar o que falta e montar" %}</button>
       <button type="submit" name="acao" value="cenas_montar" class="botao pequeno" title="{% translate 'Junta as cenas com a voz e as legendas. Cena ainda sem animacao entra com a imagem parada, aproximando devagar' %}">{% translate "Montar o video" %}</button>
     </form>
+    <a class="botao secundario" style="display:block; text-align:center; margin:.4rem 0" href="{% url 'social:entonacoes' post.pk %}?voltar={{ request.get_full_path|urlencode }}%23video-{{ post.pk }}" title="{% translate 'Uma tela para gravar a fala de cada cena, uma atras da outra, e salvar tudo de uma vez (feita para o celular)' %}">&#127908; {% translate "Gravar as entonacoes (todas as cenas)" %}</a>
     <form method="post" action="{% url 'social:acao_no_post' post.pk %}" class="acoes" style="gap:.4rem; margin:.2rem 0">
       {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
       <label class="ajuda">{% translate "Voz deste video" %}
