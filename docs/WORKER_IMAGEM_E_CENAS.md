@@ -177,7 +177,11 @@ mais no corpo:
 
 ---
 
-## 4. Proposta: conversão de voz (`POST /v1/audio/convert`)
+## 4. Conversão de voz (`POST /v1/audio/convert`)
+
+> **Implementado no worker (contrato 2.16)**, com o conversor do Chatterbox
+> (MIT), que aplica uma marca d'água inaudível. Detalhes no `INTEGRACAO.md` do
+> worker, seção "Conversão de voz".
 
 Em cada cena, a pessoa pode gravar (no navegador, ou enviar um arquivo) a fala
 com a entonação que quer. A gravação é **só um guia**: ela nunca entra no
@@ -187,8 +191,8 @@ ser a da conta (ex.: `qwen:carla`) ou **um modelo da voz da própria pessoa**
 (ex.: `qwen:eduardo`, criado no worker com uma gravação boa): assim ela grava a
 entonação em qualquer lugar, com barulho, e sai com a voz limpa dela.
 
-A ElevenLabs já faz isso (speech-to-speech, com remoção de ruído); o publi-bot
-usa quando a voz é dela. Para o worker:
+A ElevenLabs também converte (speech-to-speech, com remoção de ruído); o
+publi-bot usa quando a voz do vídeo é dela.
 
 ```http
 POST /v1/audio/convert
@@ -196,16 +200,18 @@ Authorization: Bearer <WORKER_SHARED_SECRET>
 Content-Type: multipart/form-data
 
 audio=<a gravacao, mp3 (o publi-bot ja corta o silencio das pontas e iguala o volume)>
-voice=qwen:carla        (uma voz do worker; a referencia dela e o timbre de saida)
+voice=qwen:carla        (so voz do Qwen: a referencia dela e o timbre de saida)
 ```
 
-- **`200`:** o MP3 convertido (`audio/mpeg`).
-- **`422 voz_desconhecida`**, como no `/v1/audio/speech`; **`503 gpu_ocupada`**
-  com `Retry-After`, como a voz do Qwen. **`404`** (worker sem a rota): o
-  publi-bot usa a voz gerada e avisa na cena.
-- A gravação pode vir de lugar ruim: vale **tirar o ruído antes** de converter,
-  e só a entonação dela importa.
+| Resposta | O que o publi-bot faz |
+|---|---|
+| `200`, MP3 (`audio/mpeg`) | usa a fala convertida e a guarda por voz + gravação |
+| `422 voz_desconhecida` (a voz não existe, ou é do Kokoro, que não tem referência) | tenta a próxima conexão de voz; nenhuma converte: voz gerada, com aviso na cena |
+| `422 pedido_invalido` (áudio vazio, ilegível ou acima de 120 s) | idem |
+| `413 arquivo_grande` (acima de 25 MB) | idem (o publi-bot já recusa gravação acima de 20 MB) |
+| `503 gpu_ocupada` com `Retry-After` | reagenda a montagem nesse tempo, como a voz do Qwen |
+| `404 conversao_desligada` (rota desligada) | voz gerada, com aviso na cena |
 
-Sugestão: um modelo de conversão sem treino, que usa a gravação de referência
-da voz como alvo (Seed-VC, por exemplo), na placa e pelo árbitro. `/health/`
-publica `rotas.conversao_de_voz: true`.
+- **Espera:** cada conversão carrega o modelo; o publi-bot espera até 300 s.
+- **`/health/` → `rotas.conversao_de_voz`** diz se a rota está ligada. O
+  publi-bot não consulta antes: tenta, e o `404` cai na voz gerada com aviso.
