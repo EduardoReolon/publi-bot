@@ -999,3 +999,17 @@ def test_gravar_todas_as_entonacoes_e_salvar_de_uma_vez(ambiente, modulo, settin
     post.refresh_from_db()
     tela_das_cenas = post.cenas_do_video
     assert tela_das_cenas[0]["tem_fala_gravada"] and not tela_das_cenas[1]["tem_fala_gravada"]
+
+    # "Ouvir tudo: voz do video" usa a voz que a montagem ja fez (nada e gerado).
+    from django.core.files.base import ContentFile
+
+    from apps.social import video
+
+    assert cenas.voz_pronta(post, 1) == ""
+    with default_storage.open(cenas.cenas(post)[0]["fala_gravada"], "rb") as arquivo:
+        convertida = video.caminho_da_convertida(post, arquivo.read())
+    default_storage.save(convertida, ContentFile(_mp3(1.0)))
+    assert cenas.voz_pronta(post, 1) == convertida
+    assert "data-voz-url" in client.get(tela).content.decode()
+    voz = client.get(reverse("social:midia_da_cena", args=[post.pk, 1, "voz"], urlconf=U))
+    assert voz.status_code == 200

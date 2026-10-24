@@ -1550,7 +1550,11 @@ def entonacoes(request: HttpRequest, pk) -> HttpResponse:
         {
             "aba": "redes",
             "post": post,
-            "cenas": post.cenas_do_video,
+            "cenas": [
+                {**c, "voz_pronta": bool(c.get("fala") and cenas.voz_pronta(post, c["n"]))}
+                for c in post.cenas_do_video
+            ],
+            "pausa": video.PAUSA,
             "voltar": request.GET.get("voltar", "")
             if request.GET.get("voltar", "").startswith("/")
             else reverse("social:inicio"),
@@ -1576,6 +1580,8 @@ def midia_da_cena(request: HttpRequest, pk, n: int, tipo: str) -> HttpResponse:
     }.get(tipo)
     cena = lista[n - 1] if 1 <= n <= len(lista) else {}
     caminho = cena.get(campo, "") if campo else ""
+    if tipo == "voz" and cena:  # a voz da cena como vai no video, se ja montada
+        caminho = cenas.voz_pronta(post, n)
     if tipo.startswith("versao-") and tipo[7:].isdigit():  # um clipe do historico
         historico = cena.get("historico") or []
         i = int(tipo[7:])
