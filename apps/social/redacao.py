@@ -536,6 +536,9 @@ def montar_e_conferir(post: Post, dados: dict, artigo) -> tuple[str, dict, list[
     return texto, extras, avisos
 
 
+CAMPOS_DO_VIDEO = ("video_ia", "voz", "video", "video_de")
+
+
 def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat) -> Post:
     """Grava o texto escrito, monta as imagens e aprova sozinho se a conta pede."""
     from apps.social import focos, iscas, laminas, proprio
@@ -543,6 +546,12 @@ def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat
     entrada = post.entrada if post.entrada_id else None
     antes = post.extras or {}
     ideia, recado = antes.get("ideia", ""), antes.get("recado") or {}
+    # Refazer como enquete (ou voltar a post comum) reescreve so o texto: o
+    # trabalho do video (cenas com imagens e animacoes, a voz, o video montado)
+    # nao pode sumir com isso.
+    video = (
+        {c: antes[c] for c in CAMPOS_DO_VIDEO if c in antes} if antes.get("manter_video") else {}
+    )
     post.texto = iscas.garantir_chamada(post, texto)
     foco = focos.do_post(post)
     # O que veio da sugestao (ideia, recado em teste, foco) continua no post.
@@ -552,6 +561,7 @@ def guardar(post: Post, texto: str, extras: dict, avisos: list[str], artigo, mat
         **({"formato": "enquete"} if e_enquete(post) else {}),
         **({"ideia": ideia} if ideia else {}),
         **({"recado": recado} if recado else {}),
+        **video,
     }
     post.avisos = avisos + (
         [f"link nao lido: {x}" for x in proprio.links_que_falharam(entrada)] if entrada else []
