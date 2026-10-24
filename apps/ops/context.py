@@ -27,5 +27,5 @@ def pendencias(request):
     return {
         "pendencias": {**contagens_de_pendencia(), **extensoes.pendencias()},
         # Telas de modulos opcionais (ver apps/ops/extensoes.py).
-        "menus_extras": extensoes.menus(),
+        "menus_extras": extensoes.menus(request),
     }

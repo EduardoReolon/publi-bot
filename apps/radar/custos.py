@@ -34,6 +34,8 @@ ESTIMATIVAS = {
     # Sem tabela conferida para estes dois: estimativas CONSERVADORAS. O que
     # vale e o custo que a resposta informa, e e ele que vai para o registro.
     ("dataforseo", "labs"): Decimal("0.05"),
+    # Ideias de palavras do Google Ads (keywords_for_keywords / _for_site).
+    ("dataforseo", "ideias"): Decimal("0.09"),
     ("dataforseo", "avaliacoes_fila"): Decimal("0.05"),
 }
 

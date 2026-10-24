@@ -441,6 +441,7 @@ class ChamadaExterna(models.Model):
         TRANSCRICAO = "transcricao", _("Transcricao")
         VALOR = "valor", _("Valor do trafego")
         INDEXACAO = "indexacao", _("Indexacao no Google")
+        ESTUDO = "estudo", _("Estudo de mercado")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     provedor = models.CharField(_("provedor"), max_length=16, choices=Provedor.choices)

@@ -1,0 +1,59 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{{ palavra }} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <p class="ajuda"><a href="{% url 'estudos:estudo' estudo.pk %}">&larr; {{ estudo.nome }}</a></p>
+  <h1>{{ palavra }}</h1>
+  <p class="pre-visualizacao">
+    {% if na_campanha %}<span class="selo ok">{% translate "na campanha" %}</span>{% endif %}
+    {% if item.origem == 'ideia' %}<span class="selo">{% translate "ideia do Google" %}</span>{% endif %}
+    {% blocktranslate with n=item.rodada %}dados da rodada {{ n }}{% endblocktranslate %}
+  </p>
+
+  <div class="secao">
+    <div class="acoes" style="gap:1.2rem">
+      <div><div class="ajuda">{% translate "Buscas/mes na area (estimado)" %}</div><strong>{{ contas.buscas }}</strong></div>
+      <div><div class="ajuda">{% translate "R$ por clique" %}</div><strong>{{ contas.cpc_reais|default:"—" }}</strong></div>
+      <div><div class="ajuda">{% translate "Concorrencia (0 a 100)" %}</div><strong>{{ item.competicao|default_if_none:"—" }}</strong></div>
+      <div><div class="ajuda">{% translate "Tendencia (12 meses)" %}</div><strong>{% if tendencia is not None %}{{ tendencia|floatformat:0 }}%{% else %}—{% endif %}</strong></div>
+      <div><div class="ajuda">{% translate "Pico" %}</div><strong>{{ pico|default:"—" }}</strong></div>
+    </div>
+    <p class="ajuda" style="margin-top:.5rem">{% blocktranslate trimmed with k=contas.cliques c=contas.custo v=contas.contatos f=contas.clientes %}
+      Pelo funil do estudo, por mes: {{ k }} cliques, R$ {{ c }}, {{ v }} contatos, {{ f }} clientes.
+    {% endblocktranslate %}</p>
+  </div>
+
+  {% if meses %}
+    <div class="secao">
+      <h2>{% translate "Historico mensal na area" %}</h2>
+      <div style="display:flex; align-items:flex-end; gap:2px; height:140px; overflow-x:auto">
+        {% for m in meses %}<div title="{{ m.rotulo }}: {{ m.valor }}" style="flex:1 0 10px; min-width:10px; background:var(--destaque, #4a7); height:{{ m.altura }}%"></div>{% endfor %}
+      </div>
+      <div class="ajuda" style="display:flex; justify-content:space-between"><span>{{ meses.0.rotulo }}</span>{% with u=meses|last %}<span>{{ u.rotulo }}</span>{% endwith %}</div>
+    </div>
+  {% endif %}
+
+  {% if sazonalidade %}
+    <div class="secao">
+      <h2>{% translate "Sazonalidade" %}</h2>
+      <p class="ajuda">{% translate "1,0 = um mes medio. Acima disso, o mes busca mais que a media." %}</p>
+      <div style="display:flex; align-items:flex-end; gap:4px; height:100px">
+        {% for s in sazonalidade %}<div style="flex:1; text-align:center"><div title="{{ s.indice }}" style="background:var(--destaque, #4a7); height:{{ s.altura }}px; max-height:80px"></div><div class="ajuda">{{ s.mes }}</div></div>{% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="secao">
+    <h2>{% translate "Por cidade" %}</h2>
+    <p class="ajuda">{% translate "Estimado = o volume do estado na fatia da populacao da cidade. Real = o que o Google mediu na cidade (\"sem dado\": abaixo do minimo que ele informa). O fator real/estimado mostra se a cidade busca mais ou menos que a media do estado." %}</p>
+    <div class="rolagem"><table>
+      <thead><tr><th>{% translate "Cidade" %}</th><th class="numero">km</th><th class="numero">{% translate "Estimado" %}</th><th class="numero">{% translate "Real" %}</th><th class="numero">{% translate "Fator" %}</th></tr></thead>
+      <tbody data-recolher="15">{% for c in cidades %}
+        <tr><td>{{ c.cidade.rotulo|default:"?" }}</td><td class="numero">{{ c.distancia|default:"" }}</td>
+          <td class="numero">{{ c.estimado }}</td>
+          <td class="numero">{% if not c.medido %}—{% elif c.real is None %}{% translate "sem dado" %}{% else %}{{ c.real }}{% endif %}</td>
+          <td class="numero">{{ c.fator|default:"—" }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+{% endblock %}

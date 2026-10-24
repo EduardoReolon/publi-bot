@@ -67,8 +67,8 @@ class TenantMembershipInline(admin.TabularInline):
 
 @admin.register(Tenant)
 class TenantAdmin(TenantAdminMixin, admin.ModelAdmin):
-    list_display = ("name", "schema_name", "status", "is_paused", "created_on")
-    list_filter = ("status", "is_paused")
+    list_display = ("name", "schema_name", "status", "is_paused", "estudos", "created_on")
+    list_filter = ("status", "is_paused", "estudos")
     search_fields = ("name", "schema_name", "slug")
     prepopulated_fields = {"slug": ("name",)}
     inlines = [TenantMembershipInline]
