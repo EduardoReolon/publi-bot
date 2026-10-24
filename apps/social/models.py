@@ -711,6 +711,12 @@ class Post(models.Model):
         return cenas.pedido_das_imagens(self)
 
     @property
+    def pedido_do_final_do_video(self) -> str:
+        from apps.social import cenas
+
+        return cenas.pedido_do_final(self)
+
+    @property
     def referencias_do_video(self) -> list:
         from apps.social import cenas
 

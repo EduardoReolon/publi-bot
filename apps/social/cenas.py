@@ -99,6 +99,75 @@ def editar(post, n: int, **campos) -> None:
     _gravar(post, lista)
 
 
+# -- Ajustar o final com outra IA ------------------------------------------------------
+# O video ja foi feito e aprovado, e o texto do post mudou (ex.: virou enquete).
+# A outra IA muda so o fim (a fala da ultima cena, de preferencia); o resto, com
+# imagens e animacoes, fica.
+PEDIDO_DO_FINAL = """\
+Este video curto ja esta pronto e aprovado: as imagens e as animacoes de todas
+as cenas estao feitas. O TEXTO DO POST (a legenda, abaixo) mudou, e o final do
+video precisa combinar com ele. Ajuste SO o final, mudando o minimo:
+- de preferencia so a FALA da ultima cena (ou das ultimas), com o mesmo tamanho
+  (fala maior estica a cena);
+- a imagem ou o movimento so se a fala nova nao combinar mais com eles (cada
+  imagem mudada e feita de novo);
+- as outras cenas ficam como estao.
+
+O texto do post agora:
+{texto}
+
+O roteiro do video:
+{roteiro}
+
+Devolva so um JSON com as cenas que mudaram, e nelas so os campos que mudaram
+("fala", "imagem", "movimento" ou "texto", a frase na tela):
+{{"cenas": [{{"n": {ultima}, "fala": "..."}}]}}
+"""
+
+
+def pedido_do_final(post) -> str:
+    lista = cenas(post)
+    return PEDIDO_DO_FINAL.format(
+        texto=(post.texto or "").strip() or "(sem texto)",
+        roteiro=video_ia.roteiro_em_texto({"cenas": lista}),
+        ultima=len(lista) or 1,
+    )
+
+
+def ajustar_final(post, resposta: str) -> list[int]:
+    """Aplica a resposta da outra IA: so as cenas e os campos que ela devolveu.
+    A imagem e o clipe ficam (a tela avisa o que refazer). Devolve as cenas
+    mudadas."""
+    import json
+
+    inicio, fim = resposta.find("{"), resposta.rfind("}")
+    try:
+        dados = json.loads(resposta[inicio : fim + 1]) if inicio >= 0 else {}
+    except ValueError:
+        dados = {}
+    itens = dados.get("cenas") if isinstance(dados, dict) else None
+    if not isinstance(itens, list):
+        raise video.VideoIndisponivel('a resposta nao tem o JSON com "cenas".')
+    lista, mudadas = cenas(post), []
+    for item in itens:
+        if not isinstance(item, dict) or not str(item.get("n", "")).isdigit():
+            continue
+        n = int(item["n"])
+        if not 1 <= n <= len(lista):
+            continue
+        campos = {
+            c: item[c]
+            for c in ("fala", "imagem", "movimento", "texto")
+            if str(item.get(c) or "").strip() and item[c] != lista[n - 1].get(c)
+        }
+        if campos:
+            editar(post, n, **campos)
+            post.refresh_from_db()
+            lista = cenas(post)
+            mudadas.append(n)
+    return mudadas
+
+
 def _na_fila(post, lista: list[dict]) -> dict[int, list[str]]:
     """Por cena, as tarefas abertas que ainda vao fazer algo nela e nao
     comecaram: a da propria cena (sem animacao em curso) e o lote ("Animar o que

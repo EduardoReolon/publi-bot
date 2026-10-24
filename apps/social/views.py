@@ -604,11 +604,16 @@ def acao_no_post(request: HttpRequest, pk) -> HttpResponse:
             messages.success(request, _("Oferta do post trocada."))
     elif acao in ("enquete", "post_comum"):
         extras = dict(post.extras or {})
-        if acao == "enquete":
+        video = extras.get("formato") == "video"  # continua video: a pergunta vai no texto
+        if acao == "enquete" and video:
+            extras["como_enquete"] = True
+        elif acao == "enquete":
             extras["formato"] = "enquete"
         else:
-            extras.pop("formato", None)
+            if not video:
+                extras.pop("formato", None)
             extras.pop("enquete", None)
+            extras.pop("como_enquete", None)
         # So o texto e reescrito: o video (cenas, imagens, animacoes, voz) fica.
         extras["manter_video"] = True
         post.extras = extras
@@ -1405,6 +1410,19 @@ def _acao_nas_cenas(request: HttpRequest, post: Post, acao: str) -> None:
                     request,
                     _("O video tem %(t)s cenas: as imagens a mais ficaram de fora.") % {"t": total},
                 )
+        elif acao == "cenas_ajustar_final":
+            mudadas = cenas.ajustar_final(post, request.POST.get("resposta", ""))
+            if mudadas:
+                messages.success(
+                    request,
+                    _(
+                        "Cena(s) %(n)s ajustada(s). A fala nova sai na proxima montagem "
+                        "(clique em Montar o video); imagem mudada: refaca a imagem dela."
+                    )
+                    % {"n": ", ".join(map(str, mudadas))},
+                )
+            else:
+                messages.info(request, _("A resposta nao mudou nenhuma cena."))
         elif acao == "cena_nao_fazer":
             cenas.nao_fazer(post, n)
             messages.success(

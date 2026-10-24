@@ -480,6 +480,51 @@ def test_enquete_no_linkedin_e_post_comum_no_instagram(ambiente, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_enquete_num_post_que_ja_e_video_mantem_o_video(ambiente, monkeypatch):
+    """O post ja e video (Reels montado): a enquete vai so no texto (a pergunta e
+    as opcoes), e o video continua sendo o que sai. Voltar a post comum tambem."""
+    _, _, client = ambiente
+    monkeypatch.setattr(tasks.escrever_post, "delay", lambda pk, **_kw: None)
+    resposta = {
+        "gancho": "Voce usa IA?",
+        "texto": "A pergunta do dia.",
+        "enquete": {"pergunta": "Quem confere?", "opcoes": ["Eu", "Ninguem"]},
+    }
+    monkeypatch.setattr(fontes, "executar", lambda chave, variaveis, **_: json.dumps(resposta))
+    _, linkedin = _destinos()
+    video = {"cenas": [{"fala": "Oi", "imagem": "x"}]}
+    post = Post.objects.create(
+        destino=linkedin,
+        entrada=Entrada.objects.create(tipo="caso", texto="Um caso", autorizado=True),
+        motivo=Post.Motivo.CASO,
+        texto="Texto",
+        situacao=Post.Situacao.RASCUNHO,
+        extras={
+            "formato": "video",
+            "video": "social/v.mp4",
+            "video_de": "cenas",
+            "video_ia": video,
+        },
+    )
+    acao = reverse("social:acao_no_post", args=[post.pk], urlconf=U)
+    client.post(acao, {"acao": "enquete"})
+    post.refresh_from_db()
+    assert post.extras["formato"] == "video" and post.extras["como_enquete"]
+    assert redacao.e_enquete(post)
+
+    redacao.escrever(post)
+    post.refresh_from_db()
+    assert post.extras["formato"] == "video" and post.extras["video"] == "social/v.mp4"
+    assert post.extras["como_enquete"] and post.extras["video_ia"] == video
+    # no LinkedIn, enquete e video nao vao juntos: a pergunta vai no texto
+    assert "A) Eu" in post.texto and "Responda nos comentarios" in post.texto
+
+    client.post(acao, {"acao": "post_comum"})
+    post.refresh_from_db()
+    assert post.extras["formato"] == "video" and "como_enquete" not in post.extras
+
+
+@pytest.mark.django_db
 def test_trocar_o_link_e_refazer_como_enquete_pela_tela(ambiente, monkeypatch):
     _, _, client = ambiente
     escritos = []

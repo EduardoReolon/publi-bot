@@ -68,6 +68,16 @@
         });
       </script>
     </details>
+    <details class="ajuda" style="margin:.3rem 0"><summary>{% translate "Ajustar o final com outra IA (o texto do post mudou)" %}</summary>
+      <p>{% translate "Para quando o video ja esta aprovado e o texto do post mudou (ex.: virou enquete): a outra IA muda so o fim, de preferencia a fala da ultima cena. As imagens e as animacoes ficam; depois e so montar o video de novo." %}</p>
+      <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-final-{{ post.pk }}">{% translate "Copiar o pedido do final" %}</button></div>
+      <textarea id="pedido-final-{{ post.pk }}" readonly rows="5" style="width:100%">{{ post.pedido_do_final_do_video }}</textarea>
+      <form method="post" action="{% url 'social:acao_no_post' post.pk %}" style="margin-top:.3rem">
+        {% csrf_token %}<input type="hidden" name="voltar" value="{{ request.get_full_path }}#video-{{ post.pk }}">
+        <textarea name="resposta" rows="3" style="width:100%" placeholder="{% translate 'Cole aqui a resposta (o JSON com as cenas)' %}"></textarea>
+        <button type="submit" name="acao" value="cenas_ajustar_final" class="botao secundario pequeno">{% translate "Aplicar nas cenas" %}</button>
+      </form>
+    </details>
     {% for c in cenas %}
       <div style="border-top:1px solid var(--borda); padding:.4rem 0">
         <strong>{% translate "Cena" %} {{ c.n }}</strong> <span class="ajuda">~{{ c.duracao }} s</span>
