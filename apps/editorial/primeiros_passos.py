@@ -127,9 +127,11 @@ def ler_negocio(resposta: str, *, blocos: dict | None = None) -> dict:
     return saida
 
 
-def ler_sementes(resposta: str) -> list[tuple[str, bool, str]]:
-    """[(semente, prioritaria, pilar)] — dos pilares entra o nome, das sementes todas."""
-    blocos = ler_blocos(resposta, ROTULOS_DAS_SEMENTES)
+def ler_sementes(resposta: str, *, blocos: dict | None = None) -> list[tuple[str, bool, str]]:
+    """[(semente, prioritaria, pilar)] — dos pilares entra o nome, das sementes todas.
+    `blocos` ja lidos: ver `ler_negocio`."""
+    if blocos is None:
+        blocos = ler_blocos(resposta, ROTULOS_DAS_SEMENTES)
     saida: list[tuple[str, bool, str]] = []
     vistas: set[str] = set()
     for bruta in blocos.get("SEMENTES", "").splitlines():
@@ -247,9 +249,11 @@ def _nota(texto: str) -> int | None:
     return int(achado.group()) if achado else None
 
 
-def ler_guia(resposta: str) -> dict:
-    """Os campos do formulario do Guia editorial a partir da resposta colada."""
-    blocos = ler_blocos(resposta, ROTULOS_DO_GUIA)
+def ler_guia(resposta: str, *, blocos: dict | None = None) -> dict:
+    """Os campos do formulario do Guia editorial a partir da resposta colada.
+    `blocos` ja lidos: ver `ler_negocio`."""
+    if blocos is None:
+        blocos = ler_blocos(resposta, ROTULOS_DO_GUIA)
     saida: dict = {}
     for campo, rotulo in (
         ("tom_humor", "HUMOR"),

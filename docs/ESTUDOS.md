@@ -49,3 +49,20 @@ pais. Por isso o raio e feito aqui.
 Toda chamada vai para o livro-caixa do Radar (finalidade "Estudo de mercado")
 e respeita o teto mensal do tenant. A conta da DataForSEO e a do tenant
 (Radar > Contas externas).
+
+## Virar cliente (`passagem.py`)
+
+Quando a empresa quiser artigos e trafego organico, "Criar o tenant" (no fim
+da tela do estudo) cria um tenant novo, ja com os primeiros passos feitos:
+
+1. "Copiar o pedido dos primeiros passos": um pedido so, com a descricao e as
+   buscas do estudo, nos mesmos blocos dos primeiros passos do Negocio e do
+   Guia (`apps/editorial/primeiros_passos.py`, lidos pelos mesmos leitores);
+2. cole a resposta, escolha o nome e o subdominio e crie. O registro sai como
+   no cadastro (quem esta logado e o dono); uma tarefa na fila (Operacao) cria
+   o schema e preenche o Negocio (tema, publico, oferta, dores, frentes, onde
+   atende, valor do cliente, cotacao), o Radar (sementes, dores, a cidade do
+   centro como regiao) e o Guia editorial. Opcional: as mesmas contas externas
+   (copiadas cifradas, como `copiar_contas_externas`).
+
+O site do cliente (endereco e chave) fica para ele, em "Site e cadencia".

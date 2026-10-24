@@ -201,3 +201,98 @@ def test_estudos_so_no_tenant_marcado_e_para_superusuario(ambiente):
     usuario.is_superuser = True
     usuario.save()
     assert client.get(inicio).status_code == 404  # o tenant nao esta marcado
+
+
+RESPOSTA_DO_CLIENTE = """TEMA: planejamento para comprar imovel sem juros
+PUBLICO: familias da regiao que querem casa propria
+OFERTA: carta de credito para comprar o imovel pagando parcelas, sem juros
+DORES:
+- juros do financiamento muito altos
+- nao consigo dar entrada
+FRENTES:
+- veiculos
+PILARES:
+- Casa propria: entrada; parcelas; prazos
+SEMENTES:
+- *consorcio de imoveis
+- como comprar casa sem juros
+HUMOR: 2
+FORMALIDADE: 3
+RESPEITO: 1
+ENTUSIASMO: 3
+PESSOA: voce
+REGRA DE OURO: claro e sem promessa
+SOMOS:
+- somos diretos | nao somos vendedores
+TERMOS:
+- garantido | provavel | ninguem garante contemplacao
+CONVITE: converse com um consultor
+EXEMPLOS:
+Um paragrafo.
+
+Outro paragrafo.
+FIM"""
+
+
+@pytest.mark.django_db
+def test_estudo_vira_tenant_com_os_primeiros_passos_feitos(
+    estudo_pronto, tenant_factory, monkeypatch, django_capture_on_commit_callbacks
+):
+    from django_tenants.utils import schema_context
+
+    from apps.accounts.models import Tenant
+    from apps.editorial.models import EditorialProfile, PerfilDoNegocio
+    from apps.estudos import passagem, tasks
+    from apps.radar.models import ConfiguracaoDoRadar, ContasExternas
+
+    client, _ = estudo_pronto
+    estudo = Estudo.objects.create(
+        nome="Empresa X", descricao="Vende consorcio.", cidade=CASCAVEL, raio_km=30,
+        valor_do_cliente=1500,
+    )  # fmt: skip
+    Rodada.objects.create(
+        estudo=estudo, numero=1, situacao=Rodada.Situacao.PRONTA,
+        resultado={"consorcio": {"volume_area": 900, "reais": {}, "meses_area": []}},
+    )  # fmt: skip
+    texto = passagem.pedido(estudo)
+    assert "- consorcio: 900" in texto and "Cascavel (PR) e regiao" in texto
+    ContasExternas.objects.update_or_create(pk=1, defaults={"dataforseo_login": "login-do-dono"})
+
+    despachados = []
+    monkeypatch.setattr(
+        tasks.criar_tenant_do_estudo, "delay", lambda *a, **k: despachados.append((a, k))
+    )
+    tela = reverse("estudos:estudo", args=[estudo.pk], urlconf=U)
+    with django_capture_on_commit_callbacks(execute=True):
+        client.post(
+            tela,
+            {"acao": "virar_cliente", "resposta": RESPOSTA_DO_CLIENTE, "organization": "Empresa X",
+             "subdomain": "empresa-x", "copiar_contas": "on"},
+        )  # fmt: skip
+    estudo.refresh_from_db()
+    assert estudo.tenant_criado == "empresa_x"
+    assert Tenant.objects.get(schema_name="empresa_x").status == Tenant.Status.PROVISIONING
+    (_tenant_id, dados), opcoes = despachados[0]
+    assert opcoes["copiar_contas"] is True
+    assert dados["negocio"]["tema"].startswith("planejamento")
+    assert dados["sementes"][:2] == ["consorcio de imoveis", "como comprar casa sem juros"]
+    assert dados["regiao"] == {"codigo": LOCAL_CASCAVEL, "nome": "Cascavel, Paraná"}
+    assert dados["guia"]["tom_humor"] == 2
+    assert "abrir" in client.get(tela).content.decode()
+
+    # O que a tarefa faz dentro do schema novo (aqui, um schema de teste).
+    with schema_context("public"):
+        novo = tenant_factory("passagem")
+    with schema_context(novo.schema_name):
+        passagem.semear(dados, copiar_contas=True)
+        perfil = PerfilDoNegocio.carregar()
+        assert perfil.oferta.startswith("carta de credito") and "veiculos" in perfil.frentes
+        assert perfil.onde_atende == "Cascavel (PR) e regiao"
+        assert perfil.valor_da_conversao == 1500
+        config = ConfiguracaoDoRadar.carregar()
+        assert "consorcio de imoveis" in config.lista_de_sementes
+        assert "nao consigo dar entrada" in config.lista_de_dores
+        assert config.regioes == [dados["regiao"]]
+        guia = EditorialProfile.carregar()
+        assert guia.tom_humor == 2 and guia.regra_de_ouro == "claro e sem promessa"
+        assert ContasExternas.carregar().dataforseo_login == "login-do-dono"
