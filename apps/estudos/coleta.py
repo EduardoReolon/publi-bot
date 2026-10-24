@@ -62,8 +62,8 @@ def custo_estimado(rodada: Rodada) -> Decimal:
     ufs = {m.uf for m in cidades_da_area(estudo)} or {0}
     volume = custos.ESTIMATIVAS[("dataforseo", "volume")]
     total = volume * len(ufs) if rodada.palavras or rodada.sementes or rodada.site else Decimal(0)
-    if rodada.sementes or rodada.site:
-        total += custos.ESTIMATIVAS[("dataforseo", "ideias")]
+    ideias = custos.ESTIMATIVAS[("dataforseo", "ideias")]
+    total += ideias * (bool(rodada.sementes) + bool(rodada.site))
     if rodada.modo == Rodada.Modo.REAL:
         total += volume * len(rodada.cidades or [])
     return total
@@ -106,15 +106,14 @@ def executar(rodada: Rodada) -> Rodada:
             continue
         metricas: dict[str, dict] = {}
         if uf == centro.uf and (rodada.sementes or rodada.site):
-            for palavra, m in provedores.ideias_dataforseo(
-                sementes=rodada.sementes,
-                site=rodada.site,
-                config=config,
-                contas=contas,
-                finalidade=finalidade,
-                local=local,
-            ).items():
-                metricas[palavra] = {**m, "origem": "ideia"}
+            # Sementes e site sao dois pedidos de ideias (um nao exclui o outro).
+            for pedido in ({"sementes": rodada.sementes}, {"site": rodada.site}):
+                if not any(pedido.values()):
+                    continue
+                for palavra, m in provedores.ideias_dataforseo(
+                    **pedido, config=config, contas=contas, finalidade=finalidade, local=local
+                ).items():
+                    metricas.setdefault(palavra, {**m, "origem": "ideia"})
             # As ideias entram na lista medida nos outros estados da area.
             palavras = list(dict.fromkeys([*palavras, *metricas]))[:MAXIMO_DE_PALAVRAS]
         faltam = [p for p in palavras if provedores.palavra_para_volume(p) not in metricas]

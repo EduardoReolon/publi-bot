@@ -76,7 +76,10 @@ def estudo_pronto(ambiente, monkeypatch):
     def post(caminho, corpo, contas):
         pedidos.append((caminho, corpo[0]))
         local = corpo[0]["location_code"]
-        if "keywords_for_keywords" in caminho:
+        if "keywords_for_site" in caminho:
+            itens = [{"keyword": "simulador de consorcio", "search_volume": 800, "cpc": 1.0,
+                      "competition_index": 20, "monthly_searches": []}]  # fmt: skip
+        elif "keywords_for_keywords" in caminho:
             itens = [{"keyword": "consorcio de imoveis", "search_volume": 5000, "cpc": 2.0,
                       "competition_index": 40, "monthly_searches": []}]  # fmt: skip
         else:
@@ -129,6 +132,7 @@ PALAVRAS:
 - Rara
 SEMENTES:
 - consorcio imovel
+SITE: [https://www.exemplo.com.br/consorcio](https://www.exemplo.com.br/consorcio)
 CAMPANHA:
 - consorcio
 FIM"""
@@ -136,17 +140,23 @@ FIM"""
     rodada = Rodada.objects.get()
     assert rodada.palavras == ["consorcio", "rara"] and rodada.sementes == ["consorcio imovel"]
     assert rodada.situacao == Rodada.Situacao.RASCUNHO
-    assert "Quero estimativa" in client.get(tela).content.decode()
+    assert rodada.site == "exemplo.com.br"  # so o dominio, sem o markdown
+    conferir = client.get(tela).content.decode()
+    assert "Quero estimativa" in conferir and "consorcio\nrara</textarea>" in conferir
+    assert "join:" not in conferir
 
     client.post(
         tela,
         {"acao": "buscar", "rodada": rodada.pk, "modo": "estimativa", "palavras": "consorcio\nrara",
-         "sementes": "consorcio imovel"},
+         "sementes": "consorcio imovel", "site": "[https://www.exemplo.com.br](https://www.exemplo.com.br)"},
     )  # fmt: skip
     rodada.refresh_from_db()
     assert rodada.situacao == Rodada.Situacao.PRONTA, rodada.erro
-    # um pedido de ideias e um de volume, os dois no estado
-    assert [c.rsplit("/", 2)[-2] for c, _ in pedidos] == ["keywords_for_keywords", "search_volume"]
+    # dois pedidos de ideias (sementes e site) e um de volume, todos no estado
+    assert [c.rsplit("/", 2)[-2] for c, _ in pedidos] == [
+        "keywords_for_keywords", "keywords_for_site", "search_volume",
+    ]  # fmt: skip
+    assert pedidos[1][1]["target"] == "exemplo.com.br"
     item = rodada.resultado["consorcio"]
     area = coleta.cidades_da_area(estudo)
     fatia = (350000 + 10000 * (len(area) - 1)) / (
@@ -155,7 +165,8 @@ FIM"""
     assert item["volume_area"] == pytest.approx(10000 * fatia, abs=1)
     assert item["cidades"][str(CASCAVEL)] > item["cidades"][str(TOLEDO)]
     assert rodada.resultado["consorcio de imoveis"]["origem"] == "ideia"
-    assert float(rodada.custo_usd) == pytest.approx(0.15)
+    assert rodada.resultado["simulador de consorcio"]["origem"] == "ideia"
+    assert float(rodada.custo_usd) == pytest.approx(0.225)
 
     # A rodada seguinte leva o que esta achou; o valor real por cidade.
     texto = pedido.montar(Estudo.objects.get())

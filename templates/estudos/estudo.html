@@ -70,11 +70,9 @@
           {% endif %}{% endfor %}</div>
         </details>
         <label class="campo">{% translate "Palavras (uma por linha)" %} <span class="ajuda">({{ rascunho.palavras|length }})</span>
-          <textarea name="palavras" rows="6" style="width:100%">{{ rascunho.palavras|join:"
-" }}</textarea></label>
+          <textarea name="palavras" rows="6" style="width:100%">{{ palavras_do_rascunho }}</textarea></label>
         <label class="campo">{% translate "Sementes para o Google sugerir mais (ate 20)" %}
-          <textarea name="sementes" rows="2" style="width:100%">{{ rascunho.sementes|join:"
-" }}</textarea></label>
+          <textarea name="sementes" rows="2" style="width:100%">{{ sementes_do_rascunho }}</textarea></label>
         <label class="campo">{% translate "Ou um site para o Google sugerir palavras" %} <input name="site" value="{{ rascunho.site }}"></label>
         <p class="ajuda">{% translate "Custo estimado desta rodada" %}: <strong>US$ {{ custo_do_rascunho }}</strong> {% translate "(o que vale e o que a DataForSEO cobrar; fica no historico)" %}</p>
         <button type="submit" class="botao">{% translate "Buscar no Google" %}</button>
@@ -150,8 +148,7 @@
           {% endfor %}</tbody>
         </table></div>
         <label class="campo">{% translate "Negativas (uma por linha)" %}
-          <textarea name="negativas" rows="3" style="width:100%">{{ estudo.negativas|join:"
-" }}</textarea></label>
+          <textarea name="negativas" rows="3" style="width:100%">{{ negativas_do_estudo }}</textarea></label>
         <button type="submit" class="botao secundario">{% translate "Salvar a campanha" %}</button>
       </form>
     {% else %}

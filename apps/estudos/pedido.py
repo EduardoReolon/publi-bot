@@ -157,6 +157,19 @@ def montar(estudo: Estudo) -> str:
     )
 
 
+def site_limpo(texto: str) -> str:
+    """So o dominio: a IA costuma mandar o site como link em markdown
+    ('[https://x.com](https://x.com)'), com caminho, ou 'nenhum'."""
+    import re
+    from urllib.parse import urlparse
+
+    achado = re.search(r"(?:https?://)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)", texto or "", re.I)
+    if not achado:
+        return ""
+    dominio = urlparse("//" + achado.group(0).split("://")[-1]).hostname or ""
+    return dominio.removeprefix("www.")[:200]
+
+
 def ler(estudo: Estudo, resposta: str) -> dict:
     """O que a resposta pede, ja limpo e com as cidades em codigo do IBGE."""
     from apps.radar.locais import normalizar
@@ -176,13 +189,13 @@ def ler(estudo: Estudo, resposta: str) -> dict:
         if codigo and codigo not in cidades:
             cidades.append(codigo)
     modo = normalizar(blocos.get("MODO", ""))
-    site = (itens(blocos.get("SITE", "")) or [""])[0]
+    site = site_limpo((itens(blocos.get("SITE", "")) or [""])[0])
     return {
         "analise": blocos.get("ANALISE", "").strip(),
         "modo": Rodada.Modo.REAL if modo.startswith("real") else Rodada.Modo.ESTIMATIVA,
         "palavras": lista("PALAVRAS", 300),
         "sementes": lista("SEMENTES", 20),
-        "site": "" if normalizar(site) in {"", "nenhum", "-", "opcional"} else site[:200],
+        "site": site,
         "cidades": cidades,
         "campanha": lista("CAMPANHA", 300),
         "negativas": lista("NEGATIVAS", 300),
