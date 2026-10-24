@@ -1,0 +1,181 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{{ estudo.nome }} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <p class="ajuda"><a href="{% url 'estudos:inicio' %}">&larr; {% translate "Estudos" %}</a></p>
+  <h1>{{ estudo.nome }}</h1>
+  <p class="pre-visualizacao">
+    {% if centro %}{{ centro.rotulo }}, {% translate "raio de" %} {{ estudo.raio_km }} km &middot; {{ populacao_da_area }} {% translate "habitantes na area" %}{% else %}<span class="selo alerta">{% translate "escolha a cidade do centro" %}</span>{% endif %}
+  </p>
+
+  <details class="secao" {% if not centro %}open{% endif %}>
+    <summary><strong>{% translate "A empresa, a area e o funil" %}</strong></summary>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="acao" value="salvar">
+      <div class="campo"><label>{% translate "Nome" %} <input name="nome" value="{{ estudo.nome }}"></label></div>
+      <div class="campo"><label>{% translate "A empresa (vai inteira no pedido para a IA)" %}
+        <textarea name="descricao" rows="6" style="width:100%">{{ estudo.descricao }}</textarea></label></div>
+      <div class="acoes" style="gap:.6rem; align-items:flex-end">
+        <label class="campo">{% translate "Cidade do centro" %} <input name="cidade" placeholder="{{ centro.rotulo|default:'Ex.: Cascavel (PR)' }}"></label>
+        <label class="campo">{% translate "Raio (km)" %} <input name="raio_km" type="number" min="0" max="500" value="{{ estudo.raio_km }}" style="width:6rem"></label>
+      </div>
+      <p class="ajuda">{% translate "O funil estima clientes a partir das buscas. Ajuste para o negocio (a IA tambem opina)." %}</p>
+      <div class="acoes" style="gap:.6rem; align-items:flex-end">
+        <label class="campo">{% translate "Cliques por busca (%)" %} <input name="ctr" value="{{ estudo.ctr }}" style="width:6rem"></label>
+        <label class="campo">{% translate "Contatos por clique (%)" %} <input name="conversao" value="{{ estudo.conversao }}" style="width:6rem"></label>
+        <label class="campo">{% translate "Clientes por contato (%)" %} <input name="fechamento" value="{{ estudo.fechamento }}" style="width:6rem"></label>
+        <label class="campo">{% translate "Valor de um cliente (R$)" %} <input name="valor_do_cliente" value="{{ estudo.valor_do_cliente|default_if_none:'' }}" style="width:8rem"></label>
+        <label class="campo">{% translate "Dolar (R$)" %} <input name="cotacao_do_dolar" value="{{ estudo.cotacao_do_dolar }}" style="width:6rem"></label>
+      </div>
+      <button type="submit" class="botao secundario">{% translate "Salvar" %}</button>
+    </form>
+  </details>
+
+  {% if area %}
+    <details class="secao">
+      <summary><strong>{% translate "As cidades da area" %}</strong> ({{ area|length }})</summary>
+      <p class="ajuda">{% translate "Distancia em linha reta ate o centro. Desmarque a cidade que nao entra (ex.: do outro lado de uma fronteira). A populacao e do Censo do IBGE." %}</p>
+      {% if falta_populacao %}
+        <form method="post" class="acoes">{% csrf_token %}<input type="hidden" name="acao" value="populacao">
+          <span class="selo alerta">{% translate "falta a populacao de algumas cidades" %}</span>
+          <button type="submit" class="botao discreto pequeno">{% translate "Ler a populacao no IBGE" %}</button></form>
+      {% endif %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="acao" value="area">
+        <div class="rolagem"><table>
+          <thead><tr><th></th><th>{% translate "Cidade" %}</th><th class="numero">km</th><th class="numero">{% translate "Populacao" %}</th></tr></thead>
+          <tbody data-recolher="10">{% for c in area %}
+            <tr><td><input type="checkbox" name="dentro" value="{{ c.codigo }}" {% if c.dentro %}checked{% endif %}></td>
+              <td>{{ c.municipio.rotulo }}</td><td class="numero">{{ c.distancia }}</td><td class="numero">{{ c.populacao|default:"—" }}</td></tr>
+          {% endfor %}</tbody>
+        </table></div>
+        <button type="submit" class="botao discreto pequeno">{% translate "Salvar a area" %}</button>
+      </form>
+    </details>
+  {% endif %}
+
+  {% if rascunho %}
+    <div class="secao">
+      <h2>{% blocktranslate with n=rascunho.numero %}Rodada {{ n }}: confira antes de buscar{% endblocktranslate %}</h2>
+      {% if rascunho.erro %}<div class="aviso ruim">{{ rascunho.erro }}</div>{% endif %}
+      {% if rascunho.analise %}<p class="pre-visualizacao" style="white-space:pre-wrap">{{ rascunho.analise }}</p>{% endif %}
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="acao" value="buscar"><input type="hidden" name="rodada" value="{{ rascunho.pk }}">
+        <div class="acoes" style="gap:1rem">
+          <label><input type="radio" name="modo" value="estimativa" {% if rascunho.modo == 'estimativa' %}checked{% endif %}> <strong>{% translate "Quero estimativa" %}</strong> <span class="ajuda">{% translate "(o estado x a populacao: um pedido por estado da area)" %}</span></label>
+          <label><input type="radio" name="modo" value="real" {% if rascunho.modo == 'real' %}checked{% endif %}> <strong>{% translate "Quero o valor mais real" %}</strong> <span class="ajuda">{% translate "(mais um pedido por cidade marcada abaixo)" %}</span></label>
+        </div>
+        <details {% if rascunho.modo == 'real' %}open{% endif %}><summary class="ajuda">{% translate "Cidades para medir uma a uma (modo real)" %}</summary>
+          <div class="acoes" style="gap:.2rem .8rem">{% for c in area %}{% if c.dentro %}
+            <label class="ajuda"><input type="checkbox" name="cidades" value="{{ c.codigo }}" {% if c.codigo in rascunho.cidades %}checked{% endif %}> {{ c.municipio.nome }} ({{ c.populacao|default:"?" }})</label>
+          {% endif %}{% endfor %}</div>
+        </details>
+        <label class="campo">{% translate "Palavras (uma por linha)" %} <span class="ajuda">({{ rascunho.palavras|length }})</span>
+          <textarea name="palavras" rows="6" style="width:100%">{{ rascunho.palavras|join:"
+" }}</textarea></label>
+        <label class="campo">{% translate "Sementes para o Google sugerir mais (ate 20)" %}
+          <textarea name="sementes" rows="2" style="width:100%">{{ rascunho.sementes|join:"
+" }}</textarea></label>
+        <label class="campo">{% translate "Ou um site para o Google sugerir palavras" %} <input name="site" value="{{ rascunho.site }}"></label>
+        <p class="ajuda">{% translate "Custo estimado desta rodada" %}: <strong>US$ {{ custo_do_rascunho }}</strong> {% translate "(o que vale e o que a DataForSEO cobrar; fica no historico)" %}</p>
+        <button type="submit" class="botao">{% translate "Buscar no Google" %}</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if centro %}
+    <details class="secao" {% if not rascunho %}open{% endif %}>
+      <summary><strong>{% translate "Nova rodada com a outra IA" %}</strong></summary>
+      <p class="ajuda">{% translate "Copie o pedido (leva a empresa, a area, o funil e tudo o que as rodadas ja acharam), cole na outra IA e traga a resposta. Pode voltar quantas vezes quiser: cada rodada fica no historico." %}</p>
+      <div class="acoes"><button type="button" class="botao discreto pequeno" data-copiar="pedido-estudo">{% translate "Copiar o pedido" %}</button></div>
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="acao" value="colar">
+        <textarea id="pedido-estudo" name="pedido" readonly rows="6" style="width:100%">{{ pedido }}</textarea>
+        <textarea name="resposta" rows="6" style="width:100%" placeholder="{% translate 'Cole aqui a resposta (ANALISE, MODO, PALAVRAS...)' %}"></textarea>
+        <button type="submit" class="botao secundario">{% translate "Ler a resposta" %}</button>
+      </form>
+    </details>
+  {% endif %}
+
+  {% if funil %}
+    <div class="secao">
+      <h2>{% translate "A campanha, pelo funil" %}</h2>
+      <p class="ajuda">{% blocktranslate trimmed with c=estudo.ctr v=estudo.conversao f=estudo.fechamento %}
+        Por mes medio, com {{ c }}% de cliques por busca, {{ v }}% de contatos por clique e {{ f }}% de
+        clientes por contato. Ordem de grandeza, nao promessa: o volume das cidades e estimado onde
+        nao foi medido.
+      {% endblocktranslate %}</p>
+      <div class="acoes" style="gap:1.2rem">
+        <div><div class="ajuda">{% translate "Buscas" %}</div><strong>{{ funil.total.buscas }}</strong></div>
+        <div><div class="ajuda">{% translate "Cliques" %}</div><strong>{{ funil.total.cliques }}</strong></div>
+        <div><div class="ajuda">{% translate "Custo (R$)" %}</div><strong>{{ funil.total.custo }}</strong></div>
+        <div><div class="ajuda">{% translate "Contatos" %}</div><strong>{{ funil.total.contatos }}</strong></div>
+        <div><div class="ajuda">{% translate "Clientes" %}</div><strong>{{ funil.total.clientes }}</strong></div>
+        <div><div class="ajuda">{% translate "R$ por contato" %}</div><strong>{{ funil.total.custo_por_contato|default:"—" }}</strong></div>
+        <div><div class="ajuda">{% translate "R$ por cliente" %}</div><strong>{{ funil.total.custo_por_cliente|default:"—" }}</strong></div>
+        {% if funil.total.retorno is not None %}<div><div class="ajuda">{% translate "Retorno (R$)" %}</div><strong>{{ funil.total.retorno }}</strong></div>{% endif %}
+      </div>
+      <p class="ajuda" style="margin-top:.5rem">{% translate "Clientes por mes do ano (pela sazonalidade de cada palavra):" %}</p>
+      <div class="acoes" style="gap:.4rem">{% for m in funil.por_mes %}<span class="selo">{{ m.mes }}: {{ m.clientes }}</span>{% endfor %}</div>
+    </div>
+  {% endif %}
+
+  <div class="secao">
+    <h2>{% translate "Palavras" %} <span class="ajuda">({{ total_de_palavras }})</span></h2>
+    {% if linhas or filtro %}
+      <form method="get" class="acoes"><input name="q" value="{{ filtro }}" placeholder="{% translate 'filtrar' %}" style="width:auto"><button class="botao discreto pequeno">{% translate "Filtrar" %}</button></form>
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="acao" value="campanha">
+        {% for p in campanha_oculta %}<input type="hidden" name="campanha" value="{{ p }}">{% endfor %}
+        <div class="rolagem"><table>
+          <thead><tr>
+            <th title="{% translate 'Na campanha' %}">{% translate "Anunciar" %}</th><th>{% translate "Palavra" %}</th>
+            <th class="numero" title="{% translate 'Buscas por mes na area (estimadas pelo estado e pela populacao)' %}">{% translate "Buscas/mes" %}</th>
+            <th class="numero" title="{% translate 'Cidades com o valor real medido' %}">{% translate "Real" %}</th>
+            <th class="numero">R$/{% translate "clique" %}</th><th class="numero">{% translate "Concorr." %}</th>
+            <th class="numero">{% translate "Tendencia" %}</th><th>{% translate "Pico" %}</th>
+            <th class="numero" title="{% translate 'Clientes por mes, pelo funil' %}">{% translate "Clientes" %}</th>
+          </tr></thead>
+          <tbody data-recolher="30">{% for l in linhas %}
+            <tr>
+              <td><input type="checkbox" name="campanha" value="{{ l.palavra }}" {% if l.na_campanha %}checked{% endif %}></td>
+              <td><a href="{% url 'estudos:palavra' estudo.pk %}?p={{ l.palavra|urlencode }}">{{ l.palavra }}</a>{% if l.origem == 'ideia' %} <span class="selo">{% translate "ideia do Google" %}</span>{% endif %}</td>
+              <td class="numero">{{ l.buscas }}</td>
+              <td class="numero">{% if l.reais_medidos %}{{ l.reais_medidos }}{% else %}—{% endif %}</td>
+              <td class="numero">{{ l.cpc_reais|default:"—" }}</td>
+              <td class="numero">{{ l.competicao|default_if_none:"—" }}</td>
+              <td class="numero">{% if l.tendencia is not None %}{{ l.tendencia|floatformat:0 }}%{% else %}—{% endif %}</td>
+              <td>{{ l.pico|default:"—" }}</td>
+              <td class="numero">{{ l.clientes }}</td>
+            </tr>
+          {% endfor %}</tbody>
+        </table></div>
+        <label class="campo">{% translate "Negativas (uma por linha)" %}
+          <textarea name="negativas" rows="3" style="width:100%">{{ estudo.negativas|join:"
+" }}</textarea></label>
+        <button type="submit" class="botao secundario">{% translate "Salvar a campanha" %}</button>
+      </form>
+    {% else %}
+      <p class="vazio">{% translate "Nenhuma palavra ainda: faca a primeira rodada." %}</p>
+    {% endif %}
+  </div>
+
+  {% if rodadas %}
+    <div class="secao">
+      <h2>{% translate "Historico das rodadas" %}</h2>
+      {% for r in rodadas %}
+        <details style="border-top:1px solid var(--borda); padding:.3rem 0">
+          <summary>{% blocktranslate with n=r.numero %}Rodada {{ n }}{% endblocktranslate %} &middot; {{ r.get_modo_display }} &middot;
+            <span class="selo {% if r.situacao == 'pronta' %}ok{% elif r.situacao == 'falhou' %}ruim{% else %}espera{% endif %}">{{ r.get_situacao_display }}</span>
+            &middot; {{ r.resultado|length }} {% translate "palavras" %} &middot; US$ {{ r.custo_usd }} &middot; {{ r.criado_em|date:"d/m H:i" }}</summary>
+          {% if r.analise %}<p class="pre-visualizacao" style="white-space:pre-wrap">{{ r.analise }}</p>{% endif %}
+          {% for a in r.avisos %}<div class="ajuda">&#9888; {{ a }}</div>{% endfor %}
+          {% if r.erro %}<div class="aviso ruim">{{ r.erro }}</div>{% endif %}
+          <details><summary class="ajuda">{% translate "O pedido e a resposta" %}</summary>
+            <textarea readonly rows="5" style="width:100%">{{ r.pedido }}</textarea>
+            <textarea readonly rows="5" style="width:100%">{{ r.resposta }}</textarea>
+          </details>
+        </details>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

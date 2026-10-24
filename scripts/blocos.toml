@@ -46,6 +46,8 @@ ignorar = [
   ".pre-commit-config.yaml",
   "NOTICE.md",
   "dump.rdb",
+  # Os municipios (coordenadas): dado, nao codigo.
+  "apps/estudos/dados/**",
 ]
 
 # Tudo que casar aqui so entra com `--com-testes`. Sao a melhor explicacao do
@@ -312,6 +314,27 @@ padroes = [
   "apps/ideias/**",
   "templates/ideias/**",
   "docs/CAIXA_DE_IDEIAS.md",
+]
+
+
+# ---------------------------------------------------------------------------
+# apps/estudos — estudos de mercado (so no tenant marcado, so superusuario)
+# ---------------------------------------------------------------------------
+[[bloco]]
+nome = "estudos-de-mercado"
+titulo = "Estudos de mercado: buscas no Google por regiao, em rodadas com outra IA"
+resumo = """
+Uma empresa, uma cidade e um raio (municipios.py, com as coordenadas do IBGE).
+Cada rodada: o pedido para a outra IA (pedido.py), a resposta em blocos, a
+busca na DataForSEO (coleta.py) por estimativa (estado x populacao) ou valor
+real por cidade, e as contas (funil.py: tendencia, sazonalidade, clientes).
+"""
+entrada = ["apps/estudos/coleta.py"]
+relacionados = ["radar"]
+padroes = [
+  "apps/estudos/**",
+  "templates/estudos/**",
+  "docs/ESTUDOS.md",
 ]
 
 

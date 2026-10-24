@@ -7,7 +7,8 @@ le essas declaracoes daqui:
     class MeuModuloConfig(AppConfig):
         urls = ("redes/", "apps.meu.urls", "meu")           # prefixo, urlconf, namespace
         menu = [{"rotulo": "Redes", "url": "meu:inicio", "aba": "redes",
-                 "pendencia": "redes", "depois_de": "artigos"}]
+                 "pendencia": "redes", "depois_de": "artigos",
+                 "visivel": "apps.meu.acesso.pode_ver"}]  # (request) -> bool, opcional
         prompts_iniciais = "apps.meu.prompts.PROMPTS"     # caminho pontilhado
         prompts_com_guia = {"meu_prompt"}                 # recebem o guia editorial
         blocos_do_artigo = ["meu/_no_artigo.html"]        # incluidos na tela do artigo
@@ -48,8 +49,20 @@ def rotas() -> list[tuple[str, str, str]]:
     return _declaracoes("urls")
 
 
-def menus() -> list[dict]:
-    return [item for lista in _declaracoes("menu") for item in lista]
+def menus(request=None) -> list[dict]:
+    """Os itens de menu dos modulos; o que declara `visivel` so aparece quando
+    a funcao diz que sim para este request."""
+    saida = []
+    for item in (i for lista in _declaracoes("menu") for i in lista):
+        if item.get("visivel"):
+            try:
+                if not import_string(item["visivel"])(request):
+                    continue
+            except Exception:
+                logger.exception("Visibilidade do menu %s indisponivel.", item.get("url"))
+                continue
+        saida.append(item)
+    return saida
 
 
 @cache

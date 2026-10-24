@@ -98,6 +98,8 @@ TENANT_APPS = [
     # (apps/ops/extensoes.py). Tirar esta linha tira o modulo inteiro.
     "apps.social",
     "apps.ideias",
+    # Estudos de mercado (Google Ads e buscas por regiao): so no tenant marcado.
+    "apps.estudos",
     #   "apps.integrations",
     #   "apps.ops",
 ]

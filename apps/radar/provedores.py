@@ -379,6 +379,57 @@ def metricas_dataforseo(
     return metricas
 
 
+def ideias_dataforseo(
+    *,
+    sementes: list[str] = (),
+    site: str = "",
+    config: ConfiguracaoDoRadar,
+    contas: ContasExternas,
+    finalidade: str,
+    local: int | None = None,
+) -> dict[str, dict]:
+    """Ideias de palavras do Planejador do Google Ads (a partir de ate 20
+    sementes, ou do site), ja com volume, historico e custo por clique, no
+    mesmo formato de `metricas_dataforseo`. Uma chamada (um preco) por pedido."""
+    sementes = list(dict.fromkeys(filter(None, map(palavra_para_volume, sementes))))[:20]
+    if sementes:
+        rota = "/keywords_data/google_ads/keywords_for_keywords/live"
+        corpo = corpo_de_volume(sementes, config=config, local=local or config.local_principal)
+        corpo["keywords"] = sementes
+    elif site.strip():
+        rota = "/keywords_data/google_ads/keywords_for_site/live"
+        corpo = corpo_de_volume([], config=config, local=local or config.local_principal)
+        corpo.pop("keywords")
+        corpo["target"] = site.strip()
+    else:
+        return {}
+    corpo["sort_by"] = "search_volume"
+    custos.conferir_teto(custos.ESTIMATIVAS[("dataforseo", "ideias")])
+    consulta = ", ".join(sementes)[:200] or site
+    try:
+        dados = _post_dataforseo(rota, [corpo], contas)
+    except ProvedorIndisponivel as exc:
+        custos.registrar(
+            provedor=ChamadaExterna.Provedor.DATAFORSEO,
+            endpoint=rota.lstrip("/"),
+            finalidade=finalidade,
+            consulta=consulta,
+            sucesso=False,
+            erro=str(exc),
+        )
+        raise
+    metricas = ler_metricas(dados["tasks"][0])
+    custos.registrar(
+        provedor=ChamadaExterna.Provedor.DATAFORSEO,
+        endpoint=rota.lstrip("/"),
+        finalidade=finalidade,
+        consulta=consulta,
+        custo=dados.get("cost") or 0,
+        itens=len(metricas),
+    )
+    return metricas
+
+
 def volume_dataforseo(palavras: list[str], **kwargs) -> dict[str, int]:
     """So o volume de cada palavra. Ver `metricas_dataforseo`."""
     return {

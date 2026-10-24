@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% load i18n %}
+{% block titulo %}{% translate "Estudos" %} — PubliBot{% endblock %}
+{% block menu %}{% include "_menu.html" %}{% endblock %}
+{% block conteudo %}
+  <h1>{% translate "Estudos de mercado" %}</h1>
+  <p class="pre-visualizacao">{% blocktranslate trimmed %}
+    Buscas no Google por regiao, em rodadas com outra IA: descreva a empresa, escolha a cidade e o
+    raio, copie o pedido, cole a resposta e o PubliBot busca na DataForSEO. Comece barato, pela
+    estimativa (estado x populacao); confirme o que importa com o valor real de cada cidade. O
+    historico de todas as rodadas fica guardado.
+  {% endblocktranslate %}</p>
+
+  <form method="post" class="secao">
+    {% csrf_token %}
+    <h2>{% translate "Novo estudo" %}</h2>
+    <div class="campo"><label for="nome">{% translate "Nome" %}</label>
+      <input id="nome" name="nome" required placeholder="{% translate 'Ex.: Empresa X - Google Ads' %}"></div>
+    <div class="campo"><label for="descricao">{% translate "A empresa (vai inteira no pedido para a IA)" %}</label>
+      <textarea id="descricao" name="descricao" rows="5" placeholder="{% translate 'O que vende, para quem, como o cliente compra, a meta, os objetivos, o orcamento, os concorrentes que voce conhece.' %}"></textarea></div>
+    <div class="acoes" style="gap:.6rem">
+      <div class="campo"><label for="cidade">{% translate "Cidade do centro" %}</label>
+        <input id="cidade" name="cidade" placeholder="{% translate 'Ex.: Cascavel (PR)' %}"></div>
+      <div class="campo"><label for="raio_km">{% translate "Raio (km)" %}</label>
+        <input id="raio_km" name="raio_km" type="number" min="0" max="500" value="50" style="width:6rem"></div>
+    </div>
+    <button type="submit" class="botao">{% translate "Criar o estudo" %}</button>
+  </form>
+
+  {% if estudos %}
+    <div class="secao">
+      <h2>{% translate "Estudos" %}</h2>
+      <div class="rolagem"><table>
+        <thead><tr><th>{% translate "Estudo" %}</th><th class="numero">{% translate "Rodadas" %}</th><th>{% translate "Atualizado" %}</th></tr></thead>
+        <tbody>{% for e in estudos %}
+          <tr><td><a href="{% url 'estudos:estudo' e.pk %}">{{ e.nome }}</a></td>
+            <td class="numero">{{ e.rodadas.all|length }}</td>
+            <td class="pre-visualizacao">{{ e.atualizado_em|date:"d/m/Y H:i" }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    </div>
+  {% endif %}
+{% endblock %}

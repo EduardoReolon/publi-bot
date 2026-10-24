@@ -188,6 +188,13 @@ class Tenant(TenantMixin):
     # Interruptor por tenant. Toda task de publicacao consulta antes de sair
     # para a rede.
     is_paused = models.BooleanField(_("pausado"), default=False)
+    # Os estudos de mercado (apps/estudos) so aparecem no tenant marcado, e so
+    # para superusuario: e a bancada do dono, nao uma tela de cliente.
+    estudos = models.BooleanField(
+        _("estudos de mercado"),
+        default=False,
+        help_text=_("Mostra a tela de Estudos neste tenant (so para superusuario)."),
+    )
 
     created_on = models.DateField(_("criado em"), auto_now_add=True)
     provisioned_at = models.DateTimeField(_("provisionado em"), null=True, blank=True)
